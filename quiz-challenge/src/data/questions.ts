@@ -9,8 +9,8 @@ export const questions: Question[] = [
     category: "한국사",
     difficulty: "쉬움",
     question: "한글을 창제한 조선의 왕은 누구인가요?",
-    options: ["태조", "세종대왕", "성종", "영조"],
-    answer: 1,
+    options: ["태조", "영조", "성종", "세종대왕"],
+    answer: 3,
     explanation: "세종대왕은 1443년 훈민정음(한글)을 창제하여 백성들이 쉽게 글을 읽고 쓸 수 있도록 했습니다."
   },
   {
@@ -63,8 +63,8 @@ export const questions: Question[] = [
     category: "한국사",
     difficulty: "보통",
     question: "3·1 운동이 일어난 연도는?",
-    options: ["1910년", "1919년", "1945년", "1948년"],
-    answer: 1,
+    options: ["1919년", "1910년", "1945년", "1948년"],
+    answer: 0,
     explanation: "3·1 운동은 1919년 3월 1일 일제 강점기에 한국인들이 독립을 외친 대규모 만세 운동입니다."
   },
   {
@@ -121,8 +121,8 @@ export const questions: Question[] = [
     category: "과학",
     difficulty: "쉬움",
     question: "인간의 정상 체온은 약 몇 도인가요?",
-    options: ["35°C", "36.5°C", "38°C", "40°C"],
-    answer: 1,
+    options: ["35°C", "40°C", "38°C", "36.5°C"],
+    answer: 3,
     explanation: "인간의 정상 체온은 약 36.5°C이며, 이를 벗어나면 발열이나 저체온 상태로 봅니다."
   },
   {
@@ -166,8 +166,8 @@ export const questions: Question[] = [
     category: "과학",
     difficulty: "어려움",
     question: "DNA의 이중나선 구조를 발견한 과학자는?",
-    options: ["다윈", "멘델", "왓슨과 크릭", "파스퇴르"],
-    answer: 2,
+    options: ["왓슨과 크릭", "멘델", "다윈", "파스퇴르"],
+    answer: 0,
     explanation: "제임스 왓슨과 프랜시스 크릭은 1953년 DNA의 이중나선 구조를 발견했습니다."
   },
   {
@@ -197,8 +197,8 @@ export const questions: Question[] = [
     category: "지리",
     difficulty: "쉬움",
     question: "대한민국의 수도는 어디인가요?",
-    options: ["부산", "인천", "서울", "대구"],
-    answer: 2,
+    options: ["부산", "인천", "대구", "서울"],
+    answer: 3,
     explanation: "서울은 대한민국의 수도이자 약 1천만 명이 거주하는 인구 기준 최대 도시입니다."
   },
   {
@@ -206,8 +206,8 @@ export const questions: Question[] = [
     category: "지리",
     difficulty: "쉬움",
     question: "면적 기준으로 세계에서 가장 넓은 대륙은?",
-    options: ["아프리카", "북아메리카", "아시아", "유럽"],
-    answer: 2,
+    options: ["아시아", "북아메리카", "아프리카", "유럽"],
+    answer: 0,
     explanation: "아시아는 약 4,458만 ㎢로 면적 기준 세계에서 가장 넓은 대륙이며, 세계 인구의 60%가 거주합니다."
   },
   {
@@ -224,8 +224,8 @@ export const questions: Question[] = [
     category: "지리",
     difficulty: "보통",
     question: "본류 길이 기준으로 한국에서 가장 긴 강은?",
-    options: ["한강", "낙동강", "금강", "영산강"],
-    answer: 1,
+    options: ["낙동강", "한강", "금강", "영산강"],
+    answer: 0,
     explanation: "낙동강은 본류 길이 약 510km로 한국에서 가장 긴 강이며, 영남 지방을 관통합니다."
   },
   {
@@ -251,8 +251,8 @@ export const questions: Question[] = [
     category: "지리",
     difficulty: "보통",
     question: "아마존 강은 어느 대륙에 있나요?",
-    options: ["아프리카", "아시아", "남아메리카", "북아메리카"],
-    answer: 2,
+    options: ["아프리카", "아시아", "북아메리카", "남아메리카"],
+    answer: 3,
     explanation: "아마존 강은 남아메리카 브라질을 중심으로 흐르는 세계 최대 유역 면적의 강입니다."
   },
   {
@@ -291,8 +291,8 @@ export const questions: Question[] = [
     category: "예술과문화",
     difficulty: "쉬움",
     question: "'모나리자'를 그린 화가는 누구인가요?",
-    options: ["미켈란젤로", "레오나르도 다 빈치", "라파엘로", "피카소"],
-    answer: 1,
+    options: ["레오나르도 다 빈치", "미켈란젤로", "라파엘로", "피카소"],
+    answer: 0,
     explanation: "레오나르도 다 빈치는 16세기 초 모나리자를 그렸으며, 현재 루브르 박물관에 전시되어 있습니다."
   },
   {
@@ -318,8 +318,8 @@ export const questions: Question[] = [
     category: "예술과문화",
     difficulty: "보통",
     question: "'별이 빛나는 밤'을 그린 화가는?",
-    options: ["클로드 모네", "빈센트 반 고흐", "폴 고갱", "에드가 드가"],
-    answer: 1,
+    options: ["클로드 모네", "에드가 드가", "폴 고갱", "빈센트 반 고흐"],
+    answer: 3,
     explanation: "빈센트 반 고흐는 1889년 생레미 정신병원에서 '별이 빛나는 밤'을 그렸습니다."
   },
   {
@@ -354,8 +354,8 @@ export const questions: Question[] = [
     category: "예술과문화",
     difficulty: "어려움",
     question: "인상주의 음악의 대표적인 작곡가는?",
-    options: ["차이콥스키", "드뷔시", "브람스", "쇼팽"],
-    answer: 1,
+    options: ["드뷔시", "차이콥스키", "브람스", "쇼팽"],
+    answer: 0,
     explanation: "클로드 드뷔시는 '달빛', '바다' 등으로 유명한 프랑스 인상주의 음악의 대표 작곡가입니다."
   },
   {
@@ -363,8 +363,8 @@ export const questions: Question[] = [
     category: "예술과문화",
     difficulty: "어려움",
     question: "'게르니카'를 그린 화가와 관련된 미술 사조는?",
-    options: ["인상주의", "입체주의", "사실주의", "낭만주의"],
-    answer: 1,
+    options: ["인상주의", "낭만주의", "사실주의", "입체주의"],
+    answer: 3,
     explanation: "피카소의 게르니카는 입체주의 화풍으로 스페인 내전의 비극을 표현한 대작입니다."
   },
   {
@@ -372,8 +372,8 @@ export const questions: Question[] = [
     category: "예술과문화",
     difficulty: "어려움",
     question: "피카소가 공동 창시한 20세기 미술 사조는?",
-    options: ["인상주의", "입체주의", "초현실주의", "표현주의"],
-    answer: 1,
+    options: ["인상주의", "초현실주의", "입체주의", "표현주의"],
+    answer: 2,
     explanation: "피카소는 조르주 브라크와 함께 1907년경 입체주의(큐비즘)를 창시했습니다."
   },
 ];
