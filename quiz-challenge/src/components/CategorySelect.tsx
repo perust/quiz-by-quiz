@@ -65,7 +65,7 @@ export default function CategorySelect({
       {/* 카테고리 그리드 */}
       <div className="flex-1 flex items-center justify-center">
         <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full max-w-lg">
-          {allCategories.map((category) => {
+          {allCategories.map((category, index) => {
             const isCompleted = completedCategories.has(category);
             const score = categoryScores[category];
 
@@ -74,17 +74,18 @@ export default function CategorySelect({
                 key={category}
                 onClick={() => !isCompleted && onSelectCategory(category)}
                 disabled={isCompleted}
-                className={`relative p-4 sm:p-6 rounded-2xl border-2 transition-all duration-300 transform
+                className={`animate-stagger-fade-in relative p-4 sm:p-6 rounded-2xl border-2 transition-all duration-300 transform
                           ${isCompleted
                             ? 'bg-slate-800/30 border-slate-600/30 cursor-default opacity-70'
                             : `bg-slate-800/50 ${getCategoryBorderClass(category)} ${getCategoryGlowClass(category)}
                                hover:scale-105 hover:shadow-xl cursor-pointer active:scale-100`
                           }`}
+                style={{ '--stagger-delay': `${index * 100}ms` } as React.CSSProperties}
                 aria-label={`${category} 카테고리 ${isCompleted ? '완료됨' : '선택'}`}
               >
                 {/* 완료 체크마크 */}
                 {isCompleted && (
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center animate-stamp">
                     <span className="text-white text-sm">✓</span>
                   </div>
                 )}
@@ -122,7 +123,7 @@ export default function CategorySelect({
       <div className="mt-6 sm:mt-8 text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-full mb-4">
           <div className="flex gap-1">
-            {allCategories.map((category, index) => (
+            {allCategories.map((category) => (
               <div
                 key={category}
                 className={`w-2 h-2 rounded-full transition-colors duration-300

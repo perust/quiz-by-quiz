@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Grade, CategoryScores, Category } from '../types';
 import { getCategoryIcon, allCategories } from '../utils/helpers';
+import { launchConfetti } from '../utils/confetti';
 
 interface ResultScreenProps {
   nickname: string;
@@ -31,6 +32,7 @@ export default function ResultScreen({
 }: ResultScreenProps) {
   const [displayScore, setDisplayScore] = useState(0);
   const [showContent, setShowContent] = useState(false);
+  const [gradeAnimDone, setGradeAnimDone] = useState(false);
 
   // 점수 카운트업 애니메이션
   useEffect(() => {
@@ -52,6 +54,14 @@ export default function ResultScreen({
     return () => clearInterval(timer);
   }, [totalScore]);
 
+  // 컨페티 (S 또는 A 등급)
+  useEffect(() => {
+    if (grade.label === 'S' || grade.label === 'A') {
+      const cleanup = launchConfetti(3000);
+      return cleanup;
+    }
+  }, [grade.label]);
+
   const getCategoryColorClass = (category: Category): string => {
     const colors: Record<Category, string> = {
       "한국사": "bg-red-500",
@@ -71,7 +81,12 @@ export default function ResultScreen({
 
       {/* 등급 배지 */}
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 sm:p-8 mb-6 text-center border border-slate-700/50 w-full max-w-md">
-        <div className="text-6xl sm:text-7xl mb-3 animate-bounce-slow">
+        <div
+          className={`text-6xl sm:text-7xl mb-3 ${gradeAnimDone ? 'animate-bounce-slow' : 'animate-grade-bounce-in'}`}
+          onAnimationEnd={() => {
+            if (!gradeAnimDone) setGradeAnimDone(true);
+          }}
+        >
           {grade.emoji}
         </div>
         <div className="text-3xl sm:text-4xl font-bold text-white mb-1">
@@ -96,7 +111,7 @@ export default function ResultScreen({
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-5 sm:p-6 mb-6 w-full max-w-md border border-slate-700/50">
         <h2 className="text-lg font-semibold text-white mb-4">카테고리별 점수</h2>
         <div className="space-y-4">
-          {allCategories.map((category) => {
+          {allCategories.map((category, index) => {
             const score = categoryScores[category];
             const percentage = (score / 10) * 100;
 
@@ -113,8 +128,11 @@ export default function ResultScreen({
                 </div>
                 <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                   <div
-                    className={`h-full ${getCategoryColorClass(category)} transition-all duration-1000 ease-out rounded-full`}
-                    style={{ width: `${percentage}%` }}
+                    className={`h-full ${getCategoryColorClass(category)} rounded-full animate-fill-bar`}
+                    style={{
+                      '--bar-width': `${percentage}%`,
+                      '--bar-delay': `${index * 200 + 500}ms`,
+                    } as React.CSSProperties}
                   />
                 </div>
               </div>

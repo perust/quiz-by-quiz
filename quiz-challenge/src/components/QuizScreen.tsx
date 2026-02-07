@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Question, Category, FeedbackState } from '../types';
 import { getCategoryIcon } from '../utils/helpers';
 import ProgressBar from './ProgressBar';
@@ -61,10 +61,10 @@ export default function QuizScreen({
     const isCorrect = index === feedback.correctAnswer;
 
     if (isSelected && feedback.isCorrect) {
-      return 'bg-green-500/20 border-green-500 ring-2 ring-green-500/50';
+      return 'bg-green-500/20 border-green-500 ring-2 ring-green-500/50 animate-pulse-glow-green';
     }
     if (isSelected && !feedback.isCorrect) {
-      return 'bg-red-500/20 border-red-500 ring-2 ring-red-500/50';
+      return 'bg-red-500/20 border-red-500 ring-2 ring-red-500/50 animate-shake';
     }
     if (isCorrect && !feedback.isCorrect) {
       return 'bg-green-500/10 border-green-500/50';
@@ -72,18 +72,43 @@ export default function QuizScreen({
     return 'bg-slate-800/30 border-slate-700/30 opacity-50';
   };
 
-  const handleOptionClick = (index: number) => {
+  const handleOptionClick = useCallback((index: number) => {
     if (!feedback.isVisible) {
       onSubmitAnswer(index);
     }
-  };
+  }, [feedback.isVisible, onSubmitAnswer]);
 
-  const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
+  const handleOptionKeyDown = (e: React.KeyboardEvent, index: number) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       handleOptionClick(index);
     }
   };
+
+  // 키보드 단축키 (1/2/3/4, Enter/Space)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showConfirmModal) return;
+
+      if (feedback.isVisible) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onNextQuestion();
+        }
+        return;
+      }
+
+      const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3 };
+      const answerIndex = keyMap[e.key];
+      if (answerIndex !== undefined) {
+        e.preventDefault();
+        onSubmitAnswer(answerIndex);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [feedback.isVisible, showConfirmModal, onSubmitAnswer, onNextQuestion]);
 
   return (
     <div className="min-h-screen flex flex-col p-4 sm:p-6">
@@ -110,7 +135,7 @@ export default function QuizScreen({
       </div>
 
       {/* 문제 영역 */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col" aria-live="polite">
         {/* 난이도 표시 */}
         <div className="mb-3">
           <span className={`text-xs px-2 py-0.5 rounded-full
@@ -122,7 +147,10 @@ export default function QuizScreen({
         </div>
 
         {/* 질문 카드 */}
-        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-5 sm:p-6 mb-4 sm:mb-6 border border-slate-700/50">
+        <div
+          key={question.id}
+          className="animate-slide-in-right bg-slate-800/50 backdrop-blur-sm rounded-2xl p-5 sm:p-6 mb-4 sm:mb-6 border border-slate-700/50"
+        >
           <h2 className="text-lg sm:text-xl font-medium text-white leading-relaxed">
             {question.question}
           </h2>
@@ -134,7 +162,7 @@ export default function QuizScreen({
             <button
               key={index}
               onClick={() => handleOptionClick(index)}
-              onKeyDown={(e) => handleKeyDown(e, index)}
+              onKeyDown={(e) => handleOptionKeyDown(e, index)}
               disabled={feedback.isVisible}
               className={`w-full p-4 rounded-xl border-2 transition-all duration-200
                         flex items-center gap-3 text-left
@@ -168,6 +196,13 @@ export default function QuizScreen({
             </button>
           ))}
         </div>
+
+        {/* 키보드 힌트 */}
+        {!feedback.isVisible && (
+          <p className="text-xs text-slate-600 text-center mb-2">
+            키보드 1~4로 답변 선택
+          </p>
+        )}
 
         {/* 피드백 표시 */}
         {feedback.isVisible && (

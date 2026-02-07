@@ -53,7 +53,7 @@ export default function StartScreen({
             id="nickname"
             value={inputValue}
             onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder="닉네임을 입력하세요"
             maxLength={10}
             className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-xl

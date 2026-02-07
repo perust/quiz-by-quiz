@@ -7,7 +7,7 @@ interface ProgressBarProps {
   showPercentage?: boolean;
 }
 
-export default function ProgressBar({
+const ProgressBar = React.memo(function ProgressBar({
   progress,
   label,
   color = 'bg-gradient-to-r from-indigo-500 to-purple-500',
@@ -33,4 +33,6 @@ export default function ProgressBar({
       </div>
     </div>
   );
-}
+});
+
+export default ProgressBar;

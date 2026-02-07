@@ -49,7 +49,7 @@ export default function Leaderboard({
       </h1>
 
       {/* 리더보드 테이블 */}
-      <div className="w-full max-w-lg mb-6">
+      <div className="w-full max-w-lg mb-6" role="table" aria-label="순위표">
         {entries.length === 0 ? (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 text-center border border-slate-700/50">
             <div className="text-4xl mb-4">🎮</div>
@@ -59,12 +59,12 @@ export default function Leaderboard({
         ) : (
           <div className="space-y-2">
             {/* 헤더 */}
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs text-slate-500 uppercase tracking-wider">
-              <div className="col-span-1">#</div>
-              <div className="col-span-4">닉네임</div>
-              <div className="col-span-2 text-center">점수</div>
-              <div className="col-span-2 text-center">등급</div>
-              <div className="col-span-3 text-right">날짜</div>
+            <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs text-slate-500 uppercase tracking-wider" role="row">
+              <div className="col-span-1" role="columnheader">#</div>
+              <div className="col-span-4" role="columnheader">닉네임</div>
+              <div className="col-span-2 text-center" role="columnheader">점수</div>
+              <div className="col-span-2 text-center" role="columnheader">등급</div>
+              <div className="col-span-3 text-right" role="columnheader">날짜</div>
             </div>
 
             {/* 엔트리 */}
@@ -78,9 +78,10 @@ export default function Leaderboard({
                   className={`grid grid-cols-12 gap-2 px-4 py-3 rounded-xl border transition-all
                             ${getRankClass(rank)}
                             ${isCurrentUser ? 'ring-2 ring-purple-500/50' : ''}`}
+                  role="row"
                 >
                   {/* 순위 */}
-                  <div className="col-span-1 flex items-center">
+                  <div className="col-span-1 flex items-center" role="cell">
                     {rank <= 3 ? (
                       <span className="text-lg">{getRankIcon(rank)}</span>
                     ) : (
@@ -89,7 +90,7 @@ export default function Leaderboard({
                   </div>
 
                   {/* 닉네임 */}
-                  <div className="col-span-4 flex items-center">
+                  <div className="col-span-4 flex items-center" role="cell">
                     <span className={`font-medium truncate ${isCurrentUser ? 'text-purple-400' : 'text-white'}`}>
                       {entry.nickname}
                       {isCurrentUser && <span className="ml-1 text-xs">(나)</span>}
@@ -97,19 +98,19 @@ export default function Leaderboard({
                   </div>
 
                   {/* 점수 */}
-                  <div className="col-span-2 flex items-center justify-center">
+                  <div className="col-span-2 flex items-center justify-center" role="cell">
                     <span className="font-bold text-white">{entry.score}</span>
                     <span className="text-slate-500 text-xs">/40</span>
                   </div>
 
                   {/* 등급 */}
-                  <div className="col-span-2 flex items-center justify-center gap-1">
+                  <div className="col-span-2 flex items-center justify-center gap-1" role="cell">
                     <span>{entry.grade.emoji}</span>
                     <span className="text-slate-300 text-sm font-medium">{entry.grade.label}</span>
                   </div>
 
                   {/* 날짜 */}
-                  <div className="col-span-3 flex items-center justify-end">
+                  <div className="col-span-3 flex items-center justify-end" role="cell">
                     <span className="text-slate-500 text-xs">{entry.date}</span>
                   </div>
                 </div>

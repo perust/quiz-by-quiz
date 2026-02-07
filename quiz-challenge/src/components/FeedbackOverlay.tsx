@@ -8,7 +8,7 @@ interface FeedbackOverlayProps {
   isLastQuestion: boolean;
 }
 
-export default function FeedbackOverlay({
+const FeedbackOverlay = React.memo(function FeedbackOverlay({
   isCorrect,
   correctAnswer,
   explanation,
@@ -16,8 +16,12 @@ export default function FeedbackOverlay({
   isLastQuestion,
 }: FeedbackOverlayProps) {
   return (
-    <div className="animate-fade-in mt-4 p-4 sm:p-5 rounded-xl border bg-slate-800/80 backdrop-blur-sm
-                  border-slate-700">
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="animate-fade-in mt-4 p-4 sm:p-5 rounded-xl border bg-slate-800/80 backdrop-blur-sm
+                  border-slate-700"
+    >
       {/* 결과 메시지 */}
       <div className="flex items-center gap-2 mb-3">
         {isCorrect ? (
@@ -58,4 +62,6 @@ export default function FeedbackOverlay({
       </button>
     </div>
   );
-}
+});
+
+export default FeedbackOverlay;

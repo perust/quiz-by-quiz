@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { questions, getQuestionsByCategory } from '../data/questions';
 import { shuffleArray, getGrade, formatDate, allCategories } from '../utils/helpers';
+import { playCorrectSound, playWrongSound, playFanfareSound, setMuted } from '../utils/sounds';
 
 interface UseQuizGameReturn {
   // 상태
@@ -23,6 +24,8 @@ interface UseQuizGameReturn {
   completedCategories: Set<Category>;
   feedback: FeedbackState;
   leaderboard: LeaderboardEntry[];
+  muted: boolean;
+  transitionClass: string;
 
   // 계산된 값
   currentQuestion: Question | null;
@@ -43,6 +46,7 @@ interface UseQuizGameReturn {
   resetGame: () => void;
   addToLeaderboard: () => void;
   goToCategory: () => void;
+  toggleMute: () => void;
 }
 
 export function useQuizGame(): UseQuizGameReturn {
@@ -80,6 +84,12 @@ export function useQuizGame(): UseQuizGameReturn {
   // 리더보드
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
+  // 음소거
+  const [muted, setMutedState] = useState<boolean>(false);
+
+  // 화면 전환 애니메이션 클래스
+  const [transitionClass, setTransitionClass] = useState<string>('animate-fade-in');
+
   // 현재 문제
   const currentQuestion = useMemo(() => {
     if (currentQuestions.length === 0) return null;
@@ -106,9 +116,20 @@ export function useQuizGame(): UseQuizGameReturn {
   // 등급 계산
   const grade = useMemo(() => getGrade(totalScore), [totalScore]);
 
+  // 음소거 토글
+  const toggleMute = useCallback(() => {
+    setMutedState(prev => {
+      const next = !prev;
+      setMuted(next);
+      return next;
+    });
+  }, []);
+
   // 게임 시작 (닉네임 입력 후)
   const startGame = useCallback(() => {
     if (nickname.trim()) {
+      setNickname(prev => prev.trim());
+      setTransitionClass('animate-slide-in-right');
       setScreen('category');
     }
   }, [nickname]);
@@ -116,10 +137,11 @@ export function useQuizGame(): UseQuizGameReturn {
   // 카테고리 선택
   const selectCategory = useCallback((category: Category) => {
     const categoryQuestions = getQuestionsByCategory(category);
-    const shuffledQuestions = shuffleArray(categoryQuestions);
+    const shuffled = shuffleArray(categoryQuestions);
+    const selected = shuffled.slice(0, 10);
 
     setSelectedCategory(category);
-    setCurrentQuestions(shuffledQuestions);
+    setCurrentQuestions(selected);
     setCurrentQuestionIndex(0);
     setAnswers(new Map());
     setFeedback({
@@ -128,6 +150,7 @@ export function useQuizGame(): UseQuizGameReturn {
       correctAnswer: 0,
       explanation: '',
     });
+    setTransitionClass('animate-slide-in-right');
     setScreen('quiz');
   }, []);
 
@@ -148,6 +171,13 @@ export function useQuizGame(): UseQuizGameReturn {
       }));
     }
 
+    // 사운드 재생
+    if (isCorrect) {
+      playCorrectSound();
+    } else {
+      playWrongSound();
+    }
+
     // 피드백 표시
     setFeedback({
       isVisible: true,
@@ -166,8 +196,11 @@ export function useQuizGame(): UseQuizGameReturn {
     // 모든 카테고리 완료 확인
     const newCompletedCount = completedCategories.size + 1;
     if (newCompletedCount >= allCategories.length) {
+      playFanfareSound();
+      setTransitionClass('animate-slide-up');
       setScreen('result');
     } else {
+      setTransitionClass('animate-slide-in-left');
       setScreen('category');
     }
   }, [selectedCategory, completedCategories]);
@@ -191,21 +224,25 @@ export function useQuizGame(): UseQuizGameReturn {
 
   // 결과 화면으로
   const showResult = useCallback(() => {
+    setTransitionClass('animate-slide-up');
     setScreen('result');
   }, []);
 
   // 리더보드 화면으로
   const showLeaderboard = useCallback(() => {
+    setTransitionClass('animate-fade-in');
     setScreen('leaderboard');
   }, []);
 
   // 카테고리 선택 화면으로
   const goToCategory = useCallback(() => {
+    setTransitionClass('animate-slide-in-left');
     setScreen('category');
   }, []);
 
   // 게임 리셋
   const resetGame = useCallback(() => {
+    setTransitionClass('animate-fade-in');
     setScreen('start');
     setNickname('');
     setSelectedCategory(null);
@@ -244,6 +281,7 @@ export function useQuizGame(): UseQuizGameReturn {
       return newLeaderboard.slice(0, 10);
     });
 
+    setTransitionClass('animate-fade-in');
     setScreen('leaderboard');
   }, [nickname, totalScore]);
 
@@ -259,6 +297,8 @@ export function useQuizGame(): UseQuizGameReturn {
     completedCategories,
     feedback,
     leaderboard,
+    muted,
+    transitionClass,
 
     // 계산된 값
     currentQuestion,
@@ -279,5 +319,6 @@ export function useQuizGame(): UseQuizGameReturn {
     resetGame,
     addToLeaderboard,
     goToCategory,
+    toggleMute,
   };
 }
