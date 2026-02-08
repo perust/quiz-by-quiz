@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>상식왕 퀴즈 챌린지 — 선생님 대시보드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #1E293B; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
+    @keyframes fade-in-up {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slide-right { from { width: 0; } }
+
+    .animate-fade-in-up { animation: fade-in-up 0.6s ease-out both; }
+    .animate-fade-in { animation: fade-in 0.4s ease-out both; }
+    .stagger-1 { animation-delay: 0.1s; }
+    .stagger-2 { animation-delay: 0.2s; }
+    .stagger-3 { animation-delay: 0.3s; }
+    .stagger-4 { animation-delay: 0.4s; }
+    .stagger-5 { animation-delay: 0.5s; }
+    .stagger-6 { animation-delay: 0.6s; }
+    .stagger-7 { animation-delay: 0.7s; }
+    .stagger-8 { animation-delay: 0.8s; }
+
+    .glass {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .glass:hover { border-color: rgba(148, 163, 184, 0.2); }
+
+    .bar-fill { animation: slide-right 1.2s ease-out both; }
+
+    .grade-s { background: linear-gradient(135deg, #F59E0B, #D97706); }
+    .grade-a { background: linear-gradient(135deg, #3B82F6, #2563EB); }
+    .grade-b { background: linear-gradient(135deg, #22C55E, #16A34A); }
+    .grade-c { background: linear-gradient(135deg, #F97316, #EA580C); }
+    .grade-d { background: linear-gradient(135deg, #EF4444, #DC2626); }
+
+    .medal-gold { background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05)); }
+    .medal-silver { background: linear-gradient(135deg, rgba(148, 163, 184, 0.15), rgba(148, 163, 184, 0.05)); }
+    .medal-bronze { background: linear-gradient(135deg, rgba(180, 83, 9, 0.15), rgba(180, 83, 9, 0.05)); }
+
+    @media print {
+      body { background: white !important; color: black !important; }
+      .glass { background: white !important; border: 1px solid #e2e8f0 !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-[#0F172A] text-slate-100 font-sans min-h-screen">
+
+  <header class="animate-fade-in-up stagger-1">
+    <div class="max-w-6xl mx-auto px-4 pt-8 pb-6">
+      <div class="glass rounded-2xl p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="text-3xl">📊</span>
+              <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                선생님 대시보드
+              </h1>
+            </div>
+            <p class="text-slate-400 text-sm">상식왕 퀴즈 챌린지 — 반 전체 성적 보고서</p>
+          </div>
+          <div id="header-stats" class="flex flex-wrap gap-3"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 pb-12 space-y-6">
+    <section class="animate-fade-in-up stagger-2">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>🏆</span> 순위표</h2>
+      <div class="glass rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-700/50">
+                <th class="px-4 py-3 text-left text-slate-400 font-medium">순위</th>
+                <th class="px-4 py-3 text-left text-slate-400 font-medium">이름</th>
+                <th class="px-4 py-3 text-center text-slate-400 font-medium">총점</th>
+                <th class="px-4 py-3 text-center text-slate-400 font-medium">등급</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:#EF4444">한국사</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:#3B82F6">과학</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:#22C55E">지리</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:#A855F7">예술</th>
+                <th class="px-4 py-3 text-center text-slate-400 font-medium">응시</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-3">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>📈</span> 등급 분포</h2>
+      <div class="glass rounded-2xl p-6">
+        <div id="grade-dist" class="space-y-4"></div>
+        <p id="grade-dist-note" class="text-xs text-slate-500 mt-4 text-center"></p>
+      </div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-4">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>📚</span> 카테고리별 반 성적</h2>
+      <div id="category-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-5">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>⚠️</span> 관심 필요 학생</h2>
+      <div class="glass rounded-2xl p-6">
+        <div id="attention-list" class="space-y-4"></div>
+        <p class="text-xs text-slate-500 mt-4">* 카테고리별 7점 미만 항목을 약점으로 표시합니다.</p>
+      </div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-6">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>💡</span> 핵심 인사이트</h2>
+      <div id="insights" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-7" id="trend-section" style="display:none">
+      <h2 id="trend-title" class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"></h2>
+      <div id="trend-content" class="glass rounded-2xl p-6"></div>
+    </section>
+
+    <section class="animate-fade-in-up stagger-8 no-print">
+      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>🛠️</span> 선생님 커맨드 가이드</h2>
+      <div class="glass rounded-2xl p-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-dashboard</code>
+            <span class="text-xs text-slate-400">반 전체 종합 대시보드</span>
+          </div>
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-student</code>
+            <span class="text-xs text-slate-400">개별 학생 상세 조회</span>
+          </div>
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-compare</code>
+            <span class="text-xs text-slate-400">학생 간 성적 비교</span>
+          </div>
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-rank</code>
+            <span class="text-xs text-slate-400">전체 순위표</span>
+          </div>
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-register</code>
+            <span class="text-xs text-slate-400">학생 등록 / 점수 입력</span>
+          </div>
+          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
+            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-analyze</code>
+            <span class="text-xs text-slate-400">반 전체 성과 분석</span>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-4 text-center">Claude Code 터미널에서 위 커맨드를 입력하세요.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="animate-fade-in max-w-6xl mx-auto px-4 pb-8">
+    <div id="footer-text" class="text-center text-xs text-slate-600 space-y-1"></div>
+  </footer>
+
+  <script>
+    // =====================================================
+    // 📌 DATA — students.ts 내용을 여기에 반영합니다.
+    //    학생 추가/수정 시 이 배열만 업데이트하면 됩니다.
+    // =====================================================
+    const students = [
+      {
+        id: "김민준", name: "김민준", registeredAt: "2026.02.05 09:00",
+        results: [
+          { date: "2026.02.05 09:30", totalScore: 34, categoryScores: { "한국사": 9, "과학": 8, "지리": 9, "예술과문화": 8 }, grade: { label: "A", emoji: "🌟", title: "박학다식", minScore: 32 } },
+          { date: "2026.02.07 14:20", totalScore: 37, categoryScores: { "한국사": 10, "과학": 9, "지리": 9, "예술과문화": 9 }, grade: { label: "A", emoji: "🌟", title: "박학다식", minScore: 32 } },
+        ],
+      },
+      {
+        id: "이서연", name: "이서연", registeredAt: "2026.02.05 09:00",
+        results: [
+          { date: "2026.02.05 10:00", totalScore: 28, categoryScores: { "한국사": 7, "과학": 6, "지리": 8, "예술과문화": 7 }, grade: { label: "B", emoji: "📚", title: "준수함", minScore: 24 } },
+        ],
+      },
+      {
+        id: "박지호", name: "박지호", registeredAt: "2026.02.06 11:00",
+        results: [
+          { date: "2026.02.06 11:30", totalScore: 21, categoryScores: { "한국사": 5, "과학": 7, "지리": 4, "예술과문화": 5 }, grade: { label: "C", emoji: "📖", title: "노력필요", minScore: 16 } },
+        ],
+      },
+    ];
+
+    // =====================================================
+    // CONFIG
+    // =====================================================
+    const CATEGORIES = ["한국사", "과학", "지리", "예술과문화"];
+    const CAT_META = {
+      "한국사":   { color: "#EF4444", icon: "🏛️", gradient: "from-red-500 to-red-400" },
+      "과학":     { color: "#3B82F6", icon: "🔬", gradient: "from-blue-500 to-blue-400" },
+      "지리":     { color: "#22C55E", icon: "🌍", gradient: "from-green-500 to-green-400" },
+      "예술과문화": { color: "#A855F7", icon: "🎨", gradient: "from-purple-500 to-purple-400" },
+    };
+    const GRADE_ORDER = ["S", "A", "B", "C", "D"];
+    const GRADE_COLORS = {
+      S: { bar: "from-yellow-500 to-amber-500", css: "grade-s" },
+      A: { bar: "from-blue-500 to-blue-600", css: "grade-a" },
+      B: { bar: "from-green-500 to-green-600", css: "grade-b" },
+      C: { bar: "from-orange-500 to-orange-600", css: "grade-c" },
+      D: { bar: "from-red-500 to-red-600", css: "grade-d" },
+    };
+    const SCORE_COLORS = ["text-yellow-400", "text-slate-300", "text-orange-400", "text-slate-400"];
+    const MEDAL_CLASSES = ["medal-gold", "medal-silver", "medal-bronze"];
+    const MEDAL_EMOJIS = ["🥇", "🥈", "🥉"];
+    const WEAKNESS_THRESHOLD = 7;
+
+    // =====================================================
+    // HELPERS
+    // =====================================================
+    const latest = (s) => s.results[s.results.length - 1];
+    const round1 = (n) => Math.round(n * 10) / 10;
+    const today = () => { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`; };
+
+    function getGradeLabel(score) {
+      if (score >= 38) return "S";
+      if (score >= 32) return "A";
+      if (score >= 24) return "B";
+      if (score >= 16) return "C";
+      return "D";
+    }
+
+    function diagnoseBadge(avg) {
+      if (avg >= 8) return `<span class="text-xs px-2.5 py-1 rounded-full bg-green-500/10 text-green-400 font-medium">우수</span>`;
+      if (avg >= 7) return `<span class="text-xs px-2.5 py-1 rounded-full bg-yellow-500/10 text-yellow-400 font-medium">보통</span>`;
+      if (avg >= 5) return `<span class="text-xs px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 font-medium">주의</span>`;
+      return `<span class="text-xs px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 font-medium">위험</span>`;
+    }
+
+    // =====================================================
+    // COMPUTED DATA
+    // =====================================================
+    const ranked = [...students]
+      .map(s => ({ ...s, best: latest(s) }))
+      .sort((a, b) => b.best.totalScore - a.best.totalScore);
+
+    const totalAttempts = students.reduce((sum, s) => sum + s.results.length, 0);
+    const latestScores = ranked.map(r => r.best.totalScore);
+    const classAvg = round1(latestScores.reduce((a, b) => a + b, 0) / latestScores.length);
+
+    // Grade distribution
+    const gradeDist = {};
+    GRADE_ORDER.forEach(g => gradeDist[g] = 0);
+    ranked.forEach(r => { gradeDist[r.best.grade.label] = (gradeDist[r.best.grade.label] || 0) + 1; });
+
+    // Category stats
+    const catStats = {};
+    CATEGORIES.forEach(cat => {
+      const scores = ranked.map(r => r.best.categoryScores[cat]);
+      const avg = round1(scores.reduce((a, b) => a + b, 0) / scores.length);
+      const min = Math.min(...scores);
+      const max = Math.max(...scores);
+      const minWho = ranked.filter(r => r.best.categoryScores[cat] === min).map(r => r.name).join(", ");
+      const maxWho = ranked.filter(r => r.best.categoryScores[cat] === max).map(r => r.name).join(", ");
+      catStats[cat] = { avg, min, max, minWho, maxWho };
+    });
+
+    // Students with weaknesses (score < WEAKNESS_THRESHOLD in any category)
+    const attentionStudents = ranked
+      .map(r => {
+        const weaknesses = CATEGORIES.filter(c => r.best.categoryScores[c] < WEAKNESS_THRESHOLD)
+          .map(c => ({ cat: c, score: r.best.categoryScores[c] }));
+        return { ...r, weaknesses };
+      })
+      .filter(r => r.weaknesses.length > 0)
+      .sort((a, b) => a.best.totalScore - b.best.totalScore);
+
+    // Students with multiple attempts (for trend section)
+    const trendStudents = students.filter(s => s.results.length >= 2);
+
+    // Insights computation
+    const maxScore = Math.max(...latestScores);
+    const minScore = Math.min(...latestScores);
+    const topStudent = ranked[0];
+    const worstCats = [...CATEGORIES].sort((a, b) => catStats[a].avg - catStats[b].avg);
+    const bestCats = [...CATEGORIES].sort((a, b) => catStats[b].avg - catStats[a].avg);
+
+    // =====================================================
+    // RENDER
+    // =====================================================
+    function render() {
+      renderHeader();
+      renderRanking();
+      renderGradeDistribution();
+      renderCategoryCards();
+      renderAttention();
+      renderInsights();
+      renderTrends();
+      renderFooter();
+    }
+
+    function renderHeader() {
+      const el = document.getElementById("header-stats");
+      const stats = [
+        { label: "생성일", value: today(), color: "text-slate-200" },
+        { label: "학생수", value: `${students.length}명`, color: "text-blue-400" },
+        { label: "총 응시", value: `${totalAttempts}회`, color: "text-purple-400" },
+        { label: "반 평균", value: `${classAvg}점`, color: "text-green-400" },
+      ];
+      el.innerHTML = stats.map(s => `
+        <div class="glass rounded-xl px-4 py-2 text-center">
+          <div class="text-xs text-slate-400">${s.label}</div>
+          <div class="text-sm font-semibold ${s.color}">${s.value}</div>
+        </div>`).join("");
+    }
+
+    function renderRanking() {
+      const tbody = document.getElementById("ranking-body");
+      tbody.innerHTML = ranked.map((r, i) => {
+        const medal = i < 3 ? MEDAL_EMOJIS[i] : `<span class="text-slate-500 text-sm pl-1">${i + 1}</span>`;
+        const medalClass = i < 3 ? MEDAL_CLASSES[i] : "";
+        const scoreColor = i < SCORE_COLORS.length ? SCORE_COLORS[i] : "text-slate-400";
+        const borderClass = i < ranked.length - 1 ? "border-b border-slate-700/30" : "";
+        const gradeCSS = GRADE_COLORS[r.best.grade.label]?.css || "grade-d";
+        return `<tr class="${medalClass} ${borderClass} hover:bg-slate-700/20 transition-colors">
+          <td class="px-4 py-3 text-left"><span class="text-xl">${medal}</span></td>
+          <td class="px-4 py-3 text-left font-semibold text-slate-100">${r.name}</td>
+          <td class="px-4 py-3 text-center"><span class="font-bold text-lg ${scoreColor}">${r.best.totalScore}</span><span class="text-slate-500">/40</span></td>
+          <td class="px-4 py-3 text-center"><span class="${gradeCSS} text-white text-xs font-bold px-2.5 py-1 rounded-full">${r.best.grade.emoji} ${r.best.grade.label}</span></td>
+          ${CATEGORIES.map(c => `<td class="px-4 py-3 text-center font-medium" style="color:${CAT_META[c].color}">${r.best.categoryScores[c]}</td>`).join("")}
+          <td class="px-4 py-3 text-center text-slate-400">${r.results.length}회</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderGradeDistribution() {
+      const el = document.getElementById("grade-dist");
+      const total = students.length;
+      el.innerHTML = GRADE_ORDER.map(g => {
+        const count = gradeDist[g] || 0;
+        const pct = total > 0 ? round1(count / total * 100) : 0;
+        const barColor = GRADE_COLORS[g].bar;
+        const textColor = count > 0 ? "text-white drop-shadow" : "text-slate-400";
+        return `<div class="flex items-center gap-3">
+          <span class="${GRADE_COLORS[g].css} text-white text-xs font-bold w-10 text-center py-1 rounded-full shrink-0">${g}</span>
+          <div class="flex-1 h-8 bg-slate-800 rounded-full overflow-hidden relative">
+            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${barColor}" style="width: ${pct}%"></div>
+            <span class="absolute inset-0 flex items-center justify-center text-xs font-medium ${textColor}">${count}명 (${pct}%)</span>
+          </div>
+        </div>`;
+      }).join("");
+      document.getElementById("grade-dist-note").textContent = `최신 응시 결과 기준 (${total}명)`;
+    }
+
+    function renderCategoryCards() {
+      const el = document.getElementById("category-cards");
+      el.innerHTML = CATEGORIES.map(cat => {
+        const s = catStats[cat];
+        const m = CAT_META[cat];
+        const pct = s.avg * 10;
+        return `<div class="glass rounded-2xl p-5" style="border-left: 4px solid ${m.color}">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">${m.icon}</span>
+              <h3 class="font-bold" style="color:${m.color}">${cat}</h3>
+            </div>
+            ${diagnoseBadge(s.avg)}
+          </div>
+          <div class="flex items-end gap-2 mb-2">
+            <span class="text-2xl font-bold text-slate-100">${s.avg}</span>
+            <span class="text-slate-500 text-sm mb-0.5">/10점 평균</span>
+          </div>
+          <div class="h-3 bg-slate-800 rounded-full overflow-hidden">
+            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${m.gradient}" style="width: ${pct}%"></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-500 mt-1.5">
+            <span>최저 ${s.min}점 (${s.minWho})</span>
+            <span>최고 ${s.max}점 (${s.maxWho})</span>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderAttention() {
+      const el = document.getElementById("attention-list");
+      if (attentionStudents.length === 0) {
+        el.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">모든 학생이 카테고리별 7점 이상입니다. 🎉</p>`;
+        return;
+      }
+      const borderColors = { C: "border-orange-500/20", D: "border-red-500/20", B: "border-yellow-500/20", A: "border-blue-500/20", S: "border-yellow-500/20" };
+      el.innerHTML = attentionStudents.map(r => {
+        const gradeCSS = GRADE_COLORS[r.best.grade.label]?.css || "grade-d";
+        const border = borderColors[r.best.grade.label] || "border-slate-500/20";
+        const weakCount = r.weaknesses.length;
+        const msg = weakCount >= 3 ? "여러 카테고리에서 보강이 필요합니다."
+                  : weakCount === 2 ? "2개 카테고리 보강을 권장합니다."
+                  : `${r.weaknesses[0].cat} 영역 보강을 권장합니다.`;
+        const badges = r.weaknesses.map(w => {
+          const cm = CAT_META[w.cat];
+          const bgColor = cm.color.replace("#", "");
+          return `<span class="text-xs px-2.5 py-1 rounded-full font-medium" style="background:${cm.color}15;color:${cm.color};border:1px solid ${cm.color}33">
+            ${cm.icon} ${w.cat === "예술과문화" ? "예술" : w.cat} ${w.score}점
+          </span>`;
+        }).join("");
+        return `<div class="bg-slate-800/50 rounded-xl p-4 border ${border}">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-bold text-slate-100">${r.name}</span>
+                <span class="${gradeCSS} text-white text-xs font-bold px-2 py-0.5 rounded-full">${r.best.grade.label}</span>
+                <span class="text-xs text-slate-500">${r.best.totalScore}/40점</span>
+              </div>
+              <p class="text-sm text-slate-400">${msg}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">${badges}</div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderInsights() {
+      const el = document.getElementById("insights");
+      const classAvgGrade = getGradeLabel(classAvg);
+      const gap = maxScore - minScore;
+      const gapText = gap >= 15 ? "큰 편" : gap >= 10 ? "보통" : "적은 편";
+
+      // Find worst categories
+      const worstAvg = catStats[worstCats[0]].avg;
+      const worstList = worstCats.filter(c => catStats[c].avg === worstAvg);
+
+      // Retake insights
+      const retakers = trendStudents.map(s => {
+        const first = s.results[0].totalScore;
+        const last = s.results[s.results.length - 1].totalScore;
+        return { name: s.name, diff: last - first };
+      });
+
+      const cards = [
+        {
+          icon: "📊", title: "반 평균 점수",
+          body: `반 평균 <span class="text-blue-400 font-semibold">${classAvg}점</span> (${round1(classAvg / 40 * 100)}%)으로 전반적으로 ${classAvgGrade}등급 수준입니다.`,
+        },
+        {
+          icon: "🏆", title: "최고 성적",
+          body: `<span class="text-yellow-400 font-semibold">${topStudent.name}</span> 학생이 ${topStudent.best.totalScore}점(${topStudent.best.grade.label}등급)으로 1위입니다.${topStudent.results.length >= 2 ? " 재응시를 통해 꾸준히 성장했습니다." : ""}`,
+        },
+        {
+          icon: "📉", title: "가장 어려운 카테고리",
+          body: `${worstList.map(c => `<span style="color:${CAT_META[c].color}" class="font-semibold">${c}</span>`).join("와 ")}${worstList.length > 1 ? "가" : "이"} 평균 ${worstAvg}점으로 가장 낮습니다.`,
+        },
+        {
+          icon: "📐", title: "성적 편차",
+          body: `최고점(${maxScore}점)과 최저점(${minScore}점) 차이가 <span class="text-orange-400 font-semibold">${gap}점</span>으로 학생 간 편차가 ${gapText}입니다.`,
+        },
+      ];
+
+      if (retakers.length > 0) {
+        const retakeText = retakers.map(r => {
+          const sign = r.diff > 0 ? "+" : "";
+          const cls = r.diff > 0 ? "color:#22C55E" : r.diff < 0 ? "color:#EF4444" : "color:#94A3B8";
+          return `${r.name} <span style="${cls}" class="font-semibold">${sign}${r.diff}점</span>`;
+        }).join(", ");
+        cards.push({
+          icon: "🔄", title: "재응시 효과",
+          body: `${retakeText} — 반복 학습의 효과가 확인됩니다.`,
+        });
+      }
+
+      el.innerHTML = cards.map(c => `
+        <div class="glass rounded-2xl p-5 hover:scale-[1.02] transition-transform">
+          <div class="text-2xl mb-2">${c.icon}</div>
+          <h3 class="font-bold text-slate-200 text-sm mb-1">${c.title}</h3>
+          <p class="text-slate-400 text-xs leading-relaxed">${c.body}</p>
+        </div>`).join("");
+    }
+
+    function renderTrends() {
+      if (trendStudents.length === 0) return;
+      const section = document.getElementById("trend-section");
+      section.style.display = "";
+
+      // Render each student with trends
+      const titleEl = document.getElementById("trend-title");
+      const contentEl = document.getElementById("trend-content");
+
+      if (trendStudents.length === 1) {
+        const s = trendStudents[0];
+        titleEl.innerHTML = `<span>📈</span> 성적 추이 — ${s.name}`;
+        contentEl.innerHTML = buildTrendChart(s);
+      } else {
+        titleEl.innerHTML = `<span>📈</span> 성적 추이`;
+        contentEl.innerHTML = trendStudents.map(s => `
+          <div class="mb-6 last:mb-0">
+            <h3 class="font-bold text-slate-200 mb-3">${s.name}</h3>
+            ${buildTrendChart(s)}
+          </div>
+        `).join('<div class="border-t border-slate-700/50 my-6"></div>');
+      }
+    }
+
+    function buildTrendChart(student) {
+      const results = student.results;
+      const first = results[0];
+      const last = results[results.length - 1];
+      const diff = last.totalScore - first.totalScore;
+      const diffSign = diff > 0 ? "+" : "";
+      const diffColor = diff > 0 ? "bg-green-500/10 text-green-400" : diff < 0 ? "bg-red-500/10 text-red-400" : "bg-slate-500/10 text-slate-400";
+
+      // SVG points
+      const n = results.length;
+      const points = results.map((r, i) => {
+        const x = n === 1 ? 50 : 15 + (i / (n - 1)) * 70;
+        const y = 100 - (r.totalScore / 40 * 100);
+        return { x, y, score: r.totalScore, date: r.date };
+      });
+
+      const lines = points.slice(1).map((p, i) =>
+        `<line x1="${points[i].x}" y1="${points[i].y}" x2="${p.x}" y2="${p.y}" stroke="#3B82F6" stroke-width="0.8" stroke-linecap="round" />`
+      ).join("");
+
+      const circles = points.map((p, i) => {
+        const color = i === points.length - 1 ? "#22C55E" : "#3B82F6";
+        return `<circle cx="${p.x}" cy="${p.y}" r="2" fill="${color}" />`;
+      }).join("");
+
+      const labels = points.map((p, i) => {
+        const dateShort = p.date.substring(5, 10).replace(".", "/");
+        const color = i === points.length - 1 ? "text-green-400" : "text-blue-400";
+        return `<div class="text-center" style="flex:1">
+          <div class="text-xs text-slate-400">${i + 1}차 (${dateShort})</div>
+          <div class="text-sm font-bold ${color}">${p.score}점</div>
+        </div>`;
+      }).join("");
+
+      // Category changes
+      const catChanges = CATEGORIES.map(cat => {
+        const prev = first.categoryScores[cat];
+        const curr = last.categoryScores[cat];
+        const d = curr - prev;
+        const cls = d > 0 ? "color:#22C55E" : d < 0 ? "color:#EF4444" : "color:#94A3B8";
+        const sign = d > 0 ? "+" : d === 0 ? "±" : "";
+        const m = CAT_META[cat];
+        const displayName = cat === "예술과문화" ? "예술" : cat;
+        return `<div class="bg-slate-800/50 rounded-lg p-3 text-center">
+          <div class="text-xs font-medium mb-1" style="color:${m.color}">${m.icon} ${displayName}</div>
+          <div class="text-lg font-bold text-slate-100">${prev} → ${curr}</div>
+          <div class="text-xs font-medium" style="${cls}">${sign}${d}</div>
+        </div>`;
+      }).join("");
+
+      return `
+        <div class="flex items-center gap-2 mb-4">
+          <span class="text-sm text-slate-400">${results.length}회 응시</span>
+          <span class="text-xs px-2 py-0.5 rounded-full ${diffColor} font-medium">${diffSign}${diff}점 ${diff >= 0 ? "성장" : "하락"}</span>
+        </div>
+        <div class="relative">
+          <div class="flex flex-col justify-between h-48 mr-2 text-xs text-slate-500 absolute left-0 top-0 bottom-0">
+            <span>40</span><span>30</span><span>20</span><span>10</span><span>0</span>
+          </div>
+          <div class="ml-8">
+            <div class="relative h-48 border-l border-b border-slate-700">
+              <div class="absolute w-full border-t border-slate-700/30" style="bottom:25%"></div>
+              <div class="absolute w-full border-t border-slate-700/30" style="bottom:50%"></div>
+              <div class="absolute w-full border-t border-slate-700/30" style="bottom:75%"></div>
+              <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                ${lines}${circles}
+              </svg>
+              <div class="absolute flex w-full" style="bottom:-2rem">${labels}</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-12 pt-4 border-t border-slate-700/50">
+          <h4 class="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">카테고리별 변화</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${catChanges}</div>
+        </div>`;
+    }
+
+    function renderFooter() {
+      document.getElementById("footer-text").innerHTML = `
+        <p>상식왕 퀴즈 챌린지 — 선생님 대시보드</p>
+        <p>Generated by Claude Code · ${today()}</p>`;
+    }
+
+    // =====================================================
+    // INIT
+    // =====================================================
+    document.addEventListener("DOMContentLoaded", render);
+  </script>
+
+</body>
+</html>
