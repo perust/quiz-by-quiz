@@ -403,13 +403,11 @@
         const count = gradeDist[g] || 0;
         const pct = total > 0 ? round1(count / total * 100) : 0;
         const barColor = GRADE_COLORS[g].bar;
-        const textColor = count > 0 ? "text-white drop-shadow" : "";
-        const textStyle = count === 0 ? `color:var(--text-muted)` : "";
         return `<div class="flex items-center gap-3">
           <span class="${GRADE_COLORS[g].css} text-white text-xs font-bold w-10 text-center py-1 rounded-full shrink-0">${g}</span>
           <div class="flex-1 h-8 rounded-full overflow-hidden relative" style="background:var(--bar-track)">
             <div class="bar-fill h-full rounded-full bg-gradient-to-r ${barColor}" style="width:${pct}%"></div>
-            <span class="absolute inset-0 flex items-center justify-center text-xs font-medium ${textColor}" style="${textStyle}">${count}명 (${pct}%)</span>
+            <span class="absolute inset-0 flex items-center justify-center text-xs font-medium" style="color:var(--text-secondary)">${count}명 (${pct}%)</span>
           </div>
         </div>`;
       }).join("");
