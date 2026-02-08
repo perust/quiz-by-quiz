@@ -126,6 +126,8 @@
 | `/quiz-teacher-analyze` | 반 전체 심층 분석 |
 | `/quiz-teacher-compare 이름1 이름2` | 학생 간 비교 |
 | `/quiz-teacher-register 이름 점수` | 학생 추가/점수 입력 |
+| `/export-report csv` | 성적 데이터를 CSV로 내보내기 |
+| `/export-report pdf` | 대시보드를 PDF로 내보내기 |
 ```
 
 ---
@@ -245,4 +247,6 @@
 | `/quiz-teacher-compare [이름] [다른학생]` | 특정 학생과 비교 |
 | `/quiz-teacher-rank` | 전체 순위표 |
 | `/quiz-teacher-dashboard` | 반 전체 대시보드 |
+| `/export-report csv` | 성적 데이터를 CSV로 내보내기 |
+| `/export-report pdf` | 대시보드를 PDF로 내보내기 |
 ```
