@@ -70,17 +70,13 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 
 1. `quiz-challenge/public/teacher-dashboard.html` 파일이 존재하는지 확인합니다.
 2. **HTML이 있으면**: `quiz-challenge/src/data/students.ts`의 현재 데이터로 `teacher-dashboard.html` 내 `const students = [...]` 부분을 동기화합니다.
-3. Chrome headless 모드로 PDF를 생성합니다:
+3. Puppeteer 스크립트로 PDF를 생성합니다:
 
 ```bash
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless --disable-gpu --no-sandbox \
-  --print-to-pdf="quiz-challenge/public/report.pdf" \
-  --print-to-pdf-no-header \
-  "file://$(pwd)/quiz-challenge/public/teacher-dashboard.html"
+cd quiz-challenge && node scripts/export-pdf.js
 ```
 
-> macOS가 아니거나 Chrome 경로가 다를 경우 `which google-chrome` 또는 `which chromium`으로 경로를 탐색합니다.
+> `puppeteer-core` + 로컬 Chrome으로 Tailwind CDN/JS 렌더링 완료 후 다크 테마 그대로 PDF를 생성합니다.
 
 4. 생성된 PDF 파일을 `open` 명령으로 엽니다.
 
@@ -91,7 +87,7 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 
 📁 `quiz-challenge/public/report.pdf`
 - 학생 N명의 대시보드 보고서
-- Chrome headless 모드로 생성
+- 다크 테마 + 글래스모피즘 스타일 유지
 
 Finder에서 확인: `open quiz-challenge/public/report.pdf`
 ```
@@ -104,13 +100,10 @@ Finder에서 확인: `open quiz-challenge/public/report.pdf`
 `quiz-challenge/public/teacher-dashboard.html` 파일을 먼저 생성해 주세요.
 ```
 
-**Chrome을 찾을 수 없으면**: 아래를 출력하고 중단합니다:
+**puppeteer-core가 없으면**: 아래 명령으로 설치 후 재시도합니다:
 
-```
-## ❌ Chrome 브라우저를 찾을 수 없습니다
-
-PDF 생성에는 Google Chrome이 필요합니다.
-https://www.google.com/chrome/ 에서 설치해 주세요.
+```bash
+cd quiz-challenge && npm install --save-dev puppeteer-core
 ```
 
 ---
