@@ -2,9 +2,11 @@
 
 ## 매개변수
 
-- `$ARGUMENTS`: 내보내기 형식 (필수)
+- `$ARGUMENTS`: 내보내기 형식 + 옵션
   - `csv` — CSV 파일로 저장
-  - `pdf` — PDF 파일로 저장
+  - `pdf` — PDF 파일로 저장 (기본: 라이트 테마)
+  - `pdf light` — 라이트 테마 PDF (인쇄 친화, 기본값)
+  - `pdf dark` — 다크 테마 PDF
   - 빈값 — 형식을 안내하고 중단
 
 ## 작업 순서
@@ -73,10 +75,15 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 3. Puppeteer 스크립트로 PDF를 생성합니다:
 
 ```bash
-cd quiz-challenge && node scripts/export-pdf.js
+# 라이트 테마 (기본값, 인쇄 친화)
+cd quiz-challenge && node scripts/export-pdf.js --light
+
+# 다크 테마
+cd quiz-challenge && node scripts/export-pdf.js --dark
 ```
 
-> `puppeteer-core` + 로컬 Chrome으로 Tailwind CDN/JS 렌더링 완료 후 다크 테마 그대로 PDF를 생성합니다.
+> `puppeteer-core` + 로컬 Chrome으로 Tailwind CDN/JS 렌더링 완료 후 PDF를 생성합니다.
+> `$ARGUMENTS`에 `dark`가 포함되면 `--dark`, 그 외에는 `--light`(기본값)을 사용합니다.
 
 4. 생성된 PDF 파일을 `open` 명령으로 엽니다.
 
@@ -87,7 +94,7 @@ cd quiz-challenge && node scripts/export-pdf.js
 
 📁 `quiz-challenge/public/report.pdf`
 - 학생 N명의 대시보드 보고서
-- 다크 테마 + 글래스모피즘 스타일 유지
+- [라이트/다크] 테마 적용
 
 Finder에서 확인: `open quiz-challenge/public/report.pdf`
 ```
@@ -113,14 +120,17 @@ cd quiz-challenge && npm install --save-dev puppeteer-core
 ```
 ## 📦 보고서 내보내기
 
-사용법: `/export-report [형식]`
+사용법: `/export-report [형식] [옵션]`
 
 | 형식 | 설명 | 출력 파일 |
 |------|------|-----------|
 | `csv` | 학생 성적 데이터를 CSV로 저장 | `public/report.csv` |
-| `pdf` | 대시보드를 PDF 파일로 저장 | `public/report.pdf` |
+| `pdf` | 라이트 테마 PDF (기본, 인쇄 친화) | `public/report.pdf` |
+| `pdf light` | 라이트 테마 PDF | `public/report.pdf` |
+| `pdf dark` | 다크 테마 PDF | `public/report.pdf` |
 
 ### 예시
 - `/export-report csv` — CSV 파일 생성
-- `/export-report pdf` — PDF 파일 생성
+- `/export-report pdf` — 라이트 테마 PDF 생성 (기본)
+- `/export-report pdf dark` — 다크 테마 PDF 생성
 ```

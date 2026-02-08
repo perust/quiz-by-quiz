@@ -18,19 +18,47 @@
     };
   </script>
   <style>
+    /* ===== Theme Variables ===== */
+    :root {
+      --bg-body: #0F172A;
+      --bg-card: rgba(30, 41, 59, 0.7);
+      --bg-card-solid: #1E293B;
+      --bg-inner: rgba(30, 41, 59, 0.5);
+      --border-card: rgba(148, 163, 184, 0.1);
+      --border-card-hover: rgba(148, 163, 184, 0.2);
+      --border-line: rgba(51, 65, 85, 0.5);
+      --text-primary: #F1F5F9;
+      --text-secondary: #CBD5E1;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      --bar-track: #1E293B;
+    }
+    .theme-light {
+      --bg-body: #F8FAFC;
+      --bg-card: rgba(255, 255, 255, 0.9);
+      --bg-card-solid: #FFFFFF;
+      --bg-inner: rgba(241, 245, 249, 0.7);
+      --border-card: rgba(203, 213, 225, 0.5);
+      --border-card-hover: rgba(148, 163, 184, 0.5);
+      --border-line: rgba(203, 213, 225, 0.5);
+      --text-primary: #1E293B;
+      --text-secondary: #334155;
+      --text-muted: #64748B;
+      --text-dim: #94A3B8;
+      --bar-track: #E2E8F0;
+    }
+
+    body { background: var(--bg-body); color: var(--text-primary); }
+
     ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #1E293B; }
+    ::-webkit-scrollbar-track { background: var(--bg-card-solid); }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
-    ::-webkit-scrollbar-thumb:hover { background: #64748B; }
 
     @keyframes fade-in-up {
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes fade-in {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slide-right { from { width: 0; } }
 
     .animate-fade-in-up { animation: fade-in-up 0.6s ease-out both; }
@@ -45,12 +73,13 @@
     .stagger-8 { animation-delay: 0.8s; }
 
     .glass {
-      background: rgba(30, 41, 59, 0.7);
+      background: var(--bg-card);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(148, 163, 184, 0.1);
+      border: 1px solid var(--border-card);
     }
-    .glass:hover { border-color: rgba(148, 163, 184, 0.2); }
+    .glass:hover { border-color: var(--border-card-hover); }
+    .theme-light .glass { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
     .bar-fill { animation: slide-right 1.2s ease-out both; }
 
@@ -63,13 +92,22 @@
     .medal-gold { background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05)); }
     .medal-silver { background: linear-gradient(135deg, rgba(148, 163, 184, 0.15), rgba(148, 163, 184, 0.05)); }
     .medal-bronze { background: linear-gradient(135deg, rgba(180, 83, 9, 0.15), rgba(180, 83, 9, 0.05)); }
+    .theme-light .medal-gold { background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.03)); }
+    .theme-light .medal-silver { background: linear-gradient(135deg, rgba(148, 163, 184, 0.1), rgba(148, 163, 184, 0.03)); }
+    .theme-light .medal-bronze { background: linear-gradient(135deg, rgba(180, 83, 9, 0.1), rgba(180, 83, 9, 0.03)); }
 
+    /* Print */
     @media print {
       .no-print { display: none !important; }
+      section, .glass, tr { break-inside: avoid; }
     }
+
+    /* Trend bar chart */
+    .trend-bar-track { background: var(--bar-track); }
+    .trend-bar-fill { transition: width 0.6s ease-out; }
   </style>
 </head>
-<body class="bg-[#0F172A] text-slate-100 font-sans min-h-screen">
+<body class="font-sans min-h-screen">
 
   <header class="animate-fade-in-up stagger-1">
     <div class="max-w-6xl mx-auto px-4 pt-8 pb-6">
@@ -78,11 +116,11 @@
           <div>
             <div class="flex items-center gap-3 mb-2">
               <span class="text-3xl">📊</span>
-              <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              <h1 class="text-2xl md:text-3xl font-bold" style="background:linear-gradient(to right,#60A5FA,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
                 선생님 대시보드
               </h1>
             </div>
-            <p class="text-slate-400 text-sm">상식왕 퀴즈 챌린지 — 반 전체 성적 보고서</p>
+            <p style="color:var(--text-muted)" class="text-sm">상식왕 퀴즈 챌린지 — 반 전체 성적 보고서</p>
           </div>
           <div id="header-stats" class="flex flex-wrap gap-3"></div>
         </div>
@@ -92,21 +130,21 @@
 
   <main class="max-w-6xl mx-auto px-4 pb-12 space-y-6">
     <section class="animate-fade-in-up stagger-2">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>🏆</span> 순위표</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>🏆</span> 순위표</h2>
       <div class="glass rounded-2xl overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-700/50">
-                <th class="px-4 py-3 text-left text-slate-400 font-medium">순위</th>
-                <th class="px-4 py-3 text-left text-slate-400 font-medium">이름</th>
-                <th class="px-4 py-3 text-center text-slate-400 font-medium">총점</th>
-                <th class="px-4 py-3 text-center text-slate-400 font-medium">등급</th>
+              <tr style="border-bottom:1px solid var(--border-line)">
+                <th class="px-4 py-3 text-left font-medium" style="color:var(--text-muted)">순위</th>
+                <th class="px-4 py-3 text-left font-medium" style="color:var(--text-muted)">이름</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:var(--text-muted)">총점</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:var(--text-muted)">등급</th>
                 <th class="px-4 py-3 text-center font-medium" style="color:#EF4444">한국사</th>
                 <th class="px-4 py-3 text-center font-medium" style="color:#3B82F6">과학</th>
                 <th class="px-4 py-3 text-center font-medium" style="color:#22C55E">지리</th>
                 <th class="px-4 py-3 text-center font-medium" style="color:#A855F7">예술</th>
-                <th class="px-4 py-3 text-center text-slate-400 font-medium">응시</th>
+                <th class="px-4 py-3 text-center font-medium" style="color:var(--text-muted)">응시</th>
               </tr>
             </thead>
             <tbody id="ranking-body"></tbody>
@@ -116,78 +154,91 @@
     </section>
 
     <section class="animate-fade-in-up stagger-3">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>📈</span> 등급 분포</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>📈</span> 등급 분포</h2>
       <div class="glass rounded-2xl p-6">
         <div id="grade-dist" class="space-y-4"></div>
-        <p id="grade-dist-note" class="text-xs text-slate-500 mt-4 text-center"></p>
+        <p id="grade-dist-note" class="text-xs mt-4 text-center" style="color:var(--text-dim)"></p>
       </div>
     </section>
 
     <section class="animate-fade-in-up stagger-4">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>📚</span> 카테고리별 반 성적</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>📚</span> 카테고리별 반 성적</h2>
       <div id="category-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
     </section>
 
     <section class="animate-fade-in-up stagger-5">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>⚠️</span> 관심 필요 학생</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>⚠️</span> 관심 필요 학생</h2>
       <div class="glass rounded-2xl p-6">
         <div id="attention-list" class="space-y-4"></div>
-        <p class="text-xs text-slate-500 mt-4">* 카테고리별 7점 미만 항목을 약점으로 표시합니다.</p>
+        <p class="text-xs mt-4" style="color:var(--text-dim)">* 카테고리별 7점 미만 항목을 약점으로 표시합니다.</p>
       </div>
     </section>
 
     <section class="animate-fade-in-up stagger-6">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>💡</span> 핵심 인사이트</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>💡</span> 핵심 인사이트</h2>
       <div id="insights" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </section>
 
     <section class="animate-fade-in-up stagger-7" id="trend-section" style="display:none">
-      <h2 id="trend-title" class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"></h2>
+      <h2 id="trend-title" class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"></h2>
       <div id="trend-content" class="glass rounded-2xl p-6"></div>
     </section>
 
     <section class="animate-fade-in-up stagger-8 no-print">
-      <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2"><span>🛠️</span> 선생님 커맨드 가이드</h2>
+      <h2 class="text-lg font-bold mb-3 flex items-center gap-2" style="color:var(--text-primary)"><span>🛠️</span> 선생님 커맨드 가이드</h2>
       <div class="glass rounded-2xl p-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-dashboard</code>
-            <span class="text-xs text-slate-400">반 전체 종합 대시보드</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-dashboard</code>
+            <span class="text-xs" style="color:var(--text-muted)">반 전체 종합 대시보드</span>
           </div>
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-student</code>
-            <span class="text-xs text-slate-400">개별 학생 상세 조회</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-student</code>
+            <span class="text-xs" style="color:var(--text-muted)">개별 학생 상세 조회</span>
           </div>
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-compare</code>
-            <span class="text-xs text-slate-400">학생 간 성적 비교</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-compare</code>
+            <span class="text-xs" style="color:var(--text-muted)">학생 간 성적 비교</span>
           </div>
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-rank</code>
-            <span class="text-xs text-slate-400">전체 순위표</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-rank</code>
+            <span class="text-xs" style="color:var(--text-muted)">전체 순위표</span>
           </div>
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-register</code>
-            <span class="text-xs text-slate-400">학생 등록 / 점수 입력</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-register</code>
+            <span class="text-xs" style="color:var(--text-muted)">학생 등록 / 점수 입력</span>
           </div>
-          <div class="flex items-start gap-3 bg-slate-800/40 rounded-xl p-3">
-            <code class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md font-mono whitespace-nowrap">/quiz-teacher-analyze</code>
-            <span class="text-xs text-slate-400">반 전체 성과 분석</span>
+          <div class="flex items-start gap-3 rounded-xl p-3" style="background:var(--bg-inner)">
+            <code class="text-xs px-2 py-1 rounded-md font-mono whitespace-nowrap" style="background:rgba(59,130,246,0.1);color:#60A5FA">/quiz-teacher-analyze</code>
+            <span class="text-xs" style="color:var(--text-muted)">반 전체 성과 분석</span>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mt-4 text-center">Claude Code 터미널에서 위 커맨드를 입력하세요.</p>
+        <p class="text-xs mt-4 text-center" style="color:var(--text-dim)">Claude Code 터미널에서 위 커맨드를 입력하세요.</p>
       </div>
     </section>
   </main>
 
   <footer class="animate-fade-in max-w-6xl mx-auto px-4 pb-8">
-    <div id="footer-text" class="text-center text-xs text-slate-600 space-y-1"></div>
+    <div id="footer-text" class="text-center text-xs space-y-1" style="color:var(--text-dim)"></div>
   </footer>
 
   <script>
     // =====================================================
+    // 🎨 THEME — URL ?theme=light 로 라이트 모드 전환
+    // =====================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const theme = urlParams.get('theme') || 'dark';
+    if (theme === 'light') document.body.classList.add('theme-light');
+
+    // PDF 내보내기 모드: URL에 theme 파라미터가 있으면 애니메이션 비활성화
+    if (urlParams.has('theme')) {
+      const s = document.createElement('style');
+      s.textContent = '*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; }';
+      document.head.appendChild(s);
+    }
+
+    // =====================================================
     // 📌 DATA — students.ts 내용을 여기에 반영합니다.
-    //    학생 추가/수정 시 이 배열만 업데이트하면 됩니다.
     // =====================================================
     const students = [
       {
@@ -267,12 +318,10 @@
     const latestScores = ranked.map(r => r.best.totalScore);
     const classAvg = round1(latestScores.reduce((a, b) => a + b, 0) / latestScores.length);
 
-    // Grade distribution
     const gradeDist = {};
     GRADE_ORDER.forEach(g => gradeDist[g] = 0);
     ranked.forEach(r => { gradeDist[r.best.grade.label] = (gradeDist[r.best.grade.label] || 0) + 1; });
 
-    // Category stats
     const catStats = {};
     CATEGORIES.forEach(cat => {
       const scores = ranked.map(r => r.best.categoryScores[cat]);
@@ -284,7 +333,6 @@
       catStats[cat] = { avg, min, max, minWho, maxWho };
     });
 
-    // Students with weaknesses (score < WEAKNESS_THRESHOLD in any category)
     const attentionStudents = ranked
       .map(r => {
         const weaknesses = CATEGORIES.filter(c => r.best.categoryScores[c] < WEAKNESS_THRESHOLD)
@@ -294,15 +342,11 @@
       .filter(r => r.weaknesses.length > 0)
       .sort((a, b) => a.best.totalScore - b.best.totalScore);
 
-    // Students with multiple attempts (for trend section)
     const trendStudents = students.filter(s => s.results.length >= 2);
-
-    // Insights computation
     const maxScore = Math.max(...latestScores);
     const minScore = Math.min(...latestScores);
     const topStudent = ranked[0];
     const worstCats = [...CATEGORIES].sort((a, b) => catStats[a].avg - catStats[b].avg);
-    const bestCats = [...CATEGORIES].sort((a, b) => catStats[b].avg - catStats[a].avg);
 
     // =====================================================
     // RENDER
@@ -321,33 +365,33 @@
     function renderHeader() {
       const el = document.getElementById("header-stats");
       const stats = [
-        { label: "생성일", value: today(), color: "text-slate-200" },
-        { label: "학생수", value: `${students.length}명`, color: "text-blue-400" },
-        { label: "총 응시", value: `${totalAttempts}회`, color: "text-purple-400" },
-        { label: "반 평균", value: `${classAvg}점`, color: "text-green-400" },
+        { label: "생성일", value: today(), color: "var(--text-primary)" },
+        { label: "학생수", value: `${students.length}명`, color: "#60A5FA" },
+        { label: "총 응시", value: `${totalAttempts}회`, color: "#A78BFA" },
+        { label: "반 평균", value: `${classAvg}점`, color: "#4ADE80" },
       ];
       el.innerHTML = stats.map(s => `
         <div class="glass rounded-xl px-4 py-2 text-center">
-          <div class="text-xs text-slate-400">${s.label}</div>
-          <div class="text-sm font-semibold ${s.color}">${s.value}</div>
+          <div class="text-xs" style="color:var(--text-muted)">${s.label}</div>
+          <div class="text-sm font-semibold" style="color:${s.color}">${s.value}</div>
         </div>`).join("");
     }
 
     function renderRanking() {
       const tbody = document.getElementById("ranking-body");
       tbody.innerHTML = ranked.map((r, i) => {
-        const medal = i < 3 ? MEDAL_EMOJIS[i] : `<span class="text-slate-500 text-sm pl-1">${i + 1}</span>`;
+        const medal = i < 3 ? MEDAL_EMOJIS[i] : `<span style="color:var(--text-dim)" class="text-sm pl-1">${i + 1}</span>`;
         const medalClass = i < 3 ? MEDAL_CLASSES[i] : "";
         const scoreColor = i < SCORE_COLORS.length ? SCORE_COLORS[i] : "text-slate-400";
-        const borderClass = i < ranked.length - 1 ? "border-b border-slate-700/30" : "";
+        const borderStyle = i < ranked.length - 1 ? `border-bottom:1px solid var(--border-line)` : "";
         const gradeCSS = GRADE_COLORS[r.best.grade.label]?.css || "grade-d";
-        return `<tr class="${medalClass} ${borderClass} hover:bg-slate-700/20 transition-colors">
+        return `<tr class="${medalClass}" style="${borderStyle}">
           <td class="px-4 py-3 text-left"><span class="text-xl">${medal}</span></td>
-          <td class="px-4 py-3 text-left font-semibold text-slate-100">${r.name}</td>
-          <td class="px-4 py-3 text-center"><span class="font-bold text-lg ${scoreColor}">${r.best.totalScore}</span><span class="text-slate-500">/40</span></td>
+          <td class="px-4 py-3 text-left font-semibold" style="color:var(--text-primary)">${r.name}</td>
+          <td class="px-4 py-3 text-center"><span class="font-bold text-lg ${scoreColor}">${r.best.totalScore}</span><span style="color:var(--text-dim)">/40</span></td>
           <td class="px-4 py-3 text-center"><span class="${gradeCSS} text-white text-xs font-bold px-2.5 py-1 rounded-full">${r.best.grade.emoji} ${r.best.grade.label}</span></td>
           ${CATEGORIES.map(c => `<td class="px-4 py-3 text-center font-medium" style="color:${CAT_META[c].color}">${r.best.categoryScores[c]}</td>`).join("")}
-          <td class="px-4 py-3 text-center text-slate-400">${r.results.length}회</td>
+          <td class="px-4 py-3 text-center" style="color:var(--text-muted)">${r.results.length}회</td>
         </tr>`;
       }).join("");
     }
@@ -359,12 +403,13 @@
         const count = gradeDist[g] || 0;
         const pct = total > 0 ? round1(count / total * 100) : 0;
         const barColor = GRADE_COLORS[g].bar;
-        const textColor = count > 0 ? "text-white drop-shadow" : "text-slate-400";
+        const textColor = count > 0 ? "text-white drop-shadow" : "";
+        const textStyle = count === 0 ? `color:var(--text-muted)` : "";
         return `<div class="flex items-center gap-3">
           <span class="${GRADE_COLORS[g].css} text-white text-xs font-bold w-10 text-center py-1 rounded-full shrink-0">${g}</span>
-          <div class="flex-1 h-8 bg-slate-800 rounded-full overflow-hidden relative">
-            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${barColor}" style="width: ${pct}%"></div>
-            <span class="absolute inset-0 flex items-center justify-center text-xs font-medium ${textColor}">${count}명 (${pct}%)</span>
+          <div class="flex-1 h-8 rounded-full overflow-hidden relative" style="background:var(--bar-track)">
+            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${barColor}" style="width:${pct}%"></div>
+            <span class="absolute inset-0 flex items-center justify-center text-xs font-medium ${textColor}" style="${textStyle}">${count}명 (${pct}%)</span>
           </div>
         </div>`;
       }).join("");
@@ -377,7 +422,7 @@
         const s = catStats[cat];
         const m = CAT_META[cat];
         const pct = s.avg * 10;
-        return `<div class="glass rounded-2xl p-5" style="border-left: 4px solid ${m.color}">
+        return `<div class="glass rounded-2xl p-5" style="border-left:4px solid ${m.color}">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
               <span class="text-lg">${m.icon}</span>
@@ -386,13 +431,13 @@
             ${diagnoseBadge(s.avg)}
           </div>
           <div class="flex items-end gap-2 mb-2">
-            <span class="text-2xl font-bold text-slate-100">${s.avg}</span>
-            <span class="text-slate-500 text-sm mb-0.5">/10점 평균</span>
+            <span class="text-2xl font-bold" style="color:var(--text-primary)">${s.avg}</span>
+            <span class="text-sm mb-0.5" style="color:var(--text-dim)">/10점 평균</span>
           </div>
-          <div class="h-3 bg-slate-800 rounded-full overflow-hidden">
-            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${m.gradient}" style="width: ${pct}%"></div>
+          <div class="h-3 rounded-full overflow-hidden" style="background:var(--bar-track)">
+            <div class="bar-fill h-full rounded-full bg-gradient-to-r ${m.gradient}" style="width:${pct}%"></div>
           </div>
-          <div class="flex justify-between text-xs text-slate-500 mt-1.5">
+          <div class="flex justify-between text-xs mt-1.5" style="color:var(--text-dim)">
             <span>최저 ${s.min}점 (${s.minWho})</span>
             <span>최고 ${s.max}점 (${s.maxWho})</span>
           </div>
@@ -403,33 +448,30 @@
     function renderAttention() {
       const el = document.getElementById("attention-list");
       if (attentionStudents.length === 0) {
-        el.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">모든 학생이 카테고리별 7점 이상입니다. 🎉</p>`;
+        el.innerHTML = `<p class="text-sm text-center py-4" style="color:var(--text-muted)">모든 학생이 카테고리별 7점 이상입니다. 🎉</p>`;
         return;
       }
-      const borderColors = { C: "border-orange-500/20", D: "border-red-500/20", B: "border-yellow-500/20", A: "border-blue-500/20", S: "border-yellow-500/20" };
       el.innerHTML = attentionStudents.map(r => {
         const gradeCSS = GRADE_COLORS[r.best.grade.label]?.css || "grade-d";
-        const border = borderColors[r.best.grade.label] || "border-slate-500/20";
         const weakCount = r.weaknesses.length;
         const msg = weakCount >= 3 ? "여러 카테고리에서 보강이 필요합니다."
                   : weakCount === 2 ? "2개 카테고리 보강을 권장합니다."
                   : `${r.weaknesses[0].cat} 영역 보강을 권장합니다.`;
         const badges = r.weaknesses.map(w => {
           const cm = CAT_META[w.cat];
-          const bgColor = cm.color.replace("#", "");
           return `<span class="text-xs px-2.5 py-1 rounded-full font-medium" style="background:${cm.color}15;color:${cm.color};border:1px solid ${cm.color}33">
             ${cm.icon} ${w.cat === "예술과문화" ? "예술" : w.cat} ${w.score}점
           </span>`;
         }).join("");
-        return `<div class="bg-slate-800/50 rounded-xl p-4 border ${border}">
+        return `<div class="rounded-xl p-4" style="background:var(--bg-inner);border:1px solid var(--border-card)">
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <div class="flex items-center gap-2 mb-1">
-                <span class="font-bold text-slate-100">${r.name}</span>
+                <span class="font-bold" style="color:var(--text-primary)">${r.name}</span>
                 <span class="${gradeCSS} text-white text-xs font-bold px-2 py-0.5 rounded-full">${r.best.grade.label}</span>
-                <span class="text-xs text-slate-500">${r.best.totalScore}/40점</span>
+                <span class="text-xs" style="color:var(--text-dim)">${r.best.totalScore}/40점</span>
               </div>
-              <p class="text-sm text-slate-400">${msg}</p>
+              <p class="text-sm" style="color:var(--text-muted)">${msg}</p>
             </div>
             <div class="flex flex-wrap gap-2">${badges}</div>
           </div>
@@ -442,12 +484,9 @@
       const classAvgGrade = getGradeLabel(classAvg);
       const gap = maxScore - minScore;
       const gapText = gap >= 15 ? "큰 편" : gap >= 10 ? "보통" : "적은 편";
-
-      // Find worst categories
       const worstAvg = catStats[worstCats[0]].avg;
       const worstList = worstCats.filter(c => catStats[c].avg === worstAvg);
 
-      // Retake insights
       const retakers = trendStudents.map(s => {
         const first = s.results[0].totalScore;
         const last = s.results[s.results.length - 1].totalScore;
@@ -455,50 +494,37 @@
       });
 
       const cards = [
-        {
-          icon: "📊", title: "반 평균 점수",
-          body: `반 평균 <span class="text-blue-400 font-semibold">${classAvg}점</span> (${round1(classAvg / 40 * 100)}%)으로 전반적으로 ${classAvgGrade}등급 수준입니다.`,
-        },
-        {
-          icon: "🏆", title: "최고 성적",
-          body: `<span class="text-yellow-400 font-semibold">${topStudent.name}</span> 학생이 ${topStudent.best.totalScore}점(${topStudent.best.grade.label}등급)으로 1위입니다.${topStudent.results.length >= 2 ? " 재응시를 통해 꾸준히 성장했습니다." : ""}`,
-        },
-        {
-          icon: "📉", title: "가장 어려운 카테고리",
-          body: `${worstList.map(c => `<span style="color:${CAT_META[c].color}" class="font-semibold">${c}</span>`).join("와 ")}${worstList.length > 1 ? "가" : "이"} 평균 ${worstAvg}점으로 가장 낮습니다.`,
-        },
-        {
-          icon: "📐", title: "성적 편차",
-          body: `최고점(${maxScore}점)과 최저점(${minScore}점) 차이가 <span class="text-orange-400 font-semibold">${gap}점</span>으로 학생 간 편차가 ${gapText}입니다.`,
-        },
+        { icon: "📊", title: "반 평균 점수",
+          body: `반 평균 <span class="font-semibold" style="color:#60A5FA">${classAvg}점</span> (${round1(classAvg/40*100)}%)으로 전반적으로 ${classAvgGrade}등급 수준입니다.` },
+        { icon: "🏆", title: "최고 성적",
+          body: `<span class="font-semibold" style="color:#FBBF24">${topStudent.name}</span> 학생이 ${topStudent.best.totalScore}점(${topStudent.best.grade.label}등급)으로 1위입니다.${topStudent.results.length >= 2 ? " 재응시를 통해 꾸준히 성장했습니다." : ""}` },
+        { icon: "📉", title: "가장 어려운 카테고리",
+          body: `${worstList.map(c => `<span style="color:${CAT_META[c].color}" class="font-semibold">${c}</span>`).join("와 ")}${worstList.length > 1 ? "가" : "이"} 평균 ${worstAvg}점으로 가장 낮습니다.` },
+        { icon: "📐", title: "성적 편차",
+          body: `최고점(${maxScore}점)과 최저점(${minScore}점) 차이가 <span class="font-semibold" style="color:#FB923C">${gap}점</span>으로 학생 간 편차가 ${gapText}입니다.` },
       ];
-
       if (retakers.length > 0) {
         const retakeText = retakers.map(r => {
           const sign = r.diff > 0 ? "+" : "";
           const cls = r.diff > 0 ? "color:#22C55E" : r.diff < 0 ? "color:#EF4444" : "color:#94A3B8";
           return `${r.name} <span style="${cls}" class="font-semibold">${sign}${r.diff}점</span>`;
         }).join(", ");
-        cards.push({
-          icon: "🔄", title: "재응시 효과",
-          body: `${retakeText} — 반복 학습의 효과가 확인됩니다.`,
-        });
+        cards.push({ icon: "🔄", title: "재응시 효과", body: `${retakeText} — 반복 학습의 효과가 확인됩니다.` });
       }
 
       el.innerHTML = cards.map(c => `
-        <div class="glass rounded-2xl p-5 hover:scale-[1.02] transition-transform">
+        <div class="glass rounded-2xl p-5">
           <div class="text-2xl mb-2">${c.icon}</div>
-          <h3 class="font-bold text-slate-200 text-sm mb-1">${c.title}</h3>
-          <p class="text-slate-400 text-xs leading-relaxed">${c.body}</p>
+          <h3 class="font-bold text-sm mb-1" style="color:var(--text-primary)">${c.title}</h3>
+          <p class="text-xs leading-relaxed" style="color:var(--text-muted)">${c.body}</p>
         </div>`).join("");
     }
 
     function renderTrends() {
       if (trendStudents.length === 0) return;
       const section = document.getElementById("trend-section");
-      section.style.display = "";
+      section.style.display = "block";
 
-      // Render each student with trends
       const titleEl = document.getElementById("trend-title");
       const contentEl = document.getElementById("trend-content");
 
@@ -510,10 +536,10 @@
         titleEl.innerHTML = `<span>📈</span> 성적 추이`;
         contentEl.innerHTML = trendStudents.map(s => `
           <div class="mb-6 last:mb-0">
-            <h3 class="font-bold text-slate-200 mb-3">${s.name}</h3>
+            <h3 class="font-bold mb-3" style="color:var(--text-primary)">${s.name}</h3>
             ${buildTrendChart(s)}
           </div>
-        `).join('<div class="border-t border-slate-700/50 my-6"></div>');
+        `).join(`<div style="border-top:1px solid var(--border-line)" class="my-6"></div>`);
       }
     }
 
@@ -523,35 +549,33 @@
       const last = results[results.length - 1];
       const diff = last.totalScore - first.totalScore;
       const diffSign = diff > 0 ? "+" : "";
-      const diffColor = diff > 0 ? "bg-green-500/10 text-green-400" : diff < 0 ? "bg-red-500/10 text-red-400" : "bg-slate-500/10 text-slate-400";
+      const diffColor = diff > 0 ? "background:rgba(34,197,94,0.1);color:#22C55E" : diff < 0 ? "background:rgba(239,68,68,0.1);color:#EF4444" : "background:rgba(148,163,184,0.1);color:#94A3B8";
 
-      // SVG points
-      const n = results.length;
-      const points = results.map((r, i) => {
-        const x = n === 1 ? 50 : 15 + (i / (n - 1)) * 70;
-        const y = 100 - (r.totalScore / 40 * 100);
-        return { x, y, score: r.totalScore, date: r.date };
-      });
-
-      const lines = points.slice(1).map((p, i) =>
-        `<line x1="${points[i].x}" y1="${points[i].y}" x2="${p.x}" y2="${p.y}" stroke="#3B82F6" stroke-width="0.8" stroke-linecap="round" />`
-      ).join("");
-
-      const circles = points.map((p, i) => {
-        const color = i === points.length - 1 ? "#22C55E" : "#3B82F6";
-        return `<circle cx="${p.x}" cy="${p.y}" r="2" fill="${color}" />`;
-      }).join("");
-
-      const labels = points.map((p, i) => {
-        const dateShort = p.date.substring(5, 10).replace(".", "/");
-        const color = i === points.length - 1 ? "text-green-400" : "text-blue-400";
-        return `<div class="text-center" style="flex:1">
-          <div class="text-xs text-slate-400">${i + 1}차 (${dateShort})</div>
-          <div class="text-sm font-bold ${color}">${p.score}점</div>
+      // Bar chart rows for each attempt
+      const barRows = results.map((r, i) => {
+        const dateShort = r.date.substring(5, 10).replace(".", "/");
+        const pct = (r.totalScore / 40 * 100);
+        const isLast = i === results.length - 1;
+        const barColor = isLast ? "#22C55E" : "#3B82F6";
+        const gradeCSS = GRADE_COLORS[r.grade.label]?.css || "grade-d";
+        return `<div class="flex items-center gap-3 mb-3">
+          <div class="w-20 shrink-0 text-right">
+            <div class="text-xs font-medium" style="color:var(--text-muted)">${i+1}차</div>
+            <div class="text-xs" style="color:var(--text-dim)">${dateShort}</div>
+          </div>
+          <div class="flex-1">
+            <div class="h-8 rounded-full overflow-hidden relative" style="background:var(--bar-track)">
+              <div class="h-full rounded-full trend-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+              <span class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow">${r.totalScore}/40</span>
+            </div>
+          </div>
+          <div class="w-12 shrink-0">
+            <span class="${gradeCSS} text-white text-xs font-bold px-2 py-0.5 rounded-full">${r.grade.label}</span>
+          </div>
         </div>`;
       }).join("");
 
-      // Category changes
+      // Category changes table
       const catChanges = CATEGORIES.map(cat => {
         const prev = first.categoryScores[cat];
         const curr = last.categoryScores[cat];
@@ -560,36 +584,21 @@
         const sign = d > 0 ? "+" : d === 0 ? "±" : "";
         const m = CAT_META[cat];
         const displayName = cat === "예술과문화" ? "예술" : cat;
-        return `<div class="bg-slate-800/50 rounded-lg p-3 text-center">
+        return `<div class="rounded-lg p-3 text-center" style="background:var(--bg-inner)">
           <div class="text-xs font-medium mb-1" style="color:${m.color}">${m.icon} ${displayName}</div>
-          <div class="text-lg font-bold text-slate-100">${prev} → ${curr}</div>
+          <div class="text-lg font-bold" style="color:var(--text-primary)">${prev} → ${curr}</div>
           <div class="text-xs font-medium" style="${cls}">${sign}${d}</div>
         </div>`;
       }).join("");
 
       return `
         <div class="flex items-center gap-2 mb-4">
-          <span class="text-sm text-slate-400">${results.length}회 응시</span>
-          <span class="text-xs px-2 py-0.5 rounded-full ${diffColor} font-medium">${diffSign}${diff}점 ${diff >= 0 ? "성장" : "하락"}</span>
+          <span class="text-sm" style="color:var(--text-muted)">${results.length}회 응시</span>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="${diffColor}">${diffSign}${diff}점 ${diff >= 0 ? "성장" : "하락"}</span>
         </div>
-        <div class="relative">
-          <div class="flex flex-col justify-between h-48 mr-2 text-xs text-slate-500 absolute left-0 top-0 bottom-0">
-            <span>40</span><span>30</span><span>20</span><span>10</span><span>0</span>
-          </div>
-          <div class="ml-8">
-            <div class="relative h-48 border-l border-b border-slate-700">
-              <div class="absolute w-full border-t border-slate-700/30" style="bottom:25%"></div>
-              <div class="absolute w-full border-t border-slate-700/30" style="bottom:50%"></div>
-              <div class="absolute w-full border-t border-slate-700/30" style="bottom:75%"></div>
-              <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                ${lines}${circles}
-              </svg>
-              <div class="absolute flex w-full" style="bottom:-2rem">${labels}</div>
-            </div>
-          </div>
-        </div>
-        <div class="mt-12 pt-4 border-t border-slate-700/50">
-          <h4 class="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">카테고리별 변화</h4>
+        <div class="mb-6">${barRows}</div>
+        <div style="border-top:1px solid var(--border-line)" class="pt-4">
+          <h4 class="text-xs font-semibold mb-3 uppercase tracking-wider" style="color:var(--text-muted)">카테고리별 변화</h4>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${catChanges}</div>
         </div>`;
     }

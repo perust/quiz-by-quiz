@@ -3,7 +3,10 @@
  * teacher-dashboard.html → report.pdf 변환 스크립트
  * puppeteer-core + 로컬 Chrome을 사용합니다.
  *
- * 사용법: node scripts/export-pdf.js
+ * 사용법:
+ *   node scripts/export-pdf.js          (기본: light 테마)
+ *   node scripts/export-pdf.js --light  (라이트 테마, 인쇄 친화)
+ *   node scripts/export-pdf.js --dark   (다크 테마)
  */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
@@ -24,6 +27,9 @@ function findChrome() {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  const theme = args.includes('--dark') ? 'dark' : 'light';
+
   const chromePath = findChrome();
   if (!chromePath) {
     console.error('Chrome을 찾을 수 없습니다. Google Chrome을 설치해 주세요.');
@@ -38,6 +44,8 @@ async function main() {
     process.exit(1);
   }
 
+  console.log(`🎨 테마: ${theme === 'light' ? '라이트 (인쇄 친화)' : '다크'}`);
+
   const browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: true,
@@ -45,7 +53,7 @@ async function main() {
   });
 
   const page = await browser.newPage();
-  await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0', timeout: 30000 });
+  await page.goto(`file://${htmlPath}?theme=${theme}`, { waitUntil: 'networkidle0', timeout: 30000 });
 
   // Tailwind CDN 처리 + JS 렌더링 완료 대기
   await page.waitForFunction(
@@ -55,6 +63,9 @@ async function main() {
     },
     { timeout: 15000 }
   );
+
+  // 렌더링 안정화 대기 (Tailwind JIT + 동적 콘텐츠)
+  await new Promise(r => setTimeout(r, 1500));
 
   await page.pdf({
     path: pdfPath,
