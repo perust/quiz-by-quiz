@@ -4,7 +4,7 @@
 
 - `$ARGUMENTS`: 내보내기 형식 (필수)
   - `csv` — CSV 파일로 저장
-  - `pdf` — 브라우저에서 PDF 인쇄 화면 열기
+  - `pdf` — PDF 파일로 저장
   - 빈값 — 형식을 안내하고 중단
 
 ## 작업 순서
@@ -70,21 +70,30 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 
 1. `quiz-challenge/public/teacher-dashboard.html` 파일이 존재하는지 확인합니다.
 2. **HTML이 있으면**: `quiz-challenge/src/data/students.ts`의 현재 데이터로 `teacher-dashboard.html` 내 `const students = [...]` 부분을 동기화합니다.
-3. `open quiz-challenge/public/teacher-dashboard.html` 명령으로 브라우저에서 엽니다.
+3. Chrome headless 모드로 PDF를 생성합니다:
 
-출력:
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless --disable-gpu --no-sandbox \
+  --print-to-pdf="quiz-challenge/public/report.pdf" \
+  --print-to-pdf-no-header \
+  "file://$(pwd)/quiz-challenge/public/teacher-dashboard.html"
+```
+
+> macOS가 아니거나 Chrome 경로가 다를 경우 `which google-chrome` 또는 `which chromium`으로 경로를 탐색합니다.
+
+4. 생성된 PDF 파일을 `open` 명령으로 엽니다.
+
+**성공 시** 아래를 출력합니다:
 
 ```
-## 📄 PDF 내보내기 준비
+## ✅ PDF 내보내기 완료
 
-브라우저에서 대시보드가 열렸습니다.
+📁 `quiz-challenge/public/report.pdf`
+- 학생 N명의 대시보드 보고서
+- Chrome headless 모드로 생성
 
-### PDF 저장 방법
-1. **⌘ + P** (또는 Ctrl + P) 로 인쇄 대화상자를 엽니다
-2. 대상을 **"PDF로 저장"** 으로 변경합니다
-3. **저장** 을 클릭합니다
-
-> 💡 커맨드 가이드 섹션은 자동으로 제외됩니다 (인쇄 스타일 적용)
+Finder에서 확인: `open quiz-challenge/public/report.pdf`
 ```
 
 **HTML이 없으면**: 아래를 출력하고 중단합니다:
@@ -93,6 +102,15 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 ## ❌ 대시보드 HTML 파일이 없습니다
 
 `quiz-challenge/public/teacher-dashboard.html` 파일을 먼저 생성해 주세요.
+```
+
+**Chrome을 찾을 수 없으면**: 아래를 출력하고 중단합니다:
+
+```
+## ❌ Chrome 브라우저를 찾을 수 없습니다
+
+PDF 생성에는 Google Chrome이 필요합니다.
+https://www.google.com/chrome/ 에서 설치해 주세요.
 ```
 
 ---
@@ -107,9 +125,9 @@ students 배열에서 각 학생의 **최신 결과**(results 배열의 마지�
 | 형식 | 설명 | 출력 파일 |
 |------|------|-----------|
 | `csv` | 학생 성적 데이터를 CSV로 저장 | `public/report.csv` |
-| `pdf` | 브라우저에서 PDF 인쇄 화면 열기 | 브라우저 인쇄 |
+| `pdf` | 대시보드를 PDF 파일로 저장 | `public/report.pdf` |
 
 ### 예시
 - `/export-report csv` — CSV 파일 생성
-- `/export-report pdf` — 브라우저에서 PDF 저장
+- `/export-report pdf` — PDF 파일 생성
 ```
