@@ -21,7 +21,9 @@
       "Bash(gh auth status:*)",
       "Bash(gh repo create:*)",
       "Bash(curl:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "WebSearch",
+      "Bash(open:*)"
     ]
   }
 }

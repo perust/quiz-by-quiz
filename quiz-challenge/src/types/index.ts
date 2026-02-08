@@ -53,3 +53,19 @@ export interface FeedbackState {
   correctAnswer: number;
   explanation: string;
 }
+
+// 학생 퀴즈 결과 타입
+export interface StudentResult {
+  date: string;                    // "2026.02.08 14:30"
+  totalScore: number;              // 0-40
+  categoryScores: CategoryScores;  // { 한국사: N, 과학: N, 지리: N, 예술과문화: N }
+  grade: Grade;                    // 등급 정보
+}
+
+// 학생 프로필 타입
+export interface StudentProfile {
+  id: string;                      // 학생 식별자 (예: "홍길동")
+  name: string;                    // 표시 이름
+  registeredAt: string;            // 최초 등록일
+  results: StudentResult[];        // 퀴즈 결과 (복수 응시 지원)
+}
