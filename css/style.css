@@ -1102,6 +1102,13 @@ body.is-booted .app-bar {
   font-variant-numeric: tabular-nums;
 }
 
+/* 몇 문제 중 몇 개인지. 점수보다 작게 붙여 순위는 점수로 읽히게 둔다 */
+.ranking-item__hits {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .ranking-item__date {
   grid-area: date;
   font-size: 12px;
@@ -1575,11 +1582,47 @@ body.is-booted .app-bar {
     height: 36px;
     margin: -18px 0 0 -18px;
   }
+
+  .walk-confirm {
+    width: 64px;
+    height: 64px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    font-size: 14px;
+  }
 }
 
-/* 답을 낸 뒤에는 치운다. 그대로 두면 «다음 문제» 버튼을 가린다 */
-.arena--locked .walk-stick {
+/* 확정 버튼. 스틱의 반대편에 두어 두 엄지로 잡는다.
+   손가락에는 Enter가 없어, 이게 없으면 스틱으로 걸어가도 칸을 직접 눌러야 한다.
+   답을 낸 뒤에는 walker.js 가 --on 을 떼어 치운다 — 그대로 두면 «다음 문제»를 가린다. */
+.walk-confirm {
   display: none;
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.walk-confirm:active {
+  translate: 0 2px;
+  background: #2c46ad;
+}
+
+@media (pointer: coarse) {
+  .walk-confirm--on {
+    display: block;
+  }
 }
 
 .walk-stick__knob {

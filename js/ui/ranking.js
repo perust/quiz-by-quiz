@@ -104,6 +104,14 @@ export function createRankingScreen({ onHome, loadRankings, clearRankings }) {
     score.className = 'ranking-item__score';
     score.textContent = `${record.score}점`;
 
+    // 점수만 보여주면 만점이 다른 기록끼리 잘못 비교된다.
+    // 카테고리가 늘면 전체 도전 만점이 함께 커지는데(400 → 500) 기록은 같은
+    // 목록에 쌓이므로, 몇 문제 중 몇 개인지를 붙여 읽는 사람이 가늠하게 한다.
+    const hits = document.createElement('span');
+    hits.className = 'ranking-item__hits';
+    hits.textContent = `${record.correctCount}/${record.totalCount}`;
+    score.append(' ', hits);
+
     // 소요 시간은 목록에 넣지 않는다 (FR-6.4)
     const date = document.createElement('span');
     date.className = 'ranking-item__date';

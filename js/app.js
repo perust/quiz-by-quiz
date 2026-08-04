@@ -1,7 +1,7 @@
 // 진입점. 데이터 로딩과 화면 흐름을 연결한다.
 // 게임 규칙은 core/, 그리기는 ui/, 저장은 storage/ 가 맡고 여기서는 셋을 잇기만 한다.
 
-import { CATEGORIES, QUESTIONS_PER_ROUND } from './constants.js';
+import { CATEGORIES, QUESTIONS_PER_ROUND, RECENT_QUESTION_MEMORY } from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession } from './core/session.js';
@@ -236,8 +236,12 @@ async function main() {
       return;
     }
 
-    // 이번 판에 낸 문제는 다음 판에서 후순위가 된다. 중간에 나가도 마찬가지다
-    recentQuestionIds = questions.map((question) => question.id);
+    // 이번 판에 낸 문제는 다음 판에서 후순위가 된다. 중간에 나가도 마찬가지다.
+    // 한 판만 기억하면 은행이 커져도 같은 문제가 금방 되돌아오므로 여러 판을
+    // 쌓아 두되, 오래된 것부터 잘라 낸다. 새 문제가 앞에 오게 이어 붙인다.
+    recentQuestionIds = [
+      ...new Set([...questions.map((question) => question.id), ...recentQuestionIds]),
+    ].slice(0, RECENT_QUESTION_MEMORY);
     await preferences.setRecentQuestionIds(recentQuestionIds);
 
     lastRound = round;

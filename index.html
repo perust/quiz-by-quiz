@@ -101,7 +101,7 @@
 
       <p class="home-hint" aria-hidden="true">
         <span class="home-hint-key">방향키로 캐릭터를 움직이고 Enter/Space로 고를 수 있어요</span>
-        <span class="home-hint-touch">스틱으로 캐릭터를 움직이고 메뉴를 눌러 고를 수 있어요</span>
+        <span class="home-hint-touch">스틱으로 캐릭터를 움직이고 선택 버튼으로 고를 수 있어요</span>
       </p>
 
       <p class="home-note" id="home-note" role="alert" hidden></p>
@@ -161,7 +161,7 @@
              입력 장치에 따라 문구가 달라진다. 스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다. -->
         <p class="arena__hint" aria-hidden="true">
           <span class="arena__hint-key">방향키와 Enter/Space로 조작하세요</span>
-          <span class="arena__hint-touch">스틱으로 움직이고 바닥을 눌러 고르세요</span>
+          <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 고르세요</span>
         </p>
       </div>
 
@@ -284,6 +284,10 @@
     <div class="walk-stick" id="walk-stick" aria-hidden="true">
       <span class="walk-stick__knob" id="walk-knob"></span>
     </div>
+
+    <!-- 손가락에는 Enter가 없다. 스틱으로 걸어간 자리를 확정할 길이 없으면
+         결국 칸을 직접 눌러야 해서 스틱이 헛돈다. 엄지가 닿는 반대편에 둔다. -->
+    <button type="button" class="walk-confirm" id="walk-confirm" aria-hidden="true" tabindex="-1">선택</button>
   </main>
 
   <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->
@@ -307,8 +311,9 @@
         <dt>먼저 확정</dt>
         <dd><kbd>Enter</kbd> · <kbd>Space</kbd> 로 기다리지 않고 바로 냅니다</dd>
 
-        <dt>누르기</dt>
-        <dd>바닥을 직접 누르면 걸어가서 냅니다</dd>
+        <dt>손가락</dt>
+        <dd>왼쪽 스틱으로 움직이고 오른쪽 <strong>선택</strong> 버튼으로 냅니다.
+          바닥을 직접 눌러도 걸어가서 냅니다</dd>
 
         <dt>번호로</dt>
         <dd><kbd>1</kbd> ~ <kbd>4</kbd> 는 게임 모드와 상관없이 늘 됩니다</dd>
