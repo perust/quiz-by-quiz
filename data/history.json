@@ -1,0 +1,102 @@
+[
+  {
+    "id": "history-001",
+    "category": "history",
+    "question": "훈민정음이 반포된 해는?",
+    "choices": ["1443년", "1446년", "1450년", "1392년"],
+    "answerIndex": 1,
+    "explanation": "세종이 1443년에 만든 새 문자를, 사용법을 풀이한 『훈민정음』 해례본과 함께 1446년에 세상에 알렸습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "세종"]
+  },
+  {
+    "id": "history-002",
+    "category": "history",
+    "question": "1392년 고려를 무너뜨리고 조선을 세운 인물은?",
+    "choices": ["최영", "이성계", "정도전", "이방원"],
+    "answerIndex": 1,
+    "explanation": "이성계는 위화도 회군으로 정권을 잡은 뒤 조선을 건국하고 태조가 되었습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "건국"]
+  },
+  {
+    "id": "history-003",
+    "category": "history",
+    "question": "1597년 이순신이 좁은 물목의 빠른 물살을 이용해 적은 수의 배로 일본 수군을 물리친 해전은?",
+    "choices": ["옥포해전", "한산도대첩", "명량대첩", "노량해전"],
+    "answerIndex": 2,
+    "explanation": "울돌목이라고도 하는 명량 해협의 거센 조류를 전술에 활용한 전투로, 정유재란의 흐름을 바꿨습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "임진왜란", "이순신"]
+  },
+  {
+    "id": "history-004",
+    "category": "history",
+    "question": "몽골의 침입을 물리치려는 염원을 담아 고려가 1236년부터 15년에 걸쳐 새긴 목판 기록물은?",
+    "choices": ["팔만대장경", "삼국유사", "직지심체요절", "상정고금예문"],
+    "answerIndex": 0,
+    "explanation": "경판이 8만여 장(81,258매)에 이르러 이런 이름이 붙었습니다. 지금은 합천 해인사 장경판전에 보관돼 있고, 경판은 유네스코 세계기록유산입니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "문화재"]
+  },
+  {
+    "id": "history-005",
+    "category": "history",
+    "question": "일제강점기에 전국에서 독립을 외친 3·1 운동이 일어난 해는?",
+    "choices": ["1910년", "1926년", "1945년", "1919년"],
+    "answerIndex": 3,
+    "explanation": "고종의 장례를 앞둔 1919년 3월 1일 서울과 지방에서 동시에 시작돼 전국으로 번졌습니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-006",
+    "category": "history",
+    "question": "918년 궁예를 몰아내고 고려를 세운 인물은?",
+    "choices": ["견훤", "대조영", "김유신", "왕건"],
+    "answerIndex": 3,
+    "explanation": "송악(개성)의 호족 출신으로, 뒤이어 후삼국을 통일하고 고려의 첫 임금 태조가 되었습니다.",
+    "difficulty": "easy",
+    "tags": ["고려", "건국"]
+  },
+  {
+    "id": "history-007",
+    "category": "history",
+    "question": "1909년 하얼빈역에서 이토 히로부미를 저격한 독립운동가는?",
+    "choices": ["안중근", "윤봉길", "이봉창", "김좌진"],
+    "answerIndex": 0,
+    "explanation": "거사 뒤 뤼순 감옥에 갇혀 『동양평화론』을 쓰다 이듬해 순국했습니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-008",
+    "category": "history",
+    "question": "676년 당의 세력을 몰아내고 삼국 통일을 완성한 신라의 왕은?",
+    "choices": ["진흥왕", "문무왕", "법흥왕", "무열왕"],
+    "answerIndex": 1,
+    "explanation": "아버지 무열왕이 백제를 무너뜨린 뒤를 이어 고구려를 멸망시키고 당의 군대까지 물리쳤습니다.",
+    "difficulty": "normal",
+    "tags": ["신라", "삼국통일"]
+  },
+  {
+    "id": "history-009",
+    "category": "history",
+    "question": "영조가 백성의 군포 부담을 2필에서 1필로 줄여준 조선 후기의 제도는?",
+    "choices": ["대동법", "영정법", "균역법", "호패법"],
+    "answerIndex": 2,
+    "explanation": "1750년에 시행됐으며, 줄어든 재정은 어염세와 결작 등을 새로 걷어 메웠습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-010",
+    "category": "history",
+    "question": "1866년 프랑스 함대가 강화도를 침입해 외규장각 도서를 약탈해 간 사건은?",
+    "choices": ["운요호 사건", "임오군란", "병인양요", "신미양요"],
+    "answerIndex": 2,
+    "explanation": "천주교 탄압을 구실로 삼았고, 이때 실려 간 의궤는 2011년 대여 형식으로 돌아왔습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "근대"]
+  }
+]

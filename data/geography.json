@@ -1,0 +1,102 @@
+[
+  {
+    "id": "geography-001",
+    "category": "geography",
+    "question": "대한민국에서 면적이 가장 넓은 섬은?",
+    "choices": ["거제도", "제주도", "강화도", "진도"],
+    "answerIndex": 1,
+    "explanation": "제주도의 면적은 약 1,850㎢로, 국내에서 두 번째로 큰 섬보다도 네 배 이상 넓습니다.",
+    "difficulty": "easy",
+    "tags": ["한국지리", "섬"]
+  },
+  {
+    "id": "geography-002",
+    "category": "geography",
+    "question": "오스트레일리아(호주)의 수도는?",
+    "choices": ["시드니", "멜버른", "캔버라", "브리즈번"],
+    "answerIndex": 2,
+    "explanation": "시드니와 멜버른의 수도 경쟁을 절충해 두 도시 사이에 계획도시 캔버라를 세웠습니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "수도"]
+  },
+  {
+    "id": "geography-003",
+    "category": "geography",
+    "question": "지구에서 해발 고도가 가장 높은 산은?",
+    "choices": ["몽블랑", "킬리만자로", "K2", "에베레스트"],
+    "answerIndex": 3,
+    "explanation": "히말라야산맥의 에베레스트는 해발 8,848.86m로, 2020년 네팔과 중국이 공동 측정해 합의한 공식 높이입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "산"]
+  },
+  {
+    "id": "geography-004",
+    "category": "geography",
+    "question": "일본의 수도는?",
+    "choices": ["도쿄", "오사카", "교토", "나고야"],
+    "answerIndex": 0,
+    "explanation": "에도라 불리던 도시가 1868년 지금의 이름으로 바뀌면서 일본의 중심이 되었습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "수도"]
+  },
+  {
+    "id": "geography-005",
+    "category": "geography",
+    "question": "이집트를 남북으로 가로질러 지중해로 흘러드는 강은?",
+    "choices": ["나일강", "아마존강", "황허강", "갠지스강"],
+    "answerIndex": 0,
+    "explanation": "해마다 범람하며 실어 온 흙이 하류에 쌓여 고대 이집트 문명이 자랄 터전을 만들었습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "강"]
+  },
+  {
+    "id": "geography-006",
+    "category": "geography",
+    "question": "한반도에서 길이가 가장 긴 강은?",
+    "choices": ["두만강", "낙동강", "압록강", "한강"],
+    "answerIndex": 2,
+    "explanation": "백두산에서 시작해 서해로 흘러들며 길이가 790km를 넘습니다. 나머지 보기의 강들보다 250km 이상 깁니다.",
+    "difficulty": "normal",
+    "tags": ["한국지리", "강"]
+  },
+  {
+    "id": "geography-007",
+    "category": "geography",
+    "question": "지중해와 홍해를 이어 유럽과 아시아의 뱃길을 줄여 준 운하는?",
+    "choices": ["파나마 운하", "수에즈 운하", "킬 운하", "코린트 운하"],
+    "answerIndex": 1,
+    "explanation": "1869년 이집트에 개통돼, 아프리카 남단을 돌아가던 항로를 크게 단축했습니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "교통"]
+  },
+  {
+    "id": "geography-008",
+    "category": "geography",
+    "question": "미국의 수도는?",
+    "choices": ["뉴욕", "시카고", "보스턴", "워싱턴"],
+    "answerIndex": 3,
+    "explanation": "어느 주에도 속하지 않는 특별 구역에 있어 정식 이름은 워싱턴 D.C.입니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "수도"]
+  },
+  {
+    "id": "geography-009",
+    "category": "geography",
+    "question": "지구에서 수심이 가장 깊은 호수는?",
+    "choices": ["바이칼호", "카스피해", "슈피리어호", "탕가니카호"],
+    "answerIndex": 0,
+    "explanation": "최대 수심이 1,642m로, 얼지 않은 지표 민물의 20% 남짓을 담고 있습니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "호수"]
+  },
+  {
+    "id": "geography-010",
+    "category": "geography",
+    "question": "국토가 유럽과 아시아 두 대륙에 걸쳐 있으며 이스탄불이 자리한 나라는?",
+    "choices": ["이탈리아", "이집트", "튀르키예", "우크라이나"],
+    "answerIndex": 2,
+    "explanation": "보스포루스 해협이 이스탄불 한가운데를 지나며 두 대륙을 갈라놓습니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "국가"]
+  }
+]

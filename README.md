@@ -1,66 +1,146 @@
-# Quiz Challenge
+# 상식 퀴즈
 
-React와 TypeScript로 만든 퀴즈 게임 프로젝트입니다. 사용자는 닉네임을 입력하고 카테고리를 선택한 뒤 문제를 풀며 점수와 진행률을 확인할 수 있습니다.
+브라우저에서 바로 도는 4지선다 상식 퀴즈 게임. 한국사·과학·지리·일반상식 40문제.
 
-실제 앱 코드는 `quiz-challenge/` 하위 디렉터리에 있습니다.
+빌드 도구, 번들러, npm 의존성이 없다. HTML·CSS·JavaScript 파일을 그대로 서빙하면 동작한다.
 
-## 주요 기능
+> 이전의 React/TypeScript 버전은 [`legacy/`](legacy/)에 그대로 보존돼 있다. 더 이상 유지보수하지 않는다.
 
-- 시작 화면과 닉네임 입력
-- 카테고리 선택
-- 퀴즈 진행 화면
-- 정답/오답 피드백
-- 전체 진행률 표시
-- 결과 화면
-- 리더보드
-- 음소거 토글
-- React Error Boundary
+## 무엇을 할 수 있나
 
-## 기술 스택
+- 카테고리 하나를 골라 **10문제**를 풀거나, **전체 도전**으로 40문제를 연속으로 푼다
+- 문항당 20초. 시간이 다 되면 오답으로 처리되고 정답과 해설을 보여준다
+- 답을 고르면 곧바로 정답 여부와 해설이 뜬다. 해설을 읽는 동안 타이머는 멈춘다
+- 한 판을 마치면 점수·정답률·소요 시간, 틀린 문제 다시 보기, 최고 기록과의 비교를 볼 수 있다
+- 닉네임을 넣어 랭킹에 기록을 남긴다. 모드·카테고리별로 상위 10개까지 보관한다
 
-- React
-- TypeScript
-- Create React App
-- Tailwind CSS
+> **랭킹은 이 브라우저에만 저장된다.** 배포해서 여러 사람이 들어와도 기록은 공유되지 않는다.
+> 자기 최고 기록을 갱신하는 용도다. 사용자 간 경쟁은 서버를 붙여야 성립한다.
 
-## 프로젝트 구조
+## 실행
+
+```bash
+python3 -m http.server 8765
+```
+
+프로젝트 루트에서 실행한 뒤 <http://localhost:8765>로 접속한다. 포트는 아무거나 써도 된다.
+
+**`index.html`을 더블클릭해서 여는 방식(`file://`)으로는 동작하지 않는다.** 브라우저가
+그 출처에서는 ES 모듈과 `fetch`를 모두 막기 때문이다. 그렇게 열면 화면에 안내가 뜬다.
+
+Node나 Python이 없다면 정적 파일을 서빙하는 어떤 도구를 써도 된다. 빌드 단계가 없다.
+
+## 문제 추가하기
+
+**`data/` 폴더의 JSON만 고치면 된다. 코드는 손대지 않는다.**
+
+`data/<카테고리>.json` 배열에 아래 형태로 덧붙인다. 파일명이 곧 카테고리 코드다.
+
+```json
+{
+  "id": "history-011",
+  "category": "history",
+  "question": "918년 궁예를 몰아내고 고려를 세운 인물은?",
+  "choices": ["견훤", "대조영", "김유신", "왕건"],
+  "answerIndex": 3,
+  "explanation": "송악의 호족 출신으로, 뒤이어 후삼국을 통일했습니다.",
+  "difficulty": "easy",
+  "tags": ["고려", "건국"]
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `id` | 전역 고유. **기존 ID를 재사용하지 않는다.** 보통 `<카테고리>-<3자리>` |
+| `category` | 파일명과 같아야 한다 |
+| `choices` | 정확히 4개 |
+| `answerIndex` | `choices`에서 정답의 위치 (0부터) |
+| `difficulty` | `easy` / `normal` / `hard` |
+| `tags` | 주제 태그. v1에서는 출제에 쓰지 않는다 |
+
+문제를 늘려도 한 판의 출제 수는 10문제로 유지된다(`js/constants.js`의 `QUESTIONS_PER_ROUND`).
+은행이 출제 수보다 적으면 있는 만큼만 낸다.
+
+### 넣기 전에 확인할 것
+
+형식 검사는 스키마만 본다. **내용의 정확성은 걸러주지 못한다.**
+
+1. 정답이 하나뿐인가 — 다른 해석이 가능하면 조건을 문장에 넣는다
+2. 최상급에 기준이 있는가 — `가장 큰`은 면적인지 인구인지 밝힌다
+3. 시간과 범위가 명확한가 — 변하는 정보는 시점을, 비교는 범위를 한정한다
+4. 교차 검증했는가 — 연도·수치·순위는 출처 두 곳 이상에서 확인한다
+5. 확신이 서는가 — 서지 않으면 넣지 않는다
+
+형식은 아래로 훑을 수 있다.
+
+```bash
+for f in data/*.json; do
+  python3 -c "import json;d=json.load(open('$f'));print('$f',len(d),'OK' if all(0<=q['answerIndex']<len(q['choices'])==4 for q in d) else 'FAIL')"
+done
+```
+
+## 구조
 
 ```text
-.
-└── quiz-challenge/
-    ├── src/
-    │   ├── App.tsx
-    │   ├── components/
-    │   └── hooks/
-    ├── public/
-    ├── package.json
-    ├── tailwind.config.js
-    └── tsconfig.json
+index.html            화면마다 <section data-screen="...">. 해시 라우팅 없음
+css/style.css
+js/constants.js       제한 시간·출제 수·배점·카테고리 정의
+js/core/              게임 로직. DOM을 건드리지 않고 값만 반환한다
+js/ui/                DOM 렌더링. 게임 규칙을 갖지 않는다
+js/storage/           저장소. local-store.js만 localStorage를 만진다
+js/data/              JSON 로드 + 형식 검증
+js/audio.js           효과음. 파일 없이 Web Audio로 합성한다
+js/app.js             위를 잇는 진입점
+data/<카테고리>.json   문제 은행. 파일명 = 카테고리 코드
 ```
 
-## 설치 및 실행
+로직과 화면을 나눈 것이 이 프로젝트의 핵심 설계다. 나중에 프레임워크로 옮길 때
+`core/`를 그대로 재사용하기 위함이다. `core/`에 `document`나 `window`가 등장하면 잘못 짠 것이다.
 
-```bash
-git clone https://github.com/perust/quiz-challenge.git
-cd quiz-challenge/quiz-challenge
-npm install
-npm start
-```
+랭킹 저장은 `js/storage/adapter.js`가 내보내는 객체를 통해서만 부른다. 서버 랭킹으로 바꿀 때
+고칠 곳은 그 파일 한 줄이고 게임 로직은 그대로다.
 
-브라우저에서 `http://localhost:3000`에 접속합니다.
+## 접근성
 
-## 빌드
+- 마우스 없이 키보드만으로 홈 → 퀴즈 → 결과 → 랭킹을 모두 진행할 수 있다
+- 보기는 숫자 키 `1`~`4`로도 고른다
+- 정답과 오답을 색상만으로 구분하지 않는다. `✓ 정답` / `✗ 오답` 표시가 함께 붙어 흑백에서도 읽힌다
+- 화면이 바뀌면 포커스가 새 화면으로 옮겨 가고 스크린리더가 제목부터 읽는다
+- 남은 시간은 화면으로만 보여준다. 1초마다 낭독되면 문제를 읽을 수 없기 때문에,
+  남은 5초 경고만 한 번 알린다
+- 애니메이션은 `prefers-reduced-motion` 설정을 따른다
+- 320px 폭까지 레이아웃이 깨지지 않는다
 
-```bash
-npm run build
-```
+## 저장되는 값
 
-## 테스트
+`localStorage`만 쓴다. 서버로 전송되는 것은 없다.
 
-```bash
-npm test
-```
+| 키 | 내용 |
+| --- | --- |
+| `quiz.rankings` | 랭킹 기록 |
+| `quiz.settings` | 음소거 여부 |
+| `quiz.nickname` | 마지막으로 입력한 닉네임 |
+| `quiz.recentQuestionIds` | 직전 판 문제 ID (중복 회피용) |
+| `quiz.schemaVersion` | 저장 데이터 스키마 버전 |
 
-## 참고
+값이 깨져도 앱은 죽지 않는다. 성한 기록만 살리고 나머지는 버린 뒤 빈 랭킹으로 복구한다.
 
-하위 디렉터리의 기존 `README.md`에는 Create React App 기본 안내가 포함되어 있습니다. 이 문서는 저장소 루트에서 프로젝트 개요와 실행 위치를 빠르게 파악하기 위한 README입니다.
+## 배포
+
+정적 파일만 있으므로 어떤 정적 호스팅에도 그대로 올린다. 모든 경로가 상대 경로라
+하위 경로(`https://<사용자>.github.io/<저장소>/`)에 올려도 동작한다.
+
+GitHub Pages로 올리려면 `.github/workflows/pages.yml`을 쓴다. 저장소 설정에서
+**Settings → Pages → Source**를 `GitHub Actions`로 바꾼 뒤 기본 브랜치에 푸시하면 된다.
+
+이 프로젝트가 저장소 루트가 아닌 하위 폴더에 있다면 워크플로 파일 맨 위의
+`SOURCE_DIR` 값을 그 폴더 이름으로 고친다.
+
+## 기술 제약
+
+바꾸지 않기로 정한 것들이다.
+
+- 번들러·트랜스파일러·npm 의존성 없음. 프레임워크와 외부 라이브러리도 쓰지 않는다
+- ES 모듈과 `fetch`를 쓴다
+- `localStorage` 외의 브라우저 저장소는 쓰지 않는다
+- UI 문구와 주석은 한국어로 쓴다

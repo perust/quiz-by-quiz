@@ -1,0 +1,44 @@
+# GitHub Pages 배포
+#
+# 빌드 단계가 없다. 정적 파일을 그대로 올린다.
+# 저장소 설정에서 Settings → Pages → Source 를 "GitHub Actions"로 바꿔야 동작한다.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 이 프로젝트가 저장소 루트가 아니라면 그 폴더 이름으로 고친다.
+# 예: 하위 폴더가 quiz-vanilla 라면 SOURCE_DIR: quiz-vanilla
+env:
+  SOURCE_DIR: .
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 진행 중인 것을 취소하지는 않는다
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SOURCE_DIR }}
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

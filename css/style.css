@@ -1,0 +1,1202 @@
+/* 상식 퀴즈 — 3단계 스타일
+   모바일 우선. 320px 폭까지 깨지지 않게 맞췄다. */
+
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #e2e5ea;
+  --text: #1c1f24;
+  --text-muted: #6b7280;
+  --accent: #3b5bdb;
+  --accent-soft: #edf0fd;
+  --correct: #2f9e44;
+  --correct-soft: #ebfbee;
+  --wrong: #e03131;
+  --wrong-soft: #fff5f5;
+  --warning: #e8590c;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* flex·grid 요소에도 hidden 속성이 먹도록 (JS가 hidden으로 여닫는다) */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard',
+    'Malgun Gothic', system-ui, sans-serif;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 스크린리더 전용. 화면에서는 보이지 않지만 낭독은 된다 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 키보드로 이동할 때만 테두리를 보여준다. 마우스 클릭에는 뜨지 않는다 */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── 부팅 상태 ──
+   스크립트가 실행되지 못하면 .is-booted가 붙지 않아 앱이 계속 숨겨진다.
+   3초 뒤 인라인 스크립트가 .is-boot-failed를 붙여 이유를 알린다. */
+.app {
+  display: none;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 8px 16px 48px;
+}
+
+body.is-booted .app {
+  display: block;
+}
+
+.boot {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+
+body.is-booted .boot {
+  display: none;
+}
+
+.boot__loading {
+  margin: 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.boot__error {
+  display: none;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+body.is-boot-failed .boot__loading {
+  display: none;
+}
+
+body.is-boot-failed .boot__error {
+  display: block;
+}
+
+.boot__title {
+  margin: 0 0 10px;
+  font-size: 19px;
+}
+
+.boot__body {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.boot__code {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #1c1f24;
+  color: #e8eaed;
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.boot code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 0.92em;
+}
+
+/* ── 상단 바 (소리 토글) ── */
+.app-bar {
+  display: none;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 12px 16px 0;
+  justify-content: flex-end;
+}
+
+body.is-booted .app-bar {
+  display: flex;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.icon-button__icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+.screen:focus {
+  outline: none; /* 화면 전환용 포커스라 테두리를 그리지 않는다 */
+}
+
+/* ── 버튼 공통 ── */
+.button {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  /* 손가락으로 누를 수 있는 크기 (3-B 반응형) */
+  min-height: 44px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.button--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button--primary:hover {
+  background: #364fc7;
+}
+
+.button--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.button--ghost:hover {
+  border-color: #c8ccd4;
+  color: var(--text);
+}
+
+.button--danger {
+  background: var(--wrong);
+  color: #fff;
+}
+
+.button--danger:hover {
+  background: #c92a2a;
+}
+
+/* ── 홈 ── */
+.home-header {
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.home-title {
+  margin: 0 0 6px;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+.home-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.category-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 20px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.category-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.category-card:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.category-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.category-card__icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.category-card__name {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.category-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.category-card__count {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.category-card:disabled .category-card__count {
+  color: var(--wrong);
+}
+
+/* 최고 점수 (FR-2.3). 기록이 없으면 아예 그리지 않는다 */
+.category-card__best {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ── 전체 도전 (FR-2.2) ── */
+.challenge-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.challenge-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.challenge-card:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.challenge-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.challenge-card__icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.challenge-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.challenge-card__name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.challenge-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.challenge-card__meta {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: right;
+}
+
+.home-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.home-note {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--wrong-soft);
+  color: var(--wrong);
+  font-size: 13px;
+}
+
+/* ── 퀴즈 헤더 ── */
+.quiz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.quiz-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.quiz-category {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.quiz-position {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.progress__fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+/* ── 타이머 ── */
+.timer {
+  margin-bottom: 20px;
+}
+
+.timer__track {
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.timer__fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transform-origin: left center;
+}
+
+.timer__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 경고 상태: 색상만이 아니라 아이콘과 문구도 함께 바뀐다 (FR-3.9) */
+.timer--warning .timer__fill {
+  background: var(--warning);
+}
+
+.timer--warning .timer__label {
+  color: var(--warning);
+}
+
+.timer--warning .timer__icon {
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── 문제와 보기 ── */
+.question {
+  margin: 0 0 18px;
+  font-size: 20px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  word-break: keep-all;
+}
+
+.choices {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.choice:disabled {
+  cursor: default;
+}
+
+.choice__key {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.choice__text {
+  flex: 1;
+  word-break: keep-all;
+}
+
+/* 정답·오답 표시는 색상에 더해 아이콘으로도 구분한다 (FR-4.1, FR-4.2) */
+.choice__mark {
+  flex: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.choice--correct {
+  border-color: var(--correct);
+  background: var(--correct-soft);
+}
+
+.choice--correct .choice__key {
+  background: var(--correct);
+  color: #fff;
+}
+
+.choice--correct .choice__mark {
+  color: var(--correct);
+}
+
+.choice--wrong {
+  border-color: var(--wrong);
+  background: var(--wrong-soft);
+}
+
+.choice--wrong .choice__key {
+  background: var(--wrong);
+  color: #fff;
+}
+
+.choice--wrong .choice__mark {
+  color: var(--wrong);
+}
+
+.choice--muted {
+  opacity: 0.55;
+}
+
+/* ── 피드백 ── */
+.feedback {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.feedback__verdict {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.feedback--correct .feedback__verdict {
+  color: var(--correct);
+}
+
+.feedback--wrong .feedback__verdict {
+  color: var(--wrong);
+}
+
+.feedback__explanation {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.feedback__notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.feedback .button {
+  width: 100%;
+}
+
+/* ── 나가기 확인 다이얼로그 ── */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dialog-backdrop[hidden] {
+  display: none;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 340px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+}
+
+.dialog__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.dialog__body {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.dialog__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dialog__actions .button {
+  flex: 1;
+}
+
+/* ── 결과 ── */
+.result-header {
+  margin-bottom: 20px;
+  padding: 24px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.result-mode {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.result-score {
+  margin: 4px 0 8px;
+  font-size: 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.result-score strong {
+  font-size: 44px;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: -0.03em;
+}
+
+.result-score__max {
+  margin-left: 2px;
+}
+
+.result-grade {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.result-grade-message {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+/* 최고 기록 비교 (FR-5.7) */
+.result-best {
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.result-best--new {
+  background: var(--correct-soft);
+  color: var(--correct);
+  font-weight: 600;
+}
+
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 14px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.result-stats__item {
+  text-align: center;
+  min-width: 0;
+}
+
+.result-stats dt {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.result-stats dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-block {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.result-block__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* 카테고리별 정답 개수 (FR-5.6) */
+.category-score {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-score__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.category-score__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 틀린 문제 다시 보기 (FR-5.4) */
+.review {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.review__item {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.review__item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.review__question {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  word-break: keep-all;
+}
+
+/* 정답·오답을 색상만이 아니라 앞의 기호와 글자로도 구분한다 */
+.review__row {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  word-break: keep-all;
+}
+
+.review__tag {
+  flex: none;
+  font-weight: 700;
+}
+
+.review__row--mine .review__tag {
+  color: var(--wrong);
+}
+
+.review__row--answer .review__tag {
+  color: var(--correct);
+}
+
+.review__explanation {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+/* 랭킹 등록 (FR-6.1) */
+.register__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.register__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.register__input {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  color: inherit;
+}
+
+.register__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.register__input:disabled {
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.register__message {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.register__message--error {
+  color: var(--wrong);
+}
+
+.register__message--done {
+  color: var(--correct);
+  font-weight: 600;
+}
+
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-actions .button {
+  flex: 1 1 30%;
+  min-width: 96px;
+}
+
+/* ── 랭킹 ── */
+.ranking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ranking-title {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+/* 저장 범위 안내 (FR-6.10) */
+.ranking-scope {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  word-break: keep-all;
+}
+
+.ranking-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+}
+
+.ranking-tab {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.ranking-tab:hover {
+  border-color: var(--accent);
+}
+
+.ranking-tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.ranking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  grid-template-areas:
+    'rank nickname score'
+    'rank date date';
+  align-items: center;
+  column-gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* 방금 등록한 기록 (FR-6.5) */
+.ranking-item--mine {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ranking-item__rank {
+  grid-area: rank;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ranking-item--mine .ranking-item__rank {
+  color: var(--accent);
+}
+
+.ranking-item__nickname {
+  grid-area: nickname;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ranking-item__badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.ranking-item__score {
+  grid-area: score;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-item__date {
+  grid-area: date;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 빈 상태 (FR-6.12) */
+.ranking-empty {
+  margin: 0;
+  padding: 32px 16px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.ranking-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* ── 출제 수보다 문제가 적을 때 ── */
+.category-card__count--short {
+  color: var(--warning);
+}
+
+/* ── 애니메이션 ──
+   정답·오답을 눈으로도 짚어 준다. 색상 대신이 아니라 색상에 더하는 것이다. */
+@keyframes pop {
+  40% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.choice--correct {
+  animation: pop 0.32s ease;
+}
+
+.choice--wrong {
+  animation: shake 0.3s ease;
+}
+
+.feedback:not([hidden]) {
+  animation: fade-up 0.25s ease;
+}
+
+/* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* 화면 전환·문제 이동용 포커스라 테두리를 그리지 않는다 */
+.question:focus {
+  outline: none;
+}
+
+/* ── 좁은 화면 (320px까지) ── */
+@media (max-width: 360px) {
+  .app,
+  .app-bar,
+  .boot {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .home-title {
+    font-size: 24px;
+  }
+
+  .category-grid {
+    gap: 10px;
+  }
+
+  .category-card {
+    padding: 16px 12px;
+  }
+
+  .challenge-card {
+    gap: 10px;
+    padding: 14px 12px;
+  }
+
+  .question {
+    font-size: 18px;
+  }
+
+  .result-score strong {
+    font-size: 36px;
+  }
+
+  .result-stats {
+    padding: 12px 4px;
+    gap: 4px;
+  }
+
+  .result-stats dd {
+    font-size: 14px;
+  }
+
+  .result-stats dt {
+    font-size: 11px;
+  }
+
+  .result-block {
+    padding: 14px 12px;
+  }
+
+  /* 닉네임 칸이 너무 좁아지지 않게 라벨을 윗줄로 뺀다 */
+  .register__row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .register__label {
+    grid-column: 1 / -1;
+  }
+
+  .result-actions .button {
+    flex-basis: 100%;
+  }
+
+  .ranking-item {
+    grid-template-columns: 24px 1fr auto;
+    padding: 10px 12px;
+  }
+}
