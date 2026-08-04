@@ -25,6 +25,9 @@ import { createLocalRankingStore, createLocalPreferences } from './local-store.j
  * @property {number} totalCount
  * @property {number} durationMs 개인 지표. 순위에는 반영하지 않는다 (FR-5.3)
  * @property {string} playedAt ISO 8601 문자열
+ * @property {{id: string, correct: boolean, timedOut: boolean}[]} [questionResults]
+ *   문항별 정오 (선택). 이 필드가 없는 예전 기록도 그대로 읽힌다.
+ *   화면에는 쓰지 않고, 선생님 모드가 문항 단위 정답률을 낼 때 쓴다.
  */
 
 /**

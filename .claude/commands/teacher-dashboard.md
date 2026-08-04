@@ -19,6 +19,7 @@ allowed-tools: Bash(python3:*), Read
 | 6 | **히트맵** — 학생 × 분야 시각화 |
 | 7 | **관심 학생** — 세 갈래로 분류 |
 | 8 | **교육 제안** — 데이터에서 자동 도출 |
+| 9 | **문항별 분석** — 정답률·난이도 불일치·시간 초과 |
 
 **읽을 기록이 없으면 종료 코드 1로 멈춘다.** 데이터가 없으면 나머지가 전부 무의미하다.
 그때는 `/quiz-teacher-collect` 의 학생용 내보내기 안내를 전달한다.
@@ -101,6 +102,12 @@ def load(strict=True):
                 'accuracy': int(r['correctCount']) / int(r['totalCount']),
                 'durationMs': int(r.get('durationMs') or 0),
                 'playedAt': r['playedAt'],
+                # 문항별 정오 (앱 개선 이후 기록에만 있다). 없으면 빈 목록
+                'items': [
+                    {'id': it['id'], 'correct': bool(it.get('correct')), 'timedOut': bool(it.get('timedOut'))}
+                    for it in (r.get('questionResults') or [])
+                    if isinstance(it, dict) and isinstance(it.get('id'), str)
+                ],
             })
             kept += 1
         if kept == 0:
@@ -141,6 +148,18 @@ def pct(x):
 
 def bar(ratio, width=16):
     return '█' * round(max(0.0, min(1.0, ratio)) * width)
+
+
+def load_bank():
+    """문항별 분석에 쓸 문제 은행. 없으면 빈 딕셔너리."""
+    bank = {}
+    for path in sorted(glob.glob('data/*.json')):
+        try:
+            for q in json.load(open(path, encoding='utf-8')):
+                bank[q['id']] = q
+        except Exception:
+            continue
+    return bank
 
 # ── 등급 규칙 ──────────────────────────────────────────────────
 # 정의는 /create-report 에 있다. 세 명령어가 같은 값을 갖는지 아래에서 스스로 검사한다.
@@ -330,6 +349,65 @@ if not retried:
     tips.append('같은 과제를 두 번 푼 학생이 없습니다. 재응시는 해설을 읽었는지 확인하는 가장 쉬운 방법입니다.')
 for i, t in enumerate(tips, 1):
     print(f'  {i}. {t}')
+
+# ── 9. 문항별 분석 ─────────────────────────────────────────────
+print('\n[9] 문항별 분석')
+with_items = [r for r in records if r['items']]
+if not with_items:
+    print('  문항별 기록이 있는 제출물이 없습니다.')
+    print('  앱을 고치기 전에 푼 기록에는 문항 정오가 없습니다. 새로 응시한 기록부터 잡힙니다.')
+else:
+    if len(with_items) < len(records):
+        print(f'  ※ {len(records) - len(with_items)}건은 문항 기록이 없어 제외했습니다 (앱 개선 이전 기록).')
+    bank = load_bank()
+    tally = {}
+    for r in with_items:
+        for it in r['items']:
+            t = tally.setdefault(it['id'], {'n': 0, 'ok': 0, 'to': 0})
+            t['n'] += 1
+            t['ok'] += it['correct']
+            t['to'] += it['timedOut']
+    rows = []
+    for qid, t in tally.items():
+        q = bank.get(qid, {})
+        rows.append({'id': qid, 'n': t['n'], 'acc': t['ok'] / t['n'], 'to': t['to'] / t['n'],
+                     'diff': q.get('difficulty', '?'), 'cat': q.get('category'),
+                     'q': q.get('question', '(문제 은행에 없음)')})
+    rows.sort(key=lambda x: x['acc'])
+    print(f'  집계 {len(rows)}문항 · 응시 {len(with_items)}건')
+
+    print('\n  가장 많이 틀린 문항')
+    for r in rows[:5]:
+        print(f"    {pct(r['acc']):>5} ({r['n']}명)  [{r['id']}] {r['diff']:<6} {r['q'][:34]}")
+
+    perfect = [r for r in rows if r['acc'] >= 1.0 and r['n'] >= 2]
+    if perfect:
+        print(f'\n  모두 맞힌 문항 {len(perfect)}개 — 변별이 되지 않는다')
+        for r in perfect[:5]:
+            print(f"    [{r['id']}] {r['diff']:<6} {r['q'][:40]}")
+
+    # 선언 난이도와 실제 정답률이 어긋난 문항
+    EXPECT = {'easy': 0.70, 'normal': 0.45, 'hard': 0.0}
+    mismatch = []
+    for r in rows:
+        if r['diff'] not in EXPECT or r['n'] < 2:
+            continue
+        if r['diff'] == 'easy' and r['acc'] < 0.50:
+            mismatch.append((r, 'easy 인데 정답률이 낮다 → hard 로 내리거나 문항을 점검'))
+        elif r['diff'] == 'hard' and r['acc'] >= 0.90:
+            mismatch.append((r, 'hard 인데 다 맞힌다 → easy 로 올리거나 난도를 높임'))
+    if mismatch:
+        print(f'\n  선언 난이도와 어긋난 문항 {len(mismatch)}개')
+        for r, why in mismatch[:6]:
+            print(f"    [{r['id']}] {r['diff']} · 실제 {pct(r['acc'])} — {why}")
+        print('    → /quiz-range 로 해당 번호대를 열어 난이도를 조정하세요')
+
+    timeouts = [r for r in rows if r['to'] >= 0.30 and r['n'] >= 2]
+    if timeouts:
+        print(f'\n  시간 초과가 잦은 문항 {len(timeouts)}개 — 몰라서가 아니라 시간이 모자란 것일 수 있다')
+        for r in timeouts[:5]:
+            print(f"    [{r['id']}] 시간 초과 {pct(r['to'])} · 정답률 {pct(r['acc'])}  {r['q'][:30]}")
+
 PY
 ```
 
@@ -372,6 +450,21 @@ PY
 스크립트가 데이터에서 뽑은 초안이다. **그대로 옮기지 말고 판단을 붙인다.**
 반 사정을 아는 것은 선생님이지 스크립트가 아니다. 맞지 않는 제안은 왜 맞지 않는지 적는다.
 
+### 문항별 분석 (9구획)
+
+앱이 문항별 정오를 저장하게 되면서 가능해진 분석이다. **문항 단위로 무엇이 무너졌는지** 보여준다.
+
+- **가장 많이 틀린 문항** — 반이 모르는 지점이다. 다음 수업에서 그 내용을 다룬다
+- **모두 맞힌 문항** — 변별이 되지 않는다. 난도를 올리거나 교체를 검토한다
+- **선언 난이도와 어긋난 문항** — `easy` 인데 정답률이 낮거나 `hard` 인데 다 맞히는 경우다.
+  **문항의 문제일 수도, 학생의 문제일 수도 있다.** 정답률이 유독 낮으면 학생이 모르는 것인지
+  문항이 잘못된 것인지 `/quiz-check` 로 정답과 보기를 먼저 점검한다
+- **시간 초과가 잦은 문항** — 몰라서 틀린 것과 다르다. 질문이 길거나 계산이 필요한 경우가 많다.
+  내용을 더 가르칠 게 아니라 문항을 다듬을 신호다
+
+**문항 기록이 없는 제출물은 제외된다.** 앱 개선 이전에 푼 기록에는 문항 정오가 없다.
+제외된 건수를 함께 찍으므로, 그 수가 많으면 분석 표본이 작다는 뜻이다.
+
 ## 3. 출력
 
 구획별 숫자를 그대로 나열하지 말고 **읽고 판단해서** 다시 쓴다.
@@ -386,8 +479,8 @@ PY
 ## 반드시 밝힐 한계
 
 - **제출한 학생만 보인다.** 안 낸 학생은 데이터에 없다. 반 평균이 아니라 제출자 평균이다
-- **문항별로 무엇을 틀렸는지 알 수 없다.** 앱이 한 판의 요약만 저장한다.
-  "3번 문제를 반의 80% 가 틀렸다" 는 분석은 앱을 고쳐야 가능하다
+- **문항별 분석은 앱 개선 이후 기록에만 적용된다.** 그 이전에 푼 기록에는 문항 정오가 없어
+  9구획에서 제외된다. 표본이 적으면 문항 정답률이 한두 명으로 흔들린다
 - **표본이 작으면 등급과 순위가 한두 문항으로 뒤집힌다.** 열 명 미만이면 단정하지 않는다
 - **소요 시간은 평가에 쓰지 않는다.** 곱씹을 시간을 보장한다는 설계 원칙(PRD 2.1)과 충돌한다
 - **미응시 분야가 있는 학생의 등급은 푼 분야만으로 계산된다.** 같은 잣대가 아니다
