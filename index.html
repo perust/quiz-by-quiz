@@ -58,24 +58,51 @@
         <p class="home-subtitle">카테고리를 골라 한 판 풀어보세요. 문항당 20초입니다.</p>
       </header>
 
-      <div class="category-grid" id="category-grid"></div>
+      <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
+           버튼은 그대로 눌러도 되고, 걷기는 게임 모드 조작을 미리 익히는 길이다. -->
+      <div class="home-stage" id="home-stage">
+        <div class="home-menu">
+          <button type="button" class="menu-card" id="open-characters">
+            <span class="menu-card__figure" id="my-character-figure" aria-hidden="true"></span>
+            <span class="menu-card__body">
+              <span class="menu-card__name">내 캐릭터</span>
+              <span class="menu-card__desc" id="my-character-name">파랑 슬라임</span>
+            </span>
+          </button>
+          <button type="button" class="menu-card" id="open-ranking" disabled>
+            <span class="menu-card__figure" aria-hidden="true">🏅</span>
+            <span class="menu-card__body">
+              <span class="menu-card__name">랭킹 보기</span>
+              <span class="menu-card__desc">내 최고 기록</span>
+            </span>
+          </button>
+        </div>
 
-      <!-- 전체 도전 (FR-2.2)
-           이 둘은 정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
-           눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
-           home.js가 리스너를 단 뒤 열어준다. -->
-      <button type="button" class="challenge-card" id="start-all" disabled>
-        <span class="challenge-card__icon" aria-hidden="true">🏆</span>
-        <span class="challenge-card__body">
-          <span class="challenge-card__name">전체 도전</span>
-          <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
-        </span>
-        <span class="challenge-card__meta" id="start-all-meta">불러오는 중…</span>
-      </button>
+        <div class="category-grid" id="category-grid"></div>
 
-      <div class="home-actions">
-        <button type="button" class="button button--ghost" id="open-ranking" disabled>랭킹 보기</button>
+        <!-- 전체 도전 (FR-2.2)
+             이 둘은 정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
+             눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
+             home.js가 리스너를 단 뒤 열어준다. -->
+        <button type="button" class="challenge-card" id="start-all" disabled>
+          <span class="challenge-card__icon" aria-hidden="true">🏆</span>
+          <span class="challenge-card__body">
+            <span class="challenge-card__name">전체 도전</span>
+            <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
+          </span>
+          <span class="challenge-card__meta" id="start-all-meta">불러오는 중…</span>
+        </button>
+
+        <!-- 홈을 걸어 다니는 캐릭터. 몸통은 sprite.js가 그려 넣는다 -->
+        <div class="walker walker--home" id="home-character" aria-hidden="true">
+          <span class="walker__shadow"></span>
+        </div>
       </div>
+
+      <p class="home-hint" aria-hidden="true">
+        <span class="home-hint-key">방향키로 캐릭터를 움직이고 Enter/Space로 고를 수 있어요</span>
+        <span class="home-hint-touch">스틱으로 캐릭터를 움직이고 메뉴를 눌러 고를 수 있어요</span>
+      </p>
 
       <p class="home-note" id="home-note" role="alert" hidden></p>
     </section>
@@ -124,10 +151,9 @@
       <div class="arena" id="arena" hidden>
         <div class="arena__stage" aria-hidden="true">
           <div class="arena__grid" id="arena-tiles"></div>
-          <!-- 그림자는 땅에 남고 몸통만 튄다. 눈이 몸통 안에 있어야 함께 움직인다 -->
-          <div class="arena__character" id="arena-character">
-            <span class="arena__shadow"></span>
-            <span class="arena__body"><span class="arena__face"></span></span>
+          <!-- 그림자는 땅에 남고 몸통만 튄다. 몸통은 sprite.js가 그려 넣는다 -->
+          <div class="walker" id="arena-character">
+            <span class="walker__shadow"></span>
           </div>
         </div>
 
@@ -137,13 +163,6 @@
           <span class="arena__hint-key">방향키와 Enter/Space로 조작하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 바닥을 눌러 고르세요</span>
         </p>
-
-        <!-- 손가락으로 미는 이동 스틱. 손가락 입력이 있는 기기에서만 그린다.
-             화면에 띄워(position: fixed) 세로 자리를 차지하지 않는다.
-             z-index를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. -->
-        <div class="arena__stick" id="arena-stick" aria-hidden="true">
-          <span class="arena__knob" id="arena-knob"></span>
-        </div>
       </div>
 
       <div class="feedback" id="feedback" role="status" hidden>
@@ -154,6 +173,23 @@
           <span id="next-label">다음 문제</span>
           <span class="key-hint" aria-hidden="true">Space/Enter <kbd class="key-hint__key">↵</kbd></span>
         </button>
+      </div>
+    </section>
+
+    <!-- ─────────── 내 캐릭터 ─────────── -->
+    <section class="screen" data-screen="characters" aria-labelledby="characters-title" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <h1 class="screen-title" id="characters-title">내 캐릭터</h1>
+        <button type="button" class="button button--ghost" id="characters-back">홈으로</button>
+      </header>
+
+      <p class="screen-lead">캐릭터를 걸어서 올라가면 그 자리에서 바꿔 볼 수 있어요.</p>
+
+      <div class="character-stage" id="character-stage">
+        <div class="character-grid" id="character-grid"></div>
+        <div class="walker walker--home" id="character-walker" aria-hidden="true">
+          <span class="walker__shadow"></span>
+        </div>
       </div>
     </section>
 
@@ -242,6 +278,12 @@
       </div>
     </section>
 
+    <!-- 공용 이동 스틱. 손가락 입력이 있는 기기에서만, 걸어 다닐 수 있는 화면에서만 그린다.
+         화면에 띄워(position: fixed) 세로 자리를 차지하지 않는다.
+         z-index를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. -->
+    <div class="walk-stick" id="walk-stick" aria-hidden="true">
+      <span class="walk-stick__knob" id="walk-knob"></span>
+    </div>
   </main>
 
   <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->

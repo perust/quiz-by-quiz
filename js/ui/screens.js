@@ -3,7 +3,7 @@
 // 해시 라우팅을 쓰지 않으므로 새로고침하면 항상 홈에서 시작한다.
 
 /**
- * @param {'home'|'quiz'|'result'|'ranking'} name 보여줄 화면 이름
+ * @param {'home'|'quiz'|'characters'|'result'|'ranking'} name 보여줄 화면 이름
  */
 export function showScreen(name) {
   let target = null;

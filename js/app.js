@@ -13,6 +13,8 @@ import { createHomeScreen } from './ui/home.js';
 import { createQuizScreen } from './ui/quiz.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
+import { createCharactersScreen } from './ui/characters-screen.js';
+import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
 
 const ALL_MODE_LABEL = '전체 도전';
 
@@ -117,10 +119,24 @@ async function main() {
 
   // ── 화면 ───────────────────────────────────────────────────────
 
+  // 쓰고 있는 캐릭터. 없는 id가 저장돼 있어도 findCharacter가 기본값으로 되돌린다
+  let characterId = findCharacter(settings.characterId ?? DEFAULT_CHARACTER_ID).id;
+
   const homeScreen = createHomeScreen({
     onSelectCategory: (categoryId) => startRound({ mode: 'category', categoryId }),
     onStartAll: () => startRound({ mode: 'all', categoryId: null }),
     onOpenRanking: () => openRanking(),
+    onOpenCharacters: () => openCharacters(),
+  });
+
+  const charactersScreen = createCharactersScreen({
+    // 칸에 올라선 것만으로 바뀐다. 고르는 순간이 곧 미리보기다
+    onSelect: (id) => {
+      characterId = id;
+      quizScreen.setCharacter(id);
+      preferences.setSettings({ characterId: id });
+    },
+    onBack: goHome,
   });
 
   const quizScreen = createQuizScreen({
@@ -138,6 +154,7 @@ async function main() {
     onChange: (enabled) => preferences.setSettings({ gameMode: enabled }),
   });
   gameModeToggle.set(settings.gameMode);
+  quizScreen.setCharacter(characterId);
 
   const resultScreen = createResultScreen({
     onRetry: () => (lastRound ? startRound(lastRound) : goHome()),
@@ -183,12 +200,14 @@ async function main() {
   }
 
   async function goHome() {
+    charactersScreen.hide();
     homeScreen.render({
       categories: CATEGORIES,
       banks,
       bestScores: await loadBestScores(),
       allCount: allModeCount(),
       questionsPerRound: QUESTIONS_PER_ROUND,
+      characterId,
     });
     showScreen('home');
   }
@@ -230,6 +249,7 @@ async function main() {
       categoryId: round.categoryId,
     });
 
+    homeScreen.hide();
     showScreen('quiz');
     quizScreen.start(session, { categoryLabel: labelFor(round) });
   }
@@ -300,8 +320,17 @@ async function main() {
   // ── 랭킹 ───────────────────────────────────────────────────────
 
   async function openRanking(target = null) {
+    homeScreen.hide();
     await rankingScreen.show({ target, highlightId: registeredId });
     showScreen('ranking');
+  }
+
+  // ── 내 캐릭터 ──────────────────────────────────────────────────
+
+  function openCharacters() {
+    homeScreen.hide();
+    showScreen('characters');
+    charactersScreen.show(characterId);
   }
 
   // ── 시작 ───────────────────────────────────────────────────────

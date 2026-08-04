@@ -352,6 +352,11 @@ export function createQuizScreen({ onExit, onComplete }) {
       renderQuestion();
     },
 
+    /** 무대에서 쓸 캐릭터를 갈아 끼운다. 홈에서 고른 것이 여기로 온다 */
+    setCharacter(id) {
+      arena.setCharacter(id);
+    },
+
     /**
      * 게임 모드를 켜고 끈다. 판 도중에 바꿔도 세션은 그대로다 —
      * 무대는 보기 버튼을 대신 눌러줄 뿐이라 게임 상태를 갖지 않는다.
