@@ -42,8 +42,6 @@ export function createArena({ onChoose, trapFocus }) {
     root: document.getElementById('arena'),
     character: document.getElementById('arena-character'),
     tiles: document.getElementById('arena-tiles'),
-    pad: document.querySelector('.arena__pad'),
-    pick: document.getElementById('arena-pick'),
     help: document.getElementById('arena-help'),
     helpDialog: document.getElementById('help-dialog'),
     helpClose: document.getElementById('help-close'),
@@ -70,8 +68,6 @@ export function createArena({ onChoose, trapFocus }) {
    */
   const held = new Set();
 
-  const directionButtons = [...el.pad.querySelectorAll('[data-dx]')];
-
   /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let helpOpener = null;
 
@@ -95,14 +91,10 @@ export function createArena({ onChoose, trapFocus }) {
 
   // ── 잠금 ───────────────────────────────────────────────────────
 
-  /** 답을 낸 뒤에는 조작부가 눌리지 않는다는 것을 눈으로도 알린다 */
+  /** 답을 낸 뒤에는 바닥이 눌리지 않는다는 것을 눈으로도 알린다 */
   function setLocked(value) {
     locked = value;
     el.root.classList.toggle('arena--locked', value);
-    el.pick.disabled = value;
-    directionButtons.forEach((button) => {
-      button.disabled = value;
-    });
   }
 
   // ── 캐릭터 위치 ────────────────────────────────────────────────
@@ -240,13 +232,6 @@ export function createArena({ onChoose, trapFocus }) {
 
   // ── 입력 ───────────────────────────────────────────────────────
 
-  directionButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      step(Number(button.dataset.dx), Number(button.dataset.dy));
-    });
-  });
-
-  el.pick.addEventListener('click', () => pick());
   el.help.addEventListener('click', openHelp);
   el.helpClose.addEventListener('click', closeHelp);
 
@@ -352,7 +337,7 @@ export function createArena({ onChoose, trapFocus }) {
       if (locked) return false;
 
       if (PICK_KEYS.includes(event.key)) {
-        if (document.activeElement?.closest('.choice, .pad-button, .arena__help')) return false;
+        if (document.activeElement?.closest('.choice, .arena__help')) return false;
         pick();
         return true;
       }
