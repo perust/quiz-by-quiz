@@ -34,6 +34,7 @@ export function createQuizScreen({ onExit, onComplete }) {
     verdict: document.getElementById('feedback-verdict'),
     explanation: document.getElementById('feedback-explanation'),
     nextButton: document.getElementById('next-button'),
+    nextLabel: document.getElementById('next-label'),
     exitButton: document.getElementById('quiz-exit'),
     dialog: document.getElementById('exit-dialog'),
     dialogCancel: document.getElementById('exit-cancel'),
@@ -232,7 +233,8 @@ export function createQuizScreen({ onExit, onComplete }) {
     }
     el.explanation.textContent = question.explanation;
 
-    el.nextButton.textContent = session.hasNext() ? '다음 문제' : '결과 보기';
+    // 버튼이 아니라 글자 span만 바꾼다. 버튼째 갈아치우면 Enter 표시가 지워진다
+    el.nextLabel.textContent = session.hasNext() ? '다음 문제' : '결과 보기';
 
     // 자동 전환 없이 "다음 문제" 버튼을 눌러야 넘어간다 (FR-4.4)
     el.feedback.hidden = false;
@@ -306,6 +308,20 @@ export function createQuizScreen({ onExit, onComplete }) {
     if (arena.handleDialogKey(event)) return;
 
     if (el.screen.hidden || !session) return;
+
+    // 게임 모드는 «다음 문제» 버튼에 Enter라고 적어 두었으므로,
+    // 포커스가 버튼에서 벗어나 있어도 그 말이 참이어야 한다.
+    // 어떤 버튼에든 포커스가 있으면 건드리지 않는다 — 그건 브라우저가 알아서 누른다.
+    if (
+      arena.isEnabled()
+      && event.key === 'Enter'
+      && !el.feedback.hidden
+      && !document.activeElement?.closest('button')
+    ) {
+      event.preventDefault();
+      goNext();
+      return;
+    }
 
     const index = CHOICE_KEYS.indexOf(event.key);
     if (index !== -1 && index < session.currentQuestion().choices.length) {

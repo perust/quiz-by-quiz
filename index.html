@@ -149,7 +149,11 @@
       <div class="feedback" id="feedback" role="status" hidden>
         <p class="feedback__verdict" id="feedback-verdict"></p>
         <p class="feedback__explanation" id="feedback-explanation"></p>
-        <button type="button" class="button button--primary" id="next-button">다음 문제</button>
+        <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
+        <button type="button" class="button button--primary" id="next-button">
+          <span id="next-label">다음 문제</span>
+          <span class="key-hint" aria-hidden="true">Enter <kbd class="key-hint__key">↵</kbd></span>
+        </button>
       </div>
     </section>
 
