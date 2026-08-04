@@ -69,14 +69,15 @@ export function createCharactersScreen({ onSelect, onBack }) {
     el.grid.replaceChildren();
     cards.length = 0;
 
-    CHARACTERS.forEach((character, index) => {
+    CHARACTERS.forEach((character) => {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'character-card';
       card.dataset.characterId = character.id;
-      // 이름을 붙이지 않는다 — 무엇으로 보이는지는 보는 사람이 정한다.
-      // 다만 아무 이름도 없으면 스크린리더가 읽을 것이 없어 자리 번호로 알린다
-      card.setAttribute('aria-label', `캐릭터 ${index + 1}`);
+      // 이름은 화면에 그리지 않는다 — 무엇으로 보이는지는 보는 사람이 정한다.
+      // 다만 그림만 있는 버튼은 눈으로 볼 수 없는 사람에게 아무것도 아니라
+      // 스크린리더에는 이름을 알려준다
+      card.setAttribute('aria-label', character.name);
 
       card.append(createPreview(character.id));
       // 눌러도 걸어가서 고른다. 손가락은 이쪽이 편하다
