@@ -1161,10 +1161,12 @@ body.is-booted .app-bar {
 /* ── 바닥 ──
    칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
    선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */
+/* 칸 사이 틈이 곧 십자선이자 «아무 칸도 아닌 자리»다.
+   캐릭터는 여기 한가운데에서 시작하므로 눈에 보일 만큼 넓혀 둔다. */
 .arena__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 7px;
+  gap: 10px;
   padding: 7px;
   /* --border 는 페이지 배경과 가까워 십자선이 묻힌다. 한 단계 진한 값을 쓴다 */
   background: #ccd2dd;
@@ -1254,6 +1256,7 @@ body.is-booted .app-bar {
 
 /* ── 캐릭터 ──
    바닥 위에 겹쳐 놓는다. 칸을 누르는 것을 막지 않도록 클릭은 통과시킨다. */
+/* 좌표는 매 프레임 JS가 직접 넣는다. transition을 걸면 입력이 굼떠지므로 걸지 않는다 */
 .arena__character {
   position: absolute;
   top: 0;
@@ -1261,8 +1264,6 @@ body.is-booted .app-bar {
   width: 34px;
   height: 42px;
   pointer-events: none;
-  /* 살짝 튕기며 멈춰 건너간 느낌을 준다. JS의 WALK_MS와 길이를 맞춘다 */
-  transition: transform 0.22s cubic-bezier(0.34, 1.16, 0.64, 1);
   will-change: transform;
 }
 
@@ -1311,8 +1312,9 @@ body.is-booted .app-bar {
   left: 12px;
 }
 
+/* 움직이는 동안 계속 돈다. 멈추면 클래스가 빠져 제자리로 돌아온다 */
 .arena__character--walking {
-  animation: arena-walk 0.22s ease;
+  animation: arena-walk 0.32s ease-in-out infinite;
 }
 
 .arena__character--hop {
@@ -1325,9 +1327,9 @@ body.is-booted .app-bar {
 }
 
 @keyframes arena-walk {
-  0% { translate: 0 0; }
-  50% { translate: 0 -7px; rotate: -5deg; }
-  100% { translate: 0 0; rotate: 0deg; }
+  0% { translate: 0 0; rotate: -4deg; }
+  50% { translate: 0 -5px; rotate: 4deg; }
+  100% { translate: 0 0; rotate: -4deg; }
 }
 
 @keyframes arena-hop {
