@@ -140,6 +140,34 @@ def pct(x):
 def bar(ratio, width=16):
     return '█' * round(max(0.0, min(1.0, ratio)) * width)
 
+# ── 등급 규칙 ──────────────────────────────────────────────────
+# 정의는 /create-report 에 있다. 여기서는 그 규칙을 그대로 따른다.
+# 값을 고칠 일이 있으면 두 파일을 함께 고쳐야 한다.
+CUTS = ((0.20, 'A'), (0.40, 'B'), (0.70, 'C'))
+EPS = 1e-9
+
+
+def grade_of(ratio):
+    for cut, g in CUTS:
+        if ratio <= cut + EPS:
+            return g
+    return 'D'
+
+
+def assign(pairs):
+    """[(값, 이름)] → ({이름: 등급}, {이름: 순위}, {이름: 상위비율}). 동점은 같은 등급."""
+    n = len(pairs)
+    rank, prev = 0, None
+    grades, ranks, ratios = {}, {}, {}
+    for i, (v, name) in enumerate(sorted(pairs, key=lambda x: -x[0]), 1):
+        if prev is None or v != prev:
+            rank, prev = i, v
+        ranks[name] = rank
+        ratios[name] = rank / n
+        grades[name] = grade_of(rank / n)
+    return grades, ranks, ratios
+
+
 # ── 통합 실행 ──────────────────────────────────────────────────
 records, problems = load()
 
@@ -186,8 +214,7 @@ for t in [t for t in re.split(r'[\s,]+', (os.environ.get('QUIZ_ARGS') or '').str
     if resolve_category(t):
         want = resolve_category(t)
 
-print(f"  {'학생':<8}" + ''.join(f'{KO[c]:>8}' for c in CATEGORIES) + f"{'전체도전':>9}{'평균':>7}")
-table = []
+table, rows_cache = [], {}
 for name, rows in students.items():
     cells, vals = [], []
     for c in CATEGORIES:
@@ -200,7 +227,14 @@ for name, rows in students.items():
     acell = pct(max(r['accuracy'] for r in alls)) if alls else '-'
     mean = sum(vals) / len(vals) if vals else 0
     table.append((mean, name))
-    print(f'  {name:<8}' + ''.join(f'{x:>8}' for x in cells) + f'{acell:>9}{pct(mean):>7}')
+    rows_cache[name] = (cells, acell, mean)
+
+grades, ranks, ratios = assign(table)
+print(f"  {'등급':<4}{'학생':<8}" + ''.join(f'{KO[c]:>8}' for c in CATEGORIES) + f"{'전체도전':>9}{'평균':>7}")
+for mean, name in sorted(table, key=lambda x: -x[0]):
+    cells, acell, _ = rows_cache[name]
+    print(f'  {grades[name]:<4}{name:<8}' + ''.join(f'{x:>8}' for x in cells) + f'{acell:>9}{pct(mean):>7}')
+print('  등급: 상위 20% A · 40% B · 70% C · 나머지 D (동점은 같은 등급, /create-report 와 같은 규칙)')
 
 if want:
     pool = [(max(r['accuracy'] for r in students[n] if r['mode'] == 'category' and r['category'] == want), n)
@@ -216,7 +250,8 @@ prev, rank = None, 0
 for i, (acc, name) in enumerate(pool, 1):
     if acc != prev:
         rank, prev = i, acc
-    print(f'   {rank:>2}위  {name:<8}{pct(acc):>7}  {bar(acc)}')
+    g = grades.get(name, grade_of(rank / len(pool)))
+    print(f'   {rank:>2}위  {g}  {name:<8}{pct(acc):>7}  {bar(acc)}')
 
 print('\n━━━ 4단계 · 관심 학생 ━━━')
 means = sorted(table)
@@ -248,6 +283,30 @@ for name in dict.fromkeys(watch + [n for _, n in spread]):
         print(f'      {KO[c]:<7}{pct(mine):>6}  반 평균 대비 {diff*100:+4.0f}%p  {mark}')
 PY
 ```
+
+## 3단계 — 등급은 어디서 오나
+
+대시보드가 보여주는 **A~D 등급의 분류 규칙은 `/create-report` 가 정의한다.**
+이 명령어는 그 규칙을 그대로 따라 쓴다.
+
+| 등급 | 기준 |
+| --- | --- |
+| A | 상위 20% 이내 |
+| B | 상위 40% 이내 |
+| C | 상위 70% 이내 |
+| D | 나머지 (하위 30%) |
+
+**동점은 같은 등급이다.** 경계에 동점자가 걸리면 모두 위 등급을 준다.
+산정 값은 카테고리별 최고 기록의 평균 정답률이다.
+
+**규칙 값을 바꿀 일이 생기면 `/create-report` 와 이 파일을 함께 고친다.**
+한쪽만 고치면 같은 학생이 두 명령어에서 다른 등급을 받는다.
+
+성적표 형태로 발급하려면 `/create-report` 를 쓴다. 분야별 등급과 학생별 카드까지 나온다.
+대시보드는 반 전체를 한눈에 보는 용도라 종합 등급만 붙인다.
+
+**등급은 상대 평가다.** 반 전체가 잘해도 누군가는 D 를 받는다. 절대 실력을 뜻하지 않으므로
+등급 옆의 정답률을 반드시 함께 읽는다.
 
 ## 4단계 판정 — 누구를 볼 것인가
 
