@@ -121,11 +121,11 @@ export function createArena({ onChoose, trapFocus }) {
     const box = tile.getBoundingClientRect();
     if (box.width === 0) return; // 아직 배치되지 않았다
 
+    // 발을 칸 아래쪽에 붙인다. 번호와 채점 표시는 칸 위쪽에 있으므로
+    // 칸이 좁아져도 서로 겹치지 않는다. 칸 높이가 바뀌어도 그대로 맞는다.
     const x = box.left - base.left + box.width / 2;
-    const y = box.top - base.top + box.height / 2;
-    // 세로는 한가운데보다 조금 위에 둔다. 발밑 그림자가 칸 안에 들어와
-    // 칸을 딛고 선 것처럼 보이고, 아래쪽 채점 표시와도 겹치지 않는다
-    el.character.style.transform = `translate(${x}px, ${y}px) translate(-50%, -56%)`;
+    const y = box.bottom - base.top - 10;
+    el.character.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
   }
 
   /** 서 있는 칸에 불을 켠다 */
