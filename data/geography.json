@@ -128,5 +128,85 @@
     "explanation": "울릉도에서 동남쪽으로 약 87km 떨어져 있어, 맑은 날에는 울릉도에서 보입니다.",
     "difficulty": "easy",
     "tags": ["한국지리", "섬"]
+  },
+  {
+    "id": "geography-014",
+    "category": "geography",
+    "question": "지구를 북반구와 남반구로 나누는 위도 0°의 선을 무엇이라 하는가?",
+    "choices": ["적도", "날짜변경선", "북회귀선", "남회귀선"],
+    "answerIndex": 0,
+    "explanation": "이 선에서 남북으로 멀어질수록 위도가 높아지며 각각 90°까지 매깁니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "좌표"]
+  },
+  {
+    "id": "geography-015",
+    "category": "geography",
+    "question": "지도에서 해발 고도가 같은 지점을 이어 땅의 높낮이를 나타낸 선은?",
+    "choices": ["등압선", "등온선", "등고선", "해안선"],
+    "answerIndex": 2,
+    "explanation": "선의 간격이 좁을수록 경사가 가파릅니다. 등압선은 기압, 등온선은 기온이 같은 곳을 잇습니다.",
+    "difficulty": "easy",
+    "tags": ["지리일반", "지도"]
+  },
+  {
+    "id": "geography-016",
+    "category": "geography",
+    "question": "정상에 천지라는 호수가 있는, 북한과 중국의 국경에 걸친 산은?",
+    "choices": ["금강산", "백두산", "한라산", "지리산"],
+    "answerIndex": 1,
+    "explanation": "화산이 분출한 뒤 꺼져 내린 자리에 물이 고여 만들어진 칼데라호입니다.",
+    "difficulty": "easy",
+    "tags": ["한국지리", "산"]
+  },
+  {
+    "id": "geography-017",
+    "category": "geography",
+    "question": "세계 표준시의 기준이 되는 본초자오선(경도 0°)이 지나는 영국 런던의 지역은?",
+    "choices": ["옥스퍼드", "케임브리지", "웨스트민스터", "그리니치"],
+    "answerIndex": 3,
+    "explanation": "이곳 천문대를 지나는 선을 1884년 국제회의에서 경도의 기준으로 삼기로 정했습니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "시간"]
+  },
+  {
+    "id": "geography-018",
+    "category": "geography",
+    "question": "아프리카 북부에 펼쳐진, 더운 사막 가운데 면적이 가장 넓은 곳은?",
+    "choices": ["고비 사막", "칼라하리 사막", "아타카마 사막", "사하라 사막"],
+    "answerIndex": 3,
+    "explanation": "이집트에서 대서양 연안까지 여러 나라에 걸쳐 있고, 남쪽 가장자리는 사헬이라 불리는 반건조 지대로 이어집니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "사막"]
+  },
+  {
+    "id": "geography-019",
+    "category": "geography",
+    "question": "남아메리카에서 포르투갈어를 공용어로 쓰는 나라는?",
+    "choices": ["브라질", "아르헨티나", "콜롬비아", "페루"],
+    "answerIndex": 0,
+    "explanation": "식민지 시기 포르투갈의 지배를 받은 영향이며, 이 대륙의 다른 나라들은 대부분 에스파냐어를 씁니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "언어"]
+  },
+  {
+    "id": "geography-020",
+    "category": "geography",
+    "question": "면적을 기준으로 세계에서 가장 작은 독립국은?",
+    "choices": ["모나코", "산마리노", "바티칸 시국", "리히텐슈타인"],
+    "answerIndex": 2,
+    "explanation": "넓이가 0.44㎢에 지나지 않으며, 이탈리아 로마 시내에 완전히 둘러싸여 있습니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-021",
+    "category": "geography",
+    "question": "빙하가 깎아낸 골짜기에 바닷물이 들어차 만들어진, 노르웨이 해안에 발달한 좁고 깊은 만은?",
+    "choices": ["삼각주", "피오르", "석호", "카르스트"],
+    "answerIndex": 1,
+    "explanation": "양옆이 절벽처럼 서고 물이 깊어 큰 배가 안쪽까지 들어갑니다. 뉴질랜드와 칠레 남부 해안에도 발달했습니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "지형"]
   }
 ]
