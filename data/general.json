@@ -1,0 +1,102 @@
+[
+  {
+    "id": "general-001",
+    "category": "general",
+    "question": "1년 열두 달 중 날수가 가장 적은 달은?",
+    "choices": ["1월", "2월", "4월", "11월"],
+    "answerIndex": 1,
+    "explanation": "2월은 28일까지 있고, 윤년에만 29일이 됩니다.",
+    "difficulty": "easy",
+    "tags": ["달력"]
+  },
+  {
+    "id": "general-002",
+    "category": "general",
+    "question": "하계 올림픽은 원칙적으로 몇 년마다 열리는가?",
+    "choices": ["2년", "3년", "4년", "5년"],
+    "answerIndex": 2,
+    "explanation": "고대 올림피아 경기의 4년 주기를 이어받아 근대 올림픽도 4년마다 개최합니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-003",
+    "category": "general",
+    "question": "세계보건기구를 가리키는 영문 약자는?",
+    "choices": ["WTO", "WHO", "UNESCO", "UNICEF"],
+    "answerIndex": 1,
+    "explanation": "World Health Organization의 머리글자로, 보건 분야를 맡은 국제연합 전문기구입니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구"]
+  },
+  {
+    "id": "general-004",
+    "category": "general",
+    "question": "무지개의 색을 흔히 몇 가지로 나누어 말하는가?",
+    "choices": ["7가지", "5가지", "6가지", "8가지"],
+    "answerIndex": 0,
+    "explanation": "뉴턴이 빨강부터 보라까지 일곱으로 나눈 관습에서 왔습니다. 실제 빛의 띠는 끊김 없이 이어집니다.",
+    "difficulty": "easy",
+    "tags": ["과학상식", "색"]
+  },
+  {
+    "id": "general-005",
+    "category": "general",
+    "question": "축구 경기에서 한 팀이 경기장에 동시에 나설 수 있는 선수는 몇 명인가?",
+    "choices": ["11명", "9명", "10명", "12명"],
+    "answerIndex": 0,
+    "explanation": "골키퍼 한 명을 포함한 수이며, 퇴장 등으로 7명 미만이 되면 경기를 이어갈 수 없습니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "축구"]
+  },
+  {
+    "id": "general-006",
+    "category": "general",
+    "question": "국제연합(UN) 본부가 있는 도시는?",
+    "choices": ["제네바", "파리", "빈", "뉴욕"],
+    "answerIndex": 3,
+    "explanation": "이스트강 변에 1950년대 초 세워진 건물을 지금까지 쓰고 있습니다. 제네바와 빈에도 사무국이 있습니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구"]
+  },
+  {
+    "id": "general-007",
+    "category": "general",
+    "question": "평화상을 제외한 노벨상 시상식이 해마다 열리는 나라는?",
+    "choices": ["노르웨이", "덴마크", "핀란드", "스웨덴"],
+    "answerIndex": 3,
+    "explanation": "노벨의 유언에 따라 스톡홀름에서 열리며, 평화상만 오슬로에서 따로 시상합니다.",
+    "difficulty": "normal",
+    "tags": ["국제", "노벨상"]
+  },
+  {
+    "id": "general-008",
+    "category": "general",
+    "question": "다음 가운데 대한민국의 국경일이 아닌 날은?",
+    "choices": ["현충일", "제헌절", "개천절", "한글날"],
+    "answerIndex": 0,
+    "explanation": "국경일은 3·1절·제헌절·광복절·개천절·한글날 다섯입니다. 현충일은 국경일이 아닌 법정 기념일입니다.",
+    "difficulty": "normal",
+    "tags": ["법", "기념일"]
+  },
+  {
+    "id": "general-009",
+    "category": "general",
+    "question": "대한민국 헌법 개정안을 국회 의결 뒤 최종적으로 확정하는 절차는?",
+    "choices": ["대통령 공포", "헌법재판소 심판", "국민투표", "국무회의 의결"],
+    "answerIndex": 2,
+    "explanation": "국회 재적 의원 3분의 2 이상이 찬성해 의결한 뒤, 국민투표에서 과반수가 찬성해야 확정됩니다.",
+    "difficulty": "hard",
+    "tags": ["법", "헌법"]
+  },
+  {
+    "id": "general-010",
+    "category": "general",
+    "question": "오케스트라가 연주를 시작하기 전 음을 맞출 때 기준 음을 내는 악기는?",
+    "choices": ["바이올린", "플루트", "클라리넷", "오보에"],
+    "answerIndex": 3,
+    "explanation": "온도와 습도가 바뀌어도 음높이가 비교적 덜 흔들려 기준으로 삼습니다. 보통 '라'에 해당하는 A음을 냅니다.",
+    "difficulty": "hard",
+    "tags": ["음악", "오케스트라"]
+  }
+]

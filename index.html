@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>상식 퀴즈</title>
+  <meta name="description" content="브라우저에서 바로 즐기는 4지선다 상식 퀴즈. 한국사·과학·지리·일반상식 40문제.">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧠</text></svg>">
+  <script>
+    // 모듈이 아닌 일반 스크립트라 어떤 환경에서도 실행된다.
+    // app.js가 뜨면 이 타이머를 지운다. 지워지지 않으면 스크립트가 막힌 것이다
+    // (file:// 로 열었을 때가 대표적이다).
+    window.__bootTimer = setTimeout(function () {
+      document.body.classList.add('is-boot-failed');
+    }, 3000);
+  </script>
+</head>
+<body>
+
+  <!-- ─────────── 부팅 상태 ───────────
+       스크립트가 아예 실행되지 않는 경우를 화면으로 알린다.
+       모듈 로드가 막히면 JS로는 손쓸 수 없어 HTML에 정적으로 심어 둔다. -->
+  <div class="boot" id="boot">
+    <p class="boot__loading">불러오는 중…</p>
+    <div class="boot__error" role="alert">
+      <h1 class="boot__title">게임을 불러오지 못했습니다</h1>
+      <p class="boot__body">
+        파일을 직접 여는 방식(<code>file://</code>)에서는 브라우저가 스크립트와 문제 데이터를 막습니다.
+        프로젝트 폴더에서 로컬 서버를 띄운 뒤 접속해 주세요.
+      </p>
+      <pre class="boot__code">python3 -m http.server 8765</pre>
+      <p class="boot__body">그다음 <code>http://localhost:8765</code>로 들어오면 됩니다.</p>
+    </div>
+  </div>
+
+  <div class="app-bar">
+    <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
+      <span class="icon-button__icon" id="sound-icon" aria-hidden="true">🔊</span>
+      <span id="sound-label">소리 켜짐</span>
+    </button>
+  </div>
+
+  <!-- 화면 전환과 타이머 경고를 스크린리더에 알린다.
+       타이머 숫자는 1초마다 바뀌므로 넣지 않는다. 남은 5초 경고만 한 번 알린다. -->
+  <p class="sr-only" id="announcer" role="status" aria-live="polite"></p>
+
+  <main class="app">
+
+    <!-- ─────────── 홈 ─────────── -->
+    <section class="screen" data-screen="home" aria-labelledby="home-title" tabindex="-1">
+      <header class="home-header">
+        <h1 class="home-title" id="home-title">상식 퀴즈</h1>
+        <p class="home-subtitle">카테고리를 골라 한 판 풀어보세요. 문항당 20초입니다.</p>
+      </header>
+
+      <div class="category-grid" id="category-grid"></div>
+
+      <!-- 전체 도전 (FR-2.2)
+           이 둘은 정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
+           눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
+           home.js가 리스너를 단 뒤 열어준다. -->
+      <button type="button" class="challenge-card" id="start-all" disabled>
+        <span class="challenge-card__icon" aria-hidden="true">🏆</span>
+        <span class="challenge-card__body">
+          <span class="challenge-card__name">전체 도전</span>
+          <span class="challenge-card__desc">네 카테고리를 섞어 한 번에</span>
+        </span>
+        <span class="challenge-card__meta" id="start-all-meta">불러오는 중…</span>
+      </button>
+
+      <div class="home-actions">
+        <button type="button" class="button button--ghost" id="open-ranking" disabled>랭킹 보기</button>
+      </div>
+
+      <p class="home-note" id="home-note" role="alert" hidden></p>
+    </section>
+
+    <!-- ─────────── 퀴즈 ─────────── -->
+    <section class="screen" data-screen="quiz" aria-labelledby="question-text" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <div class="quiz-meta">
+          <span class="quiz-category" id="quiz-category"></span>
+          <span class="quiz-position" id="quiz-position"></span>
+        </div>
+        <button type="button" class="button button--ghost" id="quiz-exit">나가기</button>
+      </header>
+
+      <div class="progress" id="progress" role="progressbar"
+           aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress__fill" id="progress-fill"></div>
+      </div>
+
+      <!-- 남은 시간은 눈으로만 본다. 1초마다 낭독되면 문제를 읽을 수 없다 -->
+      <div class="timer" id="timer" aria-hidden="true">
+        <div class="timer__track">
+          <div class="timer__fill" id="timer-fill"></div>
+        </div>
+        <p class="timer__label">
+          <span class="timer__icon" id="timer-icon">⏱</span>
+          <span id="timer-text">남은 시간 20초</span>
+        </p>
+      </div>
+
+      <h1 class="question" id="question-text" tabindex="-1"></h1>
+
+      <ul class="choices" id="choices" aria-label="보기"></ul>
+
+      <div class="feedback" id="feedback" role="status" hidden>
+        <p class="feedback__verdict" id="feedback-verdict"></p>
+        <p class="feedback__explanation" id="feedback-explanation"></p>
+        <button type="button" class="button button--primary" id="next-button">다음 문제</button>
+      </div>
+    </section>
+
+    <!-- ─────────── 결과 (FR-5.2 ~ FR-5.7) ─────────── -->
+    <section class="screen" data-screen="result" aria-labelledby="result-title" tabindex="-1" hidden>
+      <h1 class="sr-only" id="result-title">퀴즈 결과</h1>
+
+      <header class="result-header">
+        <p class="result-mode" id="result-mode"></p>
+        <p class="result-score">
+          <strong id="result-score">0</strong><span class="result-score__max" id="result-max"></span>
+        </p>
+        <p class="result-grade" id="result-grade"></p>
+        <p class="result-grade-message" id="result-grade-message"></p>
+        <p class="result-best" id="result-best"></p>
+      </header>
+
+      <dl class="result-stats">
+        <div class="result-stats__item">
+          <dt>정답</dt>
+          <dd id="result-correct"></dd>
+        </div>
+        <div class="result-stats__item">
+          <dt>정답률</dt>
+          <dd id="result-accuracy"></dd>
+        </div>
+        <div class="result-stats__item">
+          <dt>소요 시간</dt>
+          <dd id="result-duration"></dd>
+        </div>
+      </dl>
+
+      <!-- 전체 모드에서만 (FR-5.6) -->
+      <div class="result-block" id="result-category-block" hidden>
+        <h2 class="result-block__title">카테고리별 정답</h2>
+        <ul class="category-score" id="result-category-list"></ul>
+      </div>
+
+      <!-- 틀린 문제 다시 보기 (FR-5.4) -->
+      <div class="result-block" id="result-review-block" hidden>
+        <h2 class="result-block__title">틀린 문제 다시 보기</h2>
+        <ol class="review" id="result-review"></ol>
+      </div>
+
+      <!-- 랭킹 등록 (FR-6.1) -->
+      <div class="result-block">
+        <h2 class="result-block__title">랭킹에 기록 남기기</h2>
+        <form class="register" id="register-form" novalidate>
+          <div class="register__row">
+            <label class="register__label" for="nickname-input">닉네임</label>
+            <input class="register__input" id="nickname-input" type="text" inputmode="text"
+                   maxlength="10" autocomplete="off" placeholder="2~10자"
+                   aria-describedby="register-message">
+            <button type="submit" class="button button--primary" id="register-button">등록</button>
+          </div>
+          <p class="register__message" id="register-message" role="status" hidden></p>
+        </form>
+      </div>
+
+      <div class="result-actions">
+        <button type="button" class="button button--primary" id="result-retry">다시 하기</button>
+        <button type="button" class="button button--ghost" id="result-ranking">랭킹 보기</button>
+        <button type="button" class="button button--ghost" id="result-home">홈으로</button>
+      </div>
+    </section>
+
+    <!-- ─────────── 랭킹 (FR-6.2 ~ FR-6.12) ─────────── -->
+    <section class="screen" data-screen="ranking" aria-labelledby="ranking-title" tabindex="-1" hidden>
+      <header class="ranking-header">
+        <h1 class="ranking-title" id="ranking-title">랭킹</h1>
+        <button type="button" class="button button--ghost" id="ranking-home">홈으로</button>
+      </header>
+
+      <!-- 저장 범위 명시 (FR-6.10) -->
+      <p class="ranking-scope">
+        이 브라우저에 저장된 내 기록입니다. 다른 기기나 다른 사람의 기록과는 공유되지 않습니다.
+      </p>
+
+      <div class="ranking-tabs" id="ranking-tabs" role="group" aria-label="랭킹 종류"></div>
+
+      <ol class="ranking-list" id="ranking-list"></ol>
+      <p class="ranking-empty" id="ranking-empty" hidden></p>
+
+      <div class="ranking-footer">
+        <button type="button" class="button button--ghost" id="ranking-clear">전체 기록 초기화</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->
+  <div class="dialog-backdrop" id="exit-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
+      <h2 class="dialog__title" id="exit-dialog-title">퀴즈를 그만둘까요?</h2>
+      <p class="dialog__body">지금 나가면 진행 중인 판은 사라지고 기록도 남지 않습니다.</p>
+      <div class="dialog__actions">
+        <button type="button" class="button button--ghost" id="exit-cancel">계속 풀기</button>
+        <button type="button" class="button button--danger" id="exit-confirm">나가기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────── 초기화 확인 (FR-6.6) ─────────── -->
+  <div class="dialog-backdrop" id="clear-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="clear-dialog-title">
+      <h2 class="dialog__title" id="clear-dialog-title">기록을 모두 지울까요?</h2>
+      <p class="dialog__body">저장된 랭킹 기록이 전부 사라집니다. 되돌릴 수 없습니다.</p>
+      <div class="dialog__actions">
+        <button type="button" class="button button--ghost" id="clear-cancel">그대로 두기</button>
+        <button type="button" class="button button--danger" id="clear-confirm">모두 지우기</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

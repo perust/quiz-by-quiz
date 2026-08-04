@@ -1,0 +1,102 @@
+[
+  {
+    "id": "science-001",
+    "category": "science",
+    "question": "물을 나타내는 화학식은?",
+    "choices": ["CO2", "H2O", "NaCl", "O2"],
+    "answerIndex": 1,
+    "explanation": "물 분자 하나는 수소 원자 두 개와 산소 원자 한 개로 이루어져 있습니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "분자"]
+  },
+  {
+    "id": "science-002",
+    "category": "science",
+    "question": "원소 기호 'Fe'가 나타내는 원소는?",
+    "choices": ["구리", "아연", "철", "납"],
+    "answerIndex": 2,
+    "explanation": "Fe는 철의 라틴어 이름 'ferrum'에서 온 기호입니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "원소"]
+  },
+  {
+    "id": "science-003",
+    "category": "science",
+    "question": "태양계에서 지름이 가장 큰 행성은?",
+    "choices": ["토성", "천왕성", "해왕성", "목성"],
+    "answerIndex": 3,
+    "explanation": "목성의 지름은 지구의 약 11배로, 태양계 행성 가운데 가장 큽니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-004",
+    "category": "science",
+    "question": "식물이 빛 에너지를 이용해 스스로 양분을 만드는 작용은?",
+    "choices": ["광합성", "증산작용", "삼투현상", "세포분열"],
+    "answerIndex": 0,
+    "explanation": "잎의 엽록체에서 물과 이산화탄소를 원료로 포도당과 산소를 만들어 냅니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "식물"]
+  },
+  {
+    "id": "science-005",
+    "category": "science",
+    "question": "소리가 전달될 수 없는 곳은?",
+    "choices": ["진공", "물속", "쇠막대", "공기"],
+    "answerIndex": 0,
+    "explanation": "소리는 물질의 진동이 이어지며 퍼지는 파동이라 전달할 매질이 없으면 나아가지 못합니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "파동"]
+  },
+  {
+    "id": "science-006",
+    "category": "science",
+    "question": "사람의 혈액에서 산소를 실어 나르는 세포는?",
+    "choices": ["백혈구", "혈소판", "림프구", "적혈구"],
+    "answerIndex": 3,
+    "explanation": "헤모글로빈이라는 색소가 산소와 결합했다 떨어지기를 되풀이하며 온몸에 산소를 공급합니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-007",
+    "category": "science",
+    "question": "주기율표에서 원자번호 1번에 해당하는 원소는?",
+    "choices": ["헬륨", "수소", "산소", "탄소"],
+    "answerIndex": 1,
+    "explanation": "원자핵에 양성자가 하나뿐인 구조이며, 우주에 있는 원자 수의 약 90%를 차지합니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "원소"]
+  },
+  {
+    "id": "science-008",
+    "category": "science",
+    "question": "다음 동물 가운데 포유류가 아닌 것은?",
+    "choices": ["돌고래", "박쥐", "펭귄", "고래"],
+    "answerIndex": 2,
+    "explanation": "펭귄은 날지 못해도 깃털이 있고 알을 낳는 조류입니다. 나머지 셋은 새끼를 낳아 젖을 먹입니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "동물"]
+  },
+  {
+    "id": "science-009",
+    "category": "science",
+    "question": "DNA에서 염기 아데닌(A)과 짝을 이루어 결합하는 염기는?",
+    "choices": ["구아닌", "사이토신", "타이민", "유라실"],
+    "answerIndex": 2,
+    "explanation": "DNA에서는 아데닌과 타이민, 구아닌과 사이토신이 짝을 이룹니다. 유라실은 RNA에서 타이민을 대신합니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "유전"]
+  },
+  {
+    "id": "science-010",
+    "category": "science",
+    "question": "드라이아이스처럼 고체가 액체를 거치지 않고 곧바로 기체로 변하는 현상은?",
+    "choices": ["승화", "융해", "응결", "기화"],
+    "answerIndex": 0,
+    "explanation": "고체와 기체 사이를 직접 오가는 상태 변화로, 반대 방향인 기체에서 고체로의 변화도 같은 이름으로 부릅니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "물질의 상태"]
+  }
+]
