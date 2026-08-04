@@ -98,5 +98,75 @@
     "explanation": "고체와 기체 사이를 직접 오가는 상태 변화로, 반대 방향인 기체에서 고체로의 변화도 같은 이름으로 부릅니다.",
     "difficulty": "hard",
     "tags": ["화학", "물질의 상태"]
+  },
+  {
+    "id": "science-011",
+    "category": "science",
+    "question": "지구에서 가장 가까운 항성은?",
+    "choices": ["달", "화성", "태양", "북극성"],
+    "answerIndex": 2,
+    "explanation": "약 1억 5천만 km 떨어져 있습니다. 달은 위성이고 화성은 행성이라 항성이 아닙니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-012",
+    "category": "science",
+    "question": "뉴턴의 운동 법칙 가운데 관성의 법칙은 몇 번째 법칙인가?",
+    "choices": ["제1법칙", "제2법칙", "제3법칙", "제4법칙"],
+    "answerIndex": 0,
+    "explanation": "밖에서 힘이 작용하지 않으면 물체가 지금의 운동 상태를 그대로 유지한다는 법칙입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "역학"]
+  },
+  {
+    "id": "science-013",
+    "category": "science",
+    "question": "사람의 장기 가운데 면적이 가장 넓은 것은?",
+    "choices": ["심장", "폐", "간", "피부"],
+    "answerIndex": 3,
+    "explanation": "성인 기준 1.5~2㎡로, 몸을 덮어 수분을 지키고 체온을 조절하는 기관입니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-014",
+    "category": "science",
+    "question": "1953년 DNA의 이중나선 구조를 밝혀낸 두 과학자는?",
+    "choices": ["멘델과 모건", "다윈과 월리스", "왓슨과 크릭", "파스퇴르와 코흐"],
+    "answerIndex": 2,
+    "explanation": "로절린드 프랭클린이 찍은 X선 회절 사진이 결정적인 단서가 되었습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "유전"]
+  },
+  {
+    "id": "science-015",
+    "category": "science",
+    "question": "이론상 더 내려갈 수 없는 절대영도는 섭씨 몇 도인가?",
+    "choices": ["-100°C", "-173°C", "-273°C", "-373°C"],
+    "answerIndex": 2,
+    "explanation": "정확히는 -273.15°C이며 절대온도 0K에 해당합니다. 입자의 열운동이 최소가 되는 온도입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "온도"]
+  },
+  {
+    "id": "science-016",
+    "category": "science",
+    "question": "진공에서 빛이 1초에 나아가는 거리에 가장 가까운 값은?",
+    "choices": ["약 30만 km", "약 100만 km", "약 300만 km", "약 1000만 km"],
+    "answerIndex": 0,
+    "explanation": "정확히는 299,792,458m입니다. 이 값을 고정해 1미터의 길이를 정의합니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "빛"]
+  },
+  {
+    "id": "science-017",
+    "category": "science",
+    "question": "1몰에 든 입자 수를 나타내는 아보가드로 수에 가장 가까운 값은?",
+    "choices": ["6.02 × 10¹⁸", "6.02 × 10²⁰", "6.02 × 10²³", "6.02 × 10²⁶"],
+    "answerIndex": 2,
+    "explanation": "2019년 국제단위계 재정의에서 6.02214076 × 10²³으로 값을 못박아 몰을 정의했습니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "단위"]
   }
 ]

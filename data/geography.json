@@ -98,5 +98,35 @@
     "explanation": "보스포루스 해협이 이스탄불 한가운데를 지나며 두 대륙을 갈라놓습니다.",
     "difficulty": "hard",
     "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-011",
+    "category": "geography",
+    "question": "면적이 가장 넓은 대륙은?",
+    "choices": ["아시아", "북아메리카", "아프리카", "유럽"],
+    "answerIndex": 0,
+    "explanation": "약 4,458만㎢로 지구 육지의 3분의 1에 가깝고, 세계 인구의 절반을 훌쩍 넘는 사람이 삽니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "대륙"]
+  },
+  {
+    "id": "geography-012",
+    "category": "geography",
+    "question": "아마존강이 흐르는 대륙은?",
+    "choices": ["아프리카", "아시아", "북아메리카", "남아메리카"],
+    "answerIndex": 3,
+    "explanation": "브라질을 중심으로 여러 나라를 지나며, 유역 면적이 세계에서 가장 넓습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "강"]
+  },
+  {
+    "id": "geography-013",
+    "category": "geography",
+    "question": "대한민국 최동단의 섬인 독도가 자리한 바다는?",
+    "choices": ["황해", "동해", "남해", "동중국해"],
+    "answerIndex": 1,
+    "explanation": "울릉도에서 동남쪽으로 약 87km 떨어져 있어, 맑은 날에는 울릉도에서 보입니다.",
+    "difficulty": "easy",
+    "tags": ["한국지리", "섬"]
   }
 ]

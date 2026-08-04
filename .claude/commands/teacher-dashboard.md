@@ -223,6 +223,7 @@ for p in problems:
 if not records:
     print('\n!! 쓸 수 있는 기록이 없습니다. 여기서 중단합니다.')
     print('   학생 내보내기 안내는 /quiz-teacher-collect 를 참고하세요.')
+    print('   콘솔을 못 여는 학생은 /quiz-teacher-register <이름> <분야> <맞은개수> 로 받아 적으세요.')
     sys.exit(1)
 
 students = by_student(records)
@@ -697,6 +698,7 @@ HTML 안에는 그리는 마크업과 함께 **원본 데이터가 JSON 으로 �
   CSV 와 PDF 로 바꾼다. `/export-report csv` 처럼 하나만 고를 수도 있다
 - 더 깊이 보려면 개별 명령어로 들어간다.
   `/quiz-teacher-student <이름>` (개인), `/quiz-teacher-compare` (지정 비교),
-  `/create-report` (성적표 발급), `/quiz-teacher-collect` (제출 관리)
+  `/create-report` (성적표 발급), `/quiz-teacher-collect` (제출 관리),
+  `/quiz-teacher-register` (선생님이 점수를 직접 입력)
 - 학생에게 보여줄 자료가 필요하면 `/create-report` 를 쓴다.
   이 대시보드는 **선생님이 판단하려고 보는 화면**이라 다른 학생 정보가 섞여 있다
