@@ -178,8 +178,14 @@ export function createQuizScreen({ onExit, onComplete }) {
   function handleTimeout() {
     if (!session || session.isAnswered()) return;
     timer.stop();
+
+    // 게임 모드에서는 시간이 다 됐을 때 «밟고 있는 칸»이 답이다.
+    // 십자 한가운데에서 시작하므로, 움직이지 않았으면 밟은 칸이 없어 null이 된다.
+    // 즉 가만히 있으면 보통 모드와 똑같이 시간 초과 오답이다.
+    const standing = arena.standingIndex();
+
     // choiceIndex가 null이면 시간 초과다. 오답과 똑같이 정답과 해설을 보여준다 (FR-3.10)
-    showFeedback(session.submit({ choiceIndex: null, elapsedMs: timer.limitMs }));
+    showFeedback(session.submit({ choiceIndex: standing, elapsedMs: timer.limitMs }));
   }
 
   function showFeedback(record) {

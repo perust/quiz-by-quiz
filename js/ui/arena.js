@@ -1,29 +1,43 @@
 // 게임 모드 무대
 //
-// 바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
-// 서 있는 칸에는 불이 들어온다.
+// 바닥을 십자로 나눈 2×2 칸 위를 캐릭터가 **자유롭게 돌아다닌다.**
+// 칸 단위로 튀는 것이 아니라 방향키를 누르는 동안 조금씩 움직이고,
+// 지금 밟고 있는 칸에 불이 들어온다. 시간이 다 되면 **그때 서 있는 칸이 답**이다.
 //
 //   ┌─────┬─────┐
 //   │  1  │  2  │
-//   ├─────┼─────┤
+//   ├──── ● ────┤   ← 십자 한가운데에서 시작한다. 여기는 «아무 칸도 아님»
 //   │  3  │  4  │
 //   └─────┴─────┘
 //
-// **게임 규칙은 갖지 않는다.** 몇 번이 정답인지 판단하지 않고, 고른 번호를
-// onChoose로 넘길 뿐이다. 채점은 core/session.js가 한다. 정답 표시도 스스로
-// 정하지 않고 quiz.js가 알려준 인덱스를 그대로 칠한다.
+// 가운데에서 시작하는 것이 중요하다. 가만히 있으면 아무 칸도 밟지 않은 채로
+// 시간이 끝나 지금까지처럼 시간 초과 오답이 된다. 보통 모드와 난이도가 같아지고,
+// 두 모드가 같은 랭킹에 쌓여도 공정하다.
 //
-// 진짜 조작 대상은 위 패널의 보기 버튼이다. 스크린리더와 Tab 사용자는 그쪽을
-// 쓰고, 여기 무대는 aria-hidden이라 같은 보기를 두 번 낭독하지 않는다.
-// 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
+// **게임 규칙은 갖지 않는다.** 몇 번이 정답인지 판단하지 않고, 밟고 있는 칸 번호를
+// 넘길 뿐이다. 채점은 core/session.js가 한다. 정답 표시도 스스로 정하지 않고
+// quiz.js가 알려준 인덱스를 그대로 칠한다.
+//
+// 진짜 조작 대상은 위 패널의 보기 버튼이다. 무대는 aria-hidden이라 같은 보기를
+// 두 번 낭독하지 않는다. 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
-/** 캐릭터가 옮겨가는 데 걸리는 시간. CSS transition과 같아야 한다 */
-const WALK_MS = 220;
+/** 초당 이동 거리(px). 바닥을 가로지르는 데 1초 남짓 걸린다 */
+const SPEED = 320;
 
-/** 바닥을 몇 줄로 나눌지. 보기가 4개라 2×2가 된다 */
-const COLUMNS = 2;
+/** 프레임 간격이 이보다 벌어지면 잘라낸다. 탭이 백그라운드에 갔다 오면 크게 튄다 */
+const MAX_STEP_MS = 50;
 
-/** 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다 */
+/** 바닥 안쪽 여백. 캐릭터가 바닥 밖으로 나가지 않게 막는 값이다 */
+const EDGE = 7;
+
+/** 눌러서 걸어갈 때 «도착했다»고 보는 거리 */
+const ARRIVE_PX = 4;
+
+/**
+ * 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다.
+ * 칸을 세지 않는다 — 자유롭게 움직이고 «발이 어느 칸에 있는지»만 본다.
+ * 그래서 바닥을 2×2가 아닌 다른 모양으로 깔아도 이 코드는 그대로 맞는다.
+ */
 const DIRECTIONS = {
   ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
   ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
@@ -49,16 +63,28 @@ export function createArena({ onChoose, trapFocus }) {
 
   /** 켜져 있는가. 꺼져 있으면 키 입력도 받지 않는다 */
   let enabled = false;
-  /** 지금 서 있는 칸. 문제가 바뀌어도 그 자리에 남는다 */
-  let position = 0;
-  /** 이번 문항의 칸 개수 */
-  let count = 0;
   /** 답을 낸 뒤에는 더 고를 수 없다 (FR-3.3을 화면에서도 지킨다) */
   let locked = true;
-  /** 걷는 표시를 끄는 타이머 */
-  let walkTimer = null;
-  /** 바닥을 눌러 이동한 뒤 자동으로 고르기 위한 타이머 */
-  let pickTimer = null;
+
+  /** 무대 기준 «발» 좌표 */
+  const pos = { x: 0, y: 0 };
+  /** 지금 밟고 있는 칸. 십자 틈에 있으면 null — 아무것도 고르지 않은 상태다 */
+  let standing = null;
+  /** 무대 기준 칸 사각형. 화면 폭에 따라 달라지므로 다시 잰다 */
+  let tileBoxes = [];
+  let stageSize = { width: 0, height: 0 };
+  /**
+   * 이번 문항에서 캐릭터를 십자 한가운데에 세웠는가.
+   * 화면이 아직 보이지 않으면 크기를 0으로 재게 되어 자리를 잡을 수 없다.
+   * 그때는 이 값이 false로 남아, 어느 경로로 들어오든 다시 세운다.
+   */
+  let placed = false;
+
+  /** 움직임 루프 */
+  let frameId = null;
+  let lastTs = 0;
+  /** 바닥을 눌렀을 때 걸어갈 지점. 방향키를 누르면 취소된다 */
+  let autoTarget = null;
 
   const tileNodes = [];
 
@@ -76,6 +102,7 @@ export function createArena({ onChoose, trapFocus }) {
   // 나가기 확인과 같은 인페이지 방식이다 — window.alert는 쓰지 않는다.
 
   function openHelp() {
+    if (!enabled) return;
     helpOpener = document.activeElement;
     el.helpDialog.hidden = false;
     el.helpClose.focus();
@@ -95,113 +122,183 @@ export function createArena({ onChoose, trapFocus }) {
   function setLocked(value) {
     locked = value;
     el.root.classList.toggle('arena--locked', value);
+    if (value) stopLoop();
   }
 
-  // ── 캐릭터 위치 ────────────────────────────────────────────────
+  // ── 무대 재기 ──────────────────────────────────────────────────
 
   /**
-   * 캐릭터를 지금 서 있는 칸의 한가운데로 옮긴다.
-   * 칸 크기는 화면 폭에 따라 달라지므로 값을 저장하지 않고 매번 잰다.
-   * 여백 설정에 기대지 않도록 무대 기준 좌표를 직접 잰다.
+   * 칸 사각형을 무대 기준 좌표로 다시 잰다.
+   * 칸 크기는 화면 폭에 따라 달라지므로 값을 저장해 두지 않고 필요할 때마다 잰다.
    */
-  function placeCharacter() {
-    const tile = tileNodes[position];
+  function measure() {
     const stage = el.character.parentElement;
-    if (!tile || !stage) return;
+    if (!stage) return;
 
     const base = stage.getBoundingClientRect();
-    const box = tile.getBoundingClientRect();
-    if (box.width === 0) return; // 아직 배치되지 않았다
+    if (base.width === 0) return; // 아직 배치되지 않았다
 
-    // 발을 칸 아래쪽에 붙인다. 번호와 채점 표시는 칸 위쪽에 있으므로
-    // 칸이 좁아져도 서로 겹치지 않는다. 칸 높이가 바뀌어도 그대로 맞는다.
-    const x = box.left - base.left + box.width / 2;
-    const y = box.bottom - base.top - 10;
-    el.character.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
-  }
-
-  /** 서 있는 칸에 불을 켠다 */
-  function lightCurrent() {
-    tileNodes.forEach((tile, index) => {
-      tile.classList.toggle('arena-tile--lit', index === position);
+    stageSize = { width: base.width, height: base.height };
+    tileBoxes = tileNodes.map((tile) => {
+      const box = tile.getBoundingClientRect();
+      return {
+        left: box.left - base.left,
+        top: box.top - base.top,
+        right: box.right - base.left,
+        bottom: box.bottom - base.top,
+      };
     });
   }
 
-  function startWalkEffect() {
-    el.character.classList.add('arena__character--walking');
-    clearTimeout(walkTimer);
-    walkTimer = setTimeout(() => {
-      el.character.classList.remove('arena__character--walking');
-    }, WALK_MS);
-  }
-
-  /**
-   * @param {number} index
-   * @param {boolean} [animate] 문항이 바뀌어 자리를 다시 잡을 때는 걷지 않는다
-   */
-  function moveTo(index, animate = true) {
-    if (count === 0) return;
-    const next = Math.max(0, Math.min(index, count - 1));
-    const moved = next !== position;
-    position = next;
-
-    if (animate && moved) startWalkEffect();
-    lightCurrent();
-    placeCharacter();
-  }
-
-  /**
-   * 8방향 이동. 가로와 세로를 따로 잘라내면 대각선이 저절로 나온다.
-   * 칸 밖으로는 나가지 않고, 없는 칸(보기가 4개보다 적을 때)은 벽처럼 막는다.
-   *
-   * @param {number} dx -1 · 0 · 1
-   * @param {number} dy -1 · 0 · 1
-   */
-  function step(dx, dy) {
-    if (!enabled || locked || count === 0) return;
-
-    const rows = Math.ceil(count / COLUMNS);
-    const col = Math.min(Math.max((position % COLUMNS) + dx, 0), COLUMNS - 1);
-    const row = Math.min(Math.max(Math.floor(position / COLUMNS) + dy, 0), rows - 1);
-
-    const target = row * COLUMNS + col;
-    if (target >= count) return; // 비어 있는 자리에는 들어가지 않는다
-    moveTo(target);
-  }
-
-  /** 지금 눌려 있는 키들을 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
-  function directionFromHeld(key) {
-    let [dx, dy] = DIRECTIONS[key];
-    for (const other of held) {
-      const paired = DIRECTIONS[other];
-      if (!paired || other === key) continue;
-      if (paired[0] !== 0 && dx === 0) [dx] = paired;
-      if (paired[1] !== 0 && dy === 0) [, dy] = paired;
+  /** 발이 놓인 칸. 십자 틈에 있으면 null */
+  function zoneAt(x, y) {
+    for (let index = 0; index < tileBoxes.length; index += 1) {
+      const box = tileBoxes[index];
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return index;
     }
+    return null;
+  }
+
+  function clampPosition() {
+    if (stageSize.width === 0) return; // 아직 크기를 재지 못했다
+
+    const half = el.character.offsetWidth / 2;
+    const height = el.character.offsetHeight;
+    pos.x = Math.min(Math.max(pos.x, EDGE + half), stageSize.width - EDGE - half);
+    // 머리가 바닥 위로 솟지 않도록 위쪽은 캐릭터 높이만큼 띄운다
+    pos.y = Math.min(Math.max(pos.y, EDGE + height), stageSize.height - EDGE);
+  }
+
+  /** 좌표를 화면에 반영하고, 밟은 칸이 바뀌었으면 불을 옮긴다 */
+  function render() {
+    el.character.style.transform =
+      `translate(${pos.x}px, ${pos.y}px) translate(-50%, -100%)`;
+
+    const zone = zoneAt(pos.x, pos.y);
+    if (zone === standing) return;
+    standing = zone;
+    tileNodes.forEach((tile, index) => {
+      tile.classList.toggle('arena-tile--lit', index === standing);
+    });
+  }
+
+  /** 캐릭터를 십자 한가운데에 세운다. 아무 칸도 밟지 않은 상태가 된다 */
+  function placeAtCenter() {
+    measure();
+    if (stageSize.width === 0) return; // 아직 크기를 얻지 못했다. placed는 false로 남는다
+
+    pos.x = stageSize.width / 2;
+    pos.y = stageSize.height / 2;
+    clampPosition();
+    render();
+    placed = true;
+  }
+
+  // ── 움직임 ─────────────────────────────────────────────────────
+
+  /** 눌려 있는 키를 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
+  function velocity() {
+    let dx = 0;
+    let dy = 0;
+    for (const key of held) {
+      const direction = DIRECTIONS[key];
+      if (!direction) continue;
+      dx += direction[0];
+      dy += direction[1];
+    }
+    dx = Math.sign(dx);
+    dy = Math.sign(dy);
+    // 대각선이 더 빠르지 않도록 길이를 1로 맞춘다
+    if (dx !== 0 && dy !== 0) return [dx * Math.SQRT1_2, dy * Math.SQRT1_2];
     return [dx, dy];
+  }
+
+  function loop(ts) {
+    frameId = null;
+    if (!enabled || locked) return;
+
+    // 화면이 아직 보이지 않을 때 켜면 무대 크기가 0으로 잡혀 자리를 잡지 못한다.
+    // 잡을 때까지 다음 프레임에 다시 시도한다.
+    if (!placed) {
+      placeAtCenter();
+      lastTs = ts;
+      frameId = requestAnimationFrame(loop);
+      return;
+    }
+
+    const dt = Math.min(ts - lastTs, MAX_STEP_MS) / 1000;
+    lastTs = ts;
+
+    let [vx, vy] = velocity();
+    const pressing = vx !== 0 || vy !== 0;
+
+    if (pressing) {
+      autoTarget = null; // 방향키가 우선이다
+    } else if (autoTarget) {
+      const dx = autoTarget.x - pos.x;
+      const dy = autoTarget.y - pos.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < ARRIVE_PX) {
+        autoTarget = null;
+        pos.x += dx;
+        pos.y += dy;
+        render();
+        pick(); // 눌러서 왔으면 도착한 자리로 확정한다
+        return;
+      }
+      vx = dx / distance;
+      vy = dy / distance;
+    }
+
+    const moving = vx !== 0 || vy !== 0;
+    el.character.classList.toggle('arena__character--walking', moving);
+
+    if (moving) {
+      pos.x += vx * SPEED * dt;
+      pos.y += vy * SPEED * dt;
+      clampPosition();
+      render();
+    }
+
+    frameId = requestAnimationFrame(loop);
+  }
+
+  function startLoop() {
+    if (frameId !== null || !enabled || locked) return;
+    lastTs = performance.now();
+    frameId = requestAnimationFrame(loop);
+  }
+
+  function stopLoop() {
+    if (frameId !== null) {
+      cancelAnimationFrame(frameId);
+      frameId = null;
+    }
+    el.character.classList.remove('arena__character--walking');
   }
 
   // ── 고르기 ─────────────────────────────────────────────────────
 
   function pick() {
-    if (!enabled || locked || count === 0) return;
+    // 십자 틈에 서 있으면 고를 것이 없다
+    if (!enabled || locked || standing === null) return;
     el.character.classList.add('arena__character--hop');
-    onChoose(position);
+    onChoose(standing);
   }
 
-  /** 바닥을 직접 누르면 그 칸까지 건너간 뒤 고른다. 한 번 누르면 끝난다 */
+  /** 바닥을 누르면 그 칸 한가운데로 걸어간 뒤 고른다 */
   function goAndPick(index) {
     if (!enabled || locked) return;
-    const walking = index !== position;
-    moveTo(index);
+    const box = tileBoxes[index];
+    if (!box) return;
 
-    clearTimeout(pickTimer);
-    if (!walking) {
-      pick();
-      return;
-    }
-    // 옮겨가는 모습을 보여준 뒤에 고른다. 그동안에도 시간은 계속 흐른다
-    pickTimer = setTimeout(pick, WALK_MS);
+    autoTarget = {
+      x: (box.left + box.right) / 2,
+      // 칸 아래쪽을 딛도록 한다. 번호·채점 표시가 있는 위쪽을 피한다
+      y: box.bottom - 10,
+    };
+    held.clear(); // 손가락으로 눌렀으면 눌린 방향키는 무시한다
+    startLoop();
   }
 
   // ── 바닥 만들기 ────────────────────────────────────────────────
@@ -239,8 +336,26 @@ export function createArena({ onChoose, trapFocus }) {
   document.addEventListener('keyup', (event) => held.delete(event.key));
   window.addEventListener('blur', () => held.clear());
 
-  // 칸 크기가 바뀌면 캐릭터도 따라가야 한다
-  window.addEventListener('resize', placeCharacter);
+  // 칸 크기가 바뀌면 좌표계를 다시 잡는다. 캐릭터는 비율을 지켜 옮긴다
+  window.addEventListener('resize', () => {
+    if (!enabled) return;
+
+    // 아직 자리를 잡지 못했으면 여기서 세운다. 그냥 클램프만 하면
+    // (0,0)이 1번 칸 쪽으로 밀려 시작부터 한 칸을 밟은 셈이 된다
+    if (!placed) {
+      placeAtCenter();
+      return;
+    }
+
+    const previous = { ...stageSize };
+    measure();
+    if (previous.width > 0 && stageSize.width > 0) {
+      pos.x *= stageSize.width / previous.width;
+      pos.y *= stageSize.height / previous.height;
+    }
+    clampPosition();
+    render();
+  });
 
   return {
     /** 게임 모드를 켜고 끈다 */
@@ -248,8 +363,76 @@ export function createArena({ onChoose, trapFocus }) {
       enabled = Boolean(value);
       el.root.hidden = !enabled;
       held.clear();
-      if (!enabled) closeHelp(); // 무대가 사라지면 도움말도 함께 닫는다
-      if (enabled) placeCharacter();
+      autoTarget = null;
+      placed = false;
+
+      if (!enabled) {
+        stopLoop();
+        closeHelp(); // 무대가 사라지면 도움말도 함께 닫는다
+        return;
+      }
+      placeAtCenter();
+      startLoop();
+    },
+
+    isEnabled() {
+      return enabled;
+    },
+
+    /**
+     * 새 문항을 위해 바닥을 다시 깐다.
+     * 캐릭터는 **십자 한가운데**로 돌아간다. 지난 문항에서 서 있던 자리가 남아 있으면
+     * 가만히 있어도 답이 나가버려, 아무것도 하지 않은 사람이 25%를 거저 얻는다.
+     * @param {number} choiceCount
+     */
+    reset(choiceCount) {
+      autoTarget = null;
+      held.clear();
+      standing = null;
+      placed = false;
+      setLocked(false);
+
+      el.character.classList.remove('arena__character--hop', 'arena__character--sad');
+      buildTiles(choiceCount);
+
+      if (!enabled) return;
+      // 바닥을 방금 붙였으므로 배치가 잡힌 다음 프레임에 좌표를 잰다
+      requestAnimationFrame(() => {
+        placeAtCenter();
+        startLoop();
+      });
+    },
+
+    /**
+     * 지금 밟고 있는 칸. 아무 칸도 아니면 null.
+     * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다.
+     */
+    standingIndex() {
+      return enabled ? standing : null;
+    },
+
+    /**
+     * 채점 결과를 바닥에 칠한다. 무엇이 정답인지는 quiz.js가 알려준다.
+     * @param {{ answerIndex: number, chosenIndex: number|null, correct: boolean }} outcome
+     */
+    showOutcome({ answerIndex, chosenIndex, correct }) {
+      setLocked(true);
+      autoTarget = null;
+
+      tileNodes.forEach((tile, index) => {
+        // 채점 뒤에는 «밟고 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면
+        // 아무 칸도 안 밟은 경우에 엉뚱한 칸이 골라진 것처럼 보인다.
+        // 어디 서 있는지는 캐릭터가 이미 알려준다.
+        tile.classList.remove('arena-tile--lit');
+
+        if (index === answerIndex) tile.classList.add('arena-tile--correct');
+        else if (index === chosenIndex) tile.classList.add('arena-tile--wrong');
+        else tile.classList.add('arena-tile--muted');
+      });
+
+      // 아무 칸도 밟지 않은 채 시간이 끝났으면 캐릭터는 그대로 둔다
+      if (chosenIndex === null) return;
+      el.character.classList.toggle('arena__character--sad', !correct);
     },
 
     /** 도움말이 열려 있는가. 뒤에서 포커스를 빼앗지 않으려고 퀴즈 화면이 물어본다 */
@@ -269,69 +452,19 @@ export function createArena({ onChoose, trapFocus }) {
       return true;
     },
 
-    isEnabled() {
-      return enabled;
-    },
-
-    /**
-     * 새 문항을 위해 바닥을 다시 깐다.
-     * 캐릭터는 서 있던 자리에 남는다 — 그 자리에서 다음 답까지 건너가는 것이 이 모드의 재미다.
-     * @param {number} choiceCount
-     */
-    reset(choiceCount) {
-      clearTimeout(pickTimer);
-      count = choiceCount;
-      setLocked(false);
-      held.clear();
-
-      el.character.classList.remove('arena__character--hop', 'arena__character--sad');
-      buildTiles(choiceCount);
-      moveTo(Math.min(position, choiceCount - 1), false);
-
-      if (!enabled) return;
-      // 바닥을 방금 붙였으므로 배치가 잡힌 다음 프레임에 위치를 다시 잰다
-      requestAnimationFrame(placeCharacter);
-    },
-
-    /**
-     * 채점 결과를 바닥에 칠한다. 무엇이 정답인지는 quiz.js가 알려준다.
-     * @param {{ answerIndex: number, chosenIndex: number|null, correct: boolean }} outcome
-     */
-    showOutcome({ answerIndex, chosenIndex, correct }) {
-      setLocked(true);
-      clearTimeout(pickTimer);
-
-      tileNodes.forEach((tile, index) => {
-        // 채점 뒤에는 «서 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면
-        // 시간 초과처럼 아무것도 안 고른 경우에 엉뚱한 칸이 골라진 것처럼 보인다.
-        // 어디 서 있는지는 캐릭터가 이미 알려준다.
-        tile.classList.remove('arena-tile--lit');
-
-        if (index === answerIndex) tile.classList.add('arena-tile--correct');
-        else if (index === chosenIndex) tile.classList.add('arena-tile--wrong');
-        else tile.classList.add('arena-tile--muted');
-      });
-
-      // 시간 초과면 캐릭터가 아무 칸도 고르지 않은 셈이라 그대로 둔다
-      if (chosenIndex === null) return;
-      el.character.classList.toggle('arena__character--sad', !correct);
-    },
-
     /**
      * 퀴즈 화면이 받은 키를 넘겨준다. 처리했으면 true.
-     * 보기 버튼이나 조작부에 포커스가 있을 때는 확정 키를 가로채지 않는다 —
-     * 그건 버튼 자체가 처리해야 할 입력이다.
+     * 방향키는 여기서 «눌린 상태»로만 기록하고 실제 이동은 움직임 루프가 한다.
      */
     handleKey(event) {
       if (!enabled) return false;
 
       if (DIRECTIONS[event.key]) {
-        // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음 문항에서 유령 대각선이 생긴다
-        const [dx, dy] = directionFromHeld(event.key);
+        // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음 문항에서 유령 방향이 생긴다
         held.add(event.key);
         if (locked) return false;
-        step(dx, dy);
-        return true;
+        startLoop();
+        return true; // 화면이 스크롤되지 않게 막는다
       }
 
       if (locked) return false;
