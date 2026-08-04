@@ -33,6 +33,9 @@ const EDGE = 7;
 /** 눌러서 걸어갈 때 «도착했다»고 보는 거리 */
 const ARRIVE_PX = 4;
 
+/** 이보다 조금 밀린 것은 손 떨림으로 보고 무시한다 */
+const STICK_DEADZONE = 5;
+
 /**
  * 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다.
  * 칸을 세지 않는다 — 자유롭게 움직이고 «발이 어느 칸에 있는지»만 본다.
@@ -56,6 +59,8 @@ export function createArena({ onChoose, trapFocus }) {
     root: document.getElementById('arena'),
     character: document.getElementById('arena-character'),
     tiles: document.getElementById('arena-tiles'),
+    stick: document.getElementById('arena-stick'),
+    knob: document.getElementById('arena-knob'),
     help: document.getElementById('arena-help'),
     helpDialog: document.getElementById('help-dialog'),
     helpClose: document.getElementById('help-close'),
@@ -93,6 +98,14 @@ export function createArena({ onChoose, trapFocus }) {
    * 창을 벗어나면 keyup을 놓칠 수 있어 blur에서 비운다.
    */
   const held = new Set();
+
+  /**
+   * 스틱을 민 방향과 세기. -1 ~ 1 이고 길이가 곧 속도 비율이다.
+   * 방향키는 켜짐/꺼짐뿐이지만 스틱은 살살 밀면 천천히 움직인다.
+   */
+  const stick = { x: 0, y: 0 };
+  /** 스틱을 잡고 있는 포인터. 손가락 두 개가 엉키지 않게 하나만 받는다 */
+  let stickPointerId = null;
 
   /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let helpOpener = null;
@@ -194,10 +207,74 @@ export function createArena({ onChoose, trapFocus }) {
     placed = true;
   }
 
+  // ── 이동 스틱 ──────────────────────────────────────────────────
+
+  function releaseStick() {
+    stickPointerId = null;
+    stick.x = 0;
+    stick.y = 0;
+    el.knob.style.translate = '';
+  }
+
+  /**
+   * 손잡이가 밀려날 수 있는 최대 거리. 여기까지 밀면 최고 속도가 된다.
+   * 값을 박아두지 않고 크기에서 뽑는다 — 짧은 화면에서 스틱이 작아지기 때문이다.
+   */
+  function stickRadius() {
+    return (el.stick.offsetWidth - el.knob.offsetWidth) / 2;
+  }
+
+  function updateStick(event) {
+    const radius = stickRadius();
+    const box = el.stick.getBoundingClientRect();
+    const dx = event.clientX - (box.left + box.width / 2);
+    const dy = event.clientY - (box.top + box.height / 2);
+    const distance = Math.hypot(dx, dy);
+
+    if (distance < STICK_DEADZONE) {
+      stick.x = 0;
+      stick.y = 0;
+    } else {
+      // 민 거리가 그대로 속도가 된다. 끝까지 밀면 1(최고 속도)
+      const strength = Math.min(distance, radius) / radius;
+      stick.x = (dx / distance) * strength;
+      stick.y = (dy / distance) * strength;
+    }
+
+    // 손잡이는 테두리 안에서만 움직인다
+    const capped = Math.min(distance, radius);
+    const kx = distance > 0 ? (dx / distance) * capped : 0;
+    const ky = distance > 0 ? (dy / distance) * capped : 0;
+    el.knob.style.translate = `${kx}px ${ky}px`;
+
+    autoTarget = null; // 손으로 미는 쪽이 우선이다
+    startLoop();
+  }
+
+  el.stick.addEventListener('pointerdown', (event) => {
+    if (!enabled || locked) return;
+    event.preventDefault();
+    stickPointerId = event.pointerId;
+    el.stick.setPointerCapture(event.pointerId);
+    updateStick(event);
+  });
+
+  el.stick.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== stickPointerId) return;
+    updateStick(event);
+  });
+
+  // 손을 떼거나 통화 등으로 입력이 끊기면 제자리로 돌린다
+  el.stick.addEventListener('pointerup', releaseStick);
+  el.stick.addEventListener('pointercancel', releaseStick);
+
   // ── 움직임 ─────────────────────────────────────────────────────
 
-  /** 눌려 있는 키를 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
+  /** 스틱과 방향키를 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
   function velocity() {
+    // 스틱을 밀고 있으면 그쪽이 우선. 민 정도가 속도가 된다
+    if (stick.x !== 0 || stick.y !== 0) return [stick.x, stick.y];
+
     let dx = 0;
     let dy = 0;
     for (const key of held) {
@@ -297,7 +374,8 @@ export function createArena({ onChoose, trapFocus }) {
       // 칸 아래쪽을 딛도록 한다. 번호·채점 표시가 있는 위쪽을 피한다
       y: box.bottom - 10,
     };
-    held.clear(); // 손가락으로 눌렀으면 눌린 방향키는 무시한다
+    held.clear();   // 손가락으로 눌렀으면 눌린 방향키는 무시한다
+    releaseStick(); // 스틱도 놓은 것으로 본다
     startLoop();
   }
 
@@ -363,6 +441,7 @@ export function createArena({ onChoose, trapFocus }) {
       enabled = Boolean(value);
       el.root.hidden = !enabled;
       held.clear();
+      releaseStick();
       autoTarget = null;
       placed = false;
 
@@ -388,6 +467,7 @@ export function createArena({ onChoose, trapFocus }) {
     reset(choiceCount) {
       autoTarget = null;
       held.clear();
+      releaseStick();
       standing = null;
       placed = false;
       setLocked(false);
@@ -418,6 +498,7 @@ export function createArena({ onChoose, trapFocus }) {
     showOutcome({ answerIndex, chosenIndex, correct }) {
       setLocked(true);
       autoTarget = null;
+      releaseStick();
 
       tileNodes.forEach((tile, index) => {
         // 채점 뒤에는 «밟고 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면

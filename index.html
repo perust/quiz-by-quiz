@@ -132,8 +132,18 @@
         </div>
 
         <!-- 한 줄만 둔다. 나머지 조작법은 헤더의 ? 에 있다.
-             스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다. -->
-        <p class="arena__hint" aria-hidden="true">방향키와 Enter/Space로 조작하세요</p>
+             입력 장치에 따라 문구가 달라진다. 스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다. -->
+        <p class="arena__hint" aria-hidden="true">
+          <span class="arena__hint-key">방향키와 Enter/Space로 조작하세요</span>
+          <span class="arena__hint-touch">스틱으로 움직이고 바닥을 눌러 고르세요</span>
+        </p>
+
+        <!-- 손가락으로 미는 이동 스틱. 손가락 입력이 있는 기기에서만 그린다.
+             화면에 띄워(position: fixed) 세로 자리를 차지하지 않는다.
+             z-index를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. -->
+        <div class="arena__stick" id="arena-stick" aria-hidden="true">
+          <span class="arena__knob" id="arena-knob"></span>
+        </div>
       </div>
 
       <div class="feedback" id="feedback" role="status" hidden>
