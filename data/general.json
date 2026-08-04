@@ -98,5 +98,85 @@
     "explanation": "온도와 습도가 바뀌어도 음높이가 비교적 덜 흔들려 기준으로 삼습니다. 보통 '라'에 해당하는 A음을 냅니다.",
     "difficulty": "hard",
     "tags": ["음악", "오케스트라"]
+  },
+  {
+    "id": "general-011",
+    "category": "general",
+    "question": "화재가 났을 때 신고하는 전화번호는?",
+    "choices": ["110", "112", "119", "129"],
+    "answerIndex": 2,
+    "explanation": "소방과 구급, 구조를 한 번호로 받습니다. 범죄 신고는 112, 보건복지 상담은 129입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-012",
+    "category": "general",
+    "question": "태극기 한가운데 태극 문양을 이루는 두 가지 색은?",
+    "choices": ["빨강과 파랑", "빨강과 노랑", "파랑과 검정", "노랑과 초록"],
+    "answerIndex": 0,
+    "explanation": "위쪽 빨강은 양, 아래쪽 파랑은 음을 나타냅니다. 네 귀퉁이의 검은 괘는 건·곤·감·리입니다.",
+    "difficulty": "easy",
+    "tags": ["한국", "상징"]
+  },
+  {
+    "id": "general-013",
+    "category": "general",
+    "question": "대한민국 5만원권 지폐에 그려진 인물은?",
+    "choices": ["세종대왕", "신사임당", "이이", "이황"],
+    "answerIndex": 1,
+    "explanation": "2009년에 처음 발행됐으며, 지금 통용되는 우리나라 지폐 가운데 액면가가 가장 큽니다.",
+    "difficulty": "easy",
+    "tags": ["한국", "화폐"]
+  },
+  {
+    "id": "general-014",
+    "category": "general",
+    "question": "경제 지표 GDP를 우리말로 옮기면?",
+    "choices": ["국내총생산", "국민총소득", "경제성장률", "소비자물가지수"],
+    "answerIndex": 0,
+    "explanation": "한 나라 안에서 일정 기간에 새로 만들어진 재화와 서비스의 가치를 모두 더한 값입니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-015",
+    "category": "general",
+    "question": "컴퓨터에서 1바이트(byte)는 몇 비트(bit)인가?",
+    "choices": ["4비트", "8비트", "16비트", "32비트"],
+    "answerIndex": 1,
+    "explanation": "여덟 자리로 256가지를 나타낼 수 있어, 글자 하나를 담는 기본 단위로 자리 잡았습니다.",
+    "difficulty": "normal",
+    "tags": ["컴퓨터", "단위"]
+  },
+  {
+    "id": "general-016",
+    "category": "general",
+    "question": "다음 가운데 우리나라 4대 사회보험에 들지 않는 것은?",
+    "choices": ["국민연금", "건강보험", "고용보험", "실손보험"],
+    "answerIndex": 3,
+    "explanation": "4대 보험은 국민연금·건강보험·고용보험·산재보험입니다. 실손의료보험은 개인이 민간 보험사와 맺는 상품입니다.",
+    "difficulty": "normal",
+    "tags": ["사회", "제도"]
+  },
+  {
+    "id": "general-017",
+    "category": "general",
+    "question": "가계의 소비 지출에서 식료품비가 차지하는 비율을 가리키는 말은?",
+    "choices": ["지니계수", "물가지수", "실업률", "엥겔지수"],
+    "answerIndex": 3,
+    "explanation": "소득이 늘수록 이 값이 낮아지는 경향이 있어 생활 수준을 가늠하는 지표로 씁니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-018",
+    "category": "general",
+    "question": "대한민국 민법에서 성년이 되는 나이는?",
+    "choices": ["만 17세", "만 18세", "만 19세", "만 20세"],
+    "answerIndex": 2,
+    "explanation": "2013년부터 만 20세에서 한 살 낮아졌습니다. 선거권은 이와 별개로 만 18세부터 주어집니다.",
+    "difficulty": "hard",
+    "tags": ["법", "생활"]
   }
 ]

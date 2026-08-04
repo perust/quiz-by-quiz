@@ -178,5 +178,85 @@
     "explanation": "삼정은 토지세인 전정, 군포를 걷는 군정, 곡식을 꾸어주는 환곡을 가리킵니다.",
     "difficulty": "hard",
     "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-019",
+    "category": "history",
+    "question": "6·25 전쟁이 일어난 해는?",
+    "choices": ["1945년", "1948년", "1950년", "1953년"],
+    "answerIndex": 2,
+    "explanation": "1950년 6월 25일 새벽 북한군이 38선을 넘으면서 시작됐고, 1953년 7월 정전협정으로 총성이 멈췄습니다.",
+    "difficulty": "easy",
+    "tags": ["현대사", "전쟁"]
+  },
+  {
+    "id": "history-020",
+    "category": "history",
+    "question": "경주에 남아 있는 석조 건축물로, 신라 선덕여왕 때 세웠다고 전하는 천문 관측 시설은?",
+    "choices": ["석굴암", "첨성대", "다보탑", "분황사탑"],
+    "answerIndex": 1,
+    "explanation": "『삼국유사』에 축조 기록이 남아 있으며, 다듬은 돌 수백 개를 원통 모양으로 쌓아 올린 형태입니다.",
+    "difficulty": "easy",
+    "tags": ["신라", "문화재"]
+  },
+  {
+    "id": "history-021",
+    "category": "history",
+    "question": "청동기 시대에 만들어진 돌무덤으로, 고창·화순·강화의 유적이 유네스코 세계유산에 오른 것은?",
+    "choices": ["고인돌", "돌무지무덤", "독무덤", "널무덤"],
+    "answerIndex": 0,
+    "explanation": "굄돌 위에 커다란 덮개돌을 얹은 형태이며, 한반도에 널리 퍼져 있습니다.",
+    "difficulty": "easy",
+    "tags": ["선사시대", "문화재"]
+  },
+  {
+    "id": "history-022",
+    "category": "history",
+    "question": "1170년 정중부 등이 일으켜 고려의 권력이 무신에게 넘어간 사건은?",
+    "choices": ["묘청의 난", "무신정변", "이자겸의 난", "만적의 난"],
+    "answerIndex": 1,
+    "explanation": "차별에 불만을 품은 무신들이 문신 세력을 몰아냈고, 이후 약 100년 동안 무신 집권기가 이어졌습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "정변"]
+  },
+  {
+    "id": "history-023",
+    "category": "history",
+    "question": "1894년 전봉준을 중심으로 고부에서 시작해 전국으로 번진 농민 봉기는?",
+    "choices": ["갑신정변", "임술농민봉기", "활빈당 운동", "동학농민운동"],
+    "answerIndex": 3,
+    "explanation": "탐관오리의 수탈에 맞서 일어났으며, 조정이 청과 일본의 군대를 불러들이면서 청일전쟁의 빌미가 되었습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "근대"]
+  },
+  {
+    "id": "history-024",
+    "category": "history",
+    "question": "1920년 10월 김좌진이 이끈 북로군정서가 만주에서 일본군을 크게 무찌른 전투는?",
+    "choices": ["청산리 대첩", "봉오동 전투", "쌍성보 전투", "대전자령 전투"],
+    "answerIndex": 0,
+    "explanation": "엿새에 걸쳐 열 차례 넘게 싸워 이겼습니다. 앞서 홍범도가 이끈 봉오동 전투도 같은 해의 승리입니다.",
+    "difficulty": "normal",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-025",
+    "category": "history",
+    "question": "993년 거란의 장수 소손녕과 담판을 벌여 강동 6주를 확보한 고려의 관리는?",
+    "choices": ["강감찬", "윤관", "서희", "최무선"],
+    "answerIndex": 2,
+    "explanation": "거란의 속셈이 고려와 송의 관계를 끊는 데 있음을 읽어내고, 교류를 약속하는 대신 압록강 동쪽 땅을 얻어냈습니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "외교"]
+  },
+  {
+    "id": "history-026",
+    "category": "history",
+    "question": "고려 광종이 958년 쌍기의 건의를 받아들여 처음 시행한, 시험으로 관리를 뽑는 제도는?",
+    "choices": ["음서제", "골품제", "독서삼품과", "과거제"],
+    "answerIndex": 3,
+    "explanation": "가문 대신 시험 성적으로 관리를 뽑아 왕권을 다지려는 뜻이 담겼습니다. 음서는 공신이나 고관의 자손을 시험 없이 등용하던 제도입니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "제도"]
   }
 ]

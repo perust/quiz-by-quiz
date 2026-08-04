@@ -168,5 +168,85 @@
     "explanation": "2019년 국제단위계 재정의에서 6.02214076 × 10²³으로 값을 못박아 몰을 정의했습니다.",
     "difficulty": "hard",
     "tags": ["화학", "단위"]
+  },
+  {
+    "id": "science-018",
+    "category": "science",
+    "question": "지구에서 낮과 밤이 하루를 주기로 되풀이되는 까닭은?",
+    "choices": ["지구의 자전", "지구의 공전", "달의 공전", "태양의 자전"],
+    "answerIndex": 0,
+    "explanation": "자전축을 중심으로 하루에 한 바퀴 돌면서 햇빛을 받는 면과 받지 못하는 면이 번갈아 바뀝니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "천체 운동"]
+  },
+  {
+    "id": "science-019",
+    "category": "science",
+    "question": "곤충의 성충이 공통으로 가지는 다리는 모두 몇 개인가?",
+    "choices": ["4개", "6개", "8개", "10개"],
+    "answerIndex": 1,
+    "explanation": "가슴 세 마디에 다리가 한 쌍씩 붙어 있습니다. 다리가 여덟 개인 거미를 곤충으로 치지 않는 까닭도 여기에 있습니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "동물"]
+  },
+  {
+    "id": "science-020",
+    "category": "science",
+    "question": "손에서 놓은 물체가 아래로 떨어지게 만드는 힘은?",
+    "choices": ["마찰력", "탄성력", "부력", "중력"],
+    "answerIndex": 3,
+    "explanation": "질량이 있는 물체끼리 서로 끌어당기는 힘으로, 지구가 물체를 당기는 크기가 곧 무게입니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "힘"]
+  },
+  {
+    "id": "science-021",
+    "category": "science",
+    "question": "수증기를 뺀 건조한 공기에서 부피 비율이 가장 높은 기체는?",
+    "choices": ["산소", "이산화탄소", "질소", "아르곤"],
+    "answerIndex": 2,
+    "explanation": "약 78%를 차지하며 산소는 21% 남짓입니다. 반응성이 낮아 과자 봉지를 채우는 데에도 쓰입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-022",
+    "category": "science",
+    "question": "철이 녹스는 것처럼 물질이 산소와 결합하는 화학 반응을 무엇이라 하는가?",
+    "choices": ["산화", "환원", "중화", "분해"],
+    "answerIndex": 0,
+    "explanation": "산소를 잃는 반대 반응은 환원이라 하며, 한쪽에서 이 반응이 일어나면 다른 쪽에서 환원이 함께 일어납니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "화학 반응"]
+  },
+  {
+    "id": "science-023",
+    "category": "science",
+    "question": "우두에 걸린 사람이 천연두에 잘 걸리지 않는다는 데 착안해 1796년 천연두 백신을 만든 사람은?",
+    "choices": ["루이 파스퇴르", "에드워드 제너", "알렉산더 플레밍", "조지프 리스터"],
+    "answerIndex": 1,
+    "explanation": "백신(vaccine)이라는 말도 암소를 뜻하는 라틴어 vacca에서 왔습니다. 천연두는 1980년 지구에서 사라졌다고 공식 선언됐습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "의학"]
+  },
+  {
+    "id": "science-024",
+    "category": "science",
+    "question": "지구 내부를 지각·맨틀·외핵·내핵으로 나눌 때, 부피가 가장 큰 층은?",
+    "choices": ["지각", "외핵", "내핵", "맨틀"],
+    "answerIndex": 3,
+    "explanation": "두께가 약 2,900km로 지구 부피의 대부분을 차지합니다. 대체로 고체지만 아주 느리게 흐르며 대류합니다.",
+    "difficulty": "hard",
+    "tags": ["지구과학", "지구 내부"]
+  },
+  {
+    "id": "science-025",
+    "category": "science",
+    "question": "원소를 원자량 순으로 늘어놓아 주기율표를 만들고, 빈자리에 들어갈 원소의 성질까지 예측한 러시아 화학자는?",
+    "choices": ["돌턴", "라부아지에", "멘델레예프", "러더퍼드"],
+    "answerIndex": 2,
+    "explanation": "1869년에 발표했으며, 뒤에 갈륨과 게르마늄이 발견되면서 예측이 맞아떨어졌습니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "과학사"]
   }
 ]
