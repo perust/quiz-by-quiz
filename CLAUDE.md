@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트
 
-브라우저에서 바로 도는 4지선다 상식 퀴즈 게임. 빌드 도구 없는 순수 HTML/CSS/JS.
+**quiz by quiz** — 브라우저에서 바로 도는 4지선다 상식 퀴즈 게임. 빌드 도구 없는 순수 HTML/CSS/JS.
 
 `docs/quiz-game-prd.md`가 **유일한 기준 문서**다. 기능은 FR 번호(FR-3.8 등)로 참조하며, 코드 주석도 그 번호를 단다.
 PRD와 사용자 지시가 충돌하면 임의로 판단하지 말고 **먼저 물어본다.**
