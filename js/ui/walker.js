@@ -51,6 +51,7 @@ let active = null;
 
 const stickEl = document.getElementById('walk-stick');
 const knobEl = document.getElementById('walk-knob');
+const confirmEl = document.getElementById('walk-confirm');
 
 function releaseStick() {
   stickPointerId = null;
@@ -112,6 +113,13 @@ if (stickEl && knobEl) {
   stickEl.addEventListener('pointercancel', releaseStick);
 }
 
+// 손가락에는 Enter가 없다. 스틱으로 걸어간 자리를 확정할 길이 있어야
+// «걸어가서 고르기»가 성립한다. 없으면 결국 칸을 직접 눌러야 해서 스틱이 헛돈다.
+confirmEl?.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  active?.confirm();
+});
+
 // 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
 document.addEventListener('keyup', (event) => held.delete(event.key));
 window.addEventListener('blur', () => held.clear());
@@ -137,10 +145,14 @@ function inputVector() {
   return [dx, dy];
 }
 
-/** 스틱을 그릴지 말지. 움직일 수 있는 화면에서만 보인다 */
-function showStick(value) {
-  if (!stickEl) return;
-  stickEl.classList.toggle('walk-stick--on', value);
+/**
+ * 손가락 조작부(스틱·확정 버튼)를 그릴지 말지.
+ * 움직일 수 있는 화면에서, 잠기지 않았을 때만 보인다.
+ * 잠긴 뒤에도 남아 있으면 «다음 문제» 버튼을 가린다.
+ */
+function showControls(value) {
+  stickEl?.classList.toggle('walk-stick--on', value);
+  confirmEl?.classList.toggle('walk-confirm--on', value);
   if (!value) releaseStick();
 }
 
@@ -288,12 +300,18 @@ export function createWalker(config) {
     character.classList.toggle('walker--walking', moving);
     character.classList.toggle('walker--idle', !moving);
 
-    if (moving) {
-      pos.x += vx * SPEED * dt;
-      pos.y += vy * SPEED * dt;
-      clampPosition();
-      render();
+    if (!moving) {
+      // 움직이지 않으면 루프를 멈춘다. 매 프레임 깨어나 아무 일도 하지 않으면
+      // 휴대폰 배터리만 쓴다. 제자리 뛰기는 CSS 애니메이션이라 프레임을
+      // 돌리지 않아도 계속 뛰고, 입력이 오면 start()가 다시 깨운다
+      // (handleKey · onStickInput · goTo 가 모두 start를 부른다).
+      return;
     }
+
+    pos.x += vx * SPEED * dt;
+    pos.y += vy * SPEED * dt;
+    clampPosition();
+    render();
 
     frameId = requestAnimationFrame(loop);
   }
@@ -333,7 +351,7 @@ export function createWalker(config) {
       if (!enabled) {
         if (active === walker) {
           active = null;
-          showStick(false);
+          showControls(false);
         }
         stop();
         character.classList.remove('walker--walking', 'walker--idle');
@@ -344,7 +362,7 @@ export function createWalker(config) {
       active = walker;
       held.clear();
       releaseStick();
-      showStick(true);
+      showControls(true);
       locked = false;
       placed = false;
       autoTarget = null;
@@ -359,11 +377,19 @@ export function createWalker(config) {
       return enabled;
     },
 
-    /** 잠그면 더 움직이지도 고르지도 못한다 */
+    /** 잠그면 더 움직이지도 고르지도 못한다. 조작부도 함께 치운다 */
     setLocked(value) {
       locked = Boolean(value);
+      // CSS 선택자로 숨기지 않는다 — 조작부는 화면에 띄운(fixed) 요소라
+      // 어느 화면의 자손도 아니다. 잠금은 워커가 아는 상태이므로 여기서 처리한다
+      showControls(enabled && !locked);
       if (locked) stop();
       else start();
+    },
+
+    /** 손가락 확정 버튼이 부른다. 키보드의 Enter와 같은 일을 한다 */
+    confirm() {
+      pick();
     },
 
     /** 지금 밟고 있는 칸. 아무 칸도 아니면 null */
