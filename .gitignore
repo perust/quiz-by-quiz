@@ -11,3 +11,6 @@ yarn-error.log*
 
 # /quiz-daily 가 뜨는 문제 은행 스냅샷. 로컬에만 두고 커밋하지 않는다
 backups/
+
+# 선생님 모드가 읽는 학생 제출물. 이름과 성적이 담긴 개인정보다
+teacher/submissions/
