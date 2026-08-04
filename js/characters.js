@@ -9,6 +9,10 @@
 //
 // 도트 그림은 문자 하나가 픽셀 하나다. 공백(또는 '.')은 비운다.
 // 글자는 palette의 키이며, 어느 글자를 쓰든 상관없다.
+//
+// **이름을 붙이지 않는다.** 무엇으로 보이는지는 보는 사람이 정한다.
+// id는 코드에서 알아보려는 이름표일 뿐 화면에 나오지 않는다.
+// 스크린리더에는 «캐릭터 3»처럼 자리 번호로 알린다 (ui/characters-screen.js).
 
 /** 도트 한 칸의 크기(px). 스프라이트 크기는 grid 폭 × 이 값이 된다.
     box-shadow 로 찍으므로 «점의 크기»와 «점 사이 간격»이 이 값으로 같아야
@@ -18,7 +22,6 @@ export const PIXEL_UNIT = 5;
 /**
  * @typedef {object} Character
  * @property {string} id 저장에 쓰는 값. 바꾸면 예전 선택이 풀린다
- * @property {string} name 화면에 보일 이름
  * @property {'slime'|'pixel'} kind
  * @property {string} [body] slime의 몸통 배경 (CSS)
  * @property {string[]} [grid] pixel의 도트 그림
@@ -29,43 +32,36 @@ export const PIXEL_UNIT = 5;
 export const CHARACTERS = [
   {
     id: 'slime-blue',
-    name: '파랑 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #6b8afd, #3b5bdb)',
   },
   {
     id: 'slime-mint',
-    name: '민트 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #63e6be, #0ca678)',
   },
   {
     id: 'slime-grape',
-    name: '포도 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #b197fc, #7048e8)',
   },
   {
     id: 'slime-peach',
-    name: '복숭아 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #ffa8a8, #f03e3e)',
   },
   {
     id: 'slime-lemon',
-    name: '레몬 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #ffe066, #f59f00)',
   },
   {
     id: 'slime-ink',
-    name: '먹물 슬라임',
     kind: 'slime',
     body: 'linear-gradient(160deg, #868e96, #343a40)',
   },
   {
     id: 'pixel-ghost',
-    name: '꼬마 유령',
     kind: 'pixel',
     palette: { B: '#e9ecef', S: '#adb5bd', E: '#212529' },
     grid: [
@@ -81,7 +77,6 @@ export const CHARACTERS = [
   },
   {
     id: 'pixel-frog',
-    name: '개구리',
     kind: 'pixel',
     palette: { G: '#40c057', D: '#2b8a3e', E: '#212529', W: '#ffffff' },
     grid: [
@@ -97,7 +92,6 @@ export const CHARACTERS = [
   },
   {
     id: 'pixel-cat',
-    name: '고양이',
     kind: 'pixel',
     palette: { Y: '#ffd43b', O: '#f08c00', E: '#212529', P: '#ffa8a8' },
     grid: [
@@ -113,7 +107,6 @@ export const CHARACTERS = [
   },
   {
     id: 'pixel-bat',
-    name: '박쥐',
     kind: 'pixel',
     palette: { V: '#845ef7', D: '#5f3dc4', E: '#f8f9fa' },
     grid: [
@@ -129,7 +122,6 @@ export const CHARACTERS = [
   },
   {
     id: 'pixel-mush',
-    name: '버섯',
     kind: 'pixel',
     palette: { R: '#fa5252', W: '#fff5f5', E: '#212529', S: '#ffe8cc' },
     grid: [
@@ -145,7 +137,6 @@ export const CHARACTERS = [
   },
   {
     id: 'pixel-robot',
-    name: '로봇',
     kind: 'pixel',
     palette: { M: '#dee2e6', D: '#868e96', E: '#4dabf7', R: '#fa5252' },
     grid: [

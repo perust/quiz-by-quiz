@@ -7,7 +7,6 @@
 
 import { createWalker } from './walker.js';
 import { paintCharacter, createBody } from './sprite.js';
-import { findCharacter } from '../characters.js';
 
 /**
  * @param {{
@@ -28,7 +27,6 @@ export function createHomeScreen({
     openRanking: document.getElementById('open-ranking'),
     openCharacters: document.getElementById('open-characters'),
     characterFigure: document.getElementById('my-character-figure'),
-    characterName: document.getElementById('my-character-name'),
     walker: document.getElementById('home-character'),
     note: document.getElementById('home-note'),
   };
@@ -156,9 +154,9 @@ export function createHomeScreen({
       if (best !== null && best !== undefined) parts.push(`최고 ${best}점`);
       el.startAllMeta.textContent = parts.join(' · ');
 
-      // 내 캐릭터 칸의 미리보기와 걸어 다닐 캐릭터
+      // 내 캐릭터 칸의 미리보기와 걸어 다닐 캐릭터.
+      // 이름은 쓰지 않는다 — 무엇으로 보이는지는 보는 사람이 정한다
       el.characterFigure.replaceChildren(createBody(characterId));
-      el.characterName.textContent = findCharacter(characterId).name;
       paintCharacter(el.walker, characterId);
 
       collectZones(categories);

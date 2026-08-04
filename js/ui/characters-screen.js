@@ -27,7 +27,10 @@ export function createCharactersScreen({ onSelect, onBack }) {
 
   function markSelected(id) {
     cards.forEach((card) => {
-      card.classList.toggle('character-card--on', card.dataset.characterId === id);
+      const on = card.dataset.characterId === id;
+      card.classList.toggle('character-card--on', on);
+      // 이름이 없으므로 «지금 쓰는 것»을 눌린 상태로 알린다
+      card.setAttribute('aria-pressed', String(on));
     });
   }
 
@@ -66,17 +69,16 @@ export function createCharactersScreen({ onSelect, onBack }) {
     el.grid.replaceChildren();
     cards.length = 0;
 
-    CHARACTERS.forEach((character) => {
+    CHARACTERS.forEach((character, index) => {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'character-card';
       card.dataset.characterId = character.id;
+      // 이름을 붙이지 않는다 — 무엇으로 보이는지는 보는 사람이 정한다.
+      // 다만 아무 이름도 없으면 스크린리더가 읽을 것이 없어 자리 번호로 알린다
+      card.setAttribute('aria-label', `캐릭터 ${index + 1}`);
 
-      const name = document.createElement('span');
-      name.className = 'character-card__name';
-      name.textContent = character.name;
-
-      card.append(createPreview(character.id), name);
+      card.append(createPreview(character.id));
       // 눌러도 걸어가서 고른다. 손가락은 이쪽이 편하다
       card.addEventListener('click', () => walker.goTo(cards.indexOf(card)));
 
