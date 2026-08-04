@@ -1338,12 +1338,81 @@ body.is-booted .app-bar {
    3×3 배치. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다.
    키보드가 없는 환경을 위한 것이라 Tab 순서에서는 빼두었다(tabindex="-1") —
    보기 버튼이 이미 Tab으로 닿으므로 같은 기능을 두 번 거치게 하지 않는다. */
+/* 조작부는 가운데, 도움말은 그 옆 빈자리에 둔다.
+   양옆을 같은 1fr로 잡아야 가운데 조작부가 정확히 가운데에 온다. */
+.arena__controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: 16px;
+}
+
 .arena__pad {
+  grid-column: 2;
   display: grid;
   grid-template-columns: repeat(3, 46px);
   gap: 6px;
-  justify-content: center;
-  margin-top: 16px;
+}
+
+/* 조작법 대화상자를 여는 버튼. 조작부와 달리 Tab으로 닿는다 —
+   키보드만 쓰는 사람이 조작법을 볼 길이 있어야 한다. */
+.arena__help {
+  grid-column: 3;
+  justify-self: start;
+  width: 34px;
+  height: 34px;
+  margin-left: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.arena__help:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── 조작법 목록 ── */
+.help-list {
+  margin: 0 0 18px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  font-size: 14px;
+}
+
+.help-list dt {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.help-list dd {
+  margin: 0;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.help-list kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
 }
 
 .pad-button {
@@ -1378,15 +1447,6 @@ body.is-booted .app-bar {
   box-shadow: 0 3px 0 #2c46ad;
   color: #fff;
   font-size: 13px;
-}
-
-.arena__hint {
-  margin: 12px auto 0;
-  max-width: 30em;
-  text-align: center;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-muted);
 }
 
 /* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */

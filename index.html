@@ -121,22 +121,28 @@
           </div>
         </div>
 
-        <!-- 3×3 조작부. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다 -->
-        <div class="arena__pad" aria-hidden="true">
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="-1">↖</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="-1">↑</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="-1">↗</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="0">←</button>
-          <button type="button" class="pad-button pad-button--pick" id="arena-pick" tabindex="-1">선택</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="0">→</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="1">↙</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="1">↓</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="1">↘</button>
-        </div>
+        <!-- 조작부는 가운데, 도움말은 그 옆의 빈자리에 둔다.
+             조작법을 늘 펼쳐두면 세로를 너무 먹는다. -->
+        <div class="arena__controls">
+          <!-- 3×3 조작부. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다 -->
+          <div class="arena__pad" aria-hidden="true">
+            <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="-1">↖</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="-1">↑</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="-1">↗</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="0">←</button>
+            <button type="button" class="pad-button pad-button--pick" id="arena-pick" tabindex="-1">선택</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="0">→</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="1">↙</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="1">↓</button>
+            <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="1">↘</button>
+          </div>
 
-        <p class="arena__hint" aria-hidden="true">
-          방향키로 움직이고 Enter 로 고릅니다. 바닥을 눌러도 됩니다.
-        </p>
+          <!-- 조작부와 달리 Tab으로 닿는다. 키보드만 쓰는 사람이 조작법을 볼 길이 필요하다 -->
+          <button type="button" class="arena__help" id="arena-help" aria-haspopup="dialog">
+            <span aria-hidden="true">?</span>
+            <span class="sr-only">게임 모드 조작법</span>
+          </button>
+        </div>
       </div>
 
       <div class="feedback" id="feedback" role="status" hidden>
@@ -234,6 +240,32 @@
   </main>
 
   <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->
+  <!-- 게임 모드 조작법. 무대에 늘 펼쳐두면 세로를 너무 먹어 여기로 옮겼다 -->
+  <div class="dialog-backdrop" id="help-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-dialog-title">
+      <h2 class="dialog__title" id="help-dialog-title">게임 모드 조작법</h2>
+      <dl class="help-list">
+        <dt>움직이기</dt>
+        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dd>
+
+        <dt>대각선</dt>
+        <dd>두 방향을 함께 누릅니다</dd>
+
+        <dt>고르기</dt>
+        <dd><kbd>Enter</kbd> 또는 <kbd>Space</kbd></dd>
+
+        <dt>바로 고르기</dt>
+        <dd>바닥을 직접 누르면 건너가서 고릅니다</dd>
+
+        <dt>번호로</dt>
+        <dd><kbd>1</kbd> ~ <kbd>4</kbd> 는 게임 모드와 상관없이 늘 됩니다</dd>
+      </dl>
+      <div class="dialog__actions">
+        <button type="button" class="button button--primary" id="help-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
   <div class="dialog-backdrop" id="exit-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
       <h2 class="dialog__title" id="exit-dialog-title">퀴즈를 그만둘까요?</h2>
