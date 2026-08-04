@@ -633,6 +633,45 @@ body.is-booted .app-bar {
 
 .feedback .button {
   width: 100%;
+  /* 키 표시를 오른쪽 끝에 붙이기 위한 기준. 글자는 가운데에 그대로 둔다 */
+  position: relative;
+}
+
+/* ── 키 표시 ──
+   게임 모드에서는 손이 방향키에 있으므로, 마우스로 옮겨 가지 않아도
+   Enter 로 이어갈 수 있다는 것을 버튼에서 바로 알린다.
+   키보드가 없는 기기에는 쓸모가 없어 pointer: fine 에서만 그린다. */
+.key-hint {
+  display: none;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  translate: 0 -50%;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+.key-hint__key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.24);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+@media (pointer: fine) {
+  .quiz--game .key-hint {
+    display: inline-flex;
+  }
 }
 
 /* ── 나가기 확인 다이얼로그 ── */
