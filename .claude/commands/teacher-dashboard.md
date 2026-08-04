@@ -37,8 +37,9 @@ from collections import defaultdict
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 
 
@@ -243,7 +244,7 @@ print(f'  등급 규칙 일치: {"예" if not drift else "!! " + ", ".join(drift
 print('\n[2] 학급 개요')
 done = {name: {r['category'] for r in rows if r['mode'] == 'category'} for name, rows in students.items()}
 full = [x for x in done if done[x] == set(CATEGORIES)]
-print(f'  네 분야 완주 {len(full)}명 / {n}명 ({pct(len(full)/n)})')
+print(f'  전 분야({len(CATEGORIES)}개) 완주 {len(full)}명 / {n}명 ({pct(len(full)/n)})')
 partial = {x: sorted(set(CATEGORIES) - done[x]) for x in done if done[x] != set(CATEGORIES)}
 for name, miss in partial.items():
     print(f'   · {name} 미응시: {", ".join(KO[c] for c in miss)}')

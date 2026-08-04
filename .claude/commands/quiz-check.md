@@ -20,8 +20,9 @@ QUIZ_CATEGORY="$ARGUMENTS" python3 - <<'PY'
 import json, glob, os, re
 from difflib import SequenceMatcher
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {c: k for k, c in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 REQUIRED = ('id', 'category', 'question', 'choices', 'answerIndex', 'explanation', 'difficulty', 'tags')

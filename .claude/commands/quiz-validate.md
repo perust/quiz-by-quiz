@@ -26,9 +26,10 @@ allowed-tools: Bash(python3:*), Read
 QUIZ_CATEGORY="$ARGUMENTS" python3 - <<'PY'
 import json, glob, os, re
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
 # 한글 이름도 그대로 받는다. js/constants.js의 CATEGORIES 이름과 맞춘다
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {code: ko for ko, code in ALIASES.items()}
 TERMS = [
     # 최상급

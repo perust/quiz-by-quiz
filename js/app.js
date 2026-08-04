@@ -79,7 +79,7 @@ async function main() {
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
 
-  // 네 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다
+  // 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다
   if (CATEGORIES.every((category) => (banks[category.id] ?? []).length === 0)) {
     showFatalError('문제 데이터를 하나도 불러오지 못했습니다. data 폴더의 JSON 파일과 네트워크 상태를 확인해 주세요.');
     return;

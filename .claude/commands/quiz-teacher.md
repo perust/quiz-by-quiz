@@ -37,8 +37,9 @@ from collections import defaultdict
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 
 
@@ -191,7 +192,7 @@ print(f'  학생 {len(students)}명 · 응시 {len(records)}건')
 missing = [n for n, rows in students.items()
            if {r['category'] for r in rows if r['mode'] == 'category'} != set(CATEGORIES)]
 if missing:
-    print(f'  네 카테고리를 다 풀지 않은 학생: {", ".join(missing)}')
+    print(f'  모든 분야를 풀지 않은 학생: {", ".join(missing)}')
 
 print('\n━━━ 2단계 · 반 전체 현황 ━━━')
 accs = [r['accuracy'] for r in records]

@@ -17,8 +17,9 @@ QUIZ_CATEGORY="$ARGUMENTS" python3 - <<'PY'
 import json, glob, os, re
 from collections import Counter
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {c: k for k, c in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 # 이 프로젝트가 정한 목표. 카테고리당 easy 4 / normal 4 / hard 2

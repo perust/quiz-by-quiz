@@ -17,7 +17,7 @@ allowed-tools: Bash(python3:*), Read
 | (생략) | 전체 |
 
 번호는 문제 ID의 뒷자리다. `history-003`이면 3번이다. ID는 카테고리마다 따로 매겨지므로
-카테고리를 지정하지 않으면 **네 카테고리의 같은 번호대를 한꺼번에** 본다.
+카테고리를 지정하지 않으면 **모든 카테고리의 같은 번호대를 한꺼번에** 본다.
 `1-3`이면 각 카테고리의 1~3번, 은행이 다 차면 12문항이 된다.
 
 보는 것은 두 가지다.
@@ -38,8 +38,9 @@ QUIZ_ARGS="$ARGUMENTS" python3 - <<'PY'
 import json, glob, os, re
 from collections import Counter
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {code: ko for ko, code in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 
@@ -210,7 +211,7 @@ PY
 ## 알아둘 것
 
 - 번호는 **ID 뒷자리**다. 파일 안의 순서나 출제 순서가 아니다
-- 카테고리를 지정하지 않으면 네 카테고리의 같은 번호대를 함께 본다
+- 카테고리를 지정하지 않으면 모든 카테고리의 같은 번호대를 함께 본다
 - 인자는 통째로 받아 스크립트가 해석한다. 위치 인자(첫째·둘째 자리)로 쪼개 받으면
   치환이 어긋났을 때 조용히 엉뚱한 범위를 보게 된다. 실제로 그런 적이 있어 이 방식으로 바꿨다.
   이 문단에 자리표시자를 그대로 적으면 실행할 때 인자값으로 바뀌어 문장이 깨지므로 풀어 썼다

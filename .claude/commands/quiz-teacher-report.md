@@ -20,8 +20,9 @@ from collections import defaultdict
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 
 
