@@ -11,6 +11,9 @@ import { createArena } from './arena.js';
 /** 키보드로 보기를 선택할 때 쓰는 키 (FR-3.5) */
 const CHOICE_KEYS = ['1', '2', '3', '4'];
 
+/** 채점 뒤 다음 문제로 넘어가는 키. 게임 모드 버튼에 적어둔 것과 같아야 한다 */
+const NEXT_KEYS = ['Enter', ' '];
+
 /** 다이얼로그 안에서 Tab이 맴돌게 할 대상 */
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -309,12 +312,13 @@ export function createQuizScreen({ onExit, onComplete }) {
 
     if (el.screen.hidden || !session) return;
 
-    // 게임 모드는 «다음 문제» 버튼에 Enter라고 적어 두었으므로,
+    // 게임 모드는 «다음 문제» 버튼에 Space/Enter라고 적어 두었으므로,
     // 포커스가 버튼에서 벗어나 있어도 그 말이 참이어야 한다.
     // 어떤 버튼에든 포커스가 있으면 건드리지 않는다 — 그건 브라우저가 알아서 누른다.
+    // Space는 preventDefault가 없으면 화면이 한 판 스크롤된다.
     if (
       arena.isEnabled()
-      && event.key === 'Enter'
+      && NEXT_KEYS.includes(event.key)
       && !el.feedback.hidden
       && !document.activeElement?.closest('button')
     ) {
