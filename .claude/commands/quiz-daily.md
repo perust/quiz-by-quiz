@@ -32,8 +32,9 @@ python3 - <<'PY'
 import json, glob, os, re, sys
 from collections import Counter
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {c: k for k, c in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 TARGET_PER_CATEGORY = {'easy': 4, 'normal': 4, 'hard': 2}
@@ -273,7 +274,7 @@ PY
 python3 - <<'PY'
 """5단계: 추가 후 형식 검증. 하나라도 걸리면 종료 코드 1."""
 import json, glob, os, re, sys
-CATEGORIES = ('history', 'science', 'geography', 'general')
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
 LEVELS = ('easy', 'normal', 'hard')
 REQUIRED = ('id', 'category', 'question', 'choices', 'answerIndex', 'explanation', 'difficulty', 'tags')
 bad, ids, total = [], [], 0

@@ -23,8 +23,9 @@ QUIZ_CAT="$1" QUIZ_LEVEL="$2" QUIZ_ARGS="$ARGUMENTS" python3 - <<'PY'
 import json, os, re
 from collections import Counter
 
-CATEGORIES = ('history', 'science', 'geography', 'general')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '일반상식': 'general'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
+           '일반상식': 'general', '예술과문화': 'art'}
 NAMES = {code: ko for ko, code in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 LEVEL_ALIASES = {'쉬움': 'easy', '보통': 'normal', '어려움': 'hard',

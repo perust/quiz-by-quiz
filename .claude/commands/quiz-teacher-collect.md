@@ -26,8 +26,9 @@ from collections import defaultdict
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 
 
@@ -169,7 +170,7 @@ for name, rows in students.items():
 missing = [n for n, rows in students.items()
            if {r['category'] for r in rows if r['mode'] == 'category'} != set(CATEGORIES)]
 if missing:
-    print(f'\n  네 카테고리를 다 풀지 않은 학생: {", ".join(missing)}')
+    print(f'\n  모든 분야를 풀지 않은 학생: {", ".join(missing)}')
 PY
 ```
 
@@ -221,7 +222,7 @@ copy(JSON.stringify({
 
 - **형식이 깨진 파일** — 건너뛰고 어느 파일인지 알린다. 전체를 멈추지 않는다
 - **중복 제출** — 같은 학생의 같은 응시(시각·모드·점수가 모두 같음)는 하나로 합친다
-- **미응시** — 네 카테고리를 다 풀지 않은 학생을 짚어준다
+- **미응시** — 모든 분야를 풀지 않은 학생을 짚어준다
 - **`.gitignore` 제외 여부** — 아래 참조
 
 ## 개인정보 주의

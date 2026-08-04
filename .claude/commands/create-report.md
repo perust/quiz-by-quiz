@@ -37,8 +37,9 @@ from collections import defaultdict
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 
 
@@ -264,7 +265,7 @@ PY
 등급을 단정적으로 말하지 말고 정답률 위주로 이야기한다.
 
 **미응시를 D로 읽지 않는다.** 안 푼 분야는 `미응시` 로 나온다. 0점이 아니다.
-종합 등급은 푼 분야만으로 계산하므로, 한 분야만 푼 학생과 네 분야를 다 푼 학생을
+종합 등급은 푼 분야만으로 계산하므로, 한 분야만 푼 학생과 모든 분야를 다 푼 학생을
 같은 잣대로 비교하고 있지 않은지 확인한다.
 
 ## 3. 출력

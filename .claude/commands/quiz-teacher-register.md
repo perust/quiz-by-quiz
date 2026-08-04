@@ -23,10 +23,10 @@ allowed-tools: Bash(python3:*), Read
 | --- | --- |
 | `홍길동 한국사 8` | 한국사 8/10 |
 | `홍길동 과학 7/10` | 총문항을 밝힐 때 |
-| `홍길동 8,7,9,6` | 네 분야를 한 번에 (한국사·과학·지리·일반상식 순) |
-| `홍길동 전체 32/40` | 전체 도전 |
+| `홍길동 8,7,9,6,5` | 모든 분야를 한 번에 (한국사·과학·지리·일반상식·예술과문화 순) |
+| `홍길동 전체 40/50` | 전체 도전 |
 
-분야는 `한국사` · `과학` · `지리` · `일반상식` · `전체` 를 받는다.
+분야는 `한국사` · `과학` · `지리` · `일반상식` · `예술과문화` · `전체` 를 받는다.
 인자가 없으면 사용법을 보여주고 멈춘다.
 
 ## 1. 실행
@@ -38,8 +38,9 @@ import json, os, re, sys
 from datetime import datetime
 
 SUB_DIR = 'teacher/submissions'
-CATEGORIES = ('history', 'science', 'geography', 'general')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리', 'general': '일반상식'}
+CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
+KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
+      'general': '일반상식', 'art': '예술과문화'}
 ALIASES = {v: k for k, v in KO.items()}
 ALIASES.update({'전체': 'all', 'all': 'all'})
 
@@ -49,15 +50,15 @@ if re.fullmatch(r'\$\w+', raw):
 
 USAGE = """사용법
   /quiz-teacher-register <이름> <분야> <맞은개수>[/<총문항>]
-  /quiz-teacher-register <이름> <맞은개수>,<맞은개수>,<맞은개수>,<맞은개수>
+  /quiz-teacher-register <이름> <맞은개수>,... (분야 수만큼, 쉼표로)
 
 예
   /quiz-teacher-register 홍길동 한국사 8          한국사 8/10
   /quiz-teacher-register 홍길동 과학 7/10         총문항을 밝힐 때
-  /quiz-teacher-register 홍길동 8,7,9,6           한국사·과학·지리·일반상식 순
-  /quiz-teacher-register 홍길동 전체 32/40        전체 도전
+  /quiz-teacher-register 홍길동 8,7,9,6,5         한국사·과학·지리·일반상식·예술과문화 순
+  /quiz-teacher-register 홍길동 전체 40/50        전체 도전
 
-분야: 한국사 · 과학 · 지리 · 일반상식 · 전체"""
+분야: """ + ' · '.join(KO[c] for c in CATEGORIES) + ' · 전체'
 
 if not raw:
     print(USAGE)
@@ -73,12 +74,13 @@ if not name or re.fullmatch(r'[\d,/]+', name):
 rest = tokens[1:]
 entries = []   # (mode, category, correct, total)
 
-# 형태 1 — 쉼표로 네 카테고리를 한 번에
+# 형태 1 — 쉼표로 모든 카테고리를 한 번에
 comma = next((t for t in rest if ',' in t), None)
 if comma:
     parts = [p.strip() for p in comma.split(',')]
-    if len(parts) != 4:
-        print(f'!! 쉼표 형식은 네 값이어야 합니다 (한국사,과학,지리,일반상식). 받은 값 {len(parts)}개\n')
+    if len(parts) != len(CATEGORIES):
+        order = ','.join(KO[c] for c in CATEGORIES)
+        print(f'!! 쉼표 형식은 {len(CATEGORIES)}개 값이어야 합니다 ({order}). 받은 값 {len(parts)}개\n')
         print(USAGE)
         sys.exit(1)
     for c, p in zip(CATEGORIES, parts):
@@ -95,7 +97,7 @@ else:
     code = ALIASES.get(cat_token) or cat_token.lower()
     m = re.fullmatch(r'(\d+)(?:/(\d+))?', score_token)
     correct = int(m.group(1))
-    total = int(m.group(2) or (40 if code == 'all' else 10))
+    total = int(m.group(2) or (10 * len(CATEGORIES) if code == 'all' else 10))
     entries.append(('all' if code == 'all' else 'category',
                     None if code == 'all' else code, correct, total))
 

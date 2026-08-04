@@ -250,6 +250,13 @@ body.is-booted .app-bar {
   gap: 12px;
 }
 
+/* 카테고리가 홀수 개면 마지막 카드가 한 칸만 채워 오른쪽이 빈다.
+   개수를 세지 않고 «홀수 번째이면서 마지막» 인 카드만 두 칸으로 늘린다.
+   카테고리를 더하거나 빼도 이 규칙 그대로 맞는다. */
+.category-card:nth-child(odd):last-child {
+  grid-column: 1 / -1;
+}
+
 .category-card {
   display: flex;
   flex-direction: column;
