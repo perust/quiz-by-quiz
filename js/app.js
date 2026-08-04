@@ -259,6 +259,8 @@ async function main() {
       totalCount: summary.totalCount,
       durationMs: summary.durationMs,
       playedAt,
+      // 문항별 정오. 선생님 모드가 문항 단위 정답률을 내는 근거다
+      questionResults: summary.questionResults,
     });
 
     await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)

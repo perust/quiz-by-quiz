@@ -144,13 +144,42 @@ function isValidRecord(value) {
   );
 }
 
+/**
+ * 문항별 정오 (선택 필드).
+ *
+ * 이 필드가 없는 예전 기록도 그대로 살린다. 그래서 스키마 버전을 올리지 않았다 —
+ * 올리면 ensureSchemaVersion이 기존 랭킹을 통째로 비운다. 더하기만 하는 변경이라
+ * 예전 기록은 이 값 없이, 새 기록은 이 값을 갖고 공존한다.
+ */
+function normalizeQuestionResults(value) {
+  if (!Array.isArray(value)) return null;
+
+  const cleaned = value
+    .filter((item) => item && typeof item.id === 'string')
+    .map((item) => ({
+      id: item.id,
+      correct: Boolean(item.correct),
+      timedOut: Boolean(item.timedOut),
+    }));
+
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 /** 전체 모드 기록의 category는 항상 null로 맞춘다 (PRD 6.2) */
 function normalizeRecord(record) {
-  return {
+  const questionResults = normalizeQuestionResults(record.questionResults);
+
+  const normalized = {
     ...record,
     category: record.mode === 'all' ? null : (record.category ?? null),
     durationMs: Number.isFinite(record.durationMs) ? record.durationMs : 0,
   };
+
+  // 값이 없거나 깨졌으면 키 자체를 남기지 않는다. 빈 배열이 "다 틀렸다"로 읽히면 안 된다
+  if (questionResults) normalized.questionResults = questionResults;
+  else delete normalized.questionResults;
+
+  return normalized;
 }
 
 /** 저장된 기록 전체. 어떤 상황에서도 배열을 돌려준다 */

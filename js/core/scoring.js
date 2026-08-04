@@ -64,6 +64,23 @@ function collectReview(questions, answers) {
 }
 
 /**
+ * 문항별 정오를 압축해 담는다. 저장 레코드에 실려 선생님 모드가 문항 단위로 분석한다.
+ *
+ * `correct`와 `timedOut`을 나눠 두는 이유는 처방이 다르기 때문이다.
+ * 몰라서 틀린 것과 시간이 모자라 못 푼 것은 지도 방법이 다르다.
+ */
+function collectQuestionResults(questions, answers) {
+  return answers
+    .map((answer, index) => ({ answer, question: questions[index] }))
+    .filter(({ question }) => question?.id)
+    .map(({ answer, question }) => ({
+      id: question.id,
+      correct: answer.correct,
+      timedOut: answer.timedOut,
+    }));
+}
+
+/**
  * 한 판의 결과를 계산한다.
  *
  * @param {{
@@ -96,5 +113,10 @@ export function summarizeRound({ questions, answers, mode, categoryId = null }) 
     grade: gradeFor(accuracy),
     byCategory: tallyByCategory(questions, answers),
     review: collectReview(questions, answers),
+
+    // 문항별 정오. 화면에는 쓰지 않고 저장 레코드에 함께 남긴다.
+    // 문제 텍스트는 넣지 않는다 — data/*.json 과 중복되고 용량만 늘어난다.
+    // 선생님 모드가 id로 문제 은행과 이어 붙여 문항 단위 정답률을 낸다.
+    questionResults: collectQuestionResults(questions, answers),
   };
 }
