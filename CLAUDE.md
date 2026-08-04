@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `docs/quiz-game-prd.md`가 **유일한 기준 문서**다. 기능은 FR 번호(FR-3.8 등)로 참조하며, 코드 주석도 그 번호를 단다.
 PRD와 사용자 지시가 충돌하면 임의로 판단하지 말고 **먼저 물어본다.**
 
-`docs/quiz-game-claude-code-prompts.md`가 3단계 개발 계획이다. **구현은 전부 완료. 남은 것은 GitHub 배포뿐이다.**
+`docs/quiz-game-claude-code-prompts.md`가 3단계 개발 계획이다. **구현과 배포 모두 완료.**
 
 | 단계 | 범위 | 상태 |
 | --- | --- | --- |
@@ -18,8 +18,9 @@ PRD와 사용자 지시가 충돌하면 임의로 판단하지 말고 **먼저 �
 | 3-A | 문제 은행 40문제 (카테고리당 10) | 완료 |
 | 3-B | 반응형·접근성 + 예외 처리 + 효과음 + 배포 준비 | 완료 |
 
-배포 파일(`README.md`, `.nojekyll`, `.github/workflows/pages.yml`)은 준비돼 있다.
-아직 git 저장소가 아니라서 실제 배포는 하지 않았다.
+서비스 이름은 **quiz by quiz**. `perust/quiz-by-quiz` 저장소의 `main`이 GitHub Pages로 그대로 나간다
+(`.github/workflows/pages.yml`, `SOURCE_DIR: .`). **저장소 루트가 곧 배포 루트다** — 공개하면 안 되는
+파일을 루트에 두지 않는다. 옛 React 구현은 `legacy/quiz-challenge/`에 아카이빙돼 있고 배포에는 쓰이지 않는다.
 
 **이번 단계 범위 밖의 기능은 미리 만들지 않는다.** 2단계 것을 1단계에서 앞당겨 짓지 말 것.
 
@@ -108,6 +109,10 @@ data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
 ## 문제 데이터
 
 `data/*.json`은 PRD 6.1 스키마의 배열이다. **문제 추가는 JSON만 고치면 되고 코드는 손대지 않는다.**
+
+현재 58문제 (한국사 18 · 과학 17 · 지리 13 · 일반상식 10). 3-A의 40문제에 레거시 React 구현의
+문제를 골라 담아 늘렸다. 카테고리당 최소 10을 넘겼으므로 **카테고리 모드 10문제, 전체 모드 40문제**로
+돈다. 은행을 더 키워도 출제 수는 그대로고 판마다 세트만 달라진다.
 
 - `id`는 전역 고유. 기존 ID를 재사용하지 않는다 (FR-1.8). 로드 시 카테고리를 넘나들며 중복을 잡는다
 - `difficulty`와 `tags`는 v1에서 안 쓰지만 스키마에 넣는다 (v2에서 일괄 수정을 피하려고)

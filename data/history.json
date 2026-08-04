@@ -108,5 +108,75 @@
     "explanation": "신라와 손잡아 한강 하류를 되찾았으나 곧 신라에 빼앗겼고, 이를 되돌리려다 554년 관산성에서 전사했습니다.",
     "difficulty": "hard",
     "tags": ["백제", "삼국시대"]
+  },
+  {
+    "id": "history-012",
+    "category": "history",
+    "question": "고구려·백제·신라가 한반도에서 겨루던 시대를 무엇이라 부르는가?",
+    "choices": ["통일신라시대", "삼국시대", "고려시대", "조선시대"],
+    "answerIndex": 1,
+    "explanation": "기원전 57년 무렵부터 668년 고구려가 멸망할 때까지 세 나라가 맞선 시기입니다.",
+    "difficulty": "easy",
+    "tags": ["삼국시대"]
+  },
+  {
+    "id": "history-013",
+    "category": "history",
+    "question": "일제로부터 해방된 것을 기념하는 광복절은 몇 월 며칠인가?",
+    "choices": ["3월 1일", "6월 6일", "8월 15일", "10월 3일"],
+    "answerIndex": 2,
+    "explanation": "1945년 8월 15일 해방과 1948년 같은 날 정부 수립을 함께 기념하는 국경일입니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "기념일"]
+  },
+  {
+    "id": "history-014",
+    "category": "history",
+    "question": "도요토미 히데요시가 조선을 침략한 임진왜란이 일어난 해는?",
+    "choices": ["1392년", "1592년", "1636년", "1894년"],
+    "answerIndex": 1,
+    "explanation": "6년을 끈 전쟁으로, 1597년 재침입한 정유재란까지 이어졌습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "임진왜란"]
+  },
+  {
+    "id": "history-015",
+    "category": "history",
+    "question": "698년 고구려 유민을 이끌고 발해를 세운 인물은?",
+    "choices": ["대조영", "왕건", "장보고", "을지문덕"],
+    "answerIndex": 0,
+    "explanation": "고구려를 잇는다는 뜻을 내세웠고, 뒤에 당으로부터 해동성국이라 불릴 만큼 커졌습니다.",
+    "difficulty": "normal",
+    "tags": ["발해", "건국"]
+  },
+  {
+    "id": "history-016",
+    "category": "history",
+    "question": "세조 때 편찬을 시작해 1485년 반포된 조선의 기본 법전은?",
+    "choices": ["대전회통", "경국대전", "속대전", "대전통편"],
+    "answerIndex": 1,
+    "explanation": "이전·호전·예전·병전·형전·공전 여섯 갈래로 짜였고, 조선이 끝날 때까지 근간이 되었습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-017",
+    "category": "history",
+    "question": "다음 가운데 흥선대원군이 추진한 정책이 아닌 것은?",
+    "choices": ["서원 철폐", "경복궁 중건", "호포제 실시", "갑오개혁"],
+    "answerIndex": 3,
+    "explanation": "갑오개혁은 1894년 김홍집 내각이 벌인 개혁으로, 흥선대원군이 물러난 뒤의 일입니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "근대"]
+  },
+  {
+    "id": "history-018",
+    "category": "history",
+    "question": "조선 후기 '삼정의 문란'에서 말하는 삼정에 들지 않는 것은?",
+    "choices": ["전정", "군정", "환곡", "공납"],
+    "answerIndex": 3,
+    "explanation": "삼정은 토지세인 전정, 군포를 걷는 군정, 곡식을 꾸어주는 환곡을 가리킵니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "제도"]
   }
 ]
