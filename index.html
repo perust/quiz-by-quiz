@@ -124,8 +124,10 @@
       <div class="arena" id="arena" hidden>
         <div class="arena__stage" aria-hidden="true">
           <div class="arena__grid" id="arena-tiles"></div>
+          <!-- 그림자는 땅에 남고 몸통만 튄다. 눈이 몸통 안에 있어야 함께 움직인다 -->
           <div class="arena__character" id="arena-character">
-            <span class="arena__face"></span>
+            <span class="arena__shadow"></span>
+            <span class="arena__body"><span class="arena__face"></span></span>
           </div>
         </div>
       </div>

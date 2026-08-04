@@ -1268,18 +1268,20 @@ body.is-booted .app-bar {
 }
 
 /* 몸통. 이미지 파일 없이 CSS로만 그린다 */
-.arena__character::before {
-  content: '';
+/* 몸통. 튀고 눌리는 것은 전부 여기다 — 눈이 안에 있어 함께 움직인다.
+   transform-origin이 발밑이라 눌릴 때 바닥에 붙어 있는다. */
+.arena__body {
   position: absolute;
   inset: 0;
   border-radius: 46% 46% 38% 38%;
   background: linear-gradient(160deg, #6b8afd, var(--accent));
   box-shadow: inset 0 -6px 0 rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.3);
+  transform-origin: 50% 100%;
 }
 
-/* 발밑 그림자. 칸을 딛고 선 느낌을 준다 */
-.arena__character::after {
-  content: '';
+/* 발밑 그림자. 몸이 튀어 올라도 그림자는 땅에 남아야 «튀는» 것으로 읽힌다.
+   그래서 몸통과 형제로 두고 따로 움직인다. */
+.arena__shadow {
   position: absolute;
   left: 50%;
   bottom: -7px;
@@ -1312,31 +1314,76 @@ body.is-booted .app-bar {
   left: 12px;
 }
 
-/* 움직이는 동안 계속 돈다. 멈추면 클래스가 빠져 제자리로 돌아온다 */
-.arena__character--walking {
-  animation: arena-walk 0.32s ease-in-out infinite;
+/* 움직이는 동안 계속 튄다. 멈추면 클래스가 빠져 제자리로 돌아온다 */
+.arena__character--walking .arena__body {
+  animation: arena-bounce 0.3s infinite;
 }
 
-.arena__character--hop {
-  animation: arena-hop 0.34s ease;
+.arena__character--walking .arena__shadow {
+  animation: arena-bounce-shadow 0.3s infinite;
+}
+
+/* 답을 낼 때 한 번 크게 뛴다. --walking 뒤에 두어야 겹칠 때 이쪽이 이긴다 */
+.arena__character--hop .arena__body {
+  animation: arena-land 0.42s;
+}
+
+.arena__character--hop .arena__shadow {
+  animation: arena-land-shadow 0.42s;
 }
 
 /* 틀렸을 때. 색을 뺀다 */
-.arena__character--sad::before {
+.arena__character--sad .arena__body {
   background: linear-gradient(160deg, #b4bcc9, #808a9b);
 }
 
-@keyframes arena-walk {
-  0% { translate: 0 0; rotate: -4deg; }
-  50% { translate: 0 -5px; rotate: 4deg; }
-  100% { translate: 0 0; rotate: -4deg; }
+/* 공이 튀듯 — 땅에 닿는 순간 납작하게 눌리고, 솟아오르며 길쭉해진다.
+   솟는 구간은 점점 느려지고(ease-out) 떨어지는 구간은 점점 빨라진다(ease-in).
+   회전은 넣지 않는다. 좌우로 흔들면 튀는 게 아니라 떠다니는 것으로 보인다. */
+@keyframes arena-bounce {
+  0% {
+    translate: 0 0;
+    scale: 1.22 0.78;
+    animation-timing-function: cubic-bezier(0.15, 0.75, 0.4, 1);
+  }
+  20% { translate: 0 -8px; scale: 0.9 1.12; }
+  50% {
+    translate: 0 -13px;
+    scale: 1 1;
+    animation-timing-function: cubic-bezier(0.6, 0, 0.85, 0.4);
+  }
+  85% { translate: 0 -3px; scale: 0.95 1.06; }
+  100% { translate: 0 0; scale: 1.22 0.78; }
 }
 
-@keyframes arena-hop {
-  0% { translate: 0 0; }
-  40% { translate: 0 -14px; }
-  70% { translate: 0 0; scale: 1.1 0.9; }
+/* 몸이 떠 있는 동안 그림자는 작고 옅어진다. 높이가 눈에 들어오게 하는 장치다 */
+@keyframes arena-bounce-shadow {
+  0% {
+    scale: 1.15 1;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.15, 0.75, 0.4, 1);
+  }
+  50% {
+    scale: 0.6 0.8;
+    opacity: 0.45;
+    animation-timing-function: cubic-bezier(0.6, 0, 0.85, 0.4);
+  }
+  100% { scale: 1.15 1; opacity: 1; }
+}
+
+@keyframes arena-land {
+  0% { translate: 0 0; scale: 1 1; animation-timing-function: cubic-bezier(0.15, 0.8, 0.4, 1); }
+  28% { translate: 0 -22px; scale: 0.86 1.2; animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5); }
+  58% { translate: 0 0; scale: 1.3 0.72; }
+  78% { translate: 0 -5px; scale: 0.96 1.05; }
   100% { translate: 0 0; scale: 1 1; }
+}
+
+@keyframes arena-land-shadow {
+  0% { scale: 1 1; opacity: 1; }
+  28% { scale: 0.5 0.7; opacity: 0.35; }
+  58% { scale: 1.25 1; opacity: 1; }
+  100% { scale: 1 1; opacity: 1; }
 }
 
 /* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
