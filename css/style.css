@@ -1696,11 +1696,10 @@ body.is-booted .app-bar {
 }
 
 .character-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 14px 6px 10px;
+  display: grid;
+  place-items: center;
+  /* 이름이 없으니 그림만 들어간다. 여백을 넉넉히 줘 누르기 편하게 한다 */
+  padding: 16px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1712,18 +1711,11 @@ body.is-booted .app-bar {
 }
 
 /* 미리보기는 정지 그림이다. 뛰는 것은 걸어 다니는 캐릭터 하나뿐이라
-   목록이 어수선해지지 않는다. */
+   목록이 어수선해지지 않는다. 이름을 붙이지 않으므로 칸에는 그림만 들어간다. */
 .character-card__figure {
   position: relative;
   width: 40px;
   height: 48px;
-}
-
-.character-card__name {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-  word-break: keep-all;
 }
 
 /* 지금 쓰고 있는 캐릭터 */
@@ -1732,18 +1724,13 @@ body.is-booted .app-bar {
   background: var(--accent-soft);
 }
 
-.character-card--on .character-card__name {
-  color: var(--accent);
-  font-weight: 700;
-}
-
 @media (max-width: 360px) {
   .character-grid {
     gap: 8px;
   }
 
   .character-card {
-    padding: 12px 4px 8px;
+    padding: 12px 4px;
   }
 }
 

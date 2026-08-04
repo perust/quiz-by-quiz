@@ -133,7 +133,12 @@ export function createArena({ onChoose, trapFocus }) {
     reset(choiceCount) {
       buildTiles(choiceCount);
       el.character.classList.remove('walker--sad');
-      walker.reset();
+      if (!enabled) return;
+
+      // reset이 아니라 setEnabled를 부른다. 워커는 한 번에 하나만 켜지므로
+      // 홈 워커가 켜지는 순간 이 워커는 꺼져 있다. 문항마다 다시 켜야
+      // 캐릭터가 자리를 잡고 스틱도 나타난다.
+      walker.setEnabled(true);
     },
 
     /**

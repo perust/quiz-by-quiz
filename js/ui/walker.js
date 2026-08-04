@@ -320,7 +320,14 @@ export function createWalker(config) {
   }
 
   const walker = {
-    /** 이 워커를 켜고 끈다. 켜면 이전에 켜져 있던 것은 꺼진다 */
+    /**
+     * 이 워커를 켜고 끈다. **켜면 이전에 켜져 있던 것은 꺼진다.**
+     *
+     * 이미 켜져 있을 때 다시 켜도 안전하다 — 자리와 입력을 처음 상태로 되돌리므로
+     * «초기화»가 필요할 때도 이걸 부르면 된다. 별도의 reset을 두지 않는 이유다.
+     * 화면이 바뀌면 이 워커가 조용히 꺼져 있을 수 있어, 다시 쓰기 전에는
+     * 반드시 여기를 거쳐야 한다.
+     */
     setEnabled(value) {
       enabled = Boolean(value);
       if (!enabled) {
@@ -350,22 +357,6 @@ export function createWalker(config) {
 
     isEnabled() {
       return enabled;
-    },
-
-    /** 칸이 바뀌었을 때. 캐릭터는 처음 자리로 돌아간다 */
-    reset() {
-      held.clear();
-      releaseStick();
-      autoTarget = null;
-      locked = false;
-      placed = false;
-      standing = null;
-      character.classList.remove('walker--hop');
-      if (!enabled) return;
-      requestAnimationFrame(() => {
-        place();
-        start();
-      });
     },
 
     /** 잠그면 더 움직이지도 고르지도 못한다 */
