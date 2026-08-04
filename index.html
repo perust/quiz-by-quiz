@@ -114,21 +114,29 @@
            진짜 조작 대상은 위 보기 버튼이다. 여기 타일은 같은 동작을 부르는
            시각적 조작부이고 aria-hidden이라 보기를 두 번 낭독하지 않는다. -->
       <div class="arena" id="arena" hidden>
-        <div class="arena__stage">
-          <div class="arena__character" id="arena-character" aria-hidden="true">
+        <div class="arena__stage" aria-hidden="true">
+          <div class="arena__grid" id="arena-tiles"></div>
+          <div class="arena__character" id="arena-character">
             <span class="arena__face"></span>
           </div>
-          <div class="arena__tiles" id="arena-tiles" aria-hidden="true"></div>
-          <div class="arena__ground" aria-hidden="true"></div>
         </div>
 
+        <!-- 3×3 조작부. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다 -->
         <div class="arena__pad" aria-hidden="true">
-          <button type="button" class="pad-button" id="arena-left" tabindex="-1">◀</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="-1">↖</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="-1">↑</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="-1">↗</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="0">←</button>
           <button type="button" class="pad-button pad-button--pick" id="arena-pick" tabindex="-1">선택</button>
-          <button type="button" class="pad-button" id="arena-right" tabindex="-1">▶</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="0">→</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="1">↙</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="1">↓</button>
+          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="1">↘</button>
         </div>
 
-        <p class="arena__hint" aria-hidden="true">← → 로 움직이고 Enter 로 고릅니다. 바닥을 눌러도 됩니다.</p>
+        <p class="arena__hint" aria-hidden="true">
+          방향키로 움직이고 Enter 로 고릅니다. 바닥을 눌러도 됩니다.
+        </p>
       </div>
 
       <div class="feedback" id="feedback" role="status" hidden>

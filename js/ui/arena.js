@@ -1,21 +1,37 @@
 // 게임 모드 무대
 //
-// 캐릭터를 좌우로 움직여 1~4번 바닥을 밟아 보기를 고른다.
+// 바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
+// 서 있는 칸에는 불이 들어온다.
+//
+//   ┌─────┬─────┐
+//   │  1  │  2  │
+//   ├─────┼─────┤
+//   │  3  │  4  │
+//   └─────┴─────┘
 //
 // **게임 규칙은 갖지 않는다.** 몇 번이 정답인지 판단하지 않고, 고른 번호를
 // onChoose로 넘길 뿐이다. 채점은 core/session.js가 한다. 정답 표시도 스스로
 // 정하지 않고 quiz.js가 알려준 인덱스를 그대로 칠한다.
 //
 // 진짜 조작 대상은 위 패널의 보기 버튼이다. 스크린리더와 Tab 사용자는 그쪽을
-// 쓰고, 여기 타일은 aria-hidden이라 같은 보기를 두 번 낭독하지 않는다.
+// 쓰고, 여기 무대는 aria-hidden이라 같은 보기를 두 번 낭독하지 않는다.
 // 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
-/** 캐릭터가 한 칸 옮겨가는 데 걸리는 시간. CSS transition과 같아야 한다 */
+/** 캐릭터가 옮겨가는 데 걸리는 시간. CSS transition과 같아야 한다 */
 const WALK_MS = 220;
 
-const LEFT_KEYS = ['ArrowLeft', 'a', 'A'];
-const RIGHT_KEYS = ['ArrowRight', 'd', 'D'];
-const PICK_KEYS = ['Enter', ' ', 'ArrowUp', 'w', 'W'];
+/** 바닥을 몇 줄로 나눌지. 보기가 4개라 2×2가 된다 */
+const COLUMNS = 2;
+
+/** 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다 */
+const DIRECTIONS = {
+  ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
+  ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
+  ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
+  ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
+};
+
+const PICK_KEYS = ['Enter', ' '];
 
 /**
  * @param {{ onChoose: (index: number) => void }} callbacks
@@ -25,16 +41,15 @@ export function createArena({ onChoose }) {
     root: document.getElementById('arena'),
     character: document.getElementById('arena-character'),
     tiles: document.getElementById('arena-tiles'),
-    left: document.getElementById('arena-left'),
-    right: document.getElementById('arena-right'),
+    pad: document.querySelector('.arena__pad'),
     pick: document.getElementById('arena-pick'),
   };
 
   /** 켜져 있는가. 꺼져 있으면 키 입력도 받지 않는다 */
   let enabled = false;
-  /** 지금 서 있는 바닥. 문제가 바뀌어도 그 자리에 남는다 */
+  /** 지금 서 있는 칸. 문제가 바뀌어도 그 자리에 남는다 */
   let position = 0;
-  /** 이번 문항의 바닥 개수 */
+  /** 이번 문항의 칸 개수 */
   let count = 0;
   /** 답을 낸 뒤에는 더 고를 수 없다 (FR-3.3을 화면에서도 지킨다) */
   let locked = true;
@@ -45,11 +60,22 @@ export function createArena({ onChoose }) {
 
   const tileNodes = [];
 
+  /**
+   * 지금 눌려 있는 방향키. 대각선은 «두 방향을 같이 누른 상태»로 판정한다.
+   * 창을 벗어나면 keyup을 놓칠 수 있어 blur에서 비운다.
+   */
+  const held = new Set();
+
+  const directionButtons = [...el.pad.querySelectorAll('[data-dx]')];
+
+  // ── 잠금 ───────────────────────────────────────────────────────
+
   /** 답을 낸 뒤에는 조작부가 눌리지 않는다는 것을 눈으로도 알린다 */
   function setLocked(value) {
     locked = value;
     el.root.classList.toggle('arena--locked', value);
-    [el.left, el.right, el.pick].forEach((button) => {
+    el.pick.disabled = value;
+    directionButtons.forEach((button) => {
       button.disabled = value;
     });
   }
@@ -57,8 +83,8 @@ export function createArena({ onChoose }) {
   // ── 캐릭터 위치 ────────────────────────────────────────────────
 
   /**
-   * 캐릭터를 지금 서 있는 바닥의 한가운데로 옮긴다.
-   * 타일 폭은 화면 크기에 따라 달라지므로 값을 저장하지 않고 매번 잰다.
+   * 캐릭터를 지금 서 있는 칸의 한가운데로 옮긴다.
+   * 칸 크기는 화면 폭에 따라 달라지므로 값을 저장하지 않고 매번 잰다.
    * 여백 설정에 기대지 않도록 무대 기준 좌표를 직접 잰다.
    */
   function placeCharacter() {
@@ -70,13 +96,17 @@ export function createArena({ onChoose }) {
     const box = tile.getBoundingClientRect();
     if (box.width === 0) return; // 아직 배치되지 않았다
 
-    const center = box.left - base.left + box.width / 2;
-    el.character.style.transform = `translateX(${center}px) translateX(-50%)`;
+    const x = box.left - base.left + box.width / 2;
+    const y = box.top - base.top + box.height / 2;
+    // 세로는 한가운데보다 조금 위에 둔다. 발밑 그림자가 칸 안에 들어와
+    // 칸을 딛고 선 것처럼 보이고, 아래쪽 채점 표시와도 겹치지 않는다
+    el.character.style.transform = `translate(${x}px, ${y}px) translate(-50%, -56%)`;
   }
 
-  function markActive() {
+  /** 서 있는 칸에 불을 켠다 */
+  function lightCurrent() {
     tileNodes.forEach((tile, index) => {
-      tile.classList.toggle('arena-tile--active', index === position);
+      tile.classList.toggle('arena-tile--lit', index === position);
     });
   }
 
@@ -99,13 +129,39 @@ export function createArena({ onChoose }) {
     position = next;
 
     if (animate && moved) startWalkEffect();
-    markActive();
+    lightCurrent();
     placeCharacter();
   }
 
-  function step(delta) {
-    if (!enabled || locked) return;
-    moveTo(position + delta);
+  /**
+   * 8방향 이동. 가로와 세로를 따로 잘라내면 대각선이 저절로 나온다.
+   * 칸 밖으로는 나가지 않고, 없는 칸(보기가 4개보다 적을 때)은 벽처럼 막는다.
+   *
+   * @param {number} dx -1 · 0 · 1
+   * @param {number} dy -1 · 0 · 1
+   */
+  function step(dx, dy) {
+    if (!enabled || locked || count === 0) return;
+
+    const rows = Math.ceil(count / COLUMNS);
+    const col = Math.min(Math.max((position % COLUMNS) + dx, 0), COLUMNS - 1);
+    const row = Math.min(Math.max(Math.floor(position / COLUMNS) + dy, 0), rows - 1);
+
+    const target = row * COLUMNS + col;
+    if (target >= count) return; // 비어 있는 자리에는 들어가지 않는다
+    moveTo(target);
+  }
+
+  /** 지금 눌려 있는 키들을 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
+  function directionFromHeld(key) {
+    let [dx, dy] = DIRECTIONS[key];
+    for (const other of held) {
+      const paired = DIRECTIONS[other];
+      if (!paired || other === key) continue;
+      if (paired[0] !== 0 && dx === 0) [dx] = paired;
+      if (paired[1] !== 0 && dy === 0) [, dy] = paired;
+    }
+    return [dx, dy];
   }
 
   // ── 고르기 ─────────────────────────────────────────────────────
@@ -116,7 +172,7 @@ export function createArena({ onChoose }) {
     onChoose(position);
   }
 
-  /** 바닥을 직접 누르면 그 자리까지 걸어가서 고른다. 한 번 누르면 끝난다 */
+  /** 바닥을 직접 누르면 그 칸까지 건너간 뒤 고른다. 한 번 누르면 끝난다 */
   function goAndPick(index) {
     if (!enabled || locked) return;
     const walking = index !== position;
@@ -127,7 +183,7 @@ export function createArena({ onChoose }) {
       pick();
       return;
     }
-    // 걸어가는 모습을 보여준 뒤에 고른다. 그동안에도 시간은 계속 흐른다
+    // 옮겨가는 모습을 보여준 뒤에 고른다. 그동안에도 시간은 계속 흐른다
     pickTimer = setTimeout(pick, WALK_MS);
   }
 
@@ -159,11 +215,19 @@ export function createArena({ onChoose }) {
 
   // ── 입력 ───────────────────────────────────────────────────────
 
-  el.left.addEventListener('click', () => step(-1));
-  el.right.addEventListener('click', () => step(1));
+  directionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      step(Number(button.dataset.dx), Number(button.dataset.dy));
+    });
+  });
+
   el.pick.addEventListener('click', () => pick());
 
-  // 타일 폭이 바뀌면 캐릭터도 따라가야 한다
+  // 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
+  document.addEventListener('keyup', (event) => held.delete(event.key));
+  window.addEventListener('blur', () => held.clear());
+
+  // 칸 크기가 바뀌면 캐릭터도 따라가야 한다
   window.addEventListener('resize', placeCharacter);
 
   return {
@@ -171,6 +235,7 @@ export function createArena({ onChoose }) {
     setEnabled(value) {
       enabled = Boolean(value);
       el.root.hidden = !enabled;
+      held.clear();
       if (enabled) placeCharacter();
     },
 
@@ -180,13 +245,14 @@ export function createArena({ onChoose }) {
 
     /**
      * 새 문항을 위해 바닥을 다시 깐다.
-     * 캐릭터는 서 있던 자리에 남는다 — 그 자리에서 다음 답까지 걸어가는 것이 이 모드의 재미다.
+     * 캐릭터는 서 있던 자리에 남는다 — 그 자리에서 다음 답까지 건너가는 것이 이 모드의 재미다.
      * @param {number} choiceCount
      */
     reset(choiceCount) {
       clearTimeout(pickTimer);
       count = choiceCount;
       setLocked(false);
+      held.clear();
 
       el.character.classList.remove('arena__character--hop', 'arena__character--sad');
       buildTiles(choiceCount);
@@ -206,37 +272,40 @@ export function createArena({ onChoose }) {
       clearTimeout(pickTimer);
 
       tileNodes.forEach((tile, index) => {
-        // 채점 뒤에는 «서 있는 자리» 강조를 뺀다. 정답·오답 표시와 섞이면
-        // 시간 초과처럼 아무것도 안 고른 경우에 엉뚱한 바닥이 골라진 것처럼 보인다.
+        // 채점 뒤에는 «서 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면
+        // 시간 초과처럼 아무것도 안 고른 경우에 엉뚱한 칸이 골라진 것처럼 보인다.
         // 어디 서 있는지는 캐릭터가 이미 알려준다.
-        tile.classList.remove('arena-tile--active');
+        tile.classList.remove('arena-tile--lit');
 
         if (index === answerIndex) tile.classList.add('arena-tile--correct');
         else if (index === chosenIndex) tile.classList.add('arena-tile--wrong');
         else tile.classList.add('arena-tile--muted');
       });
 
-      // 시간 초과면 캐릭터가 아무 바닥에도 서 있지 않은 셈이라 그대로 둔다
+      // 시간 초과면 캐릭터가 아무 칸도 고르지 않은 셈이라 그대로 둔다
       if (chosenIndex === null) return;
       el.character.classList.toggle('arena__character--sad', !correct);
     },
 
     /**
      * 퀴즈 화면이 받은 키를 넘겨준다. 처리했으면 true.
-     * 보기 버튼에 포커스가 있을 때는 확정 키를 가로채지 않는다 —
+     * 보기 버튼이나 조작부에 포커스가 있을 때는 확정 키를 가로채지 않는다 —
      * 그건 버튼 자체가 처리해야 할 입력이다.
      */
     handleKey(event) {
-      if (!enabled || locked) return false;
+      if (!enabled) return false;
 
-      if (LEFT_KEYS.includes(event.key)) {
-        step(-1);
+      if (DIRECTIONS[event.key]) {
+        // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음 문항에서 유령 대각선이 생긴다
+        const [dx, dy] = directionFromHeld(event.key);
+        held.add(event.key);
+        if (locked) return false;
+        step(dx, dy);
         return true;
       }
-      if (RIGHT_KEYS.includes(event.key)) {
-        step(1);
-        return true;
-      }
+
+      if (locked) return false;
+
       if (PICK_KEYS.includes(event.key)) {
         if (document.activeElement?.closest('.choice, .pad-button')) return false;
         pick();
