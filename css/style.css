@@ -1122,6 +1122,263 @@ body.is-booted .app-bar {
   animation: fade-up 0.25s ease;
 }
 
+/* ── 게임 모드 무대 ──
+   캐릭터를 좌우로 움직여 1~4번 바닥을 밟아 보기를 고른다.
+   조작의 실체는 위 보기 버튼이고 여기는 그 버튼을 부르는 시각적 조작부다.
+   그래서 게임 모드를 꺼도 잃는 기능이 없다. */
+
+/* 게임 모드에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
+   무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
+.quiz--game .choices {
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.quiz--game .choice {
+  min-height: 40px;
+  padding: 7px 12px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.quiz--game .choice__key {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.arena {
+  margin: 0 0 20px;
+}
+
+.arena__stage {
+  position: relative;
+  padding-top: 52px; /* 캐릭터가 설 자리 */
+}
+
+/* ── 캐릭터 ── */
+.arena__character {
+  position: absolute;
+  /* 발이 바닥 윗면(padding-top)에 정확히 닿게 둔다 */
+  top: 8px;
+  left: 0;
+  width: 36px;
+  height: 44px;
+  /* 살짝 튕기며 멈춰 걸어간 느낌을 준다. JS의 WALK_MS와 길이를 맞춘다 */
+  transition: transform 0.22s cubic-bezier(0.34, 1.16, 0.64, 1);
+  will-change: transform;
+}
+
+/* 몸통. 이미지 파일 없이 CSS로만 그린다 */
+.arena__character::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 46% 46% 38% 38%;
+  background: linear-gradient(160deg, #6b8afd, var(--accent));
+  box-shadow: inset 0 -6px 0 rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.24);
+}
+
+/* 눈 둘 */
+.arena__face,
+.arena__face::after {
+  position: absolute;
+  top: 15px;
+  width: 6px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.arena__face {
+  left: 9px;
+}
+
+.arena__face::after {
+  content: '';
+  top: 0;
+  left: 12px;
+}
+
+.arena__character--walking {
+  animation: arena-walk 0.22s ease;
+}
+
+.arena__character--hop {
+  animation: arena-hop 0.34s ease;
+}
+
+/* 틀렸을 때. 색을 빼고 살짝 주저앉는다 */
+.arena__character--sad::before {
+  background: linear-gradient(160deg, #b4bcc9, #808a9b);
+}
+
+.arena__character--sad {
+  transform-origin: bottom center;
+}
+
+@keyframes arena-walk {
+  0% { transform-origin: bottom center; }
+  50% { translate: 0 -6px; rotate: -4deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+
+@keyframes arena-hop {
+  0% { translate: 0 0; }
+  40% { translate: 0 -14px; }
+  70% { translate: 0 0; scale: 1.1 0.9; }
+  100% { translate: 0 0; scale: 1 1; }
+}
+
+/* ── 바닥 ── */
+.arena__tiles {
+  position: relative;
+  display: flex;
+  gap: 8px;
+}
+
+.arena-tile {
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* 바닥처럼 보이게 아래쪽에 두께를 준다 */
+  box-shadow: 0 4px 0 var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.arena-tile__number {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.arena-tile__mark {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  min-height: 11px;
+}
+
+/* 캐릭터가 서 있는 바닥 */
+.arena-tile--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 4px 0 var(--accent);
+}
+
+.arena-tile--active .arena-tile__number {
+  color: var(--accent);
+}
+
+/* 채점 뒤. 색만이 아니라 표시로도 구분한다 (FR-4.1, FR-4.2) */
+.arena-tile--correct {
+  background: var(--correct-soft);
+  border-color: var(--correct);
+  box-shadow: 0 4px 0 var(--correct);
+}
+
+.arena-tile--correct .arena-tile__number,
+.arena-tile--correct .arena-tile__mark {
+  color: var(--correct);
+}
+
+.arena-tile--correct .arena-tile__mark::after {
+  content: '✓ 정답';
+}
+
+.arena-tile--wrong {
+  background: var(--wrong-soft);
+  border-color: var(--wrong);
+  box-shadow: 0 4px 0 var(--wrong);
+}
+
+.arena-tile--wrong .arena-tile__number,
+.arena-tile--wrong .arena-tile__mark {
+  color: var(--wrong);
+}
+
+.arena-tile--wrong .arena-tile__mark::after {
+  content: '✗ 오답';
+}
+
+.arena-tile--muted {
+  opacity: 0.5;
+}
+
+/* 바닥 아래 지면 */
+.arena__ground {
+  height: 3px;
+  margin-top: 9px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent);
+}
+
+/* ── 조작부 ──
+   키보드가 없는 환경을 위한 것이다. Tab 순서에서는 빼두었다(tabindex="-1") —
+   보기 버튼이 이미 Tab으로 닿으므로 같은 기능을 두 번 거치게 하지 않는다. */
+.arena__pad {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pad-button {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--border);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.pad-button:active:not(:disabled) {
+  translate: 0 3px;
+  box-shadow: none;
+}
+
+/* 답을 낸 뒤. 눌러도 소용없다는 것을 눈으로 알린다 */
+.pad-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.arena--locked .arena-tile {
+  cursor: default;
+}
+
+.pad-button--pick {
+  min-width: 88px;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 3px 0 #2c46ad;
+  color: #fff;
+  font-size: 15px;
+}
+
+.arena__hint {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */
 @media (prefers-reduced-motion: reduce) {
   *,

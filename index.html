@@ -35,6 +35,10 @@
   </div>
 
   <div class="app-bar">
+    <button type="button" class="icon-button" id="game-mode-toggle" aria-pressed="false">
+      <span class="icon-button__icon" id="game-mode-icon" aria-hidden="true">📋</span>
+      <span id="game-mode-label">보통 모드</span>
+    </button>
     <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
       <span class="icon-button__icon" id="sound-icon" aria-hidden="true">🔊</span>
       <span id="sound-label">소리 켜짐</span>
@@ -105,6 +109,27 @@
       <h1 class="question" id="question-text" tabindex="-1"></h1>
 
       <ul class="choices" id="choices" aria-label="보기"></ul>
+
+      <!-- 게임 모드 무대 (FR 밖의 선택 기능).
+           진짜 조작 대상은 위 보기 버튼이다. 여기 타일은 같은 동작을 부르는
+           시각적 조작부이고 aria-hidden이라 보기를 두 번 낭독하지 않는다. -->
+      <div class="arena" id="arena" hidden>
+        <div class="arena__stage">
+          <div class="arena__character" id="arena-character" aria-hidden="true">
+            <span class="arena__face"></span>
+          </div>
+          <div class="arena__tiles" id="arena-tiles" aria-hidden="true"></div>
+          <div class="arena__ground" aria-hidden="true"></div>
+        </div>
+
+        <div class="arena__pad" aria-hidden="true">
+          <button type="button" class="pad-button" id="arena-left" tabindex="-1">◀</button>
+          <button type="button" class="pad-button pad-button--pick" id="arena-pick" tabindex="-1">선택</button>
+          <button type="button" class="pad-button" id="arena-right" tabindex="-1">▶</button>
+        </div>
+
+        <p class="arena__hint" aria-hidden="true">← → 로 움직이고 Enter 로 고릅니다. 바닥을 눌러도 됩니다.</p>
+      </div>
 
       <div class="feedback" id="feedback" role="status" hidden>
         <p class="feedback__verdict" id="feedback-verdict"></p>

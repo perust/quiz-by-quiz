@@ -6,6 +6,7 @@ import { WARNING_THRESHOLD_MS } from '../constants.js';
 import { createQuestionTimer } from '../core/timer.js';
 import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { announce } from './screens.js';
+import { createArena } from './arena.js';
 
 /** 키보드로 보기를 선택할 때 쓰는 키 (FR-3.5) */
 const CHOICE_KEYS = ['1', '2', '3', '4'];
@@ -40,6 +41,9 @@ export function createQuizScreen({ onExit, onComplete }) {
   };
 
   const timer = createQuestionTimer();
+
+  // 게임 모드 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다
+  const arena = createArena({ onChoose: (index) => selectChoice(index) });
 
   let session = null;
   let categoryLabel = '';
@@ -146,6 +150,7 @@ export function createQuizScreen({ onExit, onComplete }) {
 
     updateProgress();
     renderChoices(question);
+    arena.reset(question.choices.length);
 
     el.feedback.hidden = true;
     el.feedback.classList.remove('feedback--correct', 'feedback--wrong');
@@ -199,6 +204,13 @@ export function createQuizScreen({ onExit, onComplete }) {
     });
 
     updateProgress();
+
+    // 무대에도 같은 결과를 칠한다. 정답이 몇 번인지는 여기서 알려준다
+    arena.showOutcome({
+      answerIndex: question.answerIndex,
+      chosenIndex: record.choiceIndex,
+      correct: record.correct,
+    });
 
     el.feedback.classList.add(record.correct ? 'feedback--correct' : 'feedback--wrong');
     if (record.correct) {
@@ -284,7 +296,11 @@ export function createQuizScreen({ onExit, onComplete }) {
     if (index !== -1 && index < session.currentQuestion().choices.length) {
       event.preventDefault();
       selectChoice(index);
+      return;
     }
+
+    // 게임 모드가 꺼져 있으면 무대는 아무 키도 가져가지 않는다
+    if (arena.handleKey(event)) event.preventDefault();
   });
 
   return {
@@ -299,6 +315,18 @@ export function createQuizScreen({ onExit, onComplete }) {
       el.dialog.hidden = true;
       dialogOpener = null;
       renderQuestion();
+    },
+
+    /**
+     * 게임 모드를 켜고 끈다. 판 도중에 바꿔도 세션은 그대로다 —
+     * 무대는 보기 버튼을 대신 눌러줄 뿐이라 게임 상태를 갖지 않는다.
+     */
+    setGameMode(value) {
+      arena.setEnabled(value);
+      el.screen.classList.toggle('quiz--game', Boolean(value));
+      if (value && session && !session.isAnswered()) {
+        arena.reset(session.currentQuestion().choices.length);
+      }
     },
   };
 }
