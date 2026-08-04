@@ -1301,10 +1301,16 @@ body.is-booted .app-bar {
   cursor: default;
 }
 
-/* ── 캐릭터 ──
-   바닥 위에 겹쳐 놓는다. 칸을 누르는 것을 막지 않도록 클릭은 통과시킨다. */
-/* 좌표는 매 프레임 JS가 직접 넣는다. transition을 걸면 입력이 굼떠지므로 걸지 않는다 */
-.arena__character {
+/* ── 걸어 다니는 캐릭터 ──
+   퀴즈 무대·홈·캐릭터 화면이 같은 조각을 쓴다.
+
+     .walker          위치. JS가 transform 으로만 옮긴다
+     .walker__body    뛰고 눌리는 몸통 (슬라임은 눈, 도트는 스프라이트를 품는다)
+     .walker__shadow  땅에 남는 그림자
+
+   몸통을 ::before 로 그리면 눈이 따로 놀고 그림자가 몸을 따라 떠올라
+   튀는 것으로 보이지 않는다. 그래서 실제 요소로 나눴다. */
+.walker {
   position: absolute;
   top: 0;
   left: 0;
@@ -1314,21 +1320,42 @@ body.is-booted .app-bar {
   will-change: transform;
 }
 
-/* 몸통. 이미지 파일 없이 CSS로만 그린다 */
-/* 몸통. 튀고 눌리는 것은 전부 여기다 — 눈이 안에 있어 함께 움직인다.
-   transform-origin이 발밑이라 눌릴 때 바닥에 붙어 있는다. */
-.arena__body {
+/* 홈과 캐릭터 화면은 무대가 넓어 조금 크게 그린다 */
+.walker--home {
+  width: 40px;
+  height: 48px;
+}
+
+.walker__body {
   position: absolute;
   inset: 0;
   border-radius: 46% 46% 38% 38%;
-  background: linear-gradient(160deg, #6b8afd, var(--accent));
   box-shadow: inset 0 -6px 0 rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.3);
+  /* 발밑 기준으로 눌린다. 가운데 기준이면 땅으로 꺼져 보인다 */
   transform-origin: 50% 100%;
 }
 
-/* 발밑 그림자. 몸이 튀어 올라도 그림자는 땅에 남아야 «튀는» 것으로 읽힌다.
-   그래서 몸통과 형제로 두고 따로 움직인다. */
-.arena__shadow {
+/* 도트 몬스터는 덩어리가 아니라 스프라이트다. 배경과 그림자를 지운다 */
+.walker__body--pixel {
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+}
+
+/* 1px 요소 하나에 box-shadow 로 픽셀을 찍는다 (ui/sprite.js).
+   요소가 하나라 scale·translate 가 스프라이트 전체에 통째로 먹는다. */
+.walker__dot {
+  /* 점 크기와 간격이 같아야 픽셀이 빈틈없이 붙는다 */
+  width: var(--pixel-unit);
+  height: var(--pixel-unit);
+  /* box-shadow 는 오른쪽·아래로만 퍼지므로 왼쪽 위로 당겨 가운데를 맞춘다 */
+  translate: var(--sprite-shift-x) var(--sprite-shift-y);
+}
+
+/* 발밑 그림자. 몸이 튀어 올라도 여기 남아야 «튀는» 것으로 읽힌다 */
+.walker__shadow {
   position: absolute;
   left: 50%;
   bottom: -7px;
@@ -1340,9 +1367,13 @@ body.is-booted .app-bar {
   filter: blur(1px);
 }
 
-/* 눈 둘 */
-.arena__face,
-.arena__face::after {
+.walker--home .walker__shadow {
+  width: 30px;
+}
+
+/* 슬라임의 눈 둘 */
+.walker__face,
+.walker__face::after {
   position: absolute;
   top: 14px;
   width: 6px;
@@ -1351,43 +1382,62 @@ body.is-booted .app-bar {
   background: #fff;
 }
 
-.arena__face {
+.walker__face {
   left: 8px;
 }
 
-.arena__face::after {
+.walker__face::after {
   content: '';
   top: 0;
   left: 12px;
 }
 
-/* 움직이는 동안 계속 튄다. 멈추면 클래스가 빠져 제자리로 돌아온다 */
-.arena__character--walking .arena__body {
-  animation: arena-bounce 0.3s infinite;
+.walker--home .walker__face {
+  top: 16px;
+  left: 10px;
 }
 
-.arena__character--walking .arena__shadow {
-  animation: arena-bounce-shadow 0.3s infinite;
+/* ── 움직임 ──
+   공이 튀듯 — 땅에 닿는 순간 납작하게 눌리고, 솟아오르며 길쭉해진다.
+   솟는 구간은 점점 느려지고(ease-out) 떨어지는 구간은 점점 빨라진다(ease-in).
+   rotate 를 넣지 말 것. 좌우로 흔들면 튀는 게 아니라 떠다니는 것으로 보인다. */
+.walker--walking .walker__body {
+  animation: walker-bounce 0.3s infinite;
 }
 
-/* 답을 낼 때 한 번 크게 뛴다. --walking 뒤에 두어야 겹칠 때 이쪽이 이긴다 */
-.arena__character--hop .arena__body {
-  animation: arena-land 0.42s;
+.walker--walking .walker__shadow {
+  animation: walker-bounce-shadow 0.3s infinite;
 }
 
-.arena__character--hop .arena__shadow {
-  animation: arena-land-shadow 0.42s;
+/* 서 있을 때도 제자리에서 가만히 뛴다. «움직일 수 있다»를 눈으로 알린다 */
+.walker--idle .walker__body {
+  animation: walker-idle 1.1s infinite;
+}
+
+.walker--idle .walker__shadow {
+  animation: walker-idle-shadow 1.1s infinite;
+}
+
+/* 고를 때 한 번 크게 뛴다. --walking·--idle 뒤에 두어야 겹칠 때 이쪽이 이긴다 */
+.walker--hop .walker__body {
+  animation: walker-land 0.42s;
+}
+
+.walker--hop .walker__shadow {
+  animation: walker-land-shadow 0.42s;
 }
 
 /* 틀렸을 때. 색을 뺀다 */
-.arena__character--sad .arena__body {
+.walker--sad .walker__body {
   background: linear-gradient(160deg, #b4bcc9, #808a9b);
 }
 
-/* 공이 튀듯 — 땅에 닿는 순간 납작하게 눌리고, 솟아오르며 길쭉해진다.
-   솟는 구간은 점점 느려지고(ease-out) 떨어지는 구간은 점점 빨라진다(ease-in).
-   회전은 넣지 않는다. 좌우로 흔들면 튀는 게 아니라 떠다니는 것으로 보인다. */
-@keyframes arena-bounce {
+.walker--sad .walker__body--pixel {
+  background: none;
+  filter: grayscale(1);
+}
+
+@keyframes walker-bounce {
   0% {
     translate: 0 0;
     scale: 1.22 0.78;
@@ -1403,8 +1453,7 @@ body.is-booted .app-bar {
   100% { translate: 0 0; scale: 1.22 0.78; }
 }
 
-/* 몸이 떠 있는 동안 그림자는 작고 옅어진다. 높이가 눈에 들어오게 하는 장치다 */
-@keyframes arena-bounce-shadow {
+@keyframes walker-bounce-shadow {
   0% {
     scale: 1.15 1;
     opacity: 1;
@@ -1418,7 +1467,30 @@ body.is-booted .app-bar {
   100% { scale: 1.15 1; opacity: 1; }
 }
 
-@keyframes arena-land {
+/* 제자리 뛰기. 걷기보다 낮고 느긋하다 — 서 있다는 느낌은 남기되 살아 있게 한다 */
+@keyframes walker-idle {
+  0% {
+    translate: 0 0;
+    scale: 1.12 0.88;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  35% {
+    translate: 0 -7px;
+    scale: 0.96 1.04;
+    animation-timing-function: cubic-bezier(0.6, 0, 0.85, 0.4);
+  }
+  70% { translate: 0 0; scale: 1.12 0.88; }
+  100% { translate: 0 0; scale: 1.12 0.88; }
+}
+
+@keyframes walker-idle-shadow {
+  0% { scale: 1.08 1; opacity: 1; animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  35% { scale: 0.78 0.9; opacity: 0.65; animation-timing-function: cubic-bezier(0.6, 0, 0.85, 0.4); }
+  70% { scale: 1.08 1; opacity: 1; }
+  100% { scale: 1.08 1; opacity: 1; }
+}
+
+@keyframes walker-land {
   0% { translate: 0 0; scale: 1 1; animation-timing-function: cubic-bezier(0.15, 0.8, 0.4, 1); }
   28% { translate: 0 -22px; scale: 0.86 1.2; animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5); }
   58% { translate: 0 0; scale: 1.3 0.72; }
@@ -1426,16 +1498,16 @@ body.is-booted .app-bar {
   100% { translate: 0 0; scale: 1 1; }
 }
 
-@keyframes arena-land-shadow {
+@keyframes walker-land-shadow {
   0% { scale: 1 1; opacity: 1; }
   28% { scale: 0.5 0.7; opacity: 0.35; }
   58% { scale: 1.25 1; opacity: 1; }
   100% { scale: 1 1; opacity: 1; }
 }
 
-/* 무대 아래 한 줄 안내. ? 는 눌러야 보이므로 처음 켠 사람을 위해 최소한만 적는다.
-   키보드가 없는 기기에 «방향키로 조작하세요» 라고 적으면 쓸모가 없어 문구를 나눈다. */
-.arena__hint {
+/* ── 무대 아래 한 줄 안내 ── */
+.arena__hint,
+.home-hint {
   margin: 9px 0 0;
   text-align: center;
   font-size: 11px;
@@ -1443,14 +1515,20 @@ body.is-booted .app-bar {
   color: var(--text-muted);
 }
 
-.arena__hint-touch {
+.home-hint {
+  margin-top: 14px;
+}
+
+.arena__hint-touch,
+.home-hint-touch {
   display: none;
 }
 
 /* ── 이동 스틱 ──
-   손가락 입력이 있는 기기에서만 그린다. 화면에 띄워 세로 자리를 차지하지 않는다.
-   민 거리가 그대로 속도가 되므로 살살 밀면 천천히 움직인다. */
-.arena__stick {
+   손가락 입력이 있는 기기에서, 걸어 다닐 수 있는 화면에서만 그린다.
+   화면에 띄워 세로 자리를 차지하지 않는다.
+   z-index 를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. */
+.walk-stick {
   display: none;
   position: fixed;
   left: 16px;
@@ -1467,29 +1545,32 @@ body.is-booted .app-bar {
 }
 
 @media (pointer: coarse) {
-  .arena__hint-key {
+  .arena__hint-key,
+  .home-hint-key {
     display: none;
   }
 
-  .arena__hint-touch {
+  .arena__hint-touch,
+  .home-hint-touch {
     display: inline;
   }
 
-  .arena__stick {
+  /* 걸어 다닐 수 있는 화면에서만 켠다 (walker.js 가 붙이는 클래스) */
+  .walk-stick--on {
     display: block;
   }
 }
 
 /* 화면이 짧으면 무대와 겹칠 수 있다. 줄여서 가리는 넓이를 좁힌다 */
 @media (max-height: 700px) {
-  .arena__stick {
+  .walk-stick {
     width: 84px;
     height: 84px;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     left: 10px;
   }
 
-  .arena__knob {
+  .walk-stick__knob {
     width: 36px;
     height: 36px;
     margin: -18px 0 0 -18px;
@@ -1497,11 +1578,11 @@ body.is-booted .app-bar {
 }
 
 /* 답을 낸 뒤에는 치운다. 그대로 두면 «다음 문제» 버튼을 가린다 */
-.arena--locked .arena__stick {
+.arena--locked .walk-stick {
   display: none;
 }
 
-.arena__knob {
+.walk-stick__knob {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1512,6 +1593,160 @@ body.is-booted .app-bar {
   background: var(--accent);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
 }
+
+/* ── 홈 무대 ──
+   캐릭터가 이 안을 걸어 다닌다. 좌표 기준이므로 position 이 필요하다. */
+.home-stage {
+  position: relative;
+}
+
+/* 카테고리보다 위에 둔다. 첫 화면에 보여야 캐릭터가 서 있는 것이 눈에 들어온다 */
+.home-menu {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.menu-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 오른쪽은 캐릭터가 설 자리로 비워 둔다. 글자를 덜 가린다 */
+  padding: 14px 44px 14px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.menu-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.menu-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 미리보기 자리. 슬라임·도트가 여기 들어간다 */
+.menu-card__figure {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 40px;
+  font-size: 22px;
+  line-height: 40px;
+  text-align: center;
+}
+
+.menu-card__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu-card__name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.menu-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 캐릭터가 올라선 칸. 눌러서 고를 수 있다는 표시다 */
+.category-card.is-standing,
+.challenge-card.is-standing,
+.menu-card.is-standing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 18px rgba(59, 91, 219, 0.28);
+}
+
+/* ── 내 캐릭터 화면 ── */
+.screen-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.screen-lead {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.character-stage {
+  position: relative;
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.character-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+/* 미리보기는 정지 그림이다. 뛰는 것은 걸어 다니는 캐릭터 하나뿐이라
+   목록이 어수선해지지 않는다. */
+.character-card__figure {
+  position: relative;
+  width: 40px;
+  height: 48px;
+}
+
+.character-card__name {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  word-break: keep-all;
+}
+
+/* 지금 쓰고 있는 캐릭터 */
+.character-card--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.character-card--on .character-card__name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+@media (max-width: 360px) {
+  .character-grid {
+    gap: 8px;
+  }
+
+  .character-card {
+    padding: 12px 4px 8px;
+  }
+}
+
 
 /* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
    무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다.
