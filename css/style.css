@@ -1386,6 +1386,15 @@ body.is-booted .app-bar {
   100% { scale: 1 1; opacity: 1; }
 }
 
+/* 무대 아래 한 줄 안내. ? 는 눌러야 보이므로 처음 켠 사람을 위해 최소한만 적는다 */
+.arena__hint {
+  margin: 9px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 /* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
    무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다.
    게임 모드가 아니면 쓸모가 없으므로 아예 그리지 않는다. */
