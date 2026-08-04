@@ -118,26 +118,15 @@
       <!-- 게임 모드 무대 (FR 밖의 선택 기능).
            진짜 조작 대상은 위 보기 버튼이다. 여기 타일은 같은 동작을 부르는
            시각적 조작부이고 aria-hidden이라 보기를 두 번 낭독하지 않는다. -->
-      <!-- 바닥과 조작부를 나란히 둔다. 위아래로 쌓으면 세로가 두 배가 된다 -->
+      <!-- 방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
+           손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다.
+           조작부를 두면 하는 일 없이 자리만 차지한다. -->
       <div class="arena" id="arena" hidden>
         <div class="arena__stage" aria-hidden="true">
           <div class="arena__grid" id="arena-tiles"></div>
           <div class="arena__character" id="arena-character">
             <span class="arena__face"></span>
           </div>
-        </div>
-
-        <!-- 3×3 조작부. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다 -->
-        <div class="arena__pad" aria-hidden="true">
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="-1">↖</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="-1">↑</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="-1">↗</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="0">←</button>
-          <button type="button" class="pad-button pad-button--pick" id="arena-pick" tabindex="-1">선택</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="0">→</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="-1" data-dy="1">↙</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="0" data-dy="1">↓</button>
-          <button type="button" class="pad-button" tabindex="-1" data-dx="1" data-dy="1">↘</button>
         </div>
       </div>
 
@@ -241,6 +230,9 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-dialog-title">
       <h2 class="dialog__title" id="help-dialog-title">게임 모드 조작법</h2>
       <dl class="help-list">
+        <dt>누르기</dt>
+        <dd>바닥을 직접 누르면 건너가서 고릅니다</dd>
+
         <dt>움직이기</dt>
         <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dd>
 
@@ -249,9 +241,6 @@
 
         <dt>고르기</dt>
         <dd><kbd>Enter</kbd> 또는 <kbd>Space</kbd></dd>
-
-        <dt>바로 고르기</dt>
-        <dd>바닥을 직접 누르면 건너가서 고릅니다</dd>
 
         <dt>번호로</dt>
         <dd><kbd>1</kbd> ~ <kbd>4</kbd> 는 게임 모드와 상관없이 늘 됩니다</dd>

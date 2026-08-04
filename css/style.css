@@ -1146,13 +1146,10 @@ body.is-booted .app-bar {
   font-size: 11px;
 }
 
-/* 바닥과 조작부를 나란히 둔다. 위아래로 쌓으면 세로가 두 배가 된다.
-   조작부는 폭이 고정이고 바닥이 남는 만큼 늘어난다. */
+/* 방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
+   손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다.
+   덕분에 바닥이 폭을 다 쓰고 세로도 바닥 높이만 차지한다. */
 .arena {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 12px;
   margin: 0 0 20px;
 }
 
@@ -1340,18 +1337,8 @@ body.is-booted .app-bar {
   100% { translate: 0 0; scale: 1 1; }
 }
 
-/* ── 조작부 ──
-   3×3 배치. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다.
-   키보드가 없는 환경을 위한 것이라 Tab 순서에서는 빼두었다(tabindex="-1") —
-   보기 버튼이 이미 Tab으로 닿으므로 같은 기능을 두 번 거치게 하지 않는다. */
-.arena__pad {
-  display: grid;
-  grid-template-columns: repeat(3, 44px);
-  gap: 6px;
-}
-
 /* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
-   조작부와 달리 Tab으로 닿는다 — 키보드만 쓰는 사람이 조작법을 볼 길이 있어야 한다.
+   무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다.
    게임 모드가 아니면 쓸모가 없으므로 아예 그리지 않는다. */
 .arena__help {
   display: none;
@@ -1416,40 +1403,6 @@ body.is-booted .app-bar {
   text-align: center;
 }
 
-.pad-button {
-  height: 46px;
-  padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 3px 0 var(--border);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-muted);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.pad-button:active:not(:disabled) {
-  translate: 0 3px;
-  box-shadow: none;
-}
-
-/* 답을 낸 뒤. 눌러도 소용없다는 것을 눈으로 알린다 */
-.pad-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.pad-button--pick {
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 3px 0 #2c46ad;
-  color: #fff;
-  font-size: 13px;
-}
-
 /* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1496,23 +1449,8 @@ body.is-booted .app-bar {
     font-size: 18px;
   }
 
-  /* 조작부를 조금 줄여 옆의 바닥에 폭을 넘긴다 */
-  .arena {
-    gap: 10px;
-  }
-
-  .arena__pad {
-    grid-template-columns: repeat(3, 40px);
-    gap: 5px;
-  }
-
-  .pad-button {
-    height: 40px;
-    font-size: 15px;
-  }
-
-  .pad-button--pick {
-    font-size: 12px;
+  .arena-tile {
+    height: 64px;
   }
 
   .result-score strong {
