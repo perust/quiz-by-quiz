@@ -20,6 +20,7 @@ allowed-tools: Bash(python3:*), Read
 | 7 | **관심 학생** — 세 갈래로 분류 |
 | 8 | **교육 제안** — 데이터에서 자동 도출 |
 | 9 | **문항별 분석** — 정답률·난이도 불일치·시간 초과 |
+| 10 | **HTML 리포트** — `teacher/teacher_report.html` 로 저장 |
 
 **읽을 기록이 없으면 종료 코드 1로 멈춘다.** 데이터가 없으면 나머지가 전부 무의미하다.
 그때는 `/quiz-teacher-collect` 의 학생용 내보내기 안내를 전달한다.
@@ -215,7 +216,7 @@ print('━' * 58)
 records, problems = load()
 print('\n[1] 수집')
 ignored = os.path.exists('.gitignore') and re.search(
-    r'^teacher/submissions/?\s*$', open('.gitignore', encoding='utf-8').read(), re.M)
+    r'^teacher/(\*|submissions/?)?\s*$', open('.gitignore', encoding='utf-8').read(), re.M)
 print(f'  개인정보 제외(.gitignore): {"예" if ignored else "!! 아니오 — 학생 이름과 성적이 커밋될 수 있습니다"}')
 for p in problems:
     print('   !!', p)
@@ -408,6 +409,195 @@ else:
         for r in timeouts[:5]:
             print(f"    [{r['id']}] 시간 초과 {pct(r['to'])} · 정답률 {pct(r['acc'])}  {r['q'][:30]}")
 
+# ── 10. HTML 리포트 ────────────────────────────────────────────
+# 화면으로 보는 것과 별개로 파일을 남긴다. /export-report 가 이 파일을 읽어
+# CSV·PDF 로 바꾼다. 배포 루트에 두면 공개되므로 teacher/ 안에 쓴다.
+REPORT_PATH = 'teacher/teacher_report.html'
+
+item_rows = []
+if with_items:
+    item_rows = [{'id': r['id'], 'category': r['cat'], 'difficulty': r['diff'],
+                  'question': r['q'], 'attempts': r['n'],
+                  'accuracy': round(r['acc'], 4), 'timeoutRate': round(r['to'], 4)}
+                 for r in rows]
+
+payload = {
+    'generatedAt': None,   # 아래에서 채운다
+    'studentCount': n,
+    'recordCount': len(records),
+    'gradeCuts': [{'upTo': c, 'grade': g} for c, g in CUTS] + [{'upTo': 1.0, 'grade': 'D'}],
+    'students': [
+        {'name': name, 'grade': grades[name], 'rank': ranks[name],
+         'topRatio': round(ratios[name], 4), 'overall': round(v, 4),
+         'incomplete': name in partial,
+         'missing': [KO[c] for c in partial.get(name, [])],
+         'categories': {KO[c]: round(best[name][c], 4) for c in CATEGORIES if c in best[name]},
+         'attempts': len(students[name])}
+        for v, name in sorted(overall, key=lambda x: -x[0])
+    ],
+    'categories': [{'name': KO[c], 'mean': round(m, 4), 'spread': round(sp, 4), 'takers': cnt}
+                   for m, sp, c, cnt in sorted(cat_stat, reverse=True)],
+    'distribution': [{'label': lb, 'count': sum(1 for a in accs if lo_b <= a < hi_b)}
+                     for lb, lo_b, hi_b in (('90% 이상', 0.90, 1.01), ('70~89%', 0.70, 0.90),
+                                            ('50~69%', 0.50, 0.70), ('30~49%', 0.30, 0.50),
+                                            ('30% 미만', 0.0, 0.30))],
+    'watch': {'lowGrade': low, 'wideSpread': wide, 'incomplete': list(partial)},
+    'tips': tips,
+    'items': item_rows,
+}
+
+from datetime import datetime
+payload['generatedAt'] = datetime.now().isoformat(timespec='seconds')
+
+
+def esc(s):
+    return (str(s).replace('&', '&amp;').replace('<', '&lt;')
+            .replace('>', '&gt;').replace('"', '&quot;'))
+
+
+def heat(v):
+    return {'█': 'lv4', '▓': 'lv3', '▒': 'lv2', '░': 'lv1'}[cell(v)]
+
+
+head = ''.join(f'<th>{esc(KO[c])}</th>' for c in CATEGORIES)
+body_rows = ''
+for s in payload['students']:
+    cells = ''
+    for c in CATEGORIES:
+        ko = KO[c]
+        if ko in s['categories']:
+            v = s['categories'][ko]
+            cells += f'<td class="{heat(v)}">{v*100:.0f}%</td>'
+        else:
+            cells += '<td class="na">미응시</td>'
+    mark = '<span class="mark" title="미응시 분야가 있어 푼 분야만으로 계산된 등급">*</span>' if s['incomplete'] else ''
+    body_rows += (f'<tr><td class="g g{s["grade"]}">{s["grade"]}{mark}</td>'
+                  f'<td>{s["rank"]}</td><td>{esc(s["name"])}</td>{cells}'
+                  f'<td class="num">{s["overall"]*100:.0f}%</td></tr>')
+
+cat_rows = ''.join(
+    f'<tr><td>{esc(c["name"])}</td><td class="num">{c["mean"]*100:.0f}%</td>'
+    f'<td><div class="bar"><i style="width:{c["mean"]*100:.0f}%"></i></div></td>'
+    f'<td class="num">{c["spread"]*100:.0f}%p</td><td class="num">{c["takers"]}명</td></tr>'
+    for c in payload['categories'])
+
+dist_rows = ''.join(
+    f'<tr><td>{esc(d["label"])}</td><td class="num">{d["count"]}건</td>'
+    f'<td><div class="bar"><i style="width:{d["count"]/max(1,len(accs))*100:.0f}%"></i></div></td></tr>'
+    for d in payload['distribution'])
+
+item_html = '<p class="muted">문항별 기록이 있는 제출물이 없습니다.</p>'
+if item_rows:
+    worst = ''.join(
+        f'<tr><td class="num">{r["accuracy"]*100:.0f}%</td><td class="num">{r["attempts"]}명</td>'
+        f'<td><code>{esc(r["id"])}</code></td><td>{esc(r["difficulty"])}</td>'
+        f'<td>{esc(r["question"])}</td></tr>' for r in item_rows[:10])
+    item_html = ('<table><thead><tr><th>정답률</th><th>응시</th><th>ID</th>'
+                 f'<th>난이도</th><th>문제</th></tr></thead><tbody>{worst}</tbody></table>'
+                 f'<p class="muted">전체 {len(item_rows)}문항 중 정답률이 낮은 순 10개. '
+                 'CSV 로 내보내면 전부 담긴다.</p>')
+
+tips_html = ''.join(f'<li>{esc(t)}</li>' for t in payload['tips'])
+watch = payload['watch']
+
+html = f'''<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>선생님 리포트 — 학생 {n}명</title>
+<style>
+  :root {{ --line:#e2e5ea; --muted:#6b7280; --accent:#3b5bdb; }}
+  * {{ box-sizing:border-box }}
+  body {{ margin:0; padding:32px 24px 64px; background:#f5f6f8; color:#1c1f24;
+         font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif;
+         line-height:1.6 }}
+  main {{ max-width:960px; margin:0 auto }}
+  h1 {{ font-size:24px; margin:0 0 4px }}
+  h2 {{ font-size:17px; margin:32px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line) }}
+  .meta {{ color:var(--muted); font-size:13px; margin:0 0 20px }}
+  .warn {{ padding:12px 14px; border-radius:10px; background:#fff5f5; color:#c92a2a;
+           font-size:13px; margin:0 0 24px }}
+  table {{ width:100%; border-collapse:collapse; background:#fff; font-size:13px;
+           border:1px solid var(--line); border-radius:10px; overflow:hidden }}
+  th,td {{ padding:8px 10px; text-align:left; border-bottom:1px solid var(--line) }}
+  th {{ background:#f0f2f5; font-weight:700; font-size:12px }}
+  tr:last-child td {{ border-bottom:none }}
+  .num {{ text-align:right; font-variant-numeric:tabular-nums }}
+  .g {{ font-weight:800; text-align:center }}
+  .gA {{ color:#2f9e44 }} .gB {{ color:#1971c2 }} .gC {{ color:#e8590c }} .gD {{ color:#e03131 }}
+  .mark {{ color:var(--muted); font-weight:400 }}
+  .lv4 {{ background:#d3f9d8 }} .lv3 {{ background:#e9fac8 }}
+  .lv2 {{ background:#fff3bf }} .lv1 {{ background:#ffe3e3 }}
+  .na {{ color:var(--muted); background:#f8f9fa }}
+  .bar {{ height:8px; background:var(--line); border-radius:999px; overflow:hidden; min-width:120px }}
+  .bar i {{ display:block; height:100%; background:var(--accent) }}
+  .muted {{ color:var(--muted); font-size:12px }}
+  ol,ul {{ padding-left:20px }} li {{ margin:6px 0; font-size:13px }}
+  code {{ font-size:12px; background:#f0f2f5; padding:1px 5px; border-radius:4px }}
+  @media print {{
+    body {{ background:#fff; padding:0 }}
+    .warn {{ border:1px solid #c92a2a }}
+    h2 {{ break-after:avoid }} table {{ break-inside:auto }} tr {{ break-inside:avoid }}
+  }}
+</style>
+</head>
+<body>
+<main>
+  <h1>선생님 리포트</h1>
+  <p class="meta">학생 {n}명 · 응시 {len(records)}건 · 생성 {esc(payload['generatedAt'])}</p>
+  <p class="warn"><strong>학생 이름과 성적이 담긴 개인정보입니다.</strong>
+     공유하기 전에 받는 사람을 확인하세요. 학생 개인에게는 본인 부분만 떼어 전달합니다.</p>
+
+  <h2>등급과 분야별 성취</h2>
+  <table><thead><tr><th>등급</th><th>순위</th><th>학생</th>{head}<th>평균</th></tr></thead>
+  <tbody>{body_rows}</tbody></table>
+  <p class="muted">등급은 상위 비율 기준 상대 평가입니다 (A 상위 20% · B 40% · C 70% · 나머지 D,
+     동점은 같은 등급). 반 전체가 잘해도 누군가는 D 를 받으므로 정답률과 함께 보세요.
+     <strong>*</strong> 는 미응시 분야가 있어 푼 분야만으로 계산된 등급입니다.</p>
+
+  <h2>분야별 강점과 약점</h2>
+  <table><thead><tr><th>분야</th><th>평균</th><th></th><th>편차</th><th>응시</th></tr></thead>
+  <tbody>{cat_rows}</tbody></table>
+
+  <h2>성취 분포</h2>
+  <table><thead><tr><th>구간</th><th>건수</th><th></th></tr></thead><tbody>{dist_rows}</tbody></table>
+
+  <h2>관심 학생</h2>
+  <ul>
+    <li><strong>등급 D</strong> — {esc(', '.join(watch['lowGrade']) or '없음')}
+        <span class="muted">전반적으로 처진다. 기초부터</span></li>
+    <li><strong>분야 편차 30%p 이상</strong> — {esc(', '.join(watch['wideSpread']) or '없음')}
+        <span class="muted">특정 분야만 비어 있다. 그 분야만 보강</span></li>
+    <li><strong>미응시</strong> — {esc(', '.join(watch['incomplete']) or '없음')}
+        <span class="muted">판단할 자료가 없다. 응시부터</span></li>
+  </ul>
+
+  <h2>교육 제안</h2>
+  <ol>{tips_html}</ol>
+
+  <h2>문항별 분석</h2>
+  {item_html}
+
+  <h2>이 리포트의 한계</h2>
+  <ul>
+    <li>제출한 학생만 보입니다. 반 평균이 아니라 제출자 평균입니다</li>
+    <li>표본이 작으면 등급과 순위가 한두 문항으로 뒤집힙니다</li>
+    <li>소요 시간은 평가에 넣지 않았습니다 (PRD 2.1)</li>
+    <li>문항별 분석은 앱 개선 이후 기록에만 적용됩니다</li>
+  </ul>
+</main>
+<script type="application/json" id="report-data">{json.dumps(payload, ensure_ascii=False)}</script>
+</body>
+</html>
+'''
+
+os.makedirs('teacher', exist_ok=True)
+with open(REPORT_PATH, 'w', encoding='utf-8') as f:
+    f.write(html)
+print(f'\n[10] HTML 리포트')
+print(f'  {REPORT_PATH} ({len(html):,}바이트)')
+print('  브라우저로 열어 보거나 /export-report 로 CSV·PDF 로 내보냅니다.')
+
 PY
 ```
 
@@ -465,6 +655,18 @@ PY
 **문항 기록이 없는 제출물은 제외된다.** 앱 개선 이전에 푼 기록에는 문항 정오가 없다.
 제외된 건수를 함께 찍으므로, 그 수가 많으면 분석 표본이 작다는 뜻이다.
 
+### HTML 리포트 (10구획)
+
+화면 출력과 별개로 **`teacher/teacher_report.html` 을 남긴다.** 표와 히트맵에 색을 입힌
+문서라 그대로 열어 보거나 인쇄해도 된다. 인쇄용 스타일이 들어 있어 표가 페이지 사이에서 잘리지 않는다.
+
+HTML 안에는 그리는 마크업과 함께 **원본 데이터가 JSON 으로 박혀 있다.**
+`/export-report` 가 그 JSON 을 읽어 CSV 와 PDF 로 바꾼다. 표를 긁는 게 아니라서
+화면 서식이 바뀌어도 내보내기가 깨지지 않는다.
+
+**`teacher/` 안에 쓰는 이유가 있다.** 저장소 루트가 곧 배포 루트라(`SOURCE_DIR: .`)
+리포트를 루트에 두면 공개 사이트에 학생 이름과 성적이 올라간다. 이 경로를 바꾸지 말 것.
+
 ## 3. 출력
 
 구획별 숫자를 그대로 나열하지 말고 **읽고 판단해서** 다시 쓴다.
@@ -475,6 +677,7 @@ PY
 4. **눈여겨볼 학생** — 이름과 함께 **무엇을 어떻게 도울지.** 세 갈래를 구분한다
 5. **다음 수업 제안** — 8구획을 바탕으로 하되 구체적으로
 6. **데이터의 한계** — 아래를 반드시 밝힌다
+7. **다음 걸음** — HTML 리포트 경로를 알리고, 내보내려면 `/export-report` 를 쓰라고 안내한다
 
 ## 반드시 밝힐 한계
 
@@ -490,6 +693,8 @@ PY
 - 이 명령어는 **읽기만 한다.** 제출 파일도 문제 은행도 고치지 않는다
 - `teacher/submissions/` 는 학생 이름과 성적이 담긴 개인정보다. `.gitignore` 에 들어 있고
   1구획에서 매번 확인한다. `아니오` 가 뜨면 커밋하기 전에 반드시 넣는다
+- **내보내려면 `/export-report`** 를 이어서 쓴다. 이 명령어가 만든 HTML 을 읽어
+  CSV 와 PDF 로 바꾼다. `/export-report csv` 처럼 하나만 고를 수도 있다
 - 더 깊이 보려면 개별 명령어로 들어간다.
   `/quiz-teacher-student <이름>` (개인), `/quiz-teacher-compare` (지정 비교),
   `/create-report` (성적표 발급), `/quiz-teacher-collect` (제출 관리)

@@ -144,7 +144,7 @@ if not os.path.isdir(SUB_DIR):
 # 개인정보라 저장소에 올라가면 안 된다
 ignored = False
 for gi in ('.gitignore',):
-    if os.path.exists(gi) and re.search(r'^teacher/submissions/?\s*$', open(gi, encoding='utf-8').read(), re.M):
+    if os.path.exists(gi) and re.search(r'^teacher/(\*|submissions/?)?\s*$', open(gi, encoding='utf-8').read(), re.M):
         ignored = True
 print(f'  .gitignore 제외 여부: {"예" if ignored else "!! 아니오 — 학생 이름과 성적이 커밋될 수 있습니다"}')
 
