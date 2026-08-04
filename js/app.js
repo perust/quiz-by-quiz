@@ -46,17 +46,26 @@ function showFatalError(message) {
 
 // ── 소리 설정 ────────────────────────────────────────────────────
 
-function createSoundToggle(onChange) {
-  const button = document.getElementById('sound-toggle');
-  const icon = document.getElementById('sound-icon');
-  const label = document.getElementById('sound-label');
-  let enabled = true;
+/**
+ * 앱 바의 켬/끔 버튼 한 쌍. 소리와 게임 모드가 같은 모양을 쓴다.
+ *
+ * @param {{ ids: {button: string, icon: string, label: string},
+ *           on: {icon: string, label: string},
+ *           off: {icon: string, label: string},
+ *           apply: (value: boolean) => void,
+ *           onChange: (value: boolean) => void }} spec
+ */
+function createToggle({ ids, on, off, apply, onChange }) {
+  const button = document.getElementById(ids.button);
+  const icon = document.getElementById(ids.icon);
+  const label = document.getElementById(ids.label);
+  let enabled = false;
 
   function render() {
-    setSoundEnabled(enabled);
+    apply(enabled);
     button.setAttribute('aria-pressed', String(enabled));
-    icon.textContent = enabled ? '🔊' : '🔇';
-    label.textContent = enabled ? '소리 켜짐' : '소리 꺼짐';
+    icon.textContent = enabled ? on.icon : off.icon;
+    label.textContent = enabled ? on.label : off.label;
   }
 
   button.addEventListener('click', () => {
@@ -86,7 +95,14 @@ async function main() {
   }
 
   const settings = await preferences.getSettings();
-  const soundToggle = createSoundToggle((enabled) => preferences.setSettings({ soundEnabled: enabled }));
+
+  const soundToggle = createToggle({
+    ids: { button: 'sound-toggle', icon: 'sound-icon', label: 'sound-label' },
+    on: { icon: '🔊', label: '소리 켜짐' },
+    off: { icon: '🔇', label: '소리 꺼짐' },
+    apply: setSoundEnabled,
+    onChange: (enabled) => preferences.setSettings({ soundEnabled: enabled }),
+  });
   soundToggle.set(settings.soundEnabled);
 
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
@@ -111,6 +127,17 @@ async function main() {
     onExit: goHome,
     onComplete: showResult,
   });
+
+  // 게임 모드는 화면을 바꿀 뿐 출제·채점·점수에는 영향을 주지 않는다.
+  // 판 도중에 켜고 꺼도 세션이 유지되므로 언제 눌러도 안전하다.
+  const gameModeToggle = createToggle({
+    ids: { button: 'game-mode-toggle', icon: 'game-mode-icon', label: 'game-mode-label' },
+    on: { icon: '🕹️', label: '게임 모드' },
+    off: { icon: '📋', label: '보통 모드' },
+    apply: (enabled) => quizScreen.setGameMode(enabled),
+    onChange: (enabled) => preferences.setSettings({ gameMode: enabled }),
+  });
+  gameModeToggle.set(settings.gameMode);
 
   const resultScreen = createResultScreen({
     onRetry: () => (lastRound ? startRound(lastRound) : goHome()),

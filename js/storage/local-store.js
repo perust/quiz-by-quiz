@@ -19,7 +19,7 @@ const KEYS = {
 };
 
 /** 사용자 설정 기본값. 저장된 값이 없거나 깨졌을 때 이걸로 되돌린다 */
-const DEFAULT_SETTINGS = { soundEnabled: true };
+const DEFAULT_SETTINGS = { soundEnabled: true, gameMode: false };
 
 /** 저장 데이터 스키마 버전. 구조가 바뀌면 올린다 (v2 마이그레이션 판단 기준) */
 const SCHEMA_VERSION = 1;
@@ -291,6 +291,7 @@ export function createLocalPreferences() {
         ...DEFAULT_SETTINGS,
         // 값 하나가 깨져도 나머지 설정은 살린다
         ...(typeof stored.soundEnabled === 'boolean' ? { soundEnabled: stored.soundEnabled } : {}),
+        ...(typeof stored.gameMode === 'boolean' ? { gameMode: stored.gameMode } : {}),
       };
     },
 

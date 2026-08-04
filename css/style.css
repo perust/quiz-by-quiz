@@ -1121,6 +1121,273 @@ body.is-booted .app-bar {
 .feedback:not([hidden]) {
   animation: fade-up 0.25s ease;
 }
+/* ── 게임 모드 무대 ──
+   바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
+   조작의 실체는 위 보기 버튼이고 여기는 그 버튼을 부르는 시각적 조작부다.
+   그래서 게임 모드를 꺼도 잃는 기능이 없다. */
+
+/* 게임 모드에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
+   무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
+.quiz--game .choices {
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.quiz--game .choice {
+  min-height: 40px;
+  padding: 7px 12px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.quiz--game .choice__key {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.arena {
+  margin: 0 0 20px;
+}
+
+.arena__stage {
+  position: relative;
+}
+
+/* ── 바닥 ──
+   칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
+   선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */
+.arena__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  padding: 7px;
+  /* --border 는 페이지 배경과 가까워 십자선이 묻힌다. 한 단계 진한 값을 쓴다 */
+  background: #ccd2dd;
+  border-radius: 16px;
+}
+
+.arena-tile {
+  position: relative;
+  min-width: 0;
+  height: 76px;
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.18s, box-shadow 0.18s, color 0.18s;
+}
+
+/* 번호와 채점 표시는 칸의 가장자리에 붙인다.
+   가운데는 캐릭터가 서는 자리라 비워 둬야 서로 가리지 않는다. */
+.arena-tile__number {
+  position: absolute;
+  top: 6px;
+  left: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1;
+  transition: color 0.18s;
+}
+
+.arena-tile__mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* 캐릭터가 서 있는 칸. 불이 들어온 것처럼 보이게 한다 */
+.arena-tile--lit {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(59, 91, 219, 0.45);
+}
+
+.arena-tile--lit .arena-tile__number {
+  color: var(--accent);
+}
+
+/* 채점 뒤. 색만이 아니라 표시로도 구분한다 (FR-4.1, FR-4.2) */
+.arena-tile--correct {
+  background: var(--correct-soft);
+  box-shadow: inset 0 0 0 2px var(--correct);
+}
+
+.arena-tile--correct .arena-tile__number,
+.arena-tile--correct .arena-tile__mark {
+  color: var(--correct);
+}
+
+.arena-tile--correct .arena-tile__mark::after {
+  content: '✓ 정답';
+}
+
+.arena-tile--wrong {
+  background: var(--wrong-soft);
+  box-shadow: inset 0 0 0 2px var(--wrong);
+}
+
+.arena-tile--wrong .arena-tile__number,
+.arena-tile--wrong .arena-tile__mark {
+  color: var(--wrong);
+}
+
+.arena-tile--wrong .arena-tile__mark::after {
+  content: '✗ 오답';
+}
+
+.arena-tile--muted {
+  opacity: 0.55;
+}
+
+.arena--locked .arena-tile {
+  cursor: default;
+}
+
+/* ── 캐릭터 ──
+   바닥 위에 겹쳐 놓는다. 칸을 누르는 것을 막지 않도록 클릭은 통과시킨다. */
+.arena__character {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34px;
+  height: 42px;
+  pointer-events: none;
+  /* 살짝 튕기며 멈춰 건너간 느낌을 준다. JS의 WALK_MS와 길이를 맞춘다 */
+  transition: transform 0.22s cubic-bezier(0.34, 1.16, 0.64, 1);
+  will-change: transform;
+}
+
+/* 몸통. 이미지 파일 없이 CSS로만 그린다 */
+.arena__character::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 46% 46% 38% 38%;
+  background: linear-gradient(160deg, #6b8afd, var(--accent));
+  box-shadow: inset 0 -6px 0 rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.3);
+}
+
+/* 발밑 그림자. 칸을 딛고 선 느낌을 준다 */
+.arena__character::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 26px;
+  height: 7px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.22);
+  filter: blur(1px);
+}
+
+/* 눈 둘 */
+.arena__face,
+.arena__face::after {
+  position: absolute;
+  top: 14px;
+  width: 6px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.arena__face {
+  left: 8px;
+}
+
+.arena__face::after {
+  content: '';
+  top: 0;
+  left: 12px;
+}
+
+.arena__character--walking {
+  animation: arena-walk 0.22s ease;
+}
+
+.arena__character--hop {
+  animation: arena-hop 0.34s ease;
+}
+
+/* 틀렸을 때. 색을 뺀다 */
+.arena__character--sad::before {
+  background: linear-gradient(160deg, #b4bcc9, #808a9b);
+}
+
+@keyframes arena-walk {
+  0% { translate: 0 0; }
+  50% { translate: 0 -7px; rotate: -5deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+
+@keyframes arena-hop {
+  0% { translate: 0 0; }
+  40% { translate: 0 -14px; }
+  70% { translate: 0 0; scale: 1.1 0.9; }
+  100% { translate: 0 0; scale: 1 1; }
+}
+
+/* ── 조작부 ──
+   3×3 배치. 가운데가 «선택»이라 방향과 확정이 한 자리에 모인다.
+   키보드가 없는 환경을 위한 것이라 Tab 순서에서는 빼두었다(tabindex="-1") —
+   보기 버튼이 이미 Tab으로 닿으므로 같은 기능을 두 번 거치게 하지 않는다. */
+.arena__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  gap: 6px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.pad-button {
+  height: 46px;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--border);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.pad-button:active:not(:disabled) {
+  translate: 0 3px;
+  box-shadow: none;
+}
+
+/* 답을 낸 뒤. 눌러도 소용없다는 것을 눈으로 알린다 */
+.pad-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pad-button--pick {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 3px 0 #2c46ad;
+  color: #fff;
+  font-size: 13px;
+}
+
+.arena__hint {
+  margin: 12px auto 0;
+  max-width: 30em;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
 
 /* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */
 @media (prefers-reduced-motion: reduce) {
