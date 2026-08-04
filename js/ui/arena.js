@@ -34,15 +34,19 @@ const DIRECTIONS = {
 const PICK_KEYS = ['Enter', ' '];
 
 /**
- * @param {{ onChoose: (index: number) => void }} callbacks
+ * @param {{ onChoose: (index: number) => void,
+ *           trapFocus: (container: HTMLElement, event: KeyboardEvent) => void }} deps
  */
-export function createArena({ onChoose }) {
+export function createArena({ onChoose, trapFocus }) {
   const el = {
     root: document.getElementById('arena'),
     character: document.getElementById('arena-character'),
     tiles: document.getElementById('arena-tiles'),
     pad: document.querySelector('.arena__pad'),
     pick: document.getElementById('arena-pick'),
+    help: document.getElementById('arena-help'),
+    helpDialog: document.getElementById('help-dialog'),
+    helpClose: document.getElementById('help-close'),
   };
 
   /** 켜져 있는가. 꺼져 있으면 키 입력도 받지 않는다 */
@@ -67,6 +71,27 @@ export function createArena({ onChoose }) {
   const held = new Set();
 
   const directionButtons = [...el.pad.querySelectorAll('[data-dx]')];
+
+  /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
+  let helpOpener = null;
+
+  // ── 도움말 ─────────────────────────────────────────────────────
+  // 조작법을 무대에 늘 펼쳐두면 세로를 너무 먹어 대화상자로 옮겼다.
+  // 나가기 확인과 같은 인페이지 방식이다 — window.alert는 쓰지 않는다.
+
+  function openHelp() {
+    helpOpener = document.activeElement;
+    el.helpDialog.hidden = false;
+    el.helpClose.focus();
+  }
+
+  function closeHelp() {
+    if (el.helpDialog.hidden) return;
+    el.helpDialog.hidden = true;
+    // 열기 전에 있던 자리로 포커스를 돌려준다
+    if (helpOpener && document.contains(helpOpener)) helpOpener.focus();
+    helpOpener = null;
+  }
 
   // ── 잠금 ───────────────────────────────────────────────────────
 
@@ -222,6 +247,8 @@ export function createArena({ onChoose }) {
   });
 
   el.pick.addEventListener('click', () => pick());
+  el.help.addEventListener('click', openHelp);
+  el.helpClose.addEventListener('click', closeHelp);
 
   // 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
   document.addEventListener('keyup', (event) => held.delete(event.key));
@@ -236,7 +263,25 @@ export function createArena({ onChoose }) {
       enabled = Boolean(value);
       el.root.hidden = !enabled;
       held.clear();
+      if (!enabled) closeHelp(); // 무대가 사라지면 도움말도 함께 닫는다
       if (enabled) placeCharacter();
+    },
+
+    /** 도움말이 열려 있는가. 뒤에서 포커스를 빼앗지 않으려고 퀴즈 화면이 물어본다 */
+    isDialogOpen() {
+      return !el.helpDialog.hidden;
+    },
+
+    /**
+     * 도움말이 열려 있는 동안의 키 입력. 처리했으면 true를 돌려주고,
+     * 퀴즈 화면은 거기서 멈춘다 — 안 그러면 뒤에서 숫자키로 답이 제출된다.
+     */
+    handleDialogKey(event) {
+      if (el.helpDialog.hidden) return false;
+
+      if (event.key === 'Escape') closeHelp();
+      else if (event.key === 'Tab') trapFocus(el.helpDialog, event);
+      return true;
     },
 
     isEnabled() {
@@ -307,7 +352,7 @@ export function createArena({ onChoose }) {
       if (locked) return false;
 
       if (PICK_KEYS.includes(event.key)) {
-        if (document.activeElement?.closest('.choice, .pad-button')) return false;
+        if (document.activeElement?.closest('.choice, .pad-button, .arena__help')) return false;
         pick();
         return true;
       }

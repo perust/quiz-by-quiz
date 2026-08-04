@@ -42,8 +42,9 @@ export function createQuizScreen({ onExit, onComplete }) {
 
   const timer = createQuestionTimer();
 
-  // 게임 모드 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다
-  const arena = createArena({ onChoose: (index) => selectChoice(index) });
+  // 게임 모드 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
+  // 조작법 대화상자도 여기와 같은 포커스 가두기를 쓰라고 trapFocus를 넘긴다.
+  const arena = createArena({ onChoose: (index) => selectChoice(index), trapFocus });
 
   let session = null;
   let categoryLabel = '';
@@ -229,7 +230,11 @@ export function createQuizScreen({ onExit, onComplete }) {
 
     // 자동 전환 없이 "다음 문제" 버튼을 눌러야 넘어간다 (FR-4.4)
     el.feedback.hidden = false;
-    el.nextButton.focus();
+
+    // 다이얼로그가 열려 있으면 포커스를 가져오지 않는다.
+    // 시간 초과는 다이얼로그 뒤에서도 일어나는데, 그때 포커스를 옮기면
+    // 갇혀 있어야 할 포커스가 밖으로 새고 Tab이 다이얼로그를 벗어난다.
+    if (el.dialog.hidden && !arena.isDialogOpen()) el.nextButton.focus();
   }
 
   function goNext() {
@@ -289,6 +294,10 @@ export function createQuizScreen({ onExit, onComplete }) {
       }
       return;
     }
+
+    // 조작법 대화상자가 열려 있으면 게임 입력을 받지 않는다.
+    // 여기서 멈추지 않으면 대화상자를 읽는 중에 숫자키로 답이 제출된다.
+    if (arena.handleDialogKey(event)) return;
 
     if (el.screen.hidden || !session) return;
 
