@@ -28,7 +28,8 @@ ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography', '
 NAMES = {code: ko for ko, code in ALIASES.items()}
 LEVELS = ('easy', 'normal', 'hard')
 LEVEL_ALIASES = {'쉬움': 'easy', '보통': 'normal', '어려움': 'hard',
-                 '중간': 'normal', 'medium': 'normal'}
+                 '중간': 'normal', 'medium': 'normal',
+                 '초급': 'easy', '중급': 'normal', '상급': 'hard'}
 
 
 def env(name):
