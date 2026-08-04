@@ -674,6 +674,14 @@ body.is-booted .app-bar {
   }
 }
 
+/* 좁으면 버튼 글자와 부딪힌다. 키 표시는 부가 정보라 접는다 —
+   조작법은 ? 대화상자에 그대로 있다. 뒤에 와야 위 규칙을 이긴다. */
+@media (max-width: 400px) {
+  .quiz--game .key-hint {
+    display: none;
+  }
+}
+
 /* ── 나가기 확인 다이얼로그 ── */
 .dialog-backdrop {
   position: fixed;
