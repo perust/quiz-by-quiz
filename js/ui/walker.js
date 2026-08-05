@@ -15,20 +15,8 @@ const SPEED = 320;
 /** 프레임 간격이 이보다 벌어지면 잘라낸다. 탭이 백그라운드에 갔다 오면 크게 튄다 */
 const MAX_STEP_MS = 50;
 
-/** 눌러서 걸어갈 때 «도착했다»고 보는 거리 */
-const ARRIVE_PX = 4;
-
 /** 이보다 조금 밀린 것은 손 떨림으로 보고 무시한다 */
 const STICK_DEADZONE = 5;
-
-/**
- * 캐릭터가 화면 위아래 이만큼 안으로 들어오면 스크롤이 따라 움직인다.
- *
- * 늘 화면 한가운데에 두지 않는 것이 중요하다. 매 프레임 가운데로 맞추면
- * 사용자가 스스로 스크롤할 수 없고, 조금만 움직여도 화면 전체가 흔들린다.
- * 가장자리에 닿을 때만 미는 방식이라 가운데에서는 화면이 가만히 있는다.
- */
-const CAMERA_MARGIN = 96;
 
 /**
  * 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다.
@@ -186,57 +174,40 @@ function showControls(value) {
 // ── 워커 ─────────────────────────────────────────────────────────
 
 /**
- * 워커에는 두 가지 방식이 있다.
+ * 캐릭터는 **화면 전체를 걸어 다닌다.**
  *
- * **무대(기본)** — 정해진 `stage` 안에서만 움직이고, `getZones()`가 준 칸 목록으로
- * «몇 번 칸을 밟았는지»를 번호로 넘긴다. 퀴즈 게임 모드가 이걸 쓴다. 바닥이 곧
- * 보기이고 시간이 끝났을 때 밟은 칸이 답이 되므로, 무대 밖으로 나가면 안 된다.
+ * 밟을 칸 목록을 받지 않고 **발밑에 실제로 무엇이 있는지**를
+ * `document.elementFromPoint`로 그때그때 본다. 고르면 그 자리를 진짜로
+ * 누른다(`element.click()`) — 버튼에 달린 리스너가 마우스로 눌렀을 때와 똑같이
+ * 움직이므로, 화면 쪽에 «무엇을 골랐는지»를 잇는 코드를 둘 필요가 없다.
  *
- * **자유(`roam: true`)** — 화면 전체를 걸어 다닌다. 칸 목록을 받지 않고 **발밑에
- * 실제로 무엇이 있는지**를 `document.elementFromPoint`로 그때그때 본다. 고르면
- * 그 자리를 진짜로 누른다(`element.click()`). 홈과 내 캐릭터 화면이 이걸 쓴다.
- * 캐릭터가 화면에 붙어(fixed) 있으므로 화면 밖으로 나갈 일이 없고, 대신 가장자리를
- * 밀면 페이지가 스크롤된다.
+ * 캐릭터가 화면에 붙어(`position: fixed`) 있어 밖으로 나갈 일이 없고, 대신
+ * 가장자리를 밀면 페이지가 스크롤된다.
  *
  * @param {{
- *   stage: HTMLElement,           좌표 기준이 되는 요소 (roam이면 화면을 쓴다)
  *   character: HTMLElement,       움직일 요소
- *   roam?: boolean,               화면 전체를 걸어 다닐지
- *   getZones?: () => HTMLElement[] 무대 방식에서 밟을 수 있는 칸들
- *   onPick?: (index: number) => void,          무대 방식
- *   onZoneChange?: (index: number|null, previous: number|null) => void,  무대 방식
- *   pickable?: string,            자유 방식에서 «누를 수 있는 것»으로 볼 선택자
+ *   pickable?: string,            «누를 수 있는 것»으로 볼 선택자
  *   standClass?: string,          발밑에 붙일 클래스. 기본 is-standing
- *   onStep?: (element: HTMLElement|null) => void,  자유 방식에서 발밑이 바뀔 때
- *   edge?: number,                안쪽 여백
+ *   onStep?: (element: HTMLElement|null) => void,  발밑이 바뀔 때
+ *   edge?: number,                화면 안쪽 여백
  *   startAt?: () => {x: number, y: number}|null  처음 설 자리. 없으면 한가운데
- *   footInset?: number            칸을 눌러 갈 때 아래에서 띄울 거리. 글자를 피한다
  * }} config
  */
 export function createWalker(config) {
   const {
-    stage, character, getZones, onPick, onZoneChange,
-    roam = false, pickable = 'button, a[href], [role="button"], summary', onStep,
-    standClass = 'is-standing',
-    edge = 7, startAt, footInset = 10,
+    character, pickable = 'button, a[href], [role="button"], summary', onStep,
+    standClass = 'is-standing', edge = 7, startAt,
   } = config;
-
-  // 자유 방식은 화면에 붙는다. 페이지가 스크롤돼도 캐릭터는 제자리에 있고
-  // 그 아래로 내용이 흘러간다
-  character.classList.toggle('walker--roam', roam);
 
   let enabled = false;
   /** 잠기면 움직이지도 고르지도 못한다 */
   let locked = false;
 
-  /** 무대 기준(자유 방식에서는 화면 기준) «발» 좌표 */
+  /** 화면 기준 «발» 좌표 */
   const pos = { x: 0, y: 0 };
-  /** 지금 밟고 있는 칸 번호. 자유 방식에서는 늘 null이다 */
-  let standing = null;
-  /** 자유 방식에서 발밑에 있는 «누를 수 있는 것» */
+  /** 발밑에 있는 «누를 수 있는 것» */
   let underFoot = null;
-  let zoneNodes = [];
-  let zoneBoxes = [];
+  /** 걸어 다닐 수 있는 범위. 화면이 곧 무대다 */
   let stageSize = { width: 0, height: 0 };
 
   /**
@@ -247,57 +218,25 @@ export function createWalker(config) {
 
   let frameId = null;
   let lastTs = 0;
-  /** 눌러서 걸어갈 지점. 방향키나 스틱을 쓰면 취소된다 */
-  let autoTarget = null;
 
   function measure() {
-    if (roam) {
-      // 자유 방식은 화면이 곧 무대다. 칸 목록도 재지 않는다 — 발밑은 그때그때 본다
-      stageSize = { width: window.innerWidth, height: window.innerHeight };
-      return;
-    }
-
-    const base = stage.getBoundingClientRect();
-    if (base.width === 0) return; // 아직 배치되지 않았다
-
-    stageSize = { width: base.width, height: base.height };
-    zoneNodes = getZones();
-    zoneBoxes = zoneNodes.map((node) => {
-      const box = node.getBoundingClientRect();
-      return {
-        left: box.left - base.left,
-        top: box.top - base.top,
-        right: box.right - base.left,
-        bottom: box.bottom - base.top,
-      };
-    });
-  }
-
-  /** 발이 놓인 칸. 칸 사이 빈자리면 null */
-  function zoneAt(x, y) {
-    for (let index = 0; index < zoneBoxes.length; index += 1) {
-      const box = zoneBoxes[index];
-      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return index;
-    }
-    return null;
+    stageSize = { width: window.innerWidth, height: window.innerHeight };
   }
 
   function clampPosition() {
     if (stageSize.width === 0) return;
 
     const half = character.offsetWidth / 2;
-    const height = character.offsetHeight;
     pos.x = Math.min(Math.max(pos.x, edge + half), stageSize.width - edge - half);
 
-    // 무대 방식은 머리가 무대 위로 솟지 않도록 캐릭터 높이만큼 띄운다.
-    // 자유 방식은 그러면 **화면 맨 위의 버튼에 발이 닿지 않는다** — 앱 바가 딱
-    // 그 높이에 있다. 위쪽을 열어 두는 대신 머리가 화면 밖으로 조금 잘린다.
-    const top = roam ? edge : edge + height;
-    pos.y = Math.min(Math.max(pos.y, top), stageSize.height - edge);
+    // 위쪽은 캐릭터 높이만큼 띄우지 않는다. 띄우면 **화면 맨 위의 버튼에 발이
+    // 닿지 않는다** — 앱 바가 딱 그 높이에 있다. 대신 맨 위에서는 머리가 화면
+    // 밖으로 조금 잘린다.
+    pos.y = Math.min(Math.max(pos.y, edge), stageSize.height - edge);
   }
 
   /**
-   * 자유 방식에서 발밑에 있는 «누를 수 있는 것».
+   * 발밑에 있는 «누를 수 있는 것».
    *
    * 캐릭터 자신은 `.walker`가 `pointer-events: none`이라 잡히지 않는다.
    * 화면에 띄운 조작부(스틱·확정 버튼)는 어느 화면의 자손도 아니고 늘 같은 자리에
@@ -316,39 +255,23 @@ export function createWalker(config) {
     character.style.transform =
       `translate(${pos.x}px, ${pos.y}px) translate(-50%, -100%)`;
 
-    if (roam) {
-      const next = pickableUnderFoot();
-      if (next === underFoot) return;
-      underFoot?.classList.remove(standClass);
-      underFoot = next;
-      underFoot?.classList.add(standClass);
-      onStep?.(underFoot);
-      return;
-    }
-
-    const zone = zoneAt(pos.x, pos.y);
-    if (zone === standing) return;
-    const previous = standing;
-    standing = zone;
-    onZoneChange?.(standing, previous);
+    const next = pickableUnderFoot();
+    if (next === underFoot) return;
+    underFoot?.classList.remove(standClass);
+    underFoot = next;
+    underFoot?.classList.add(standClass);
+    onStep?.(underFoot);
   }
 
   /**
-   * 캐릭터가 화면 밖으로 나가지 않게 스크롤을 따라 움직인다.
+   * 캐릭터가 화면에 붙어 있어 밖으로 나갈 일이 없으므로, **가장자리에 닿은 채
+   * 더 밀 때만** 페이지를 그만큼 움직인다.
    *
-   * **움직이는 동안에만 부른다.** `place()`에서 부르면 새 문항이 뜰 때마다
-   * 무대로 스크롤이 내려가 문제 글이 위로 밀려난다 — 화면에 처음 들어올 때는
-   * 위에서부터 읽어야 한다.
+   * «여백에 들어오면 민다»로 하면 화면 가장자리 가까이 있는 것은 밟고 설 수가
+   * 없다 — 다가가는 순간 페이지가 도망간다.
    *
-   * `pos`는 무대 기준이고 여기서 재는 것은 화면 기준이라, 스크롤이 움직여도
-   * 밟은 칸 판정(`zoneAt`)에는 영향이 없다.
-   */
-  /**
-   * 자유 방식의 스크롤. 캐릭터가 화면에 붙어 있어 밖으로 나갈 일이 없으므로,
-   * **가장자리에 닿은 채 더 밀 때만** 페이지를 그만큼 움직인다.
-   *
-   * 무대 방식처럼 «여백에 들어오면 민다»로 하면 화면 아래쪽 96px 안에 있는 것은
-   * 밟고 서 있을 수가 없다 — 다가가는 순간 페이지가 도망간다.
+   * **움직이는 동안에만 부른다.** `place()`에서 부르면 화면에 들어올 때마다
+   * 캐릭터 쪽으로 스크롤이 끌려가 위쪽 글이 밀려난다.
    */
   function pushScroll(vy, dt) {
     if (vy === 0) return;
@@ -361,20 +284,6 @@ export function createWalker(config) {
     }
   }
 
-  function followCamera() {
-    const box = character.getBoundingClientRect();
-    if (box.height === 0) return; // 아직 보이지 않는 화면이다
-
-    // 짧은 화면에서 여백이 화면을 다 먹으면 위아래가 서로 밀어내며 떨린다
-    const margin = Math.min(CAMERA_MARGIN, window.innerHeight / 3);
-    const above = margin - box.top; // 위쪽 여백을 파고든 정도
-    const below = box.bottom - (window.innerHeight - margin);
-
-    if (above > 0) window.scrollBy(0, -above);
-    else if (below > 0) window.scrollBy(0, below);
-    // 더 스크롤할 곳이 없으면 브라우저가 알아서 멈춘다. 여기서 따로 막지 않는다
-  }
-
   /** 캐릭터를 처음 자리에 세운다 */
   function place() {
     measure();
@@ -384,7 +293,6 @@ export function createWalker(config) {
     pos.x = start ? start.x : stageSize.width / 2;
     pos.y = start ? start.y : stageSize.height / 2;
     clampPosition();
-    standing = null; // 새로 판정하도록 비운다
     render();
     placed = true;
   }
@@ -403,27 +311,7 @@ export function createWalker(config) {
     const dt = Math.min(ts - lastTs, MAX_STEP_MS) / 1000;
     lastTs = ts;
 
-    let [vx, vy] = inputVector();
-    const pressing = vx !== 0 || vy !== 0;
-
-    if (pressing) {
-      autoTarget = null; // 손으로 미는 쪽이 우선이다
-    } else if (autoTarget) {
-      const dx = autoTarget.x - pos.x;
-      const dy = autoTarget.y - pos.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance < ARRIVE_PX) {
-        autoTarget = null;
-        pos.x += dx;
-        pos.y += dy;
-        render();
-        pick(); // 눌러서 왔으면 도착한 자리로 확정한다
-        return;
-      }
-      vx = dx / distance;
-      vy = dy / distance;
-    }
-
+    const [vx, vy] = inputVector();
     const moving = vx !== 0 || vy !== 0;
     // 움직일 때는 걷는 동작, 서 있을 때는 제자리 뛰기
     character.classList.toggle('walker--walking', moving);
@@ -433,7 +321,7 @@ export function createWalker(config) {
       // 움직이지 않으면 루프를 멈춘다. 매 프레임 깨어나 아무 일도 하지 않으면
       // 휴대폰 배터리만 쓴다. 제자리 뛰기는 CSS 애니메이션이라 프레임을
       // 돌리지 않아도 계속 뛰고, 입력이 오면 start()가 다시 깨운다
-      // (handleKey · onStickInput · goTo 가 모두 start를 부른다).
+      // (handleKey 와 onStickInput 이 start를 부른다).
       return;
     }
 
@@ -441,8 +329,7 @@ export function createWalker(config) {
     pos.y += vy * SPEED * dt;
     clampPosition();
     render();
-    if (roam) pushScroll(vy, dt);
-    else followCamera();
+    pushScroll(vy, dt);
 
     frameId = requestAnimationFrame(loop);
   }
@@ -483,23 +370,15 @@ export function createWalker(config) {
     }
   });
 
+  /**
+   * 발밑을 «그 자리에서» 누른다. 버튼이 제 리스너로 알아서 움직이므로
+   * 워커는 무엇을 골랐는지 알 필요가 없다.
+   */
   function pick() {
-    if (!enabled || locked) return;
-
-    // 자유 방식은 «그 자리를 누른다». 버튼이 제 리스너로 알아서 움직이므로
-    // 워커가 무엇을 골랐는지 알 필요가 없다
-    if (roam) {
-      if (!underFoot) return;
-      character.classList.remove('walker--idle');
-      character.classList.add('walker--hop');
-      underFoot.click();
-      return;
-    }
-
-    if (standing === null) return;
+    if (!enabled || locked || !underFoot) return;
     character.classList.remove('walker--idle');
     character.classList.add('walker--hop');
-    onPick(standing);
+    underFoot.click();
   }
 
   const walker = {
@@ -538,7 +417,6 @@ export function createWalker(config) {
       showControls(true);
       locked = false;
       placed = false;
-      autoTarget = null;
       // 배치가 잡힌 다음 프레임에 좌표를 잰다
       requestAnimationFrame(() => {
         place();
@@ -577,27 +455,11 @@ export function createWalker(config) {
 
     /**
      * 화면이 스크롤되면 캐릭터는 그대로인데 발밑이 바뀐다.
-     * 루프는 멈춰 있을 수 있으므로 여기서 한 번 다시 본다 (자유 방식 전용).
+     * 루프는 서 있는 동안 멈춰 있으므로 여기서 한 번 다시 본다.
      */
     refresh() {
-      if (!enabled || !roam || !placed) return;
+      if (!enabled || !placed) return;
       render();
-    },
-
-    /** 칸을 눌렀을 때. 그 자리까지 걸어간 뒤 고른다 (무대 방식 전용) */
-    goTo(index) {
-      if (!enabled || locked || roam) return;
-      const box = zoneBoxes[index];
-      if (!box) return;
-
-      autoTarget = {
-        x: (box.left + box.right) / 2,
-        // 칸 아래쪽을 딛는다. footInset 으로 글자를 피할 만큼 띄운다
-        y: box.bottom - Math.min(footInset, (box.bottom - box.top) / 2),
-      };
-      held.clear();
-      releaseStick();
-      start();
     },
 
     /** 크기가 바뀌면 비율을 지켜 옮긴다 */
@@ -619,7 +481,6 @@ export function createWalker(config) {
 
     /** 스틱 입력이 들어왔을 때 루프를 깨운다 */
     onStickInput() {
-      autoTarget = null;
       start();
     },
 

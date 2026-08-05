@@ -44,9 +44,7 @@ export function createCharactersScreen({ onSelect, onBack }) {
   }
 
   const walker = createWalker({
-    stage: el.stage,
     character: el.walker,
-    roam: true,
     // 밟는 순간 그 캐릭터가 된다. 걸어 다니는 캐릭터도 함께 바뀌어 바로 보인다.
     // 「홈으로」처럼 캐릭터 칸이 아닌 것을 밟으면 dataset이 비어 아무 일도 없다
     onStep: (node) => apply(node?.dataset.characterId),
