@@ -12,7 +12,7 @@ import { paintCharacter } from './sprite.js';
  * @param {{
  *   screen: HTMLElement,          이 화면이 보일 때만 키를 받는다
  *   character: HTMLElement,       움직일 요소
- *   startAt?: () => HTMLElement|null  처음 설 버튼. 없으면 화면 한가운데
+ *   startAt?: () => HTMLElement|null  곁에서 시작할 버튼. 없으면 화면 한가운데
  * }} config
  */
 export function createScreenWalker({ screen, character, startAt }) {
@@ -23,8 +23,10 @@ export function createScreenWalker({ screen, character, startAt }) {
     startAt: () => {
       const box = startAt?.()?.getBoundingClientRect();
       if (!box || box.width === 0) return null;
-      // 버튼 오른쪽 끝에 선다. 가운데면 글자를 가린다
-      return { x: box.right - 26, y: box.bottom - 8 };
+      // 버튼 «위»가 아니라 바로 아래에 선다. 위에 세우면 글자를 가린다 —
+      // 홈의 메뉴 카드는 오른쪽을 비워 두었지만 일반 버튼에는 그런 여백이 없다.
+      // 한 걸음이면 올라설 수 있으니 «여기서 시작하라»는 뜻은 그대로 전해진다.
+      return { x: box.left + box.width / 2, y: box.bottom + 30 };
     },
   });
 

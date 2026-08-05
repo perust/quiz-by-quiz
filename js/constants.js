@@ -39,6 +39,19 @@ export const POINTS_PER_CORRECT = 10;
  */
 export const RECENT_QUESTION_MEMORY = 90;
 
+/**
+ * 온라인 방 (PRD 밖의 확장).
+ *
+ * 코드는 사람이 불러 주고 받아 적는 것이라 짧게 잡는다. 인원은 목록에서 한눈에
+ * 보이도록 몇 가지로 묶어 둔다 — 아무 숫자나 받으면 «3명짜리 방»처럼 어중간한
+ * 방이 생겨 고르기가 어려워진다.
+ */
+export const ROOM_CODE_LENGTH = 6;
+export const ROOM_CAPACITY_CHOICES = [2, 4, 6, 8];
+export const ROOM_NAME_MAX_LENGTH = 16;
+export const ROOM_PASSWORD_MIN_LENGTH = 4;
+export const ROOM_PASSWORD_MAX_LENGTH = 12;
+
 /** 랭킹 하나에 보관하고 표시할 상위 기록 수 (FR-6.4) */
 export const RANKING_TOP_N = 10;
 
