@@ -151,6 +151,19 @@ export function createQuizScreen({ onExit, onComplete }) {
     el.progress.setAttribute('aria-valuenow', String(percent));
   }
 
+  /**
+   * 피드백 시트를 닫고, 그만큼 두었던 아래 여백도 거둔다.
+   *
+   * **화면을 떠날 때는 반드시 부른다.** 시트는 `<main>` 밖에 있어(그래야 z-index 없이
+   * 위에 온다) 퀴즈 화면이 숨겨져도 따라 사라지지 않는다 — 조작법 대화상자와 같은
+   * 이유이고, 놓치면 결과 화면이나 홈 위에 그대로 남는다.
+   */
+  function hideFeedback() {
+    el.feedback.hidden = true;
+    el.feedback.classList.remove('feedback--correct', 'feedback--wrong');
+    document.documentElement.style.setProperty('--feedback-h', '0px');
+  }
+
   function renderQuestion() {
     const question = session.currentQuestion();
 
@@ -162,8 +175,7 @@ export function createQuizScreen({ onExit, onComplete }) {
     renderChoices(question);
     arena.reset(question.choices.length);
 
-    el.feedback.hidden = true;
-    el.feedback.classList.remove('feedback--correct', 'feedback--wrong');
+    hideFeedback();
 
     // 문제가 화면에 나타나는 지금이 타이머 시작 시점이다 (FR-3.8)
     lastShownSeconds = null;
@@ -250,6 +262,10 @@ export function createQuizScreen({ onExit, onComplete }) {
     // 버튼이 아니라 글자 span만 바꾼다. 버튼째 갈아치우면 Enter 표시가 지워진다
     el.nextLabel.textContent = session.hasNext() ? '다음 문제' : '결과 보기';
 
+    // 시트는 fixed 라 문서 흐름에서 빠져 있다. 높이만큼 아래 여백을 더 주지 않으면
+    // 마지막 보기가 시트에 가린다. 해설 길이에 따라 달라지므로 그릴 때마다 잰다
+    document.documentElement.style.setProperty('--feedback-h', `${el.feedback.offsetHeight}px`);
+
     // 다이얼로그가 열려 있으면 포커스를 가져오지 않는다.
     // 시간 초과는 다이얼로그 뒤에서도 일어나는데, 그때 포커스를 옮기면
     // 갇혀 있어야 할 포커스가 밖으로 새고 Tab이 다이얼로그를 벗어난다.
@@ -268,6 +284,7 @@ export function createQuizScreen({ onExit, onComplete }) {
     const finished = session;
     session = null;
     stopTicking();
+    hideFeedback();
     // 화면을 떠나므로 조작법 대화상자도 함께 닫는다.
     // 열어 둔 채 나가면 다음 화면 위에 남아 화면을 덮고 포커스를 가둔다.
     arena.closeDialog();
@@ -297,6 +314,7 @@ export function createQuizScreen({ onExit, onComplete }) {
     dialogOpener = null;
     stopTicking();
     session = null;
+    hideFeedback();
     arena.closeDialog(); // 같은 이유로 여기서도 닫는다
     onExit();
   }

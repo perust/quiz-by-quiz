@@ -182,20 +182,6 @@
         </p>
       </div>
 
-      <div class="feedback" id="feedback" hidden>
-        <!-- 라이브 리전은 «알리는 말»까지다. 버튼을 안에 두면 role="status"가
-             암묵적으로 aria-atomic 이라 「정답입니다 … 다음 문제」가 한 덩어리로
-             낭독되고, 곧이어 포커스가 그 버튼으로 가서 같은 말이 또 들린다. -->
-        <div role="status">
-          <p class="feedback__verdict" id="feedback-verdict"></p>
-          <p class="feedback__explanation" id="feedback-explanation"></p>
-        </div>
-        <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
-        <button type="button" class="button button--primary" id="next-button">
-          <span id="next-label">다음 문제</span>
-          <span class="key-hint" aria-hidden="true">Space/Enter <kbd class="key-hint__key">↵</kbd></span>
-        </button>
-      </div>
     </section>
 
     <!-- ─────────── 내 캐릭터 ─────────── -->
@@ -453,6 +439,26 @@
          결국 칸을 직접 눌러야 해서 스틱이 헛돈다. 엄지가 닿는 반대편에 둔다. -->
     <button type="button" class="walk-confirm" id="walk-confirm" aria-hidden="true" tabindex="-1">선택</button>
   </main>
+
+  <!-- ─────────── 피드백 시트 ───────────
+       화면 맨 아래에 붙어 뜬다. 스크롤을 내려가 찾지 않아도 되고 엄지로 누르기 쉽다.
+       **<main> 밖에 둔다** — 이 프로젝트에는 z-index가 하나도 없어 DOM 순서가 곧
+       겹치는 순서다. 안에 두면 같은 fixed 요소인 스틱·확정 버튼에 가린다.
+       뒤에 오는 대화상자들이 이 시트보다 위에 오는 것도 같은 이유다. -->
+  <div class="feedback" id="feedback" hidden>
+    <!-- 라이브 리전은 «알리는 말»까지다. 버튼을 안에 두면 role="status"가
+         암묵적으로 aria-atomic 이라 「정답입니다 … 다음 문제」가 한 덩어리로
+         낭독되고, 곧이어 포커스가 그 버튼으로 가서 같은 말이 또 들린다. -->
+    <div role="status">
+      <p class="feedback__verdict" id="feedback-verdict"></p>
+      <p class="feedback__explanation" id="feedback-explanation"></p>
+    </div>
+    <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
+    <button type="button" class="button button--primary" id="next-button">
+      <span id="next-label">다음 문제</span>
+      <span class="key-hint" aria-hidden="true">Space/Enter <kbd class="key-hint__key">↵</kbd></span>
+    </button>
+  </div>
 
   <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->
   <!-- 게임 모드 조작법. 무대에 늘 펼쳐두면 세로를 너무 먹어 여기로 옮겼다 -->
