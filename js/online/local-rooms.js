@@ -5,10 +5,14 @@
 // localStorage에 담아 둔다. 서버가 생기면 같은 인터페이스로 구현체만 갈아끼운다
 // (`adapter.js` 한 줄) — 랭킹 저장소와 같은 방식이다.
 //
-// **localStorage를 만지는 것은 이 파일과 storage/local-store.js 뿐이다.**
-// 화면(`ui/`)에서 직접 부르면 설계 위반이다.
+// **localStorage를 직접 만지지 않고 `storage/safe-storage.js`를 거친다.**
+// 못 쓰는 환경(사생활 보호 모드)에서 메모리로 넘어가는 대비가 거기 있다 —
+// 한때 여기서 직접 불렀고, 그래서 저장이 막힌 브라우저에서는 「만들기」를 눌러도
+// 아무 일이 없었다. 방이 저장되지 않아 곧바로 «없는 방»이 됐기 때문이다.
+// 화면(`ui/`)에서 저장소를 직접 부르면 설계 위반이다.
 
 import { ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { isPersistent, safeStorage } from '../storage/safe-storage.js';
 import {
   checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
 } from './rules.js';
@@ -36,10 +40,10 @@ const GHOST_MS = 6 * 60 * 60 * 1000;
  */
 const meId = (() => {
   try {
-    const saved = localStorage.getItem(ME_KEY);
+    const saved = safeStorage.getItem(ME_KEY);
     if (saved) return saved;
     const fresh = globalThis.crypto?.randomUUID?.() ?? `me-${Date.now()}`;
-    localStorage.setItem(ME_KEY, fresh);
+    safeStorage.setItem(ME_KEY, fresh);
     return fresh;
   } catch {
     // 저장을 못 하면 이번 세션에만 쓰는 값으로 버틴다
@@ -79,7 +83,7 @@ function prune(rooms) {
 
 function readAll() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = safeStorage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     // 저장 데이터가 깨져도 앱이 죽지 않는다 (PRD 8). 성한 것만 살린다
     const rooms = Array.isArray(parsed)
@@ -98,13 +102,27 @@ function touch(room) {
   return room;
 }
 
+/**
+ * 성공했는지 돌려준다.
+ *
+ * **삼키기만 하면 안 된다.** 저장 공간이 꽉 차 방이 남지 않으면 다음 `readAll`이
+ * 그 방을 못 찾아, 「만들기」를 눌러도 아무 일이 없는 것처럼 보인다. 실제로 그랬다 —
+ * 화면도 바뀌지 않고 안내도 없어 버튼이 고장 난 줄 알게 된다.
+ *
+ * 방을 여는 길목(`createRoom`·`joinRoom`)만 이 값을 본다. 설정 변경이나 한마디는
+ * 실패해도 화면이 그대로 돌고, 다음 새로고침에 되돌아갈 뿐이다.
+ */
 function writeAll(rooms) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(rooms));
+    safeStorage.setItem(KEY, JSON.stringify(rooms));
+    return true;
   } catch {
-    // 저장 공간이 꽉 차도 화면은 그대로 돈다. 다음 새로고침에 사라질 뿐이다
+    return false;
   }
 }
+
+/** 저장이 안 될 때 화면에 띄울 말. 두 길목이 같은 말을 쓴다 */
+const SAVE_FAILED = '브라우저 저장 공간이 부족해 방을 만들지 못했어요. 저장 공간을 비우고 다시 시도해 주세요.';
 
 /**
  * 밖으로 내보낼 모습.
@@ -132,6 +150,15 @@ function toPublic(room) {
 export const localRooms = {
   /** 이 저장소가 진짜 네트워크인지. 화면이 안내 문구를 정할 때 쓴다 */
   isNetworked: false,
+
+  /**
+   * 만든 방이 새로고침 뒤에도 남는가.
+   *
+   * 저장이 막힌 브라우저에서는 메모리로 넘어가므로 방은 만들어지지만 탭을 닫으면
+   * 사라진다. **되는 척하지 않는다** — 친구에게 코드를 알려 줬는데 새로고침 한 번에
+   * 방이 없어지는 편이, 미리 알려 주는 것보다 나쁘다.
+   */
+  isPersistent,
 
   /** 지금 나를 가리키는 값 */
   me() {
@@ -189,7 +216,7 @@ export const localRooms = {
       createdAt: new Date().toISOString(),
     };
 
-    writeAll([room, ...rooms]);
+    if (!writeAll([room, ...rooms])) return { ok: false, message: SAVE_FAILED };
     return { ok: true, room: toPublic(room) };
   },
 
@@ -227,7 +254,8 @@ export const localRooms = {
       characterId: player?.characterId,
       seenAt: Date.now(),
     });
-    writeAll(rooms);
+    // 들어간 것이 저장되지 않으면 대기실에 가자마자 «없는 방»이 된다
+    if (!writeAll(rooms)) return { ok: false, reason: 'save-failed' };
     return { ok: true, room: toPublic(room) };
   },
 

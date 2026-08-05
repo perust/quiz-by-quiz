@@ -54,8 +54,8 @@ index.html          화면마다 <section data-screen="...">. 해시 라우팅 �
 js/constants.js     제한 시간·출제 수·배점·카테고리 정의. 상수는 여기 한 곳에만 둔다
 js/core/            게임 로직. DOM을 절대 건드리지 않고 입력을 받아 값을 반환한다
 js/ui/              DOM 렌더링. 게임 규칙을 갖지 않는다
-js/storage/         랭킹·설정 저장소. adapter.js가 구현체를 고르고, local-store.js만 localStorage를 만진다
-js/online/          온라인 방 저장소. 같은 방식이고 local-rooms.js만 localStorage를 만진다
+js/storage/         랭킹·설정 저장소. adapter.js가 구현체를 고르고, safe-storage.js만 localStorage를 만진다
+js/online/          온라인 방 저장소. 같은 방식이고, 저장은 storage/safe-storage.js를 거친다
 js/data/            JSON 로드 + 형식 검증
 js/app.js           위를 잇는 진입점. 화면 흐름만 담당
 data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
@@ -233,11 +233,24 @@ data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
 
 - 인터페이스: `saveRecord` / `getRankings` / `getBestScore` / `clearAll`
 - 로컬 구현이 동기여도 **모든 메서드는 Promise를 반환**한다
-- `localStorage` 직접 호출은 `js/storage/local-store.js`와 `js/online/local-rooms.js` **두 곳에만** 존재한다. `core/`나 `ui/`에서 부르면 설계 위반이다
+- `localStorage` 직접 호출은 `js/storage/safe-storage.js` **한 곳에만** 존재한다. 랭킹(`local-store.js`)과 방(`local-rooms.js`)이 둘 다 그것을 거친다. `core/`나 `ui/`에서 부르면 설계 위반이다
 - `core/`와 `ui/`는 저장소를 아예 import하지 않는다. 저장이 필요하면 `app.js`가 콜백으로 넘긴다
 - 교체 지점은 `js/storage/adapter.js`의 `rankingStore` 한 줄이다
 - 닉네임과 `recentQuestionIds`는 `preferences`로 분리했다. v2에서도 브라우저에 남을 값이라 서버로 갈 랭킹 어댑터와 섞지 않는다
 - 저장 데이터가 깨져도 앱이 죽지 않고 빈 랭킹으로 복구한다 (PRD 8). 레코드 단위로 검증해 성한 기록은 살린다
+
+**저장소를 아예 못 쓰는 환경도 앱을 죽이지 않는다** (`safe-storage.js`). 사생활 보호 모드처럼
+`setItem`이 던지는 브라우저에서는 메모리 대체품으로 넘어간다 — 기록이 남지 않을 뿐 게임은 돈다.
+**이 대비를 한쪽에만 두지 말 것.** 한때 랭킹에만 있었고 방 저장소는 직접 `localStorage`를 불렀는데,
+그래서 저장이 막힌 브라우저에서는 **「만들기」를 눌러도 아무 일이 없었다** — 방이 저장되지 않아
+곧바로 «없는 방»이 됐고, 화면도 안 바뀌고 안내도 없어 버튼이 고장 난 것처럼 보였다.
+
+**쓰기 실패를 삼키기만 하지 않는다.** 대체품으로 넘어가는 것은 «처음부터 막힌» 경우를 덮을 뿐이고,
+쓰다가 용량이 차는 경우는 따로다. 방을 여는 길목(`createRoom`·`joinRoom`)은 `writeAll`의 성공 여부를
+보고 이유를 화면에 띄운다. 설정 변경이나 한마디는 실패해도 화면이 그대로 돌아 그냥 넘어간다.
+
+**저장이 안 되는 것도 화면에서 숨기지 않는다** (`roomStore.isPersistent`). `isNetworked`와 같은 이유다 —
+친구에게 코드를 알려 줬는데 새로고침 한 번에 방이 사라지는 편이, 미리 알려 주는 것보다 나쁘다.
 
 **`questionResults`** — 저장 레코드의 **선택 필드**다. `[{id, correct, timedOut}]` 형태로 문항별 정오를 담는다. 화면에는 쓰지 않고 선생님 모드(`/teacher-dashboard`)가 문항 단위 정답률을 낼 때만 쓴다. PRD 6.2 스키마에 없는 확장이다.
 

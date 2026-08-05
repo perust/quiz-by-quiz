@@ -1,12 +1,14 @@
 // localStorage 구현체 (FR-6.7, PRD 6.3)
 //
-// ★ 이 프로젝트에서 window.localStorage를 직접 만지는 유일한 파일이다.
-//   core/ 나 ui/ 에서 localStorage를 부르면 설계 위반이다. 저장이 필요하면
-//   storage/adapter.js가 내보내는 객체를 통해서만 접근한다.
+// localStorage를 직접 만지지 않고 `safe-storage.js`를 거친다 — 못 쓰는 환경에서
+// 메모리로 넘어가는 대비가 거기 있고, 온라인 방 저장소도 같은 것을 쓴다.
+// core/ 나 ui/ 에서 저장소를 부르면 설계 위반이다. 저장이 필요하면
+// storage/adapter.js가 내보내는 객체를 통해서만 접근한다.
 //
 // 저장 데이터가 깨져도 앱을 죽이지 않고 빈 값으로 되돌린다 (PRD 8).
 
 import { RANKING_TOP_N } from '../constants.js';
+import { safeStorage } from './safe-storage.js';
 import { bestScore, placeRecord, selectRanking, isSameRanking } from '../core/ranking.js';
 
 /** 저장소 키 (PRD 6.3). 키 이름은 저장 방식의 세부사항이라 이 파일 밖으로 새지 않는다 */
@@ -23,40 +25,6 @@ const DEFAULT_SETTINGS = { soundEnabled: true, gameMode: false, characterId: nul
 
 /** 저장 데이터 스키마 버전. 구조가 바뀌면 올린다 (v2 마이그레이션 판단 기준) */
 const SCHEMA_VERSION = 1;
-
-// ── 저장소 확보 ──────────────────────────────────────────────────
-
-/**
- * localStorage를 못 쓰는 환경(사생활 보호 모드, 저장소 차단)을 위한 대체품.
- * 이번 세션 동안만 살아 있고 탭을 닫으면 사라진다. 기록이 남지 않을 뿐
- * 게임은 정상 동작한다.
- */
-function createMemoryStorage() {
-  const map = new Map();
-  return {
-    getItem: (key) => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => void map.set(key, String(value)),
-    removeItem: (key) => void map.delete(key),
-  };
-}
-
-/**
- * 쓰기까지 실제로 되는지 확인한다.
- * 사파리 사생활 보호 모드처럼 객체는 있는데 setItem에서 던지는 경우가 있다.
- */
-function resolveStorage() {
-  try {
-    const probeKey = '__quiz_probe__';
-    window.localStorage.setItem(probeKey, '1');
-    window.localStorage.removeItem(probeKey);
-    return window.localStorage;
-  } catch (error) {
-    console.warn(`[저장소] localStorage를 쓸 수 없어 이번 세션에만 기록을 유지합니다: ${error.message}`);
-    return createMemoryStorage();
-  }
-}
-
-const storage = resolveStorage();
 
 // ── 안전한 읽기·쓰기 ─────────────────────────────────────────────
 
@@ -77,7 +45,7 @@ function warnOnce(reason, message) {
 function readJson(key, fallback) {
   let raw = null;
   try {
-    raw = storage.getItem(key);
+    raw = safeStorage.getItem(key);
   } catch (error) {
     console.warn(`[저장소] ${key} 읽기 실패: ${error.message}`);
     return fallback;
@@ -96,7 +64,7 @@ function readJson(key, fallback) {
 /** 저장에 실패해도(용량 초과 등) 게임은 계속된다. 성공 여부만 알린다 */
 function writeJson(key, value) {
   try {
-    storage.setItem(key, JSON.stringify(value));
+    safeStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch (error) {
     console.warn(`[저장소] ${key} 저장 실패: ${error.message}`);
