@@ -17,6 +17,12 @@ import { createBody } from './sprite.js';
 /** 말풍선이 떠 있는 시간. 짧으면 못 읽고 길면 얼굴을 가린다 */
 const BUBBLE_MS = 3200;
 
+/** 화면에 남겨 둘 대화 줄 수. 말풍선이 사라진 뒤에도 이만큼은 다시 볼 수 있다 */
+const CHAT_LINES = 4;
+
+/** 이만큼 위가 비어 있지 않으면 말풍선을 캐릭터 아래에 띄운다 */
+const BUBBLE_ROOM = 52;
+
 const ALL_CATEGORY = { id: null, name: '전체 도전' };
 
 /**
@@ -108,6 +114,10 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
 
   function showBubble(text) {
     el.bubble.textContent = text;
+    // 캐릭터는 화면 맨 위까지 갈 수 있다(앱 바 버튼을 밟으려고 위쪽 한계를 풀었다).
+    // 그대로 두면 말풍선이 화면 밖으로 나가 말을 해도 보이지 않는다
+    const top = el.character.getBoundingClientRect().top;
+    el.bubble.classList.toggle('walker__bubble--below', top < BUBBLE_ROOM);
     el.bubble.hidden = false;
     clearTimeout(bubbleTimer);
     // 얼굴을 오래 가리지 않게 스스로 사라진다
@@ -115,11 +125,24 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
   }
 
   /**
-   * 말풍선은 눈으로 보는 장치라 스크린리더에는 닿지 않는다.
-   * 들은 말을 로그에 남겨 낭독되게 한다.
+   * 대화를 몇 줄 남긴다.
+   *
+   * 말풍선은 몇 초 뒤 사라지므로 놓친 말을 다시 볼 길이 있어야 한다.
+   * `role="log"`라 이 목록이 곧 라이브 리전이고, 말풍선을 볼 수 없는 사람에게는
+   * 여기가 대화 그 자체다 — 눈으로도 보이게 두는 이유다.
    */
   function logChat({ nickname, text }) {
-    el.chatLog.textContent = `${nickname}: ${text}`;
+    const line = document.createElement('li');
+    line.className = 'chat-log__line';
+
+    const who = document.createElement('span');
+    who.className = 'chat-log__who';
+    who.textContent = nickname;
+
+    line.append(who, ' ', text);
+    el.chatLog.append(line);
+
+    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild.remove();
   }
 
   function onEvent(event) {
@@ -142,6 +165,15 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
     if (event.playerId === roomStore.me()) showBubble(event.text);
   }
 
+  /** 대화가 아닌 안내. 대화 줄과 결을 달리해 섞이지 않게 한다 */
+  function notice(text) {
+    const line = document.createElement('li');
+    line.className = 'chat-log__line chat-log__line--notice';
+    line.textContent = text;
+    el.chatLog.append(line);
+    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild.remove();
+  }
+
   // ── 설정 바꾸기 ────────────────────────────────────────────────
   // 누를 때마다 다음 값으로 돈다. 캐릭터가 밟고 Enter만 눌러도 바뀐다
 
@@ -160,8 +192,16 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
   });
 
   el.capacity.addEventListener('click', () => {
-    const index = ROOM_CAPACITY_CHOICES.indexOf(room?.capacity);
-    patch({ capacity: ROOM_CAPACITY_CHOICES[(index + 1) % ROOM_CAPACITY_CHOICES.length] });
+    if (!room) return;
+    // 지금 있는 사람보다 작게는 줄일 수 없다. 그런 값을 건너뛰지 않으면
+    // 눌러도 아무 일이 없어 버튼이 고장 난 것처럼 보인다
+    const usable = ROOM_CAPACITY_CHOICES.filter((size) => size >= room.players.length);
+    if (usable.length <= 1) {
+      notice(`지금 ${room.players.length}명이 있어 인원을 더 줄일 수 없어요.`);
+      return;
+    }
+    const index = usable.indexOf(room.capacity);
+    patch({ capacity: usable[(index + 1) % usable.length] });
   });
 
   el.mode.addEventListener('click', () => patch({ gameMode: !room?.gameMode }));
@@ -173,9 +213,9 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
     if (!room) return;
     const result = await roomStore.startGame({ code: room.code });
     if (!result.ok) {
-      el.chatLog.textContent = result.reason === 'not-host'
+      notice(result.reason === 'not-host'
         ? '방장만 판을 시작할 수 있어요.'
-        : '판을 시작하지 못했어요.';
+        : '판을 시작하지 못했어요.');
     }
   });
 
@@ -231,7 +271,7 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
 
       el.bubble.hidden = true;
       el.chatInput.value = '';
-      el.chatLog.textContent = '';
+      el.chatLog.replaceChildren();
       render();
       walker.show(characterId);
     },

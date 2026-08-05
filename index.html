@@ -318,7 +318,8 @@
         <button type="submit" class="button button--primary button--small">보내기</button>
       </form>
       <p class="chat__hint">걷는 중에 <kbd>/</kbd> 를 누르면 채팅칸으로, 채팅칸에서 <kbd>Esc</kbd> 를 누르면 다시 걷기로 갑니다.</p>
-      <p class="sr-only" id="chat-log" role="log" aria-live="polite"></p>
+      <!-- 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다 -->
+      <ul class="chat-log" id="chat-log" role="log" aria-live="polite"></ul>
     </section>
 
     <!-- ─────────── 결과 (FR-5.2 ~ FR-5.7) ─────────── -->

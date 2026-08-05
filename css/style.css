@@ -2272,6 +2272,45 @@ body.is-booted .app-bar {
   border-color: var(--accent);
 }
 
+/* 말풍선이 화면 위로 넘칠 때는 캐릭터 아래에 띄운다. 꼬리도 함께 뒤집는다 */
+.walker__bubble--below {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.walker__bubble--below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--text);
+}
+
+/* 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다 */
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-log__line {
+  font-size: 13px;
+  color: var(--text);
+  word-break: keep-all;
+}
+
+.chat-log__who {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.chat-log__line--notice {
+  color: var(--warning);
+  font-size: 12px;
+}
+
 .chat__hint {
   margin: 8px 0 0;
   font-size: 12px;
