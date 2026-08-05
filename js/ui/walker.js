@@ -44,15 +44,18 @@ const DIRECTIONS = {
 export const PICK_KEYS = ['Enter', ' '];
 
 /**
- * 글자를 입력하는 중인가. 그렇다면 방향키와 Enter는 그쪽 것이다.
+ * 지금 키를 워커가 받으면 안 되는 상황인가.
  *
- * 결과 화면에는 닉네임 칸이 있다. 이 검사가 없으면 이름을 적는 동안
- * 캐릭터가 같이 걸어가고 커서는 움직이지 않는다.
+ * - 글자를 입력하는 중이면 방향키와 Enter는 그쪽 것이다. 결과 화면에는
+ *   닉네임 칸이 있어, 이 검사가 없으면 이름을 적는 동안 캐릭터가 같이 걸어간다.
+ * - 다이얼로그가 열려 있으면 그 안이 전부다. 뒤에서 캐릭터가 걸어 다니면
+ *   가려진 자리를 밟게 되고, 갇혀 있어야 할 조작이 밖으로 샌다.
  */
-function isTyping() {
+function isBlocked() {
   const node = document.activeElement;
-  if (!node) return false;
-  return node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName);
+  if (node && (node.isContentEditable
+    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName))) return true;
+  return Boolean(document.querySelector('.dialog-backdrop:not([hidden])'));
 }
 
 // ── 입력 (모듈 하나에 모아둔다) ──────────────────────────────────
@@ -285,8 +288,12 @@ export function createWalker(config) {
     const half = character.offsetWidth / 2;
     const height = character.offsetHeight;
     pos.x = Math.min(Math.max(pos.x, edge + half), stageSize.width - edge - half);
-    // 머리가 무대 위로 솟지 않도록 위쪽은 캐릭터 높이만큼 띄운다
-    pos.y = Math.min(Math.max(pos.y, edge + height), stageSize.height - edge);
+
+    // 무대 방식은 머리가 무대 위로 솟지 않도록 캐릭터 높이만큼 띄운다.
+    // 자유 방식은 그러면 **화면 맨 위의 버튼에 발이 닿지 않는다** — 앱 바가 딱
+    // 그 높이에 있다. 위쪽을 열어 두는 대신 머리가 화면 밖으로 조금 잘린다.
+    const top = roam ? edge : edge + height;
+    pos.y = Math.min(Math.max(pos.y, top), stageSize.height - edge);
   }
 
   /**
@@ -599,7 +606,7 @@ export function createWalker(config) {
      * 방향키는 «눌린 상태»로만 기록하고 실제 이동은 루프가 한다.
      */
     handleKey(event) {
-      if (!enabled || isTyping()) return false;
+      if (!enabled || isBlocked()) return false;
 
       if (DIRECTIONS[event.key]) {
         // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음에 유령 방향이 생긴다

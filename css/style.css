@@ -1722,6 +1722,17 @@ body.is-booted .app-bar {
   background: var(--accent-soft);
 }
 
+/* 카드처럼 제 표시가 따로 없는 버튼들. 걸어 올라서면 눌릴 수 있다고 알린다.
+   focus 테두리와 같은 모양을 쓴다 — 「지금 이걸 누르면 된다」는 뜻이 같다. */
+.button.is-standing,
+.icon-button.is-standing,
+.ranking-tab.is-standing,
+.character-card.is-standing,
+.arena__help.is-standing {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* 캐릭터가 올라선 칸. 눌러서 고를 수 있다는 표시다 */
 .category-card.is-standing,
 .challenge-card.is-standing,
