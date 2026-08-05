@@ -274,6 +274,53 @@
       </div>
     </section>
 
+    <!-- ─────────── 대기실 ───────────
+         설정은 «누르면 다음 값으로 도는» 버튼이다. select 로 두면 캐릭터가
+         밟아도 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. -->
+    <section class="screen" data-screen="waiting" aria-labelledby="waiting-title" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <h1 class="screen-title" id="waiting-title">대기실</h1>
+        <button type="button" class="button button--ghost" id="waiting-leave">나가기</button>
+      </header>
+
+      <p class="screen-lead" id="waiting-lead"></p>
+
+      <div class="waiting-settings">
+        <button type="button" class="setting-card" id="setting-category">
+          <span class="setting-card__label">분야</span>
+          <span class="setting-card__value" id="setting-category-value"></span>
+        </button>
+        <button type="button" class="setting-card" id="setting-capacity">
+          <span class="setting-card__label">인원</span>
+          <span class="setting-card__value" id="setting-capacity-value"></span>
+        </button>
+        <button type="button" class="setting-card" id="setting-mode">
+          <span class="setting-card__label">모드</span>
+          <span class="setting-card__value" id="setting-mode-value"></span>
+        </button>
+      </div>
+
+      <button type="button" class="button button--primary waiting-start" id="waiting-start">게임 시작</button>
+
+      <!-- 대기실 바닥. 참가자가 서 있고 내 캐릭터가 걸어 다닌다 -->
+      <div class="lounge" id="lounge">
+        <ul class="lounge__players" id="lounge-players"></ul>
+        <div class="walker walker--home" id="waiting-character" aria-hidden="true">
+          <span class="walker__bubble" id="waiting-bubble" hidden></span>
+          <span class="walker__shadow"></span>
+        </div>
+      </div>
+
+      <form class="chat" id="chat-form" novalidate>
+        <label class="sr-only" for="chat-input">대기실에서 한마디</label>
+        <input class="chat__input" id="chat-input" type="text" maxlength="60"
+               autocomplete="off" placeholder="한마디 적고 Enter">
+        <button type="submit" class="button button--primary button--small">보내기</button>
+      </form>
+      <p class="chat__hint">걷는 중에 <kbd>/</kbd> 를 누르면 채팅칸으로, 채팅칸에서 <kbd>Esc</kbd> 를 누르면 다시 걷기로 갑니다.</p>
+      <p class="sr-only" id="chat-log" role="log" aria-live="polite"></p>
+    </section>
+
     <!-- ─────────── 결과 (FR-5.2 ~ FR-5.7) ─────────── -->
     <section class="screen" data-screen="result" aria-labelledby="result-title" tabindex="-1" hidden>
       <h1 class="sr-only" id="result-title">퀴즈 결과</h1>

@@ -16,6 +16,7 @@ import { setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen } from './ui/screens.js';
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
+import { createWaitingRoom } from './ui/waiting-room.js';
 import { roomStore } from './online/adapter.js';
 import { createQuizScreen } from './ui/quiz.js';
 import { createResultScreen } from './ui/result.js';
@@ -144,6 +145,18 @@ async function main() {
   const onlineScreen = createOnlineScreen({
     roomStore,
     onHome: goHome,
+    onEnterRoom: (code) => openWaitingRoom(code),
+    getPlayer: () => ({ nickname: savedNickname || '손님', characterId }),
+  });
+
+  // 대기실. 방 설정으로 한 판을 시작한다 — 서버가 없어 지금은 혼자 푸는 판이다
+  const waitingRoom = createWaitingRoom({
+    roomStore,
+    onLeave: () => openOnline(),
+    onStart: ({ categoryId, gameMode }) => {
+      gameModeToggle.set(gameMode);
+      startRound(categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null });
+    },
     getPlayer: () => ({ nickname: savedNickname || '손님', characterId }),
   });
 
@@ -221,6 +234,7 @@ async function main() {
   async function goHome() {
     charactersScreen.hide();
     onlineScreen.hide();
+    waitingRoom.hide();
     homeScreen.render({
       categories: CATEGORIES,
       banks,
@@ -274,6 +288,7 @@ async function main() {
     });
 
     homeScreen.hide();
+    waitingRoom.hide();
     showScreen('quiz');
     quizScreen.start(session, { categoryLabel: labelFor(round) });
   }
@@ -355,8 +370,15 @@ async function main() {
 
   async function openOnline() {
     homeScreen.hide();
+    waitingRoom.hide();
     await onlineScreen.show(characterId);
     showScreen('online');
+  }
+
+  async function openWaitingRoom(code) {
+    onlineScreen.hide();
+    await waitingRoom.show(code, characterId);
+    showScreen('waiting');
   }
 
   // ── 내 캐릭터 ──────────────────────────────────────────────────
