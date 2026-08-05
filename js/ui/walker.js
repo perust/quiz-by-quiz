@@ -22,6 +22,15 @@ const ARRIVE_PX = 4;
 const STICK_DEADZONE = 5;
 
 /**
+ * 캐릭터가 화면 위아래 이만큼 안으로 들어오면 스크롤이 따라 움직인다.
+ *
+ * 늘 화면 한가운데에 두지 않는 것이 중요하다. 매 프레임 가운데로 맞추면
+ * 사용자가 스스로 스크롤할 수 없고, 조금만 움직여도 화면 전체가 흔들린다.
+ * 가장자리에 닿을 때만 미는 방식이라 가운데에서는 화면이 가만히 있는다.
+ */
+const CAMERA_MARGIN = 96;
+
+/**
  * 방향키 → (dx, dy). 두 개를 함께 누르면 대각선이 된다.
  * 칸을 세지 않는다 — 자유롭게 움직이고 «발이 어느 칸에 있는지»만 본다.
  */
@@ -246,6 +255,30 @@ export function createWalker(config) {
     onZoneChange?.(standing, previous);
   }
 
+  /**
+   * 캐릭터가 화면 밖으로 나가지 않게 스크롤을 따라 움직인다.
+   *
+   * **움직이는 동안에만 부른다.** `place()`에서 부르면 새 문항이 뜰 때마다
+   * 무대로 스크롤이 내려가 문제 글이 위로 밀려난다 — 화면에 처음 들어올 때는
+   * 위에서부터 읽어야 한다.
+   *
+   * `pos`는 무대 기준이고 여기서 재는 것은 화면 기준이라, 스크롤이 움직여도
+   * 밟은 칸 판정(`zoneAt`)에는 영향이 없다.
+   */
+  function followCamera() {
+    const box = character.getBoundingClientRect();
+    if (box.height === 0) return; // 아직 보이지 않는 화면이다
+
+    // 짧은 화면에서 여백이 화면을 다 먹으면 위아래가 서로 밀어내며 떨린다
+    const margin = Math.min(CAMERA_MARGIN, window.innerHeight / 3);
+    const above = margin - box.top; // 위쪽 여백을 파고든 정도
+    const below = box.bottom - (window.innerHeight - margin);
+
+    if (above > 0) window.scrollBy(0, -above);
+    else if (below > 0) window.scrollBy(0, below);
+    // 더 스크롤할 곳이 없으면 브라우저가 알아서 멈춘다. 여기서 따로 막지 않는다
+  }
+
   /** 캐릭터를 처음 자리에 세운다 */
   function place() {
     measure();
@@ -312,6 +345,7 @@ export function createWalker(config) {
     pos.y += vy * SPEED * dt;
     clampPosition();
     render();
+    followCamera();
 
     frameId = requestAnimationFrame(loop);
   }
