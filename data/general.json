@@ -298,5 +298,705 @@
     "explanation": "미국·영국·프랑스·러시아·중국이며, 한 나라라도 반대하면 결의가 채택되지 않습니다.",
     "difficulty": "hard",
     "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-031",
+    "category": "general",
+    "question": "올림픽 마라톤의 정식 거리는 몇 킬로미터인가?",
+    "choices": ["40킬로미터", "42.195킬로미터", "21.0975킬로미터", "50킬로미터"],
+    "answerIndex": 1,
+    "explanation": "1908년 런던 대회에서 왕실 별궁부터 경기장 귀빈석까지의 거리를 재면서 지금의 숫자로 굳어졌습니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-032",
+    "category": "general",
+    "question": "농구에서 한 팀이 코트에 동시에 나설 수 있는 선수는 몇 명인가?",
+    "choices": ["4명", "5명", "6명", "7명"],
+    "answerIndex": 1,
+    "explanation": "센터·포워드·가드로 자리를 나눕니다. 교체는 횟수 제한 없이 할 수 있습니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "농구"]
+  },
+  {
+    "id": "general-033",
+    "category": "general",
+    "question": "올림픽기에 그려진 다섯 개의 고리는 무엇을 뜻하는가?",
+    "choices": ["다섯 창설국", "다섯 종목", "다섯 대륙", "다섯 가지 덕목"],
+    "answerIndex": 2,
+    "explanation": "서로 얽힌 모양은 그 대륙들이 만나 겨룬다는 뜻을 담았습니다. 다섯 빛깔과 흰 바탕이면 모든 나라의 국기를 그릴 수 있게 골랐습니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-034",
+    "category": "general",
+    "question": "우리나라에서 비롯해 2000년 시드니 대회부터 올림픽 정식 종목이 된 무술은?",
+    "choices": ["유도", "가라테", "우슈", "태권도"],
+    "answerIndex": 3,
+    "explanation": "발차기를 앞세운 겨루기가 특징이며, 세계 200개 가까운 나라에 보급돼 있습니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-035",
+    "category": "general",
+    "question": "야구 경기는 정규 이닝으로 몇 회까지 치르는가?",
+    "choices": ["7회", "9회", "10회", "12회"],
+    "answerIndex": 1,
+    "explanation": "각 회에 두 팀이 공격과 수비를 한 번씩 맡습니다. 승부가 나지 않으면 연장으로 이어집니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "야구"]
+  },
+  {
+    "id": "general-036",
+    "category": "general",
+    "question": "테니스 경기에서 점수가 0점일 때 부르는 말은?",
+    "choices": ["러브", "듀스", "폴트", "레트"],
+    "answerIndex": 0,
+    "explanation": "0을 뜻하는 프랑스어 뢰프(달걀)에서 왔다는 설이 널리 알려져 있습니다. 15·30·40으로 점수를 세는 것도 이 종목의 특징입니다.",
+    "difficulty": "hard",
+    "tags": ["스포츠", "테니스"]
+  },
+  {
+    "id": "general-037",
+    "category": "general",
+    "question": "축구에서 한 선수가 한 경기에 세 골을 넣는 것을 무엇이라 하는가?",
+    "choices": ["더블", "어시스트", "해트트릭", "트리플크라운"],
+    "answerIndex": 2,
+    "explanation": "예전 크리켓에서 세 타자를 연달아 잡은 선수에게 모자를 준 데서 왔다는 이야기가 전합니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "축구"]
+  },
+  {
+    "id": "general-038",
+    "category": "general",
+    "question": "골프에서 기준 타수보다 한 타 적게 홀을 마치는 것을 무엇이라 하는가?",
+    "choices": ["파", "보기", "버디", "이글"],
+    "answerIndex": 2,
+    "explanation": "두 타 적으면 이글, 기준대로면 파, 한 타 많으면 보기라 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "골프"]
+  },
+  {
+    "id": "general-039",
+    "category": "general",
+    "question": "정규 골프 코스는 몇 개의 홀로 이루어지는가?",
+    "choices": ["9개", "12개", "18개", "24개"],
+    "answerIndex": 2,
+    "explanation": "9홀씩 앞뒤로 나누어 돕니다. 기준 타수를 모두 더하면 보통 72타가 됩니다.",
+    "difficulty": "hard",
+    "tags": ["스포츠", "골프"]
+  },
+  {
+    "id": "general-040",
+    "category": "general",
+    "question": "동계 올림픽에서 얼음 위로 무거운 돌을 미끄러뜨려 표적에 붙이는 종목은?",
+    "choices": ["컬링", "봅슬레이", "루지", "스켈레톤"],
+    "answerIndex": 0,
+    "explanation": "빗자루로 얼음을 문질러 돌이 가는 길과 거리를 조절합니다. 우리나라는 2018년 평창 대회 여자부에서 은메달을 땄습니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-041",
+    "category": "general",
+    "question": "국가 권력을 입법·행정·사법으로 나누어 서로 견제하게 한 원칙은?",
+    "choices": ["삼권분립", "지방자치", "법치주의", "대의민주주의"],
+    "answerIndex": 0,
+    "explanation": "권력이 한곳에 몰리는 것을 막으려는 장치로, 몽테스키외가 체계를 세웠습니다.",
+    "difficulty": "easy",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-042",
+    "category": "general",
+    "question": "법률이 헌법에 어긋나는지를 가리는 대한민국의 기관은?",
+    "choices": ["대법원", "헌법재판소", "감사원", "국가인권위원회"],
+    "answerIndex": 1,
+    "explanation": "탄핵 심판과 정당 해산 심판도 맡습니다. 재판관 아홉 명으로 이루어집니다.",
+    "difficulty": "easy",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-043",
+    "category": "general",
+    "question": "일반 국민이 배심원으로 형사재판에 참여하는 우리나라 제도는?",
+    "choices": ["참심제", "즉결심판", "국민참여재판", "약식기소"],
+    "answerIndex": 2,
+    "explanation": "2008년부터 시행됐으며, 배심원의 평결은 재판부를 법으로 구속하지는 않고 참고 자료가 됩니다.",
+    "difficulty": "hard",
+    "tags": ["법", "제도"]
+  },
+  {
+    "id": "general-044",
+    "category": "general",
+    "question": "다음 가운데 선거의 4대 원칙에 들지 않는 것은?",
+    "choices": ["보통선거", "공개선거", "평등선거", "비밀선거"],
+    "answerIndex": 1,
+    "explanation": "네 원칙은 보통·평등·직접·비밀입니다. 누구에게 투표했는지 드러나지 않아야 하므로 공개는 오히려 어긋납니다.",
+    "difficulty": "normal",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-045",
+    "category": "general",
+    "question": "법률을 만들고 고치는 일을 맡은 대한민국의 국가 기관은?",
+    "choices": ["국회", "정부", "법원", "헌법재판소"],
+    "answerIndex": 0,
+    "explanation": "나라 살림의 예산을 심의하고 확정하는 일도 여기서 합니다.",
+    "difficulty": "easy",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-046",
+    "category": "general",
+    "question": "같은 사건에 대해 재판을 세 번까지 받을 수 있게 한 제도는?",
+    "choices": ["삼심제", "재심", "상소", "배심제"],
+    "answerIndex": 0,
+    "explanation": "판결이 잘못될 가능성을 줄이려는 장치로, 1심 지방법원에서 시작해 고등법원과 대법원으로 이어집니다.",
+    "difficulty": "normal",
+    "tags": ["법", "제도"]
+  },
+  {
+    "id": "general-047",
+    "category": "general",
+    "question": "국가 기관의 예산 집행과 공무원의 직무를 감찰하는 기관은?",
+    "choices": ["국세청", "검찰청", "감사원", "국민권익위원회"],
+    "answerIndex": 2,
+    "explanation": "대통령 소속이면서도 직무에서는 독립돼 있으며, 나라 살림의 결산을 검사해 국회에 보고합니다.",
+    "difficulty": "hard",
+    "tags": ["법", "제도"]
+  },
+  {
+    "id": "general-048",
+    "category": "general",
+    "question": "대한민국 헌법 제1조 제1항이 밝힌 국가 형태는?",
+    "choices": ["입헌군주국", "민주공화국", "연방국가", "인민공화국"],
+    "answerIndex": 1,
+    "explanation": "이어지는 2항은 주권이 국민에게 있고 모든 권력이 국민에게서 나온다고 못 박고 있습니다.",
+    "difficulty": "normal",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-049",
+    "category": "general",
+    "question": "유죄가 확정되기 전까지는 죄가 없는 것으로 본다는 원칙은?",
+    "choices": ["죄형법정주의", "일사부재리", "무죄추정의 원칙", "불고불리의 원칙"],
+    "answerIndex": 2,
+    "explanation": "그래서 증명할 책임은 처벌을 주장하는 쪽에 있습니다. 의심스러울 때는 피고인에게 유리하게 판단합니다.",
+    "difficulty": "hard",
+    "tags": ["법", "제도"]
+  },
+  {
+    "id": "general-050",
+    "category": "general",
+    "question": "법에 미리 정해 두지 않은 행위는 처벌할 수 없다는 원칙은?",
+    "choices": ["무죄추정의 원칙", "죄형법정주의", "일사부재리", "신의성실의 원칙"],
+    "answerIndex": 1,
+    "explanation": "권력이 마음대로 죄를 만들어 사람을 가두는 일을 막습니다. 그래서 형벌 법규는 뒤늦게 소급해 적용할 수 없습니다.",
+    "difficulty": "hard",
+    "tags": ["법", "제도"]
+  },
+  {
+    "id": "general-051",
+    "category": "general",
+    "question": "물건값에 얹혀 최종 소비자가 부담하며 우리나라 세율이 10퍼센트인 세금은?",
+    "choices": ["부가가치세", "소득세", "법인세", "재산세"],
+    "answerIndex": 0,
+    "explanation": "영수증에 따로 적혀 나옵니다. 소득에 관계없이 같은 비율로 매겨져 저소득층의 부담이 상대적으로 큽니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "세금"]
+  },
+  {
+    "id": "general-052",
+    "category": "general",
+    "question": "은행에 돈을 맡기거나 빌릴 때 원금에 더해 주고받는 돈은?",
+    "choices": ["배당", "이자", "수수료", "보증금"],
+    "answerIndex": 1,
+    "explanation": "원금에 대한 비율로 나타낸 것이 금리입니다. 금리가 오르면 빌린 사람의 부담이 커집니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "금융"]
+  },
+  {
+    "id": "general-053",
+    "category": "general",
+    "question": "한 나라의 돈과 다른 나라 돈을 바꾸는 비율을 무엇이라 하는가?",
+    "choices": ["금리", "관세", "환율", "물가지수"],
+    "answerIndex": 2,
+    "explanation": "원화 가치가 떨어지면 수출품 값이 싸져 유리해지지만, 수입품과 해외여행 비용은 비싸집니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "금융"]
+  },
+  {
+    "id": "general-054",
+    "category": "general",
+    "question": "주식회사가 이익의 일부를 주주에게 나누어 주는 것을 무엇이라 하는가?",
+    "choices": ["이자", "배당", "증자", "시세차익"],
+    "answerIndex": 1,
+    "explanation": "회사가 이익을 냈다고 반드시 주어야 하는 것은 아니며, 다시 투자에 쓰기로 결정할 수도 있습니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "금융"]
+  },
+  {
+    "id": "general-055",
+    "category": "general",
+    "question": "경기는 가라앉는데 물가는 오르는 상태를 무엇이라 하는가?",
+    "choices": ["인플레이션", "디플레이션", "리플레이션", "스태그플레이션"],
+    "answerIndex": 3,
+    "explanation": "경기를 살리려 돈을 풀면 물가가 더 오르고, 물가를 잡으려 죄면 경기가 더 나빠져 손쓰기가 어렵습니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-056",
+    "category": "general",
+    "question": "국민이 나라 안팎에서 벌어들인 소득을 모두 더한 지표는?",
+    "choices": ["국민총소득", "국내총생산", "소비자물가지수", "경상수지"],
+    "answerIndex": 0,
+    "explanation": "GNI라고 씁니다. 국내총생산이 '어디서 만들었나'를 본다면 이것은 '누가 벌었나'를 봅니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-057",
+    "category": "general",
+    "question": "다른 나라에서 들여오는 물품에 매기는 세금은?",
+    "choices": ["소비세", "관세", "취득세", "인지세"],
+    "answerIndex": 1,
+    "explanation": "국내 산업을 지키거나 나라 살림에 보태려고 매깁니다. 자유무역협정을 맺으면 이 세금을 서로 낮추거나 없앱니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "세금"]
+  },
+  {
+    "id": "general-058",
+    "category": "general",
+    "question": "가계가 사는 물건과 서비스의 값이 얼마나 올랐는지 모아 나타낸 지표는?",
+    "choices": ["실업률", "소비자물가지수", "경제성장률", "무역수지"],
+    "answerIndex": 1,
+    "explanation": "장바구니에 자주 담기는 품목을 골라 값을 매달 조사해 셈합니다. 기준이 되는 해를 100으로 두고 비교합니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-059",
+    "category": "general",
+    "question": "일할 뜻과 능력이 있는데도 일자리를 얻지 못한 사람의 비율은?",
+    "choices": ["고용률", "취업률", "실업률", "경제활동참가율"],
+    "answerIndex": 2,
+    "explanation": "구직을 아예 포기한 사람은 이 통계에서 빠지기 때문에, 수치가 낮다고 반드시 사정이 좋은 것은 아닙니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-060",
+    "category": "general",
+    "question": "물건을 먼저 사고 값은 나중에 치르도록 해 주는 지불 수단은?",
+    "choices": ["신용카드", "체크카드", "상품권", "직불카드"],
+    "answerIndex": 0,
+    "explanation": "통장에서 곧바로 빠져나가는 체크카드와 달리, 정해진 날에 몰아서 빠져나갑니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "생활"]
+  },
+  {
+    "id": "general-061",
+    "category": "general",
+    "question": "심장이 멈춘 사람의 가슴을 규칙적으로 눌러 되살리려는 응급 처치는?",
+    "choices": ["심폐소생술", "하임리히법", "지혈법", "회복 자세"],
+    "answerIndex": 0,
+    "explanation": "1분에 100~120번 빠르기로 가슴 가운데를 깊게 누릅니다. 구급차가 오기까지 멈추지 않는 것이 중요합니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-062",
+    "category": "general",
+    "question": "음식물이 목에 걸렸을 때 배를 안쪽 위로 밀어 올려 빼내는 응급 처치는?",
+    "choices": ["심폐소생술", "하임리히법", "냉찜질", "회복 자세"],
+    "answerIndex": 1,
+    "explanation": "뒤에서 안아 명치와 배꼽 사이를 밀어 올립니다. 기침을 할 수 있는 상태라면 먼저 기침을 하게 두는 편이 낫습니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-063",
+    "category": "general",
+    "question": "소화기를 쓸 때 가장 먼저 해야 할 일은?",
+    "choices": ["손잡이를 힘껏 누른다", "안전핀을 뽑는다", "노즐을 불 쪽으로 향한다", "소화기를 흔든다"],
+    "answerIndex": 1,
+    "explanation": "핀을 뽑고 노즐을 불에 겨눈 뒤 손잡이를 눌러, 빗자루로 쓸듯 좌우로 뿌립니다. 바람을 등지고 서는 것이 안전합니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-064",
+    "category": "general",
+    "question": "실내에서 지진을 느꼈을 때 가장 먼저 할 행동으로 알맞은 것은?",
+    "choices": ["창문을 열어 둔다", "곧바로 승강기를 탄다", "탁자 아래로 들어가 몸을 지킨다", "가스 밸브부터 잠근다"],
+    "answerIndex": 2,
+    "explanation": "떨어지는 물건에 다치는 일이 가장 많기 때문입니다. 흔들림이 멎은 뒤에 불을 끄고 계단으로 밖에 나갑니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-065",
+    "category": "general",
+    "question": "2023년부터 식품 포장에 표시하기 시작한, 먹어도 안전한 기한은?",
+    "choices": ["유통기한", "소비기한", "품질유지기한", "제조일자"],
+    "answerIndex": 1,
+    "explanation": "가게에서 팔 수 있는 기한을 적던 것에서 바뀌었습니다. 대체로 날짜가 늘어나 버려지는 음식이 줄어듭니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-066",
+    "category": "general",
+    "question": "성인이 안정을 취한 상태의 정상 혈압으로 보는 값에 가장 가까운 것은?",
+    "choices": ["90/60", "120/80", "150/100", "180/120"],
+    "answerIndex": 1,
+    "explanation": "앞의 값은 심장이 피를 내보낼 때, 뒤의 값은 쉴 때의 압력입니다. 140/90을 넘는 상태가 이어지면 고혈압으로 봅니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "건강"]
+  },
+  {
+    "id": "general-067",
+    "category": "general",
+    "question": "인슐린이 모자라거나 잘 듣지 않아 혈당이 높아지는 병은?",
+    "choices": ["고혈압", "당뇨병", "통풍", "빈혈"],
+    "answerIndex": 1,
+    "explanation": "오래되면 눈과 콩팥, 신경에 합병증을 일으킵니다. 식사와 운동으로 관리하는 것이 치료의 바탕입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "건강"]
+  },
+  {
+    "id": "general-068",
+    "category": "general",
+    "question": "화상을 입었을 때 가장 먼저 해야 할 처치는?",
+    "choices": ["흐르는 찬물로 식힌다", "얼음을 직접 댄다", "연고를 바로 두껍게 바른다", "물집을 터뜨린다"],
+    "answerIndex": 0,
+    "explanation": "15분 남짓 식혀 열이 더 깊이 파고들지 않게 합니다. 얼음을 직접 대면 조직이 더 상할 수 있습니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-069",
+    "category": "general",
+    "question": "우리나라 어린이 보호구역의 자동차 제한 속도는 시속 몇 킬로미터인가?",
+    "choices": ["20킬로미터", "30킬로미터", "40킬로미터", "50킬로미터"],
+    "answerIndex": 1,
+    "explanation": "학교와 어린이집 둘레 300미터 안쪽에 지정합니다. 이곳에서 낸 사고는 더 무겁게 처벌합니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-070",
+    "category": "general",
+    "question": "2021년부터 적용된 도시 지역 일반도로의 기본 제한 속도는?",
+    "choices": ["시속 40킬로미터", "시속 50킬로미터", "시속 60킬로미터", "시속 70킬로미터"],
+    "answerIndex": 1,
+    "explanation": "'안전속도 5030'이라 부르며, 주택가 이면도로는 시속 30킬로미터로 더 낮춥니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-071",
+    "category": "general",
+    "question": "제2차 세계대전이 끝난 1945년, 평화와 안전을 위해 창설된 국제기구는?",
+    "choices": ["국제연합", "유럽연합", "국제적십자", "국제올림픽위원회"],
+    "answerIndex": 0,
+    "explanation": "총회와 안전보장이사회를 두고 있으며, 우리나라는 1991년에 북한과 함께 가입했습니다.",
+    "difficulty": "easy",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-072",
+    "category": "general",
+    "question": "교육·과학·문화 분야의 협력을 맡으며 세계유산을 지정하는 유엔 기구는?",
+    "choices": ["국제노동기구", "세계무역기구", "국제통화기금", "유네스코"],
+    "answerIndex": 3,
+    "explanation": "본부는 파리에 있습니다. 우리나라의 석굴암과 종묘, 한국의 갯벌도 이 기구가 세계유산으로 올린 것입니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-073",
+    "category": "general",
+    "question": "전쟁터의 부상자를 돕자는 뜻에서 앙리 뒤낭이 세운 국제 인도주의 단체는?",
+    "choices": ["국경없는의사회", "유니세프", "세이브더칠드런", "국제적십자"],
+    "answerIndex": 3,
+    "explanation": "흰 바탕에 붉은 십자를 상징으로 씁니다. 창립자는 1901년 제1회 노벨 평화상을 받았습니다.",
+    "difficulty": "hard",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-074",
+    "category": "general",
+    "question": "유럽의 여러 나라가 경제와 정치를 아울러 만든 연합체를 무엇이라 하는가?",
+    "choices": ["북대서양조약기구", "유럽연합", "유럽평의회", "유럽자유무역연합"],
+    "answerIndex": 1,
+    "explanation": "회원국 사이에 사람과 물자가 자유롭게 오가며, 상당수 나라가 유로화를 함께 씁니다. 영국은 2020년에 탈퇴했습니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-075",
+    "category": "general",
+    "question": "미국·영국·프랑스·독일·이탈리아·캐나다·일본 일곱 나라의 모임을 무엇이라 하는가?",
+    "choices": ["G20", "OECD", "G7", "APEC"],
+    "answerIndex": 2,
+    "explanation": "해마다 정상들이 모여 세계 경제와 국제 현안을 논의합니다. 신흥국까지 넓힌 모임은 G20입니다.",
+    "difficulty": "hard",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-076",
+    "category": "general",
+    "question": "인터넷에서 기기를 구별하려고 붙이는 주소를 무엇이라 하는가?",
+    "choices": ["IP 주소", "URL", "쿠키", "캐시"],
+    "answerIndex": 0,
+    "explanation": "숫자로 되어 있어 사람이 외우기 어렵기 때문에, 이름을 주소로 바꿔 주는 DNS가 따로 있습니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "생활"]
+  },
+  {
+    "id": "general-077",
+    "category": "general",
+    "question": "선 없이 가까운 거리에서 인터넷에 연결하는 무선랜 기술을 흔히 뭐라 부르는가?",
+    "choices": ["블루투스", "NFC", "적외선 통신", "와이파이"],
+    "answerIndex": 3,
+    "explanation": "공유기가 내보내는 전파를 잡아 씁니다. 블루투스는 훨씬 가까운 거리에서 기기끼리 잇는 데 씁니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "생활"]
+  },
+  {
+    "id": "general-078",
+    "category": "general",
+    "question": "내 기기가 아니라 인터넷 너머의 서버에 자료를 두고 쓰는 방식은?",
+    "choices": ["오프라인 저장", "클라우드", "백업", "캐싱"],
+    "answerIndex": 1,
+    "explanation": "기기가 바뀌어도 같은 자료를 이어 쓸 수 있지만, 인터넷이 끊기면 접근하지 못합니다.",
+    "difficulty": "hard",
+    "tags": ["정보기술", "생활"]
+  },
+  {
+    "id": "general-079",
+    "category": "general",
+    "question": "컴퓨터를 망가뜨리거나 정보를 빼내는 나쁜 프로그램을 통틀어 무엇이라 하는가?",
+    "choices": ["악성코드", "방화벽", "쿠키", "드라이버"],
+    "answerIndex": 0,
+    "explanation": "바이러스와 웜, 랜섬웨어가 여기에 듭니다. 방화벽과 백신은 오히려 이를 막는 쪽입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "안전"]
+  },
+  {
+    "id": "general-080",
+    "category": "general",
+    "question": "소스 코드를 공개해 누구나 보고 고쳐 쓸 수 있게 한 소프트웨어는?",
+    "choices": ["상용 소프트웨어", "셰어웨어", "오픈소스", "프리웨어"],
+    "answerIndex": 2,
+    "explanation": "리눅스와 안드로이드의 바탕이 여기에 듭니다. 공짜라는 뜻이 아니라 코드를 열어 둔다는 뜻입니다.",
+    "difficulty": "hard",
+    "tags": ["정보기술", "생활"]
+  },
+  {
+    "id": "general-081",
+    "category": "general",
+    "question": "다음 가운데 노벨상 시상 부문에 들지 않는 것은?",
+    "choices": ["수학", "물리학", "문학", "평화"],
+    "answerIndex": 0,
+    "explanation": "물리학·화학·생리의학·문학·평화 다섯에 1969년부터 경제학이 더해졌습니다. 수학에는 필즈상이 따로 있습니다.",
+    "difficulty": "normal",
+    "tags": ["국제", "노벨상"]
+  },
+  {
+    "id": "general-082",
+    "category": "general",
+    "question": "열두 해를 한 바퀴로 도는 십이지에서 첫 번째에 놓인 동물은?",
+    "choices": ["소", "쥐", "호랑이", "용"],
+    "answerIndex": 1,
+    "explanation": "쥐·소·호랑이·토끼 순으로 이어집니다. 태어난 해의 동물을 띠라고 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["달력", "생활"]
+  },
+  {
+    "id": "general-083",
+    "category": "general",
+    "question": "24절기 가운데 봄이 시작된다고 보는 첫 절기는?",
+    "choices": ["우수", "경칩", "입춘", "곡우"],
+    "answerIndex": 2,
+    "explanation": "양력 2월 4일 무렵입니다. 이날 대문에 좋은 글귀를 써 붙이는 풍습이 있었습니다.",
+    "difficulty": "normal",
+    "tags": ["달력", "생활"]
+  },
+  {
+    "id": "general-084",
+    "category": "general",
+    "question": "달이 차고 기우는 주기를 기준으로 만든 달력은?",
+    "choices": ["태양력", "율리우스력", "그레고리력", "태음력"],
+    "answerIndex": 3,
+    "explanation": "한 해가 354일쯤이라 계절과 어긋나므로, 우리 전통 달력은 윤달을 넣어 태양의 움직임과 맞춘 태음태양력을 썼습니다.",
+    "difficulty": "hard",
+    "tags": ["달력", "생활"]
+  },
+  {
+    "id": "general-085",
+    "category": "general",
+    "question": "대한민국 국기의 이름은?",
+    "choices": ["일장기", "태극기", "성조기", "삼색기"],
+    "answerIndex": 1,
+    "explanation": "흰 바탕 가운데 태극을 두고 네 귀퉁이에 건곤감리 네 괘를 넣었습니다.",
+    "difficulty": "easy",
+    "tags": ["한국", "생활"]
+  },
+  {
+    "id": "general-086",
+    "category": "general",
+    "question": "로마 숫자 'X'는 아라비아 숫자로 얼마인가?",
+    "choices": ["5", "9", "10", "50"],
+    "answerIndex": 2,
+    "explanation": "V가 5, L이 50, C가 100입니다. 작은 수를 앞에 두면 빼라는 뜻이어서 IX는 9가 됩니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "숫자"]
+  },
+  {
+    "id": "general-087",
+    "category": "general",
+    "question": "바다와 하늘에서 거리를 잴 때 쓰는 1해리는 몇 미터인가?",
+    "choices": ["1,000미터", "1,609미터", "1,852미터", "2,000미터"],
+    "answerIndex": 2,
+    "explanation": "지구 위도 1분에 해당하는 거리에서 왔습니다. 1시간에 1해리를 가는 빠르기를 1노트라 합니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-088",
+    "category": "general",
+    "question": "예부터 넓이를 재는 데 쓰인 단위 '한 평'은 몇 제곱미터에 가장 가까운가?",
+    "choices": ["1제곱미터", "3.3제곱미터", "10제곱미터", "0.5제곱미터"],
+    "answerIndex": 1,
+    "explanation": "가로세로 여섯 자를 한 변으로 하는 넓이에서 왔습니다. 2007년부터 거래와 공문서에는 제곱미터만 쓰도록 했습니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-089",
+    "category": "general",
+    "question": "영어 알파벳은 모두 몇 글자인가?",
+    "choices": ["24개", "25개", "26개", "28개"],
+    "answerIndex": 2,
+    "explanation": "그 가운데 모음이 다섯이고 나머지가 자음입니다. 라틴 문자에서 이어져 왔습니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "언어"]
+  },
+  {
+    "id": "general-090",
+    "category": "general",
+    "question": "오늘날 쓰이는 한글의 기본 자음은 모두 몇 개인가?",
+    "choices": ["10개", "12개", "16개", "14개"],
+    "answerIndex": 3,
+    "explanation": "기본 모음은 열이며, 이를 겹쳐 만든 글자까지 더하면 자음 19개와 모음 21개를 씁니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "언어"]
+  },
+  {
+    "id": "general-091",
+    "category": "general",
+    "question": "아기가 태어나면 한 달 안에 관공서에 해야 하는 신고는?",
+    "choices": ["출생신고", "전입신고", "혼인신고", "취학통지"],
+    "answerIndex": 0,
+    "explanation": "태어난 날부터 한 달 안에 해야 하며, 이를 통해 가족관계등록부에 오릅니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-092",
+    "category": "general",
+    "question": "1년은 몇 주에 가장 가까운가?",
+    "choices": ["48주", "50주", "52주", "56주"],
+    "answerIndex": 2,
+    "explanation": "365를 7로 나누면 52주하고 하루가 남습니다. 그래서 같은 날짜의 요일이 해마다 하루씩 밀립니다.",
+    "difficulty": "normal",
+    "tags": ["달력", "숫자"]
+  },
+  {
+    "id": "general-093",
+    "category": "general",
+    "question": "우리나라에서 국회의원을 뽑는 선거는 몇 년마다 치르는가?",
+    "choices": ["2년", "3년", "4년", "6년"],
+    "answerIndex": 2,
+    "explanation": "국회의원의 임기와 같습니다. 지방자치단체장과 지방의원을 뽑는 지방선거도 같은 주기로 치릅니다.",
+    "difficulty": "normal",
+    "tags": ["법", "정치"]
+  },
+  {
+    "id": "general-094",
+    "category": "general",
+    "question": "한 여성이 평생 낳을 것으로 기대되는 아이의 수를 나타내는 지표는?",
+    "choices": ["조출생률", "합계출산율", "인구증가율", "부양비"],
+    "answerIndex": 1,
+    "explanation": "인구를 그대로 유지하려면 2.1 남짓이 필요하다고 봅니다. 우리나라는 이 값이 세계적으로 낮은 편입니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-095",
+    "category": "general",
+    "question": "대한민국의 공식 화폐 단위는?",
+    "choices": ["원", "엔", "위안", "환"],
+    "answerIndex": 0,
+    "explanation": "기호는 ₩, 국제 표기는 KRW입니다. 1962년 화폐 개혁 때 환에서 바뀌었습니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "한국"]
+  },
+  {
+    "id": "general-096",
+    "category": "general",
+    "question": "우리나라 주민등록번호 앞의 여섯 자리가 나타내는 것은?",
+    "choices": ["등록한 날짜", "생년월일", "출생지 번호", "발급 순서"],
+    "answerIndex": 1,
+    "explanation": "뒤 일곱 자리 가운데 첫 자리는 성별과 태어난 세기를 나타냅니다. 2020년부터 나머지 자리는 무작위로 매깁니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-097",
+    "category": "general",
+    "question": "국제 표준 종이 규격에서 A4 용지를 긴 변의 가운데로 접으면 어떤 규격이 되는가?",
+    "choices": ["A3", "A5", "B4", "B5"],
+    "answerIndex": 1,
+    "explanation": "반으로 접을 때마다 번호가 하나씩 커지며 가로세로 비율은 그대로입니다. 두 배로 키우면 A3가 됩니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-098",
+    "category": "general",
+    "question": "우리나라에서 나이 계산을 만 나이로 통일하는 법이 시행된 해는?",
+    "choices": ["2019년", "2021년", "2023년", "2025년"],
+    "answerIndex": 2,
+    "explanation": "세는 나이와 연 나이가 뒤섞여 생기던 혼란을 줄이려는 것으로, 행정과 계약에서 별도 표기가 없으면 만 나이로 봅니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-099",
+    "category": "general",
+    "question": "한글날은 몇 월 며칠인가?",
+    "choices": ["10월 3일", "10월 9일", "9월 10일", "11월 9일"],
+    "answerIndex": 1,
+    "explanation": "『훈민정음』 해례본이 반포된 날을 양력으로 헤아려 정했습니다. 10월 3일은 개천절입니다.",
+    "difficulty": "normal",
+    "tags": ["달력", "한국"]
+  },
+  {
+    "id": "general-100",
+    "category": "general",
+    "question": "우리나라 도로에서 자동차는 어느 쪽으로 통행하는가?",
+    "choices": ["좌측통행", "우측통행", "가운데 통행", "정해져 있지 않다"],
+    "answerIndex": 1,
+    "explanation": "그래서 운전석이 왼쪽에 있습니다. 일본과 영국은 반대로 좌측통행이라 운전석이 오른쪽입니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "법"]
   }
 ]

@@ -32,8 +32,12 @@ export const POINTS_PER_CORRECT = 10;
  * 반대로 한 카테고리 은행 전체를 덮을 만큼 크면 모두 «본 문제»가 되어
  * 기억하지 않은 것과 같아진다 — 그래서 가장 작은 카테고리 은행보다 넉넉히
  * 작게 잡는다. 은행을 크게 늘리면 이 값도 함께 키운다.
+ *
+ * 지금은 카테고리마다 100문제이므로 90까지 기억해도 «본 문제»로 다 덮이지
+ * 않는다. 카테고리 모드로 아홉 판을 내리 풀어야 그 카테고리가 다 차고,
+ * 그때도 sampleQuestions가 오래전에 본 것부터 다시 내보낸다.
  */
-export const RECENT_QUESTION_MEMORY = 60;
+export const RECENT_QUESTION_MEMORY = 90;
 
 /** 랭킹 하나에 보관하고 표시할 상위 기록 수 (FR-6.4) */
 export const RANKING_TOP_N = 10;

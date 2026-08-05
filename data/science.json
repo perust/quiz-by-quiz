@@ -298,5 +298,705 @@
     "explanation": "대륙의 해안선 모양과 화석 분포를 근거로 삼았습니다. 움직이는 힘을 설명하지 못해 오래 외면받다가 판 구조론으로 이어졌습니다.",
     "difficulty": "hard",
     "tags": ["지구과학", "과학사"]
+  },
+  {
+    "id": "science-031",
+    "category": "science",
+    "question": "쇠막대의 한쪽을 달구면 반대쪽까지 뜨거워지는 열의 이동 방식은?",
+    "choices": ["대류", "전도", "복사", "증발"],
+    "answerIndex": 1,
+    "explanation": "물질을 이루는 입자가 이웃에 진동을 넘겨주며 열이 옮겨 갑니다. 대류는 물질이 직접 흐르는 것, 복사는 중간에 물질 없이 전해지는 것입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "열"]
+  },
+  {
+    "id": "science-032",
+    "category": "science",
+    "question": "바닥이 거칠수록 커지며 물체의 움직임을 방해하는 힘은?",
+    "choices": ["마찰력", "중력", "부력", "탄성력"],
+    "answerIndex": 0,
+    "explanation": "걷거나 자동차가 달릴 수 있는 것도 이 힘 덕분입니다. 기름을 치면 이 힘이 줄어 잘 미끄러집니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "힘"]
+  },
+  {
+    "id": "science-033",
+    "category": "science",
+    "question": "물에 잠긴 물체를 위로 밀어 올리는 힘을 무엇이라 하는가?",
+    "choices": ["장력", "자기력", "부력", "마찰력"],
+    "answerIndex": 2,
+    "explanation": "밀어낸 물의 무게만큼 힘을 받습니다. 쇠로 만든 배가 뜨는 것도 속이 비어 물을 많이 밀어내기 때문입니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "힘"]
+  },
+  {
+    "id": "science-034",
+    "category": "science",
+    "question": "높은 곳에 있는 물체가 그 높이 때문에 가지는 에너지는?",
+    "choices": ["운동 에너지", "열에너지", "화학 에너지", "위치 에너지"],
+    "answerIndex": 3,
+    "explanation": "떨어지면서 운동 에너지로 바뀝니다. 댐에 물을 가둬 두었다가 떨어뜨려 전기를 만드는 것이 이 원리입니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "에너지"]
+  },
+  {
+    "id": "science-035",
+    "category": "science",
+    "question": "물속에 담근 젓가락이 꺾여 보이게 만드는 빛의 성질은?",
+    "choices": ["반사", "굴절", "회절", "산란"],
+    "answerIndex": 1,
+    "explanation": "빛이 물질에 따라 나아가는 속도가 달라지면서 경계면에서 방향이 꺾입니다. 볼록렌즈가 상을 맺는 것도 같은 원리입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "빛"]
+  },
+  {
+    "id": "science-036",
+    "category": "science",
+    "question": "프리즘을 지난 햇빛이 여러 빛깔의 띠로 나뉘는 현상을 무엇이라 하는가?",
+    "choices": ["분산", "간섭", "편광", "회절"],
+    "answerIndex": 0,
+    "explanation": "빛깔마다 꺾이는 정도가 달라 갈라집니다. 공기 중 물방울이 프리즘 노릇을 하면 무지개가 뜹니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "빛"]
+  },
+  {
+    "id": "science-037",
+    "category": "science",
+    "question": "코일에 전류를 흘려 자석의 성질을 띠게 만든 장치는?",
+    "choices": ["축전기", "반도체", "전자석", "영구자석"],
+    "answerIndex": 2,
+    "explanation": "전류를 끊으면 자기력이 사라지고, 세기도 전류로 조절할 수 있습니다. 고철을 옮기는 기중기에 쓰입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "전기"]
+  },
+  {
+    "id": "science-038",
+    "category": "science",
+    "question": "상온의 공기 중에서 소리가 1초에 나아가는 거리에 가장 가까운 값은?",
+    "choices": ["약 34미터", "약 340미터", "약 3,400미터", "약 30만 킬로미터"],
+    "answerIndex": 1,
+    "explanation": "번개가 친 뒤 천둥이 늦게 들리는 것도 이 때문입니다. 빛은 소리보다 훨씬 빨라 거의 곧바로 보입니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "파동"]
+  },
+  {
+    "id": "science-039",
+    "category": "science",
+    "question": "구급차가 다가올 때 사이렌이 높게, 멀어질 때 낮게 들리는 현상은?",
+    "choices": ["공명", "간섭", "회절", "도플러 효과"],
+    "answerIndex": 3,
+    "explanation": "소리를 내는 것과 듣는 것 사이의 거리가 변하면서 파장이 눌리거나 늘어납니다. 천문학에서 별이 멀어지는지 살필 때도 씁니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "파동"]
+  },
+  {
+    "id": "science-040",
+    "category": "science",
+    "question": "에너지는 형태만 바뀔 뿐 전체 양이 변하지 않는다는 법칙은?",
+    "choices": ["관성의 법칙", "에너지 보존 법칙", "만유인력 법칙", "작용 반작용 법칙"],
+    "answerIndex": 1,
+    "explanation": "그래서 아무것도 넣지 않고 계속 움직이는 기계는 만들 수 없습니다.",
+    "difficulty": "normal",
+    "tags": ["물리", "에너지"]
+  },
+  {
+    "id": "science-041",
+    "category": "science",
+    "question": "원소 기호 'Au'가 나타내는 원소는?",
+    "choices": ["은", "금", "구리", "알루미늄"],
+    "answerIndex": 1,
+    "explanation": "'빛나는 새벽'을 뜻하는 라틴어 아우룸에서 왔습니다. 은은 Ag, 구리는 Cu로 적습니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "원소"]
+  },
+  {
+    "id": "science-042",
+    "category": "science",
+    "question": "소금의 주성분인 염화나트륨을 나타내는 화학식은?",
+    "choices": ["KCl", "NaOH", "NaCl", "CaCO₃"],
+    "answerIndex": 2,
+    "explanation": "나트륨과 염소가 1대 1로 결합해 있습니다. 물에 녹으면 두 이온으로 나뉘어 전기가 통합니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "화합물"]
+  },
+  {
+    "id": "science-043",
+    "category": "science",
+    "question": "물질을 이루는 기본 알갱이로, 원자핵과 전자로 이루어진 것은?",
+    "choices": ["원자", "분자", "이온", "세포"],
+    "answerIndex": 0,
+    "explanation": "이것이 둘 이상 결합하면 분자가 됩니다. 전자를 잃거나 얻어 전기를 띠게 된 것은 이온입니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "원자"]
+  },
+  {
+    "id": "science-044",
+    "category": "science",
+    "question": "원자핵을 이루는 두 가지 입자를 바르게 짝지은 것은?",
+    "choices": ["전자와 광자", "양성자와 중성자", "전자와 양성자", "전자와 중성자"],
+    "answerIndex": 1,
+    "explanation": "이 가운데 양성자의 수가 곧 원자번호이며, 전자는 원자핵 바깥을 돌고 있습니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "원자"]
+  },
+  {
+    "id": "science-045",
+    "category": "science",
+    "question": "산과 염기가 만나 물과 염을 만드는 반응을 무엇이라 하는가?",
+    "choices": ["산화 반응", "환원 반응", "연소 반응", "중화 반응"],
+    "answerIndex": 3,
+    "explanation": "속이 쓰릴 때 제산제를 먹거나 벌에 쏘인 자리에 암모니아수를 바르는 것이 이 반응을 쓰는 예입니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "반응"]
+  },
+  {
+    "id": "science-046",
+    "category": "science",
+    "question": "자기 자신은 변하지 않으면서 반응이 일어나는 속도를 바꾸는 물질은?",
+    "choices": ["촉매", "용매", "시약", "지시약"],
+    "answerIndex": 0,
+    "explanation": "자동차 배기가스를 덜 해롭게 바꾸는 장치에도 들어 있고, 우리 몸속 효소도 같은 일을 합니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "반응"]
+  },
+  {
+    "id": "science-047",
+    "category": "science",
+    "question": "1기압에서 물이 끓는 온도는 섭씨 몇 도인가?",
+    "choices": ["50도", "80도", "100도", "200도"],
+    "answerIndex": 2,
+    "explanation": "기압이 낮은 높은 산에서는 이보다 낮은 온도에서 끓어 밥이 설익습니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "물질의 상태"]
+  },
+  {
+    "id": "science-048",
+    "category": "science",
+    "question": "같은 원소인데 중성자 수가 달라 질량이 다른 원자를 무엇이라 하는가?",
+    "choices": ["이온", "동소체", "동위원소", "화합물"],
+    "answerIndex": 2,
+    "explanation": "탄소-14처럼 시간이 지나며 저절로 붕괴하는 것도 있어, 유물의 나이를 재는 데 씁니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "원자"]
+  },
+  {
+    "id": "science-049",
+    "category": "science",
+    "question": "물질이 타는 데 필요한 세 가지 중 탈 물질과 산소를 뺀 나머지는?",
+    "choices": ["발화점 이상의 온도", "충분한 양의 물", "이산화탄소", "높은 기압"],
+    "answerIndex": 0,
+    "explanation": "불을 끄려면 셋 가운데 하나만 없애면 됩니다. 물을 뿌리는 것은 온도를 낮추는 방법입니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "반응"]
+  },
+  {
+    "id": "science-050",
+    "category": "science",
+    "question": "다이아몬드와 흑연처럼 같은 원소로 이루어졌으나 성질이 다른 물질을 이르는 말은?",
+    "choices": ["동위원소", "혼합물", "화합물", "동소체"],
+    "answerIndex": 3,
+    "explanation": "둘 다 탄소로만 이루어졌지만 원자가 이어진 짜임새가 달라 굳기와 전기 전도성이 크게 다릅니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "물질"]
+  },
+  {
+    "id": "science-051",
+    "category": "science",
+    "question": "생물의 몸을 이루는 기본 단위는?",
+    "choices": ["세포", "조직", "기관", "분자"],
+    "answerIndex": 0,
+    "explanation": "이것이 모여 조직이 되고, 조직이 모여 기관을 이룹니다. 1665년 훅이 코르크를 들여다보다 처음 발견하고 이름 붙였습니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "세포"]
+  },
+  {
+    "id": "science-052",
+    "category": "science",
+    "question": "부모가 모두 AB형일 때 태어날 수 없는 자녀의 ABO식 혈액형은?",
+    "choices": ["A형", "B형", "O형", "AB형"],
+    "answerIndex": 2,
+    "explanation": "부모가 A와 B 유전자만 물려줄 수 있어 자녀는 A형·B형·AB형 가운데 하나가 됩니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "유전"]
+  },
+  {
+    "id": "science-053",
+    "category": "science",
+    "question": "세포에서 에너지를 만들어 내 흔히 '발전소'에 비유되는 소기관은?",
+    "choices": ["골지체", "액포", "미토콘드리아", "리보솜"],
+    "answerIndex": 2,
+    "explanation": "산소를 써서 양분을 분해해 에너지를 얻습니다. 근육 세포처럼 에너지를 많이 쓰는 곳에 특히 많습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "세포"]
+  },
+  {
+    "id": "science-054",
+    "category": "science",
+    "question": "사람의 체세포 하나에 들어 있는 염색체는 모두 몇 개인가?",
+    "choices": ["23개", "46개", "48개", "64개"],
+    "answerIndex": 1,
+    "explanation": "23쌍이며, 그 가운데 한 쌍이 성별을 정하는 성염색체입니다. 정자와 난자에는 절반인 23개가 들어 있습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "유전"]
+  },
+  {
+    "id": "science-055",
+    "category": "science",
+    "question": "완두를 여러 대에 걸쳐 길러 유전의 법칙을 밝힌 사람은?",
+    "choices": ["멘델", "다윈", "파스퇴르", "린네"],
+    "answerIndex": 0,
+    "explanation": "수도원 뜰에서 8년 가까이 실험했으나 당대에는 주목받지 못하다가, 30여 년 뒤 재발견되며 유전학의 출발점이 됐습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "유전"]
+  },
+  {
+    "id": "science-056",
+    "category": "science",
+    "question": "『종의 기원』을 써서 자연선택에 따른 진화를 설명한 사람은?",
+    "choices": ["라마르크", "다윈", "훅", "멘델"],
+    "answerIndex": 1,
+    "explanation": "비글호를 타고 세계를 돌며 모은 관찰을 바탕으로 1859년에 펴냈습니다. 갈라파고스 제도의 새 부리 모양이 잘 알려진 사례입니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "진화"]
+  },
+  {
+    "id": "science-057",
+    "category": "science",
+    "question": "사람의 심장은 몇 개의 방으로 나뉘어 있는가?",
+    "choices": ["2개", "3개", "4개", "6개"],
+    "answerIndex": 2,
+    "explanation": "피를 받는 심방 둘과 내보내는 심실 둘로 이루어져, 산소가 많은 피와 적은 피가 섞이지 않습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-058",
+    "category": "science",
+    "question": "몸에 들어온 세균을 잡아먹어 우리를 지키는 혈액 세포는?",
+    "choices": ["적혈구", "혈소판", "백혈구", "혈장"],
+    "answerIndex": 2,
+    "explanation": "적혈구는 산소를 나르고 혈소판은 상처에서 피를 굳힙니다. 감염이 생기면 이 세포의 수가 늘어납니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-059",
+    "category": "science",
+    "question": "1928년 플레밍이 푸른곰팡이에서 찾아낸, 세균을 억누르는 최초의 항생제는?",
+    "choices": ["아스피린", "인슐린", "스트렙토마이신", "페니실린"],
+    "answerIndex": 3,
+    "explanation": "배양 접시에 곰팡이가 핀 자리 둘레만 세균이 자라지 않은 것을 눈여겨보다 발견했습니다. 제2차 세계대전 중 대량 생산돼 수많은 목숨을 구했습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "과학사"]
+  },
+  {
+    "id": "science-060",
+    "category": "science",
+    "question": "생태계에서 죽은 생물과 배설물을 분해해 흙으로 돌려보내는 무리는?",
+    "choices": ["분해자", "생산자", "1차 소비자", "최종 소비자"],
+    "answerIndex": 0,
+    "explanation": "버섯과 세균이 여기에 듭니다. 이들이 없으면 물질이 순환하지 못해 생태계가 유지되지 않습니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "생태계"]
+  },
+  {
+    "id": "science-061",
+    "category": "science",
+    "question": "태양계에서 태양과 가장 가까운 궤도를 도는 행성은?",
+    "choices": ["수성", "금성", "지구", "화성"],
+    "answerIndex": 0,
+    "explanation": "공전 주기가 88일로 짧고, 대기가 거의 없어 낮과 밤의 온도 차가 수백 도에 이릅니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-062",
+    "category": "science",
+    "question": "표면이 산화철로 덮여 '붉은 행성'이라 불리는 태양계의 행성은?",
+    "choices": ["금성", "화성", "목성", "토성"],
+    "answerIndex": 1,
+    "explanation": "태양계에서 가장 높은 화산인 올림푸스산이 있고, 물이 흘렀던 흔적으로 보이는 지형이 남아 있습니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-063",
+    "category": "science",
+    "question": "뚜렷한 고리를 두른 모습으로 잘 알려진 태양계의 행성은?",
+    "choices": ["목성", "천왕성", "해왕성", "토성"],
+    "answerIndex": 3,
+    "explanation": "고리는 얼음과 암석 조각이 모인 것입니다. 다른 목성형 행성에도 고리가 있으나 훨씬 옅습니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-064",
+    "category": "science",
+    "question": "달이 지구와 태양 사이에 들어와 해를 가리는 현상은?",
+    "choices": ["일식", "월식", "삭망", "엄폐"],
+    "answerIndex": 0,
+    "explanation": "달이 지구 그림자에 들어가 가려지는 것은 월식입니다. 달의 궤도가 조금 기울어 있어 매달 일어나지는 않습니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "지구과학"]
+  },
+  {
+    "id": "science-065",
+    "category": "science",
+    "question": "우리 태양계가 속해 있는 은하를 무엇이라 부르는가?",
+    "choices": ["우리은하", "안드로메다은하", "대마젤란은하", "삼각형자리은하"],
+    "answerIndex": 0,
+    "explanation": "막대 나선 모양이며, 밤하늘에 흐릿한 띠로 보이는 은하수가 이 은하를 옆에서 본 모습입니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "우주"]
+  },
+  {
+    "id": "science-066",
+    "category": "science",
+    "question": "중력이 너무 강해 빛조차 빠져나오지 못하는 천체는?",
+    "choices": ["백색왜성", "블랙홀", "중성자별", "성운"],
+    "answerIndex": 1,
+    "explanation": "무거운 별이 수명을 다하고 붕괴하며 만들어집니다. 2019년에 그 둘레의 빛을 찍은 사진이 처음 공개됐습니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "우주"]
+  },
+  {
+    "id": "science-067",
+    "category": "science",
+    "question": "우주가 한 점에서 시작해 팽창해 왔다는 이론을 무엇이라 하는가?",
+    "choices": ["정상우주론", "빅뱅 이론", "천동설", "지동설"],
+    "answerIndex": 1,
+    "explanation": "먼 은하일수록 빠르게 멀어진다는 관측과 우주 곳곳에 남은 배경 복사가 근거입니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "우주"]
+  },
+  {
+    "id": "science-068",
+    "category": "science",
+    "question": "길게 찌그러진 궤도로 태양을 돌며, 가까워지면 꼬리를 늘어뜨리는 천체는?",
+    "choices": ["소행성", "유성", "혜성", "위성"],
+    "answerIndex": 2,
+    "explanation": "얼음과 먼지가 태양열에 녹아 뿜어져 나온 것이 꼬리로 보이며, 꼬리는 늘 태양 반대쪽으로 뻗습니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-069",
+    "category": "science",
+    "question": "지구에서 달의 한쪽 면만 볼 수 있는 까닭은?",
+    "choices": ["달이 스스로 돌지 않기 때문", "자전 주기와 공전 주기가 같기 때문", "늘 지구 그림자에 가리기 때문", "달이 지구보다 훨씬 작기 때문"],
+    "answerIndex": 1,
+    "explanation": "지구의 인력에 오래 끌리면서 두 주기가 약 27.3일로 맞물렸습니다. 뒷면은 1959년 탐사선이 보낸 사진으로 처음 보게 됐습니다.",
+    "difficulty": "hard",
+    "tags": ["천문", "지구과학"]
+  },
+  {
+    "id": "science-070",
+    "category": "science",
+    "question": "태양에서 가까운 순서로 볼 때 지구 바로 안쪽에 있는 행성은?",
+    "choices": ["수성", "금성", "화성", "목성"],
+    "answerIndex": 1,
+    "explanation": "두꺼운 이산화탄소 대기가 열을 가둬 표면 온도가 460도를 넘습니다. 새벽이나 초저녁에 유난히 밝게 보여 샛별이라 불립니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "태양계"]
+  },
+  {
+    "id": "science-071",
+    "category": "science",
+    "question": "지구에 계절 변화가 생기는 가장 큰 까닭은?",
+    "choices": ["지구가 자전하기 때문", "자전축이 기울어진 채 공전하기 때문", "태양과의 거리가 크게 변하기 때문", "달이 지구를 돌기 때문"],
+    "answerIndex": 1,
+    "explanation": "약 23.5도 기울어 있어 같은 자리라도 햇빛을 받는 각도가 달라집니다. 그래서 북반구와 남반구의 계절이 서로 반대입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "천문"]
+  },
+  {
+    "id": "science-072",
+    "category": "science",
+    "question": "마그마가 식어 굳어서 만들어진 암석을 무엇이라 하는가?",
+    "choices": ["퇴적암", "변성암", "화성암", "석회암"],
+    "answerIndex": 2,
+    "explanation": "천천히 식으면 알갱이가 굵은 화강암이, 빠르게 식으면 알갱이가 고운 현무암이 됩니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "암석"]
+  },
+  {
+    "id": "science-073",
+    "category": "science",
+    "question": "지층 속에 남아 있는 옛 생물의 몸이나 흔적을 무엇이라 하는가?",
+    "choices": ["화석", "광물", "결정", "운석"],
+    "answerIndex": 0,
+    "explanation": "언제 쌓인 지층인지 알려 주기도 하고, 그 시절의 기후와 환경을 짐작하게 해 주기도 합니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "화석"]
+  },
+  {
+    "id": "science-074",
+    "category": "science",
+    "question": "지진이 내놓은 에너지의 크기 자체를 숫자로 나타낸 값은?",
+    "choices": ["진도", "규모", "진앙", "진원"],
+    "answerIndex": 1,
+    "explanation": "한 지진에 하나뿐인 값입니다. 진도는 흔들림이 느껴진 정도라 같은 지진이라도 지역마다 다르게 매겨집니다.",
+    "difficulty": "hard",
+    "tags": ["지구과학", "지진"]
+  },
+  {
+    "id": "science-075",
+    "category": "science",
+    "question": "지구 대기에서 우리가 살고 구름과 비가 생기는, 가장 아래 층은?",
+    "choices": ["대류권", "성층권", "중간권", "열권"],
+    "answerIndex": 0,
+    "explanation": "높이 올라갈수록 기온이 낮아져 공기가 위아래로 섞입니다. 여객기는 흔들림이 적은 그 위쪽 성층권 아랫부분을 납니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-076",
+    "category": "science",
+    "question": "성층권에 자리 잡고 자외선을 막아 주는 기체 층은?",
+    "choices": ["전리층", "오존층", "대류권", "열권"],
+    "answerIndex": 1,
+    "explanation": "냉매로 쓰이던 물질이 이 층을 파괴한다는 것이 밝혀져 1987년 몬트리올 의정서로 사용을 줄이기로 했습니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-077",
+    "category": "science",
+    "question": "이산화탄소처럼 지구에서 나가는 열을 붙잡아 기온을 높이는 기체는?",
+    "choices": ["온실가스", "불활성 기체", "희귀 기체", "미세먼지"],
+    "answerIndex": 0,
+    "explanation": "메테인과 수증기도 여기에 듭니다. 이 기체가 아예 없으면 지구 평균 기온이 영하로 떨어져 살기 어려워집니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "환경"]
+  },
+  {
+    "id": "science-078",
+    "category": "science",
+    "question": "달과 태양의 인력 때문에 바닷물의 높이가 하루에 두 번쯤 오르내리는 현상은?",
+    "choices": ["해류", "파도", "조석", "용승"],
+    "answerIndex": 2,
+    "explanation": "차이가 큰 곳에서는 바닷길이 드러나기도 합니다. 서해안은 이 차이가 특히 커서 갯벌이 넓게 발달했습니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "바다"]
+  },
+  {
+    "id": "science-079",
+    "category": "science",
+    "question": "지구 겉면을 이루는 여러 판이 움직이며 지진과 화산을 일으킨다는 이론은?",
+    "choices": ["지향사설", "판 구조론", "대륙 이동설", "수축설"],
+    "answerIndex": 1,
+    "explanation": "베게너의 대륙 이동설이 설명하지 못한 '움직이는 힘'을 맨틀의 흐름으로 풀어내며 1960년대에 자리 잡았습니다.",
+    "difficulty": "hard",
+    "tags": ["지구과학", "지진"]
+  },
+  {
+    "id": "science-080",
+    "category": "science",
+    "question": "북서태평양에서 생겨 우리나라로 올라오는 강한 열대 저기압을 부르는 말은?",
+    "choices": ["허리케인", "사이클론", "토네이도", "태풍"],
+    "answerIndex": 3,
+    "explanation": "같은 현상을 대서양에서는 허리케인, 인도양에서는 사이클론이라 부릅니다. 토네이도는 규모가 훨씬 작은 회오리바람입니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-081",
+    "category": "science",
+    "question": "원자력 발전소에서 무거운 원자핵이 쪼개지며 에너지를 내는 반응은?",
+    "choices": ["핵분열", "핵융합", "중화", "산화"],
+    "answerIndex": 0,
+    "explanation": "우라늄에 중성자를 부딪쳐 일으키며, 나온 중성자가 다시 다른 핵을 쪼개는 연쇄 반응이 이어집니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "원자력"]
+  },
+  {
+    "id": "science-082",
+    "category": "science",
+    "question": "태양이 빛과 열을 내는 원리로, 가벼운 원자핵이 합쳐지는 반응은?",
+    "choices": ["핵분열", "연소", "핵융합", "방사성 붕괴"],
+    "answerIndex": 2,
+    "explanation": "수소가 헬륨으로 바뀌면서 줄어든 질량이 에너지로 나옵니다. 땅 위에서 이를 흉내 내려는 연구가 이어지고 있습니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "원자력"]
+  },
+  {
+    "id": "science-083",
+    "category": "science",
+    "question": "질량과 에너지가 서로 바뀔 수 있음을 나타낸 아인슈타인의 식은?",
+    "choices": ["F = ma", "E = mc²", "V = IR", "PV = nRT"],
+    "answerIndex": 1,
+    "explanation": "1905년에 내놓았으며, 아주 작은 질량이 사라져도 엄청난 에너지가 나온다는 뜻입니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "과학사"]
+  },
+  {
+    "id": "science-084",
+    "category": "science",
+    "question": "온도가 일정할 때 기체의 압력과 부피가 반비례한다는 법칙은?",
+    "choices": ["샤를 법칙", "헨리 법칙", "아보가드로 법칙", "보일 법칙"],
+    "answerIndex": 3,
+    "explanation": "주사기 끝을 막고 밀면 안이 잘 안 눌리는 것이 이 때문입니다. 온도와 부피의 관계를 다룬 것은 샤를 법칙입니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "기체"]
+  },
+  {
+    "id": "science-085",
+    "category": "science",
+    "question": "전기가 잘 통하지 않아 전선을 감싸는 데 쓰이는 물질은?",
+    "choices": ["부도체", "도체", "반도체", "초전도체"],
+    "answerIndex": 0,
+    "explanation": "고무와 유리, 플라스틱이 여기에 듭니다. 반도체는 조건에 따라 전기가 통하기도 하고 막히기도 합니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "전기"]
+  },
+  {
+    "id": "science-086",
+    "category": "science",
+    "question": "우리 몸에서 음식물의 소화가 가장 먼저 시작되는 곳은?",
+    "choices": ["입", "위", "소장", "대장"],
+    "answerIndex": 0,
+    "explanation": "이로 잘게 부수는 동시에, 침 속 효소가 녹말을 분해하기 시작합니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-087",
+    "category": "science",
+    "question": "잘게 분해된 영양분을 빨아들이는 일을 주로 맡은 소화 기관은?",
+    "choices": ["위", "대장", "소장", "간"],
+    "answerIndex": 2,
+    "explanation": "안쪽 벽에 융털이 빽빽해 닿는 넓이가 매우 넓습니다. 대장은 주로 물을 흡수합니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-088",
+    "category": "science",
+    "question": "숨을 들이쉴 때 몸에 들어와 세포가 양분을 태우는 데 쓰이는 기체는?",
+    "choices": ["질소", "산소", "이산화탄소", "수소"],
+    "answerIndex": 1,
+    "explanation": "폐에서 혈액으로 옮겨 타 온몸으로 실려 갑니다. 반대로 세포가 내놓은 이산화탄소는 폐를 거쳐 밖으로 나갑니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-089",
+    "category": "science",
+    "question": "몸의 균형을 잡고 근육의 움직임을 세밀하게 조절하는 뇌의 부위는?",
+    "choices": ["대뇌", "간뇌", "연수", "소뇌"],
+    "answerIndex": 3,
+    "explanation": "대뇌 뒤쪽 아래에 있으며 주름이 촘촘합니다. 연수는 심장 박동과 호흡처럼 목숨에 직결된 일을 맡습니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-090",
+    "category": "science",
+    "question": "스스로 번식하지 못하고 숙주 세포 안에서만 늘어나는 것은?",
+    "choices": ["효모", "곰팡이", "바이러스", "원생생물"],
+    "answerIndex": 2,
+    "explanation": "세포로 이루어져 있지 않아 생물과 무생물의 경계에 놓입니다. 그래서 세균을 잡는 항생제가 듣지 않습니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "미생물"]
+  },
+  {
+    "id": "science-091",
+    "category": "science",
+    "question": "금속에 빛을 쬐면 전자가 튀어나오는 현상으로, 아인슈타인이 설명한 것은?",
+    "choices": ["광전 효과", "초전도 현상", "전자기 유도", "열전 효과"],
+    "answerIndex": 0,
+    "explanation": "빛이 알갱이의 성질도 지닌다는 근거가 됐습니다. 아인슈타인은 상대성이론이 아니라 이 연구로 노벨 물리학상을 받았습니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "빛"]
+  },
+  {
+    "id": "science-092",
+    "category": "science",
+    "question": "코일 속에서 자석을 움직이면 전류가 흐르는, 발전기의 바탕이 된 현상은?",
+    "choices": ["광전 효과", "전자기 유도", "정전기 유도", "압전 효과"],
+    "answerIndex": 1,
+    "explanation": "패러데이가 밝혀냈으며, 오늘날 발전소가 전기를 만드는 방식이 모두 이 원리에 기대고 있습니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "전기"]
+  },
+  {
+    "id": "science-093",
+    "category": "science",
+    "question": "극지방 하늘에서 태양에서 온 입자가 대기와 부딪혀 내는 빛의 현상은?",
+    "choices": ["신기루", "오로라", "무지개", "유성"],
+    "answerIndex": 1,
+    "explanation": "지구 자기장이 입자를 극지방으로 몰아넣기 때문에 높은 위도에서 주로 보입니다. 부딪히는 기체에 따라 초록이나 붉은빛을 냅니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-094",
+    "category": "science",
+    "question": "얼음이 물에 뜨는 까닭으로 알맞은 것은?",
+    "choices": ["얼음 속에 공기가 들어가서", "온도가 낮으면 무게가 줄어서", "얼면서 분자가 성기게 배열돼 밀도가 낮아져서", "물의 표면장력이 커져서"],
+    "answerIndex": 2,
+    "explanation": "대부분의 물질은 굳으면 부피가 줄지만 물은 늘어납니다. 그 덕에 겨울에도 호수 밑바닥까지 얼지 않아 물속 생물이 삽니다.",
+    "difficulty": "hard",
+    "tags": ["화학", "물질의 상태"]
+  },
+  {
+    "id": "science-095",
+    "category": "science",
+    "question": "용액이 산성인지 염기성인지를 0에서 14까지의 수로 나타낸 값은?",
+    "choices": ["pH", "밀도", "농도", "몰"],
+    "answerIndex": 0,
+    "explanation": "7이 중성이고 그보다 낮으면 산성, 높으면 염기성입니다. 우리 몸의 피는 7.4 언저리로 유지됩니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "반응"]
+  },
+  {
+    "id": "science-096",
+    "category": "science",
+    "question": "식물이 잎의 기공으로 물을 수증기 상태로 내보내는 작용은?",
+    "choices": ["광합성", "증산 작용", "호흡", "발효"],
+    "answerIndex": 1,
+    "explanation": "뿌리에서 물을 끌어올리는 힘이 되고 잎의 온도도 낮춰 줍니다. 더운 날 나무 아래가 시원한 까닭이기도 합니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "식물"]
+  },
+  {
+    "id": "science-097",
+    "category": "science",
+    "question": "효모가 산소 없이 당을 분해해 알코올과 이산화탄소를 만드는 과정은?",
+    "choices": ["부패", "연소", "발효", "산화"],
+    "answerIndex": 2,
+    "explanation": "빵이 부풀고 술이 익는 것이 모두 이 과정입니다. 사람에게 이롭지 않은 방향으로 분해되면 부패라 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "미생물"]
+  },
+  {
+    "id": "science-098",
+    "category": "science",
+    "question": "나침반 바늘을 북쪽으로 향하게 하는 지구 자기장이 만들어지는 곳은?",
+    "choices": ["지각", "맨틀", "내핵", "외핵"],
+    "answerIndex": 3,
+    "explanation": "액체 상태의 철이 흐르면서 전류가 생기고 그 전류가 자기장을 만듭니다. 내핵은 압력이 커서 고체입니다.",
+    "difficulty": "hard",
+    "tags": ["지구과학", "지구"]
+  },
+  {
+    "id": "science-099",
+    "category": "science",
+    "question": "국제단위계(SI)에서 질량의 기본 단위는?",
+    "choices": ["킬로그램", "뉴턴", "그램", "파운드"],
+    "answerIndex": 0,
+    "explanation": "기본 단위 가운데 유일하게 접두어가 붙어 있습니다. 2019년부터 금속 원기 대신 플랑크 상수로 정의합니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "단위"]
+  },
+  {
+    "id": "science-100",
+    "category": "science",
+    "question": "생물의 몸속에서 화학 반응을 돕는 단백질을 무엇이라 하는가?",
+    "choices": ["호르몬", "항체", "효소", "비타민"],
+    "answerIndex": 2,
+    "explanation": "저마다 맡은 반응이 정해져 있고, 온도와 산도가 맞아야 제대로 일합니다. 침 속 아밀레이스가 그 예입니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "인체"]
   }
 ]

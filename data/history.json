@@ -298,5 +298,705 @@
     "explanation": "몰락한 양반으로, 상인과 광산 노동자까지 끌어모아 한때 청천강 이북을 장악했으나 이듬해 정주성이 무너지며 진압됐습니다.",
     "difficulty": "hard",
     "tags": ["조선", "민란"]
+  },
+  {
+    "id": "history-031",
+    "category": "history",
+    "question": "고조선을 세웠다고 전해지는 인물은?",
+    "choices": ["단군왕검", "박혁거세", "김수로", "온조"],
+    "answerIndex": 0,
+    "explanation": "『삼국유사』에 실린 건국 이야기에 나오며, 하늘에서 내려온 환웅과 웅녀 사이에서 태어났다고 전합니다.",
+    "difficulty": "easy",
+    "tags": ["고조선", "건국"]
+  },
+  {
+    "id": "history-032",
+    "category": "history",
+    "question": "신석기 시대를 대표하는, 겉면에 빗살 모양 무늬를 새긴 토기는?",
+    "choices": ["민무늬 토기", "빗살무늬 토기", "붉은 간토기", "덧띠 토기"],
+    "answerIndex": 1,
+    "explanation": "바닥이 뾰족하거나 둥근 것이 많아 모래에 꽂아 세웠습니다. 민무늬 토기는 뒤이은 청동기 시대의 것입니다.",
+    "difficulty": "normal",
+    "tags": ["선사시대", "유물"]
+  },
+  {
+    "id": "history-033",
+    "category": "history",
+    "question": "청동기 시대 만주와 한반도에서 나온, 칼날이 비파처럼 휜 청동 검은?",
+    "choices": ["세형 동검", "환두대도", "비파형 동검", "청동 방울"],
+    "answerIndex": 2,
+    "explanation": "출토된 자리를 이어 보면 고조선의 세력이 미친 범위를 짐작할 수 있습니다. 세형 동검은 그 뒤 한반도에서 따로 발달했습니다.",
+    "difficulty": "normal",
+    "tags": ["선사시대", "유물"]
+  },
+  {
+    "id": "history-034",
+    "category": "history",
+    "question": "고구려를 세웠다고 전해지는 인물은?",
+    "choices": ["온조", "박혁거세", "김알지", "주몽"],
+    "answerIndex": 3,
+    "explanation": "부여에서 남쪽으로 내려와 나라를 세웠다고 전하며 동명성왕이라고도 부릅니다. 온조는 백제, 박혁거세는 신라의 시조입니다.",
+    "difficulty": "easy",
+    "tags": ["삼국시대", "건국"]
+  },
+  {
+    "id": "history-035",
+    "category": "history",
+    "question": "만주 지린성에 남아 있는, 고구려 광개토대왕의 업적을 새긴 비석은?",
+    "choices": ["광개토대왕릉비", "단양 적성비", "북한산 순수비", "사택지적비"],
+    "answerIndex": 0,
+    "explanation": "아들 장수왕이 414년에 세웠으며, 높이가 6미터를 넘고 1,700자가 넘는 글자가 새겨져 있습니다.",
+    "difficulty": "normal",
+    "tags": ["삼국시대", "문화재"]
+  },
+  {
+    "id": "history-036",
+    "category": "history",
+    "question": "고구려 장수왕이 427년 국내성에서 도읍을 옮긴 곳은?",
+    "choices": ["한성", "평양", "사비", "금성"],
+    "answerIndex": 1,
+    "explanation": "남쪽으로 세력을 넓히려는 뜻이었고, 이 압박을 받은 백제는 웅진으로 도읍을 옮기게 됩니다.",
+    "difficulty": "normal",
+    "tags": ["삼국시대", "고구려"]
+  },
+  {
+    "id": "history-037",
+    "category": "history",
+    "question": "4세기에 백제의 세력을 크게 넓혀 전성기를 이끈 왕은?",
+    "choices": ["무령왕", "의자왕", "근초고왕", "성왕"],
+    "answerIndex": 2,
+    "explanation": "고구려의 평양성을 쳐서 고국원왕을 전사시켰고, 남쪽으로 마한 세력을 아울렀습니다.",
+    "difficulty": "normal",
+    "tags": ["삼국시대", "백제"]
+  },
+  {
+    "id": "history-038",
+    "category": "history",
+    "question": "신라 진흥왕이 한강 유역을 차지한 것을 기려 세운, 서울에 남아 있던 비석은?",
+    "choices": ["중원 고구려비", "단양 적성비", "사택지적비", "북한산 순수비"],
+    "answerIndex": 3,
+    "explanation": "오래도록 내력을 몰랐다가 조선 후기에 김정희가 비문을 읽어 진흥왕의 것임을 밝혔습니다.",
+    "difficulty": "hard",
+    "tags": ["삼국시대", "문화재"]
+  },
+  {
+    "id": "history-039",
+    "category": "history",
+    "question": "612년 살수에서 수나라의 대군을 물리친 고구려의 장수는?",
+    "choices": ["을지문덕", "연개소문", "양만춘", "온달"],
+    "answerIndex": 0,
+    "explanation": "거짓으로 물러나 적을 깊숙이 끌어들인 뒤 강을 건널 때 들이쳤습니다. 이 싸움을 살수 대첩이라 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["삼국시대", "전투"]
+  },
+  {
+    "id": "history-040",
+    "category": "history",
+    "question": "645년 당 태종의 군대를 막아낸 고구려의 성으로, 성주가 양만춘이라 전하는 곳은?",
+    "choices": ["요동성", "안시성", "백암성", "개모성"],
+    "answerIndex": 1,
+    "explanation": "몇 달에 걸친 포위를 견뎌내 당군이 끝내 물러났습니다. 양만춘이라는 이름은 훨씬 뒤의 기록에만 보입니다.",
+    "difficulty": "hard",
+    "tags": ["삼국시대", "전투"]
+  },
+  {
+    "id": "history-041",
+    "category": "history",
+    "question": "9세기에 완도에 청해진을 두고 바닷길 무역을 쥐었던 신라의 인물은?",
+    "choices": ["김유신", "장보고", "최치원", "원효"],
+    "answerIndex": 1,
+    "explanation": "해적을 물리치고 신라·당·일본을 잇는 뱃길을 장악했으나, 중앙 정치에 얽혀 들었다가 죽임을 당했습니다.",
+    "difficulty": "easy",
+    "tags": ["신라", "인물"]
+  },
+  {
+    "id": "history-042",
+    "category": "history",
+    "question": "전성기의 발해를 두고 당에서 '바다 동쪽의 융성한 나라'라는 뜻으로 부른 말은?",
+    "choices": ["해동성국", "동방예의지국", "군자지국", "소중화"],
+    "answerIndex": 0,
+    "explanation": "9세기 선왕 무렵 옛 고구려 땅의 대부분을 아우르며 크게 뻗어 나갔습니다.",
+    "difficulty": "normal",
+    "tags": ["발해", "남북국"]
+  },
+  {
+    "id": "history-043",
+    "category": "history",
+    "question": "당의 빈공과에 급제하고 「토황소격문」을 지은 통일신라의 문인은?",
+    "choices": ["설총", "강수", "최치원", "김대문"],
+    "answerIndex": 2,
+    "explanation": "신라로 돌아와 개혁안을 올렸으나 받아들여지지 않자 벼슬을 버리고 산으로 들어갔습니다.",
+    "difficulty": "hard",
+    "tags": ["신라", "인물"]
+  },
+  {
+    "id": "history-044",
+    "category": "history",
+    "question": "여러 종파의 다툼을 아우르려 한 화쟁 사상으로 알려진 신라의 승려는?",
+    "choices": ["의상", "자장", "혜초", "원효"],
+    "answerIndex": 3,
+    "explanation": "어려운 교리 대신 노래와 쉬운 말로 백성에게 불교를 알렸고, 아들 설총을 두었습니다.",
+    "difficulty": "normal",
+    "tags": ["신라", "불교"]
+  },
+  {
+    "id": "history-045",
+    "category": "history",
+    "question": "경주 토함산에 있는, 돌을 쌓아 만든 신라의 석굴 사원은?",
+    "choices": ["석굴암", "불국사", "해인사", "부석사"],
+    "answerIndex": 0,
+    "explanation": "가운데 본존불을 두고 둘레에 여러 조각을 새겼습니다. 불국사와 함께 유네스코 세계유산에 올랐습니다.",
+    "difficulty": "easy",
+    "tags": ["신라", "문화재"]
+  },
+  {
+    "id": "history-046",
+    "category": "history",
+    "question": "고려 광종이 956년 억울하게 노비가 된 사람을 가려내 풀어 준 제도는?",
+    "choices": ["전시과", "노비안검법", "과전법", "직전법"],
+    "answerIndex": 1,
+    "explanation": "호족이 거느리던 사람과 재산을 줄여 왕권을 세우려는 뜻이 함께 담겼습니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "제도"]
+  },
+  {
+    "id": "history-047",
+    "category": "history",
+    "question": "고려 성종에게 시무 28조를 올려 유교에 바탕한 정치를 권한 인물은?",
+    "choices": ["최충", "최영", "최승로", "최충헌"],
+    "answerIndex": 2,
+    "explanation": "지방에 관리를 보내 다스리게 하자는 제안이 받아들여져 12목이 설치됐습니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "인물"]
+  },
+  {
+    "id": "history-048",
+    "category": "history",
+    "question": "1019년 귀주에서 거란의 군대를 크게 무찌른 고려의 장수는?",
+    "choices": ["윤관", "김윤후", "강감찬", "척준경"],
+    "answerIndex": 2,
+    "explanation": "세 차례에 걸친 거란의 침입은 이 싸움을 끝으로 마무리됐고, 이후 고려는 국경에 천리장성을 쌓았습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "전투"]
+  },
+  {
+    "id": "history-049",
+    "category": "history",
+    "question": "고려가 여진을 막으려 만든 부대로, 윤관이 이끌어 동북 9성을 쌓은 군대는?",
+    "choices": ["별무반", "삼별초", "광군", "도방"],
+    "answerIndex": 0,
+    "explanation": "기병과 보병, 승려 부대까지 갖추어 꾸렸습니다. 쌓은 성은 오래 지키지 못하고 곧 돌려주었습니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "제도"]
+  },
+  {
+    "id": "history-050",
+    "category": "history",
+    "question": "몽골과의 강화에 반발해 진도와 제주도로 옮겨 가며 싸운 고려의 군대는?",
+    "choices": ["광군", "도방", "별무반", "삼별초"],
+    "answerIndex": 3,
+    "explanation": "무신정권이 거느리던 군대에서 비롯했으며, 1273년 제주에서 진압되며 항쟁이 끝났습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "전투"]
+  },
+  {
+    "id": "history-051",
+    "category": "history",
+    "question": "1377년 청주 흥덕사에서 찍은, 현존하는 금속활자 인쇄본 가운데 가장 오래된 책은?",
+    "choices": ["무구정광대다라니경", "직지심체요절", "상정고금예문", "월인천강지곡"],
+    "answerIndex": 1,
+    "explanation": "구텐베르크의 성서보다 78년 앞섭니다. 하권만 남아 프랑스 국립도서관에 있습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "문화재"]
+  },
+  {
+    "id": "history-052",
+    "category": "history",
+    "question": "원의 간섭에서 벗어나려 쌍성총관부를 되찾고 개혁을 편 고려의 왕은?",
+    "choices": ["원종", "충선왕", "공민왕", "우왕"],
+    "answerIndex": 2,
+    "explanation": "변발과 호복을 금하고 정동행성을 없앴으며, 신돈을 등용해 토지와 노비 문제를 손보게 했습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "개혁"]
+  },
+  {
+    "id": "history-053",
+    "category": "history",
+    "question": "권문세족이 빼앗은 토지와 노비를 되돌리려 공민왕 때 설치한 기구는?",
+    "choices": ["도병마사", "식목도감", "삼사", "전민변정도감"],
+    "answerIndex": 3,
+    "explanation": "신돈이 맡아 이끌면서 백성의 호응을 얻었으나, 기득권의 반발에 부딪혀 오래가지 못했습니다.",
+    "difficulty": "hard",
+    "tags": ["고려", "제도"]
+  },
+  {
+    "id": "history-054",
+    "category": "history",
+    "question": "고려 말 원에서 목화씨를 들여왔다고 전해지는 인물은?",
+    "choices": ["문익점", "최무선", "정몽주", "이색"],
+    "answerIndex": 0,
+    "explanation": "장인 정천익과 함께 재배에 성공해 무명옷이 퍼졌고, 겨울나기가 한결 나아졌습니다.",
+    "difficulty": "easy",
+    "tags": ["고려", "인물"]
+  },
+  {
+    "id": "history-055",
+    "category": "history",
+    "question": "고려 말 화약 만드는 법을 익혀 1380년 진포에서 왜구의 배를 불태운 인물은?",
+    "choices": ["최영", "이성계", "최무선", "박위"],
+    "answerIndex": 2,
+    "explanation": "화통도감을 두고 화포를 만들어 배에 실었습니다. 우리나라 최초의 함포 해전으로 꼽힙니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "인물"]
+  },
+  {
+    "id": "history-056",
+    "category": "history",
+    "question": "1388년 요동으로 향하던 이성계가 군사를 돌려 개경으로 돌아온 사건은?",
+    "choices": ["위화도 회군", "계유정난", "무신정변", "인조반정"],
+    "answerIndex": 0,
+    "explanation": "작은 나라가 큰 나라를 칠 수 없다는 이유 등을 들었습니다. 이 일로 실권을 잡아 조선 건국의 발판을 마련했습니다.",
+    "difficulty": "normal",
+    "tags": ["고려", "정변"]
+  },
+  {
+    "id": "history-057",
+    "category": "history",
+    "question": "조선이 개경에서 도읍을 옮긴 곳으로, 오늘날의 서울에 해당하는 곳은?",
+    "choices": ["평양", "한양", "강화", "공주"],
+    "answerIndex": 1,
+    "explanation": "1394년에 옮겼으며, 경복궁과 종묘, 사대문을 갖춘 계획도시로 꾸몄습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "건국"]
+  },
+  {
+    "id": "history-058",
+    "category": "history",
+    "question": "세종이 학문을 연구하고 정책을 다듬게 하려고 궁궐 안에 둔 기관은?",
+    "choices": ["규장각", "성균관", "홍문관", "집현전"],
+    "answerIndex": 3,
+    "explanation": "젊은 학자들이 모여 훈민정음 해설서와 농서, 역법서를 펴냈습니다. 세조 때 폐지됐습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "세종"]
+  },
+  {
+    "id": "history-059",
+    "category": "history",
+    "question": "세종 때 압록강과 두만강 유역을 개척해 설치한 국경 지역을 함께 이르는 말은?",
+    "choices": ["동북 9성", "강동 6주", "4군 6진", "천리장성"],
+    "answerIndex": 2,
+    "explanation": "최윤덕이 압록강 쪽을, 김종서가 두만강 쪽을 맡았습니다. 오늘날의 국경선이 이때 자리를 잡았습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "세종"]
+  },
+  {
+    "id": "history-060",
+    "category": "history",
+    "question": "비가 내린 양을 재려고 조선 세종 때 만든 기구는?",
+    "choices": ["자격루", "측우기", "혼천의", "앙부일구"],
+    "answerIndex": 1,
+    "explanation": "고을마다 같은 규격의 그릇을 두고 빗물의 깊이를 재 조정에 알렸습니다. 자격루는 물시계, 앙부일구는 해시계입니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "세종"]
+  },
+  {
+    "id": "history-061",
+    "category": "history",
+    "question": "조선의 정궁으로, 태조 때 처음 세운 뒤 흥선대원군이 다시 지은 궁궐은?",
+    "choices": ["창덕궁", "덕수궁", "경복궁", "창경궁"],
+    "answerIndex": 2,
+    "explanation": "1395년에 세웠으나 임진왜란 때 불탄 뒤 270여 년을 빈터로 두었다가 1868년에 다시 지었습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "문화재"]
+  },
+  {
+    "id": "history-062",
+    "category": "history",
+    "question": "임진왜란 때 이순신이 이끈, 지붕을 덮고 쇠못을 박았다고 전하는 배는?",
+    "choices": ["거북선", "판옥선", "조운선", "황포돛배"],
+    "answerIndex": 0,
+    "explanation": "적이 배에 뛰어 올라 싸우는 전법을 막으려 위를 덮었습니다. 주력은 여전히 판옥선이었고 이 배는 앞장서서 적진을 흩는 몫을 맡았습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "임진왜란"]
+  },
+  {
+    "id": "history-063",
+    "category": "history",
+    "question": "임진왜란 때 의령에서 의병을 일으켜 '홍의장군'이라 불린 사람은?",
+    "choices": ["조헌", "곽재우", "고경명", "정문부"],
+    "answerIndex": 1,
+    "explanation": "붉은 옷을 입고 앞장서 싸운 데서 별명이 붙었습니다. 지형을 이용한 기습으로 낙동강 일대를 지켰습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "임진왜란"]
+  },
+  {
+    "id": "history-064",
+    "category": "history",
+    "question": "허준이 광해군 때 완성한, 조선을 대표하는 의학서는?",
+    "choices": ["향약집성방", "의방유취", "동의보감", "방약합편"],
+    "answerIndex": 2,
+    "explanation": "우리 땅에서 나는 약재를 중심으로 정리해 백성이 쉽게 쓰도록 했습니다. 2009년 유네스코 세계기록유산에 올랐습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "문화재"]
+  },
+  {
+    "id": "history-065",
+    "category": "history",
+    "question": "1453년 수양대군이 김종서 등을 없애고 권력을 쥔 사건은?",
+    "choices": ["무오사화", "기묘사화", "인조반정", "계유정난"],
+    "answerIndex": 3,
+    "explanation": "어린 단종을 대신해 정사를 돌보던 신하들을 제거한 일로, 2년 뒤 수양대군이 세조로 즉위합니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "정변"]
+  },
+  {
+    "id": "history-066",
+    "category": "history",
+    "question": "중종 때 개혁을 펴다 1519년 기묘사화로 목숨을 잃은 사림의 인물은?",
+    "choices": ["조광조", "김종직", "이언적", "정여립"],
+    "answerIndex": 0,
+    "explanation": "현량과를 두어 사람됨으로 인재를 뽑자고 했고 공신의 명단도 손보려 했으나, 훈구 세력의 반격을 받았습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "사화"]
+  },
+  {
+    "id": "history-067",
+    "category": "history",
+    "question": "단종의 복위를 꾀하다 세조에게 목숨을 잃은 여섯 신하를 이르는 말은?",
+    "choices": ["생육신", "사육신", "삼학사", "오현"],
+    "answerIndex": 1,
+    "explanation": "성삼문과 박팽년 등이며, 벼슬을 버리고 절개를 지킨 이들은 따로 생육신이라 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "인물"]
+  },
+  {
+    "id": "history-068",
+    "category": "history",
+    "question": "임진왜란 때 조선을 도우려 군대를 보낸 나라는?",
+    "choices": ["원", "청", "명", "후금"],
+    "answerIndex": 2,
+    "explanation": "전쟁이 자기 땅으로 번지는 것을 막으려는 뜻도 있었습니다. 이 전쟁으로 국력이 기울어 뒷날 청에 밀리게 됩니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "임진왜란"]
+  },
+  {
+    "id": "history-069",
+    "category": "history",
+    "question": "1636년 청이 쳐들어와 인조가 남한산성으로 피란한 사건은?",
+    "choices": ["정묘호란", "병자호란", "신미양요", "임오군란"],
+    "answerIndex": 1,
+    "explanation": "45일을 버티다 삼전도에서 항복했고, 소현세자와 봉림대군이 볼모로 끌려갔습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "전쟁"]
+  },
+  {
+    "id": "history-070",
+    "category": "history",
+    "question": "조선 시대에 신분과 이름을 적어 16세 이상 남자가 차고 다니던 패는?",
+    "choices": ["마패", "호패", "부신", "옥패"],
+    "answerIndex": 1,
+    "explanation": "인구를 파악하고 군역과 세금을 매기려는 것이었습니다. 마패는 관리가 역마를 빌릴 때 쓰던 패입니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-071",
+    "category": "history",
+    "question": "영조와 정조가 붕당의 다툼을 누르려 인재를 고루 쓴 정책을 무엇이라 하는가?",
+    "choices": ["세도정치", "탕평책", "위민정치", "사림정치"],
+    "answerIndex": 1,
+    "explanation": "영조는 성균관 앞에 그 뜻을 새긴 비석을 세우기도 했습니다. 정조가 세상을 떠난 뒤에는 몇몇 가문이 권력을 쥐는 세도정치로 흘렀습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-072",
+    "category": "history",
+    "question": "정조가 1776년 창덕궁에 세워 책을 모으고 학자를 기른 왕실 기구는?",
+    "choices": ["홍문관", "승문원", "규장각", "성균관"],
+    "answerIndex": 2,
+    "explanation": "서얼 출신인 박제가와 유득공 등을 검서관으로 뽑아 신분의 벽을 낮춘 자리이기도 했습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "제도"]
+  },
+  {
+    "id": "history-073",
+    "category": "history",
+    "question": "정조가 아버지의 무덤을 옮긴 뒤 새 도시를 꾸리며 쌓은, 수원의 성은?",
+    "choices": ["수원 화성", "남한산성", "행주산성", "강화산성"],
+    "answerIndex": 0,
+    "explanation": "설계와 공사 과정을 『화성성역의궤』에 낱낱이 남겨, 6·25 때 부서진 뒤에도 그대로 되살릴 수 있었습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "문화재"]
+  },
+  {
+    "id": "history-074",
+    "category": "history",
+    "question": "정약용이 수원 화성을 쌓을 때 무거운 돌을 들어 올리려 고안한 장치는?",
+    "choices": ["물레방아", "거중기", "자격루", "수차"],
+    "answerIndex": 1,
+    "explanation": "도르래를 여러 개 엮어 적은 힘으로 큰 돌을 올렸습니다. 덕분에 공사 기간과 비용을 크게 줄였습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "실학"]
+  },
+  {
+    "id": "history-075",
+    "category": "history",
+    "question": "조선 후기에 김정호가 목판으로 새겨 찍어낸 우리나라 지도는?",
+    "choices": ["팔도총도", "동국여지승람", "혼일강리역대국도지도", "대동여지도"],
+    "answerIndex": 3,
+    "explanation": "22첩으로 나누어 접었다 펼 수 있게 했고, 십 리마다 점을 찍어 거리를 가늠하도록 했습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "실학"]
+  },
+  {
+    "id": "history-076",
+    "category": "history",
+    "question": "청에 사신으로 다녀온 뒤 『열하일기』를 남긴 조선 후기의 실학자는?",
+    "choices": ["박지원", "박제가", "홍대용", "유형원"],
+    "answerIndex": 0,
+    "explanation": "청의 문물을 받아들이자는 북학파에 속하며, 「양반전」과 「허생전」 같은 소설로 양반 사회를 꼬집기도 했습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "실학"]
+  },
+  {
+    "id": "history-077",
+    "category": "history",
+    "question": "1876년 일본과 맺은, 조선이 외국과 처음 맺은 근대적 조약은?",
+    "choices": ["한성 조약", "강화도 조약", "제물포 조약", "을사늑약"],
+    "answerIndex": 1,
+    "explanation": "운요호 사건을 구실로 삼았고, 부산을 비롯한 항구를 열고 일본에 영사재판권을 내준 불평등 조약이었습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "근대"]
+  },
+  {
+    "id": "history-078",
+    "category": "history",
+    "question": "1884년 김옥균 등 급진 개화파가 우정총국 잔치를 틈타 일으킨 정변은?",
+    "choices": ["임오군란", "아관파천", "갑신정변", "을미사변"],
+    "answerIndex": 2,
+    "explanation": "새 정부를 세우고 개혁안을 내걸었으나 청군이 들어오면서 사흘 만에 무너졌습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "근대"]
+  },
+  {
+    "id": "history-079",
+    "category": "history",
+    "question": "1895년 일본 세력이 경복궁에 들어가 명성황후를 시해한 사건은?",
+    "choices": ["아관파천", "임오군란", "갑신정변", "을미사변"],
+    "answerIndex": 3,
+    "explanation": "이 일과 단발령에 분노한 백성이 의병을 일으켰고, 신변에 위협을 느낀 고종은 이듬해 러시아 공사관으로 거처를 옮겼습니다.",
+    "difficulty": "hard",
+    "tags": ["조선", "근대"]
+  },
+  {
+    "id": "history-080",
+    "category": "history",
+    "question": "1896년 서재필 등이 세워 독립문을 짓고 만민공동회를 연 단체는?",
+    "choices": ["대한자강회", "신간회", "독립협회", "신민회"],
+    "answerIndex": 2,
+    "explanation": "한글 신문인 『독립신문』을 펴내 백성에게 나랏일을 알렸고, 누구나 나와 말할 수 있는 토론회를 열었습니다.",
+    "difficulty": "normal",
+    "tags": ["근대", "독립운동"]
+  },
+  {
+    "id": "history-081",
+    "category": "history",
+    "question": "3·1 운동 뒤인 1919년 중국 상하이에 세워져 독립운동을 이끈 정부는?",
+    "choices": ["대한민국 임시정부", "대한광복회", "조선건국동맹", "대한자강회"],
+    "answerIndex": 0,
+    "explanation": "여러 곳에 흩어져 있던 임시정부를 하나로 모은 것으로, 헌법을 두고 민주공화제를 내걸었습니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-082",
+    "category": "history",
+    "question": "1920년 6월 홍범도가 이끄는 부대가 만주에서 일본군을 물리친 전투는?",
+    "choices": ["쌍성보 전투", "봉오동 전투", "대전자령 전투", "영릉가 전투"],
+    "answerIndex": 1,
+    "explanation": "이 패배에 자극받은 일본군이 대규모로 밀고 들어왔고, 넉 달 뒤 청산리에서 다시 크게 졌습니다.",
+    "difficulty": "normal",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-083",
+    "category": "history",
+    "question": "1926년 순종의 장례일에 맞춰 일어난 만세 운동은?",
+    "choices": ["물산장려운동", "국채보상운동", "6·10 만세운동", "브나로드 운동"],
+    "answerIndex": 2,
+    "explanation": "학생들이 앞장서 준비했으며, 이 경험이 민족주의와 사회주의 세력이 손잡는 밑거름이 됐습니다.",
+    "difficulty": "normal",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-084",
+    "category": "history",
+    "question": "1929년 광주에서 한일 학생 사이의 충돌을 계기로 전국에 번진 항일 운동은?",
+    "choices": ["6·10 만세운동", "물산장려운동", "형평운동", "광주 학생 항일 운동"],
+    "answerIndex": 3,
+    "explanation": "이듬해까지 전국 수백 개 학교로 퍼졌으며, 3·1 운동 다음으로 큰 규모의 항일 운동으로 꼽힙니다.",
+    "difficulty": "normal",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-085",
+    "category": "history",
+    "question": "1932년 상하이 훙커우 공원에서 일본군 요인에게 폭탄을 던진 독립운동가는?",
+    "choices": ["이봉창", "윤봉길", "김상옥", "나석주"],
+    "answerIndex": 1,
+    "explanation": "김구가 이끌던 한인애국단 소속이었습니다. 이 일로 중국이 임시정부를 적극 돕게 됐습니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-086",
+    "category": "history",
+    "question": "1927년 민족주의 계열과 사회주의 계열이 손잡고 만든 항일 단체는?",
+    "choices": ["신민회", "신간회", "흥사단", "대한광복회"],
+    "answerIndex": 1,
+    "explanation": "전국에 지회를 두고 강연과 야학을 벌였으며, 광주 학생 항일 운동 때는 진상 조사단을 보냈습니다.",
+    "difficulty": "hard",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-087",
+    "category": "history",
+    "question": "우리말 사전을 만들려다 1942년 일제에 붙잡혀 흩어진 학술 단체는?",
+    "choices": ["진단학회", "조선어학회", "조선청년총동맹", "조선물산장려회"],
+    "answerIndex": 1,
+    "explanation": "회원들이 치안유지법 위반으로 갇혔고 원고도 사라졌으나, 광복 뒤 서울역 창고에서 되찾아 사전을 펴냈습니다.",
+    "difficulty": "hard",
+    "tags": ["일제강점기", "한글"]
+  },
+  {
+    "id": "history-088",
+    "category": "history",
+    "question": "1940년 충칭에서 대한민국 임시정부가 창설한 정규 군대는?",
+    "choices": ["북로군정서", "대한독립군", "한국광복군", "조선의용대"],
+    "answerIndex": 2,
+    "explanation": "연합군과 함께 인도·미얀마 전선에 나갔고, 국내로 들어가 싸울 계획을 세우던 중 광복을 맞았습니다.",
+    "difficulty": "normal",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-089",
+    "category": "history",
+    "question": "1919년 김원봉이 만주에서 조직해 요인 처단과 시설 파괴에 나선 단체는?",
+    "choices": ["의열단", "한인애국단", "흥사단", "대한광복회"],
+    "answerIndex": 0,
+    "explanation": "신채호가 그 뜻을 밝힌 「조선혁명선언」을 써 주었습니다. 뒤에는 군대를 길러 정면으로 싸우는 쪽으로 방향을 틀었습니다.",
+    "difficulty": "hard",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-090",
+    "category": "history",
+    "question": "3·1 운동 때 천안 아우내 장터에서 만세를 부르다 붙잡혀 옥중에서 숨진 인물은?",
+    "choices": ["김마리아", "남자현", "유관순", "권기옥"],
+    "answerIndex": 2,
+    "explanation": "이화학당에 다니다 학교가 문을 닫자 고향으로 내려가 만세 운동을 이끌었고, 서대문 형무소에서 열여덟에 숨졌습니다.",
+    "difficulty": "easy",
+    "tags": ["일제강점기", "독립운동"]
+  },
+  {
+    "id": "history-091",
+    "category": "history",
+    "question": "1948년에 수립된 대한민국 정부의 첫 대통령은?",
+    "choices": ["이승만", "김구", "윤보선", "장면"],
+    "answerIndex": 0,
+    "explanation": "제헌국회에서 국회의원들의 투표로 뽑혔습니다. 1960년 4·19 혁명으로 물러났습니다.",
+    "difficulty": "easy",
+    "tags": ["현대사", "정치"]
+  },
+  {
+    "id": "history-092",
+    "category": "history",
+    "question": "1948년 7월 17일 헌법을 공포한 것을 기념하는 국경일은?",
+    "choices": ["개천절", "제헌절", "광복절", "삼일절"],
+    "answerIndex": 1,
+    "explanation": "조선 건국일과 같은 날짜에 맞춰 정했습니다. 다섯 국경일 가운데 유일하게 공휴일이 아닙니다.",
+    "difficulty": "easy",
+    "tags": ["현대사", "기념일"]
+  },
+  {
+    "id": "history-093",
+    "category": "history",
+    "question": "1950년 9월 국군과 유엔군이 전세를 뒤집은 상륙 작전이 벌어진 곳은?",
+    "choices": ["부산", "목포", "인천", "군산"],
+    "answerIndex": 2,
+    "explanation": "조수 간만의 차가 커 어렵다고 여겨진 곳을 골라 허를 찔렀고, 곧 서울을 되찾았습니다.",
+    "difficulty": "normal",
+    "tags": ["현대사", "전쟁"]
+  },
+  {
+    "id": "history-094",
+    "category": "history",
+    "question": "1950년 12월 중공군에 밀리며 함경도에서 피란민을 배에 태워 남쪽으로 옮긴 작전은?",
+    "choices": ["흥남 철수", "다부동 전투", "장진호 전투", "낙동강 방어선"],
+    "answerIndex": 0,
+    "explanation": "군수품을 버리고 사람을 실어 10만 명 가까운 피란민이 남으로 내려왔습니다.",
+    "difficulty": "hard",
+    "tags": ["현대사", "전쟁"]
+  },
+  {
+    "id": "history-095",
+    "category": "history",
+    "question": "1960년 3·15 부정선거에 항의해 일어나 이승만 대통령을 물러나게 한 사건은?",
+    "choices": ["부마민주항쟁", "6월 민주항쟁", "4·19 혁명", "5·18 민주화운동"],
+    "answerIndex": 2,
+    "explanation": "마산에서 김주열 학생의 주검이 발견되면서 분노가 번졌고, 대학교수단까지 거리로 나섰습니다.",
+    "difficulty": "easy",
+    "tags": ["현대사", "민주화"]
+  },
+  {
+    "id": "history-096",
+    "category": "history",
+    "question": "1980년 5월 광주에서 신군부의 집권에 맞서 일어난 민주화 운동은?",
+    "choices": ["4·19 혁명", "5·18 민주화운동", "6월 민주항쟁", "부마민주항쟁"],
+    "answerIndex": 1,
+    "explanation": "당시 기록물이 2011년 유네스코 세계기록유산에 올랐습니다.",
+    "difficulty": "normal",
+    "tags": ["현대사", "민주화"]
+  },
+  {
+    "id": "history-097",
+    "category": "history",
+    "question": "1987년 대통령 직선제 개헌을 이끌어낸 전국적인 시위를 무엇이라 하는가?",
+    "choices": ["부마민주항쟁", "4·19 혁명", "6월 민주항쟁", "5·18 민주화운동"],
+    "answerIndex": 2,
+    "explanation": "박종철 고문치사와 이한열의 죽음이 도화선이 됐고, 결국 6·29 선언으로 직선제를 받아들이게 됐습니다.",
+    "difficulty": "hard",
+    "tags": ["현대사", "민주화"]
+  },
+  {
+    "id": "history-098",
+    "category": "history",
+    "question": "대한민국에서 하계 올림픽이 처음 열린 해와 도시는?",
+    "choices": ["1986년 서울", "1988년 서울", "2002년 부산", "2018년 평창"],
+    "answerIndex": 1,
+    "explanation": "동서 진영이 함께 참가한 대회로, 우리나라를 세계에 알리는 계기가 됐습니다. 평창은 2018년 동계 올림픽을 치렀습니다.",
+    "difficulty": "easy",
+    "tags": ["현대사", "스포츠"]
+  },
+  {
+    "id": "history-099",
+    "category": "history",
+    "question": "대한민국이 외환 위기를 맞아 국제통화기금(IMF)에 구제금융을 신청한 해는?",
+    "choices": ["1990년", "1997년", "2003년", "2008년"],
+    "answerIndex": 1,
+    "explanation": "기업이 잇따라 무너지고 실업이 크게 늘었으며, 2001년에 빌린 돈을 모두 갚았습니다.",
+    "difficulty": "hard",
+    "tags": ["현대사", "경제"]
+  },
+  {
+    "id": "history-100",
+    "category": "history",
+    "question": "1970년에 개통해 서울과 부산을 잇는 우리나라의 고속도로는?",
+    "choices": ["호남고속도로", "영동고속도로", "중부고속도로", "경부고속도로"],
+    "answerIndex": 3,
+    "explanation": "2년 5개월 만에 428킬로미터를 뚫었으며, 사람과 물자가 오가는 시간을 크게 줄였습니다.",
+    "difficulty": "hard",
+    "tags": ["현대사", "경제"]
   }
 ]
