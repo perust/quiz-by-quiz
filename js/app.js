@@ -1,7 +1,12 @@
 // 진입점. 데이터 로딩과 화면 흐름을 연결한다.
 // 게임 규칙은 core/, 그리기는 ui/, 저장은 storage/ 가 맡고 여기서는 셋을 잇기만 한다.
 
-import { CATEGORIES, QUESTIONS_PER_ROUND, RECENT_QUESTION_MEMORY } from './constants.js';
+import {
+  CATEGORIES,
+  QUESTIONS_PER_CATEGORY_IN_ALL,
+  QUESTIONS_PER_ROUND,
+  RECENT_QUESTION_MEMORY,
+} from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession } from './core/session.js';
@@ -174,7 +179,8 @@ async function main() {
   /** 전체 도전에 실제로 나갈 문항 수. 은행이 적으면 있는 만큼만 나간다 */
   function allModeCount() {
     return CATEGORIES.reduce(
-      (sum, category) => sum + Math.min(QUESTIONS_PER_ROUND, banks[category.id]?.length ?? 0),
+      (sum, category) =>
+        sum + Math.min(QUESTIONS_PER_CATEGORY_IN_ALL, banks[category.id]?.length ?? 0),
       0
     );
   }
@@ -222,7 +228,7 @@ async function main() {
       round.mode === 'all'
         ? buildAllRound({
             banks: CATEGORIES.map((category) => banks[category.id] ?? []),
-            countPerCategory: QUESTIONS_PER_ROUND,
+            countPerCategory: QUESTIONS_PER_CATEGORY_IN_ALL,
             recentIds: recentQuestionIds,
           })
         : buildRound({
