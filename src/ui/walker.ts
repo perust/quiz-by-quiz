@@ -17,6 +17,15 @@ const SPEED = 320;
 /** 프레임 간격이 이보다 벌어지면 잘라낸다. 탭이 백그라운드에 갔다 오면 크게 튄다 */
 const MAX_STEP_MS = 50;
 
+/**
+ * 화면 가장자리에서 이만큼 안쪽에 들어오면 화면이 따라오기 시작한다.
+ *
+ * 닿아야 밀리면 **벽을 미는 느낌**이고 가는 쪽이 보이지 않는다. 미리 밀어 두면
+ * 캐릭터가 보는 쪽이 먼저 열려 시야를 따라가는 것처럼 읽힌다.
+ * 짧은 화면에서는 위아래가 다 여백이 되지 않도록 화면 높이의 ¼로 줄인다.
+ */
+const CAMERA_MARGIN = 120;
+
 /** 이보다 조금 밀린 것은 손 떨림으로 보고 무시한다 */
 const STICK_DEADZONE = 5;
 
@@ -381,11 +390,18 @@ export function createWalker(config: WalkerConfig): Walker {
   }
 
   /**
-   * 캐릭터가 화면에 붙어 있어 밖으로 나갈 일이 없으므로, **가장자리에 닿은 채
-   * 더 밀 때만** 페이지를 그만큼 움직인다.
+   * 화면이 캐릭터를 따라온다.
    *
-   * «여백에 들어오면 민다»로 하면 화면 가장자리 가까이 있는 것은 밟고 설 수가
-   * 없다 — 다가가는 순간 페이지가 도망간다.
+   * 가장자리에 **닿았을 때가 아니라 가까워지면** 민다 (`CAMERA_MARGIN`).
+   * 닿아야 밀리면 벽을 미는 느낌이고 가는 쪽이 보이지 않는다.
+   *
+   * **민 만큼 캐릭터를 되돌린다.** 그래야 캐릭터가 화면 그 자리에 머물고 배경만
+   * 흐른다. 되돌리지 않으면 캐릭터와 화면이 **같은 방향으로 함께** 움직여,
+   * 가장자리 가까이 있는 것이 다가가는 만큼 멀어져 영영 잡히지 않는다.
+   * 되돌리면 반대로 **목표가 캐릭터 쪽으로 다가온다.**
+   *
+   * 스크롤이 끝에 닿으면 실제로 밀린 양이 0이라 되돌릴 것도 없다. 그때는
+   * 캐릭터가 그대로 나아가 화면 가장자리까지 간다 — 페이지 끝의 버튼도 밟힌다.
    *
    * **움직이는 동안에만 부른다.** `place()`에서 부르면 화면에 들어올 때마다
    * 캐릭터 쪽으로 스크롤이 끌려가 위쪽 글이 밀려난다.
@@ -393,12 +409,18 @@ export function createWalker(config: WalkerConfig): Walker {
   function pushScroll(vy: number, dt: number): void {
     if (vy === 0) return;
 
+    // 위아래가 통째로 여백이 되지 않게 짧은 화면에서는 좁힌다
+    const margin = Math.min(CAMERA_MARGIN, stageSize.height / 4);
     const height = character.offsetHeight;
-    const atTop = pos.y <= edge + height + 0.5;
-    const atBottom = pos.y >= stageSize.height - edge - 0.5;
-    if ((vy < 0 && atTop) || (vy > 0 && atBottom)) {
-      window.scrollBy(0, vy * SPEED * dt);
-    }
+    // 위쪽은 «머리»가, 아래쪽은 «발»이 기준이다. 눈에 보이는 몸이 가장자리에
+    // 가까워지는 순간을 재야 따라오는 느낌이 어긋나지 않는다
+    const nearTop = pos.y - height <= margin;
+    const nearBottom = pos.y >= stageSize.height - margin;
+    if (!((vy < 0 && nearTop) || (vy > 0 && nearBottom))) return;
+
+    const before = window.scrollY;
+    window.scrollBy(0, vy * SPEED * dt);
+    pos.y -= window.scrollY - before;
   }
 
   /** 캐릭터를 처음 자리에 세운다 */
@@ -444,9 +466,10 @@ export function createWalker(config: WalkerConfig): Walker {
 
     pos.x += vx * SPEED * dt;
     pos.y += vy * SPEED * dt;
+    // 화면을 민 만큼 pos.y 를 되돌리므로 clamp 와 그리기보다 먼저 와야 한다
+    pushScroll(vy, dt);
     clampPosition();
     render();
-    pushScroll(vy, dt);
 
     frameId = requestAnimationFrame(loop);
   }
