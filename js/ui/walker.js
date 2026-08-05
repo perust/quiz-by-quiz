@@ -31,6 +31,22 @@ const DIRECTIONS = {
 
 export const PICK_KEYS = ['Enter', ' '];
 
+/** 눌러서 쓰는 input. 커서가 머물지 않아 «적는 칸»이 아니다 */
+const TAP_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color']);
+
+/**
+ * 글자를 적어 넣는 자리인가.
+ *
+ * 체크박스·라디오·버튼처럼 생긴 `input`은 여기서 빠진다 — 그것들은 «들어가는» 것이
+ * 아니라 «누르는» 것이고, 커서가 머물지 않으니 갇힐 일도 없다.
+ */
+function isTypingTarget(node) {
+  if (!node) return false;
+  if (node.isContentEditable) return true;
+  if (node.tagName === 'TEXTAREA' || node.tagName === 'SELECT') return true;
+  return node.tagName === 'INPUT' && !TAP_INPUTS.has(node.type);
+}
+
 /**
  * 지금 키를 워커가 받으면 안 되는 상황인가.
  *
@@ -40,9 +56,7 @@ export const PICK_KEYS = ['Enter', ' '];
  *   가려진 자리를 밟게 되고, 갇혀 있어야 할 조작이 밖으로 샌다.
  */
 function isBlocked() {
-  const node = document.activeElement;
-  if (node && (node.isContentEditable
-    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName))) return true;
+  if (isTypingTarget(document.activeElement)) return true;
   return Boolean(document.querySelector('.dialog-backdrop:not([hidden])'));
 }
 
@@ -127,10 +141,54 @@ if (stickEl && knobEl) {
 
 // 손가락에는 Enter가 없다. 스틱으로 걸어간 자리를 확정할 길이 있어야
 // «걸어가서 고르기»가 성립한다. 없으면 결국 칸을 직접 눌러야 해서 스틱이 헛돈다.
+//
+// 입력칸에 들어가 있을 때는 **나가는 버튼이 된다.** 손가락에는 Esc도 없어서,
+// 이게 없으면 걸어서 들어간 사람이 소프트 키보드 앞에 갇힌다.
 confirmEl?.addEventListener('pointerdown', (event) => {
   event.preventDefault();
-  active?.confirm();
+  const node = document.activeElement;
+  if (isTypingTarget(node)) node.blur();
+  else active?.confirm();
+  paintConfirm();
 });
+
+/**
+ * 확정 버튼의 말이 지금 하는 일을 따라가게 한다.
+ *
+ * **바뀌는 자리에서 곧바로 부른다.** 포커스 이벤트에만 기대면 창이 포커스를 갖지
+ * 않은 동안(`document.hasFocus()`가 false) 이벤트가 미뤄져 버튼이 거짓말을 한다.
+ * 리스너는 워커를 거치지 않는 길(Tab, 칸을 손가락으로 직접 누르기)을 위해 함께 둔다.
+ */
+function paintConfirm(node = document.activeElement) {
+  if (confirmEl) confirmEl.textContent = isTypingTarget(node) ? '나가기' : '선택';
+}
+document.addEventListener('focusin', () => paintConfirm());
+// 나가는 쪽은 «어디로 가는지»(relatedTarget)를 보고 곧바로 정한다. focusout 시점에는
+// activeElement가 아직 넘어가는 중이라 한 프레임 미뤄야 했는데, 프레임이 멈춘
+// 화면에서는 그 갱신이 영영 오지 않았다
+document.addEventListener('focusout', (event) => paintConfirm(event.relatedTarget));
+
+/**
+ * **입력칸에서 빠져나오는 길.** 캐릭터로 입력칸을 밟아 들어갈 수 있게 되면서
+ * 필요해졌다 — 커서가 들어간 순간 방향키는 그쪽 것이 되어 캐릭터가 멈추고,
+ * 나오는 길을 모르면 걷기로 돌아갈 수 없다.
+ *
+ * **캡처 단계에서 받아 화면 쪽으로 넘기지 않는다.** 화면들은 Escape를 «뒤로 가기»로
+ * 쓰는데(로비 → 홈), 방 코드를 적다 Esc를 누른 사람이 홈으로 튕겨 나가면 적던 것이
+ * 통째로 날아간다.
+ *
+ * **다이얼로그 안은 예외다.** 거기서는 Escape가 «취소»이고 갇힌 상태에서 나가는
+ * 유일한 길이라, 입력칸에 커서가 있어도 다이얼로그 쪽에 양보한다.
+ */
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !active) return;
+  const node = document.activeElement;
+  if (!isTypingTarget(node) || node.closest('.dialog')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  node.blur();
+  paintConfirm();
+}, true);
 
 // 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
 document.addEventListener('keyup', (event) => held.delete(event.key));
@@ -181,6 +239,9 @@ function showControls(value) {
  * 누른다(`element.click()`) — 버튼에 달린 리스너가 마우스로 눌렀을 때와 똑같이
  * 움직이므로, 화면 쪽에 «무엇을 골랐는지»를 잇는 코드를 둘 필요가 없다.
  *
+ * 글자를 적는 칸도 밟아서 들어갈 수 있다. 거기서는 «누르기» 대신 커서를
+ * 넣고(`focus()`), Esc를 누르면 다시 걷기로 돌아온다.
+ *
  * 캐릭터가 화면에 붙어(`position: fixed`) 있어 밖으로 나갈 일이 없고, 대신
  * 가장자리를 밀면 페이지가 스크롤된다.
  *
@@ -195,8 +256,11 @@ function showControls(value) {
  */
 export function createWalker(config) {
   const {
-    character, pickable = 'button, a[href], [role="button"], summary', onStep,
-    standClass = 'is-standing', edge = 7, startAt,
+    character,
+    // 입력칸도 넣는다 — 걸어 다니는 사람만 «여기는 못 간다»가 되면 화면 절반이
+    // 캐릭터에게 막힌 셈이다. 로비의 방 코드, 대기실의 채팅칸이 그렇다
+    pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
+    onStep, standClass = 'is-standing', edge = 7, startAt,
   } = config;
 
   let enabled = false;
@@ -371,14 +435,20 @@ export function createWalker(config) {
   });
 
   /**
-   * 발밑을 «그 자리에서» 누른다. 버튼이 제 리스너로 알아서 움직이므로
+   * 발밑을 «그 자리에서» 고른다. 버튼이 제 리스너로 알아서 움직이므로
    * 워커는 무엇을 골랐는지 알 필요가 없다.
+   *
+   * 글자를 적는 칸만 다르다. `click()`은 커서를 넣어 준다는 보장이 없고,
+   * 넣어 준다 해도 **누르는 것과 들어가는 것은 뜻이 다르다** — 폼의 「만들기」를
+   * 밟았을 때처럼 무언가 일어나는 게 아니라 이제부터 적겠다는 것이다.
    */
   function pick() {
     if (!enabled || locked || !underFoot) return;
     character.classList.remove('walker--idle');
     character.classList.add('walker--hop');
-    underFoot.click();
+    if (isTypingTarget(underFoot)) underFoot.focus();
+    else underFoot.click();
+    paintConfirm();
   }
 
   const walker = {
@@ -443,12 +513,7 @@ export function createWalker(config) {
       pick();
     },
 
-    /** 지금 밟고 있는 칸. 아무 칸도 아니면 null (무대 방식) */
-    standingIndex() {
-      return enabled ? standing : null;
-    },
-
-    /** 지금 발밑에 있는 요소. 아무것도 없으면 null (자유 방식) */
+    /** 지금 발밑에 있는 요소. 아무것도 없으면 null */
     standingElement() {
       return enabled ? underFoot : null;
     },

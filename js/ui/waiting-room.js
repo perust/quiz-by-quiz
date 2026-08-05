@@ -242,15 +242,13 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
    * **Tab을 가로채지 않는다.** 대기실의 버튼은 캐릭터로 밟아 누를 수 있지만,
    * 키보드만 쓰는 사람에게 Tab으로 버튼에 닿는 길까지 막으면 안 된다.
    * 그래서 전용 키를 따로 둔다 — 걷는 중 `/`, 채팅칸에서 `Esc`.
+   *
+   * 나가는 `Esc`는 여기 없다. 어느 화면의 입력칸에서든 같은 일이 일어나야 해서
+   * `ui/walker.js`가 맡는다. 여기 두면 대기실만 규칙이 다른 화면이 된다.
    */
   document.addEventListener('keydown', (event) => {
     if (el.screen.hidden) return;
 
-    if (event.key === 'Escape' && document.activeElement === el.chatInput) {
-      event.preventDefault();
-      el.chatInput.blur();
-      return;
-    }
     if (event.key === '/' && document.activeElement !== el.chatInput) {
       event.preventDefault(); // 브라우저의 «페이지에서 찾기»가 열리지 않게
       el.chatInput.focus();
