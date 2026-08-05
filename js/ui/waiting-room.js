@@ -128,6 +128,12 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
       render();
       return;
     }
+    // 판이 열렸다. **내가 눌렀는지 묻지 않는다** — 서버가 붙으면 방장이 누른 시작이
+    // 모두에게 같은 이벤트로 오고, 그때도 이 줄이 그대로 판을 연다
+    if (event.type === 'match' && event.phase === 'started') {
+      onStart(event.setup);
+      return;
+    }
     if (event.type !== 'chat') return;
 
     logChat(event);
@@ -160,9 +166,17 @@ export function createWaitingRoom({ roomStore, onLeave, onStart, getPlayer }) {
 
   el.mode.addEventListener('click', () => patch({ gameMode: !room?.gameMode }));
 
-  el.start.addEventListener('click', () => {
+  // 여기서 판을 열지 않는다. 저장소에 «열어 달라»고 하고, 열렸다는 이벤트를
+  // 받아서 움직인다 (onEvent 참고). 그래야 서버가 붙었을 때 방에 있는 모두가
+  // 같은 순간에 같은 길로 시작한다
+  el.start.addEventListener('click', async () => {
     if (!room) return;
-    onStart({ categoryId: room.categoryId, gameMode: room.gameMode });
+    const result = await roomStore.startGame({ code: room.code });
+    if (!result.ok) {
+      el.chatLog.textContent = result.reason === 'not-host'
+        ? '방장만 판을 시작할 수 있어요.'
+        : '판을 시작하지 못했어요.';
+    }
   });
 
   el.leave.addEventListener('click', async () => {

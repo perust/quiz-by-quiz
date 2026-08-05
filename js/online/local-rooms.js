@@ -224,6 +224,27 @@ export const localRooms = {
     return { ok: true };
   },
 
+  /**
+   * 판을 연다. **방장만 열 수 있다.**
+   *
+   * 여는 사람이 판을 직접 시작하지 않고 «시작됐다»는 이벤트를 보내는 것이 핵심이다.
+   * 서버 구현에서는 그 이벤트가 방에 있는 **모두에게** 가므로, 화면은 «내가 눌렀는지»가
+   * 아니라 «판이 열렸는지»를 보고 움직이면 된다 — 그래야 부르는 쪽을 고치지 않고
+   * 여럿이 함께 시작하는 판이 된다.
+   *
+   * 로컬 구현에서는 방에 나뿐이라 그 이벤트가 나에게만 돌아온다.
+   */
+  async startGame({ code }) {
+    const rooms = readAll();
+    const room = rooms.find((item) => item.code === normalizeCode(code));
+    if (!room) return { ok: false, reason: 'not-found' };
+    if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
+
+    const setup = { categoryId: room.categoryId, gameMode: Boolean(room.gameMode) };
+    emit(room.code, { type: 'match', phase: 'started', setup });
+    return { ok: true, setup };
+  },
+
   /** 방을 나간다. 아무도 남지 않으면 방을 지운다 */
   async leaveRoom({ code }) {
     const wanted = normalizeCode(code);
