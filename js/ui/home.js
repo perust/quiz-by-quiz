@@ -48,9 +48,7 @@ export function createHomeScreen({
   // 고르는 것도 워커가 그 자리를 진짜로 누르는 것이라, 버튼에 달린 리스너가
   // 마우스로 눌렀을 때와 똑같이 움직인다 — 아래 세 줄이 그대로 쓰인다.
   const walker = createWalker({
-    stage: el.stage,
     character: el.walker,
-    roam: true,
     // 처음에는 「내 캐릭터」 위에 선다. 무엇을 할 수 있는지 눈이 먼저 간다
     startAt: () => {
       const box = el.openCharacters.getBoundingClientRect();

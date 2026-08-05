@@ -20,9 +20,7 @@ import { paintCharacter } from './sprite.js';
  */
 export function createScreenWalker({ screen, character, startAt, startPoint }) {
   const walker = createWalker({
-    stage: screen,
     character,
-    roam: true,
     startAt: () => {
       const point = startPoint?.();
       if (point) return point;

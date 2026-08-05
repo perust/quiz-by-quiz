@@ -46,13 +46,11 @@ export function createArena({ onChoose, getChoiceNodes, trapFocus }) {
   let helpOpener = null;
 
   const walker = createWalker({
-    stage: el.tiles.parentElement,
     character: el.character,
     // 무대 밖으로도 걸어 나가 화면의 아무 버튼이나 밟고 누를 수 있다.
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —
     // 시간 초과의 뜻이 그대로 유지된다
-    roam: true,
     pickable: '.arena-tile, button, a[href], [role="button"]',
     startAt: () => {
       const box = el.tiles.getBoundingClientRect();

@@ -1319,8 +1319,11 @@ body.is-booted .app-bar {
 
    몸통을 ::before 로 그리면 눈이 따로 놀고 그림자가 몸을 따라 떠올라
    튀는 것으로 보이지 않는다. 그래서 실제 요소로 나눴다. */
+/* 캐릭터는 페이지가 아니라 «화면»에 붙는다. 스크롤해도 제자리에 있고
+   그 아래로 내용이 흘러간다.
+   z-index 를 주지 말 것 — 뒤에 오는 다이얼로그가 DOM 순서로 위에 와야 한다. */
 .walker {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 34px;
@@ -1333,13 +1336,6 @@ body.is-booted .app-bar {
 .walker--home {
   width: 40px;
   height: 48px;
-}
-
-/* 화면 전체를 걸어 다니는 캐릭터는 페이지가 아니라 «화면»에 붙는다.
-   스크롤해도 캐릭터는 제자리에 있고 그 아래로 내용이 흘러간다.
-   z-index 를 주지 말 것 — 뒤에 오는 다이얼로그가 DOM 순서로 위에 와야 한다. */
-.walker--roam {
-  position: fixed;
 }
 
 .walker__body {
