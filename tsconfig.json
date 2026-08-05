@@ -1,0 +1,33 @@
+{
+  // src/*.ts 가 진짜 소스이고 js/*.js 는 tsc 가 만든 것이다.
+  // 브라우저는 지금까지처럼 js/ 를 그대로 읽으므로 index.html 의 경로는 바뀌지 않았다.
+  //
+  // **import 에는 확장자 .js 를 붙인다.** 번들러가 없어 브라우저가 그 경로를 그대로
+  // 가져가기 때문이다. TS 는 './timer.js' 를 './timer.ts' 로 알아서 이어 준다.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    "rootDir": "src",
+    "outDir": "js",
+
+    "strict": true,
+    // 배열을 훑는 코드가 많아 인덱싱마다 undefined 를 검사하게 하면
+    // 뜻이 없는 물음표만 늘어난다. 나머지 strict 검사는 모두 켠 채로 둔다.
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // 주석은 이 프로젝트에서 «왜 그렇게 했는지»를 담은 본문이다. 지우지 않는다.
+    "removeComments": false,
+    // 브라우저 개발자 도구에서 .ts 원본을 그대로 볼 수 있게 한다
+    "sourceMap": true,
+    "declaration": false,
+
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}

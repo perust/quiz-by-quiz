@@ -17,3 +17,8 @@ backups/
 # 커밋되면 공개 사이트에 올라간다. README 만 남기고 전부 제외한다.
 teacher/*
 !teacher/README.md
+
+# tsc 산출물. 진짜 소스는 src/*.ts 다.
+# 브라우저는 이 폴더를 그대로 읽으므로 로컬에서 확인하려면 먼저 `npm run build`
+# (또는 `npm run watch`) 를 돌려야 한다. 배포는 워크플로가 만들어 올린다.
+js/
