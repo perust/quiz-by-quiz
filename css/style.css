@@ -68,7 +68,10 @@ body {
   display: none;
   max-width: 560px;
   margin: 0 auto;
-  padding: 8px 16px 48px;
+  /* 아래 여백은 피드백 시트 높이만큼 늘어난다. 시트가 fixed 라 문서 흐름에서
+     빠져 있어, 이게 없으면 마지막 보기가 시트에 가려 보이지 않는다.
+     실제 높이는 해설 길이에 따라 달라지므로 quiz.js 가 재서 넣는다. */
+  padding: 8px 16px calc(48px + var(--feedback-h, 0px));
 }
 
 body.is-booted .app {
@@ -597,12 +600,31 @@ body.is-booted .app-bar {
 }
 
 /* ── 피드백 ── */
+/* 화면 맨 아래에 붙는 시트.
+   답을 고른 뒤 스크롤을 내려 찾지 않아도 되고, 엄지가 닿는 자리에 버튼이 온다.
+
+   z-index 를 주지 않는다 — 이 프로젝트에는 하나도 없고 DOM 순서가 곧 겹치는
+   순서다. 그래서 이 요소는 <main> 밖, 대화상자들 앞에 있다.
+   .app 은 --feedback-h 만큼 아래 여백을 더 두어 시트가 마지막 보기를 가리지 않는다. */
 .feedback {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 560px;
+  margin: 0 auto;
   padding: 16px;
+  /* 노치가 있는 기기에서 홈 인디케이터에 눌리지 않게 */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  /* 그림자를 위로 드리워 «떠 있는 것»으로 읽히게 한다 */
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.14);
+  /* 해설이 길어도 화면을 다 먹지 않는다 */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .feedback__verdict {
@@ -1168,7 +1190,16 @@ body.is-booted .app-bar {
 }
 
 .feedback:not([hidden]) {
-  animation: fade-up 0.25s ease;
+  animation: sheet-up 0.22s ease-out;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 /* ── 게임 모드 무대 ──
    바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
