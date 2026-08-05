@@ -461,6 +461,28 @@ export function createWalker(config) {
     character.classList.remove('walker--walking');
   }
 
+  /**
+   * 한 번 뛰기가 끝나면 스스로 뗀다.
+   *
+   * `walker--hop`은 `--idle`을 이기도록 CSS에서 뒤에 두었고, `walker-land`는 한 번만
+   * 도는 애니메이션이다. 그래서 남아 있으면 **제자리 뛰기가 영영 가려진다.**
+   *
+   * 화면을 옮기는 자리(홈에서 카테고리를 고르는 것 등)는 다음 `setEnabled(true)`가
+   * 떼어 주지만, **그 자리에 머무는 자리**(로비의 «만들기»·«새로고침», 랭킹 탭,
+   * 앱 바 토글)는 다시 켜지지 않아 캐릭터가 그대로 굳었다.
+   *
+   * 숨은 탭에서는 CSS 애니메이션이 멈춰 이 이벤트가 오지 않을 수 있다.
+   * `setEnabled`가 떼는 것은 그래서 남겨 둔다.
+   */
+  character.addEventListener('animationend', (event) => {
+    if (event.animationName !== 'walker-land') return;
+    character.classList.remove('walker--hop');
+    // 루프는 서 있는 동안 멈춰 있다. 걷는 중이 아니면 제자리 뛰기를 되돌려 준다
+    if (enabled && !character.classList.contains('walker--walking')) {
+      character.classList.add('walker--idle');
+    }
+  });
+
   function pick() {
     if (!enabled || locked) return;
 
