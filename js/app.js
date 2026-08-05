@@ -125,6 +125,11 @@ async function main() {
   let lastRound = null;
   /** 결과 화면이 들고 있는 이번 판 정보. 랭킹 등록에 쓴다 */
   let pending = null;
+  /**
+   * 지금 들어가 있는 방. 방에서 시작한 판은 끝나거나 그만두면 대기실로 돌아간다.
+   * 방을 나가면 비운다 — 그때부터는 홈이 돌아갈 곳이다.
+   */
+  let activeRoomCode = null;
   /** 방금 등록한 기록 ID. 랭킹 화면에서 강조한다 (FR-6.5) */
   let registeredId = null;
 
@@ -152,7 +157,10 @@ async function main() {
   // 대기실. 방 설정으로 한 판을 시작한다 — 서버가 없어 지금은 혼자 푸는 판이다
   const waitingRoom = createWaitingRoom({
     roomStore,
-    onLeave: () => openOnline(),
+    onLeave: () => {
+      activeRoomCode = null;
+      openOnline();
+    },
     onStart: ({ categoryId, gameMode }) => {
       gameModeToggle.set(gameMode);
       startRound(categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null });
@@ -171,7 +179,8 @@ async function main() {
   });
 
   const quizScreen = createQuizScreen({
-    onExit: goHome,
+    // 방에서 시작한 판이면 그만둘 때도 대기실로 돌아간다
+    onExit: () => (activeRoomCode ? openWaitingRoom(activeRoomCode) : goHome()),
     onComplete: showResult,
   });
 
@@ -190,6 +199,7 @@ async function main() {
   const resultScreen = createResultScreen({
     onRetry: () => (lastRound ? startRound(lastRound) : goHome()),
     onHome: goHome,
+    onRoom: () => (activeRoomCode ? openWaitingRoom(activeRoomCode) : goHome()),
     onRanking: () => openRanking(pending?.target ?? null),
     onRegister: registerRecord,
   });
@@ -232,6 +242,7 @@ async function main() {
   }
 
   async function goHome() {
+    // 홈으로 가도 방에서 나가지는 않는다. 로비에서 코드로 다시 들어갈 수 있다
     charactersScreen.hide();
     onlineScreen.hide();
     waitingRoom.hide();
@@ -325,6 +336,7 @@ async function main() {
       bestScore,
       nickname,
       characterId,
+      inRoom: Boolean(activeRoomCode),
     });
     showScreen('result');
   }
@@ -376,6 +388,7 @@ async function main() {
   }
 
   async function openWaitingRoom(code) {
+    activeRoomCode = code;
     onlineScreen.hide();
     await waitingRoom.show(code, characterId);
     showScreen('waiting');
