@@ -190,9 +190,10 @@ async function main(): Promise<void> {
   // 대기실. 방 설정으로 한 판을 시작한다 — 서버가 없어 지금은 혼자 푸는 판이다
   const waitingRoom = createWaitingRoom({
     roomStore,
-    onLeave: () => {
+    onLeave: (reason) => {
       activeRoomCode = null;
-      openOnline();
+      // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
+      openOnline(reason);
     },
     onStart: ({ categoryId, gameMode }) => {
       gameModeToggle.set(gameMode);
@@ -439,10 +440,10 @@ async function main(): Promise<void> {
 
   // ── 온라인 ─────────────────────────────────────────────────────
 
-  async function openOnline(): Promise<void> {
+  async function openOnline(notice?: string): Promise<void> {
     homeScreen.hide();
     waitingRoom.hide();
-    await onlineScreen.show(characterId);
+    await onlineScreen.show(characterId, notice);
     showScreen('online');
   }
 
