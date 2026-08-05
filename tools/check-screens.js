@@ -15,6 +15,8 @@
 //      「다음 문제」를 가렸다 (#65)
 //   ③ 조작법 대화상자를 열어 둔 채 나가면 홈 화면 위에 남았다
 //   ④ 피드백 시트는 <main> 밖에 있어 어느 화면에서든 보인다
+//   ⑤ 다이얼로그를 닫으면 포커스가 그 버튼으로 돌아오는데, 그대로 두면 캐릭터를
+//      옮겨 Enter 를 눌러도 포커스에 남은 버튼이 눌렸다 (#67)
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -56,7 +58,13 @@
       for (const [, cb] of 이번) cb(performance.now());
     }
   };
+  /**
+   * 시간을 앞당겨 프레임을 돌린다. **되돌리는 것을 잊지 말 것** —
+   * 앞당긴 채로 두면 그다음에 여는 판이 매 문항 즉시 시간 초과된다.
+   * 그래서 `잠든퀴즈를깨워본다` 는 언제나 짝을 맞춰 되돌린다.
+   */
   const 시간앞당기기 = (ms) => { 시간밀기 += ms; 프레임돌리기(); };
+  const 시간되돌리기 = (ms) => { 시간밀기 -= ms; };
 
   const 되돌리기 = () => {
     performance.now = 진짜now;
@@ -110,13 +118,16 @@
    * 나서 시트가 뜬다. 「다음 문제」를 눌러도 화면이 바뀌지 않고, 다음 문항의 타이머가
    * 또 돌아 같은 일이 되풀이된다.
    */
-  function 잠든퀴즈를깨워본다(자리) {
-    시간앞당기기(25000);
+  function 잠든퀴즈를깨워본다(자리, 밀기 = 25000) {
+    시간앞당기기(밀기);
     const 깨어났나 = !document.getElementById('feedback').hidden;
     결과.push({
-      자리, 이름: '25초가 흘러도 퀴즈가 깨어나지 않는다', 통과: !깨어났나,
+      자리, 이름: `${밀기 / 1000}초가 흘러도 퀴즈가 깨어나지 않는다`, 통과: !깨어났나,
       무엇: 깨어났나 ? `!! ${document.getElementById('feedback-verdict').textContent}` : '조용하다',
     });
+    // **밀어 둔 시간을 되돌린다.** 그대로 두면 다음에 여는 판이 시작하자마자
+    // 시간 초과가 되어, 뒤에 오는 검사가 전부 엉뚱한 것을 보게 된다
+    시간되돌리기(밀기);
   }
 
   // ── 검사 ──────────────────────────────────────────────────────
@@ -133,6 +144,30 @@
     if (지금화면() === 'waiting') await 눌러('waiting-leave');
     if (지금화면() === 'online') await 눌러('online-home');
     살펴본다('홈', 'home', true);
+
+    // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
+    // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
+    // 놓지 않으면 걸어간 자리가 아니라 포커스에 남은 버튼이 눌린다.
+    await 눌러('open-nickname', 400);
+    document.getElementById('nickname-cancel').click();
+    await 잠깐(400);
+    const 되돌아온자리 = document.activeElement instanceof HTMLElement
+      ? (document.activeElement.id || document.activeElement.tagName) : '(없음)';
+    결과.push({
+      자리: '홈', 이름: '다이얼로그를 닫으면 포커스가 돌아온다',
+      통과: document.activeElement === document.getElementById('open-nickname'),
+      무엇: 되돌아온자리,
+    });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true }));
+    결과.push({
+      자리: '홈', 이름: '걷기 시작하면 포커스를 놓는다',
+      통과: document.activeElement === document.body,
+      무엇: document.activeElement === document.body ? '놓았다'
+        : `!! ${document.activeElement.id || document.activeElement.tagName} 에 붙어 있다`,
+    });
+    프레임돌리기(2);
+
     살펴본곳.push('홈');
 
     // 홈 → 랭킹 → 홈
@@ -202,12 +237,8 @@
     await 잠깐(1000);
     살펴본다('시작하자마자 나간 뒤', 'online', true);
     잠든퀴즈를깨워본다('시작하자마자 나간 뒤');
-    시간앞당기기(25000); // 다음 문항으로 넘어가 또 뜨지는 않는가
-    결과.push({
-      자리: '시작하자마자 나간 뒤', 이름: '50초가 흘러도 조용하다',
-      통과: document.getElementById('feedback').hidden,
-      무엇: document.getElementById('feedback').hidden ? '조용하다' : '!! 또 떴다',
-    });
+    // 한 번 더. 세션이 살아 있으면 다음 문항으로 넘어가 또 뜬다
+    잠든퀴즈를깨워본다('시작하자마자 나간 뒤 (한 번 더)', 50000);
     살펴본곳.push('게임 시작 직후 나가기');
 
     await 눌러('online-home', 700);

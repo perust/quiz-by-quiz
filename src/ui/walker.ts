@@ -126,6 +126,24 @@ function isBlocked(): boolean {
   return Boolean(document.querySelector('.dialog-backdrop:not([hidden])'));
 }
 
+/**
+ * 걷기 시작하면 포커스를 놓는다.
+ *
+ * 캐릭터로 다이얼로그를 열고 닫으면 포커스가 그 버튼으로 돌아온다 — 키보드만 쓰는
+ * 사람이 자리를 잃지 않게 하는 규칙이다. 그런데 그대로 두면 **캐릭터를 옮겨 Enter를
+ * 눌러도 워커가 «버튼이 처리할 입력»이라며 비켜나**, 걸어간 자리가 아니라 포커스에
+ * 남은 버튼이 눌린다. 실제로 「내 닉네임」을 고치고 나면 어디로 걸어가 눌러도
+ * 닉네임 다이얼로그만 다시 열렸다.
+ *
+ * **걷기 시작했다는 것은 «이제 캐릭터로 고르겠다»는 뜻이다.** 글자를 적는 중이면
+ * `isBlocked`가 이미 막아 여기 오지 않으므로, 놓는 것은 버튼류뿐이다.
+ * Tab으로 옮겨 다니는 사람은 방향키를 쓰지 않으니 그 길은 그대로다.
+ */
+function dropFocus(): void {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
+}
+
 // ── 입력 (모듈 하나에 모아둔다) ──────────────────────────────────
 
 /**
@@ -625,6 +643,7 @@ export function createWalker(config: WalkerConfig): Walker {
 
     /** 스틱 입력이 들어왔을 때 루프를 깨운다 */
     onStickInput() {
+      dropFocus();
       start();
     },
 
@@ -639,6 +658,7 @@ export function createWalker(config: WalkerConfig): Walker {
         // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음에 유령 방향이 생긴다
         held.add(event.key);
         if (locked) return false;
+        dropFocus();
         start();
         return true; // 화면이 스크롤되지 않게 막는다
       }
