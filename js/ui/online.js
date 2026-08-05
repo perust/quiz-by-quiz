@@ -94,6 +94,15 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
     return CATEGORIES.find((category) => category.id === id)?.name ?? ALL_CATEGORY;
   }
 
+  function makeButton(label, variant, run) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `button ${variant} button--small`;
+    button.textContent = label;
+    button.addEventListener('click', run);
+    return button;
+  }
+
   function createItem(room) {
     const item = document.createElement('li');
     item.className = 'room-item';
@@ -119,24 +128,26 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
 
     body.append(name, meta);
 
-    // 들어가 있는 방에는 나갈 길을 준다. 없으면 내가 만든 빈 방이 목록에 쌓이고
-    // (서버가 붙으면 남들 목록까지 지저분해진다) 다시 들어갈 수도 없다
-    const button = document.createElement('button');
-    button.type = 'button';
+    const actions = document.createElement('div');
+    actions.className = 'room-item__actions';
     const full = room.players.length >= room.capacity;
 
     if (room.joined) {
-      button.className = 'button button--ghost button--small';
-      button.textContent = '나가기';
-      button.addEventListener('click', () => leave(room.code));
+      // **들어가 있는 방에는 «다시 들어갈» 길이 있어야 한다.** 새로고침하거나
+      // 홈에 다녀오면 대기실을 떠나 있을 뿐 방에서 나간 것은 아니다.
+      // 나갈 길도 함께 준다 — 없으면 빈 방이 목록에 쌓인다
+      actions.append(
+        makeButton('들어가기', 'button--primary', () => onEnterRoom(room.code)),
+        makeButton('나가기', 'button--ghost', () => leave(room.code))
+      );
     } else {
-      button.className = 'button button--primary button--small';
-      button.textContent = full ? '가득 참' : '참가';
-      button.disabled = full;
-      button.addEventListener('click', () => joinByCode(room.code, ''));
+      const join = makeButton(full ? '가득 참' : '참가', 'button--primary',
+        () => joinByCode(room.code, ''));
+      join.disabled = full;
+      actions.append(join);
     }
 
-    item.append(body, button);
+    item.append(body, actions);
     return item;
   }
 
