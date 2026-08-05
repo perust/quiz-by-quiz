@@ -260,6 +260,9 @@ export function createQuizScreen({ onExit, onComplete }) {
     const finished = session;
     session = null;
     stopTicking();
+    // 화면을 떠나므로 조작법 대화상자도 함께 닫는다.
+    // 열어 둔 채 나가면 다음 화면 위에 남아 화면을 덮고 포커스를 가둔다.
+    arena.closeDialog();
     onComplete(finished);
   }
 
@@ -286,6 +289,7 @@ export function createQuizScreen({ onExit, onComplete }) {
     dialogOpener = null;
     stopTicking();
     session = null;
+    arena.closeDialog(); // 같은 이유로 여기서도 닫는다
     onExit();
   }
 
@@ -364,9 +368,17 @@ export function createQuizScreen({ onExit, onComplete }) {
     setGameMode(value) {
       arena.setEnabled(value);
       el.screen.classList.toggle('quiz--game', Boolean(value));
-      if (value && session && !session.isAnswered()) {
-        arena.reset(session.currentQuestion().choices.length);
+      if (!value || !session) return;
+
+      if (session.isAnswered()) {
+        // 이미 답을 낸 문항이다. setEnabled가 잠금을 풀어 놓으므로 다시 잠근다 —
+        // 안 그러면 조작부가 «다음 문제» 버튼을 가리고, 채점이 끝난 바닥 위를
+        // 캐릭터가 다시 걸어 다닌다. 칸에 칠한 정답·오답은 그대로 두므로
+        // reset은 부르지 않는다.
+        arena.lock();
+        return;
       }
+      arena.reset(session.currentQuestion().choices.length);
     },
   };
 }

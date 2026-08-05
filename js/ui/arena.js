@@ -142,6 +142,17 @@ export function createArena({ onChoose, trapFocus }) {
     },
 
     /**
+     * 더 움직이지도 고르지도 못하게 잠근다. 조작부도 함께 사라진다.
+     *
+     * 채점은 showOutcome이 알아서 잠그므로 보통은 부를 일이 없다.
+     * 이미 답을 낸 문항에서 게임 모드를 켜는 경우에만 필요하다 —
+     * setEnabled가 잠금을 풀어 놓기 때문이다.
+     */
+    lock() {
+      walker.setLocked(true);
+    },
+
+    /**
      * 지금 밟고 있는 칸. 아무 칸도 아니면 null.
      * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다.
      */
@@ -174,6 +185,14 @@ export function createArena({ onChoose, trapFocus }) {
     /** 도움말이 열려 있는가. 뒤에서 포커스를 빼앗지 않으려고 퀴즈 화면이 물어본다 */
     isDialogOpen() {
       return !el.helpDialog.hidden;
+    },
+
+    /**
+     * 도움말을 닫는다. 퀴즈 화면을 떠날 때 퀴즈 화면이 부른다 —
+     * 열어 둔 채 나가면 홈 화면 위에 그대로 남아 화면을 덮고 포커스를 가둔다.
+     */
+    closeDialog() {
+      closeHelp();
     },
 
     /**
