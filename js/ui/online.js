@@ -12,7 +12,6 @@
 import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { JOIN_MESSAGES, isValidCode, normalizeCode } from '../online/rules.js';
 import { createScreenWalker } from './screen-walker.js';
-import { announce } from './screens.js';
 
 const ALL_CATEGORY = '전체 도전';
 
@@ -119,13 +118,22 @@ export function createOnlineScreen({ roomStore, onHome, getPlayer }) {
 
     body.append(name, meta);
 
+    // 들어가 있는 방에는 나갈 길을 준다. 없으면 내가 만든 빈 방이 목록에 쌓이고
+    // (서버가 붙으면 남들 목록까지 지저분해진다) 다시 들어갈 수도 없다
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'button button--primary button--small';
     const full = room.players.length >= room.capacity;
-    button.textContent = room.joined ? '들어가 있음' : (full ? '가득 참' : '참가');
-    button.disabled = room.joined || full;
-    button.addEventListener('click', () => joinByCode(room.code, ''));
+
+    if (room.joined) {
+      button.className = 'button button--ghost button--small';
+      button.textContent = '나가기';
+      button.addEventListener('click', () => leave(room.code));
+    } else {
+      button.className = 'button button--primary button--small';
+      button.textContent = full ? '가득 참' : '참가';
+      button.disabled = full;
+      button.addEventListener('click', () => joinByCode(room.code, ''));
+    }
 
     item.append(body, button);
     return item;
@@ -150,11 +158,25 @@ export function createOnlineScreen({ roomStore, onHome, getPlayer }) {
 
   // ── 참가 ───────────────────────────────────────────────────────
 
+  /**
+   * 메시지 문단은 `role="status"`라 그 자체가 라이브 리전이다.
+   * `announce()`까지 부르면 **같은 말이 두 번 낭독된다.**
+   *
+   * 숨긴 채로 글을 넣으면 낭독되지 않으므로 먼저 펼치고 넣는다.
+   */
   function say(node, message, tone) {
-    node.textContent = message;
     node.hidden = !message;
+    node.textContent = message;
     node.classList.toggle('room-message--bad', tone === 'bad');
-    if (message) announce(message);
+  }
+
+  /**
+   * 방에서 나온다. 마지막 사람이 나가면 저장소가 방을 지운다 —
+   * 그래서 목록에서 사라지는 것 자체가 «나왔다»는 표시가 된다.
+   */
+  async function leave(code) {
+    await roomStore.leaveRoom({ code });
+    await renderList();
   }
 
   async function joinByCode(code, password) {
