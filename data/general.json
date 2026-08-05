@@ -178,5 +178,125 @@
     "explanation": "2013년부터 만 20세에서 한 살 낮아졌습니다. 선거권은 이와 별개로 만 18세부터 주어집니다.",
     "difficulty": "hard",
     "tags": ["법", "생활"]
+  },
+  {
+    "id": "general-019",
+    "category": "general",
+    "question": "범죄가 일어났을 때 경찰에 신고하는 전화번호는?",
+    "choices": ["112", "114", "119", "120"],
+    "answerIndex": 0,
+    "explanation": "화재와 구조는 119, 전화번호 안내는 114입니다. 급하지 않은 민원은 지역 대표번호를 씁니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "한국"]
+  },
+  {
+    "id": "general-020",
+    "category": "general",
+    "question": "대한민국의 나라꽃으로 여겨지는 꽃은?",
+    "choices": ["진달래", "무궁화", "개나리", "목련"],
+    "answerIndex": 1,
+    "explanation": "여름부터 가을까지 오래 피고 지기를 되풀이합니다. 애국가 후렴과 국가 문장에도 쓰입니다.",
+    "difficulty": "easy",
+    "tags": ["한국", "생활"]
+  },
+  {
+    "id": "general-021",
+    "category": "general",
+    "question": "야구에서 한 팀이 수비할 때 경기장에 나서는 선수는 몇 명인가?",
+    "choices": ["8명", "9명", "10명", "11명"],
+    "answerIndex": 1,
+    "explanation": "투수와 포수에 내야 네 명, 외야 세 명을 더한 수입니다. 지명타자를 쓰면 공격에만 나서는 선수가 따로 생깁니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "야구"]
+  },
+  {
+    "id": "general-022",
+    "category": "general",
+    "question": "우리나라에서 일 년 중 낮이 가장 긴 날에 해당하는 24절기는?",
+    "choices": ["춘분", "추분", "동지", "하지"],
+    "answerIndex": 3,
+    "explanation": "양력 6월 21일 무렵으로, 반대로 밤이 가장 긴 날은 동지입니다. 춘분과 추분에는 낮과 밤의 길이가 거의 같습니다.",
+    "difficulty": "easy",
+    "tags": ["달력", "생활"]
+  },
+  {
+    "id": "general-023",
+    "category": "general",
+    "question": "대한민국 대통령의 임기는 몇 년인가?",
+    "choices": ["4년", "5년", "6년", "7년"],
+    "answerIndex": 1,
+    "explanation": "현행 헌법에서 중임할 수 없도록 정해 두었습니다. 국회의원의 임기는 이보다 한 해 짧습니다.",
+    "difficulty": "normal",
+    "tags": ["법", "한국"]
+  },
+  {
+    "id": "general-024",
+    "category": "general",
+    "question": "물가가 계속 올라 화폐의 가치가 떨어지는 현상을 무엇이라 하는가?",
+    "choices": ["디플레이션", "인플레이션", "디노미네이션", "모라토리엄"],
+    "answerIndex": 1,
+    "explanation": "같은 돈으로 살 수 있는 물건이 줄어듭니다. 반대로 물가가 계속 내리는 것은 디플레이션입니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-025",
+    "category": "general",
+    "question": "ABO식만 따질 때, 다른 모든 혈액형에게 적혈구를 줄 수 있는 혈액형은?",
+    "choices": ["A형", "B형", "O형", "AB형"],
+    "answerIndex": 2,
+    "explanation": "적혈구에 A와 B 항원이 모두 없어 응집을 일으키지 않습니다. 실제 수혈에서는 Rh와 다른 항원도 함께 맞춰 봅니다.",
+    "difficulty": "normal",
+    "tags": ["과학상식", "생활"]
+  },
+  {
+    "id": "general-026",
+    "category": "general",
+    "question": "대한민국에서 화폐를 발행하는 기관은?",
+    "choices": ["기획재정부", "한국조폐공사", "한국은행", "금융감독원"],
+    "answerIndex": 2,
+    "explanation": "지폐와 동전을 실제로 만드는 곳은 한국조폐공사이지만, 세상에 내놓는 권한은 중앙은행에 있습니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "한국"]
+  },
+  {
+    "id": "general-027",
+    "category": "general",
+    "question": "빛의 삼원색인 빨강·초록·파랑을 모두 겹치면 무슨 색이 되는가?",
+    "choices": ["검은색", "흰색", "회색", "갈색"],
+    "answerIndex": 1,
+    "explanation": "빛은 섞을수록 밝아집니다. 물감은 반대로 섞을수록 어두워져 검은색에 가까워집니다.",
+    "difficulty": "normal",
+    "tags": ["색", "과학상식"]
+  },
+  {
+    "id": "general-028",
+    "category": "general",
+    "question": "대한민국 저작권법에서 저작재산권은 원칙적으로 저작자가 죽은 뒤 몇 년까지 보호되는가?",
+    "choices": ["30년", "50년", "70년", "100년"],
+    "answerIndex": 2,
+    "explanation": "2013년에 50년에서 늘어났습니다. 이 기간이 지나면 누구나 자유롭게 쓸 수 있습니다.",
+    "difficulty": "hard",
+    "tags": ["법", "생활"]
+  },
+  {
+    "id": "general-029",
+    "category": "general",
+    "question": "소득이 얼마나 고르게 나뉘었는지를 0과 1 사이의 값으로 나타내는 지표는?",
+    "choices": ["엥겔 계수", "로렌츠 곡선", "지니 계수", "소비자물가지수"],
+    "answerIndex": 2,
+    "explanation": "0에 가까울수록 고르고 1에 가까울수록 치우쳤다는 뜻입니다. 로렌츠 곡선은 이 값을 구할 때 쓰는 그래프입니다.",
+    "difficulty": "hard",
+    "tags": ["경제", "지표"]
+  },
+  {
+    "id": "general-030",
+    "category": "general",
+    "question": "국제연합 안전보장이사회에서 거부권을 가진 상임이사국은 모두 몇 나라인가?",
+    "choices": ["3개국", "5개국", "7개국", "10개국"],
+    "answerIndex": 1,
+    "explanation": "미국·영국·프랑스·러시아·중국이며, 한 나라라도 반대하면 결의가 채택되지 않습니다.",
+    "difficulty": "hard",
+    "tags": ["국제기구", "국제"]
   }
 ]

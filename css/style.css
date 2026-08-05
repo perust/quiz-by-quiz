@@ -1540,8 +1540,8 @@ body.is-booted .app-bar {
   position: fixed;
   left: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 172px;
-  height: 172px;
+  width: 160px;
+  height: 160px;
   border-radius: 50%;
   background: rgba(226, 229, 234, 0.72);
   border: 1px solid rgba(15, 23, 42, 0.12);
@@ -1571,21 +1571,21 @@ body.is-booted .app-bar {
 /* 화면이 짧으면 무대와 겹칠 수 있다. 줄여서 가리는 넓이를 좁힌다 */
 @media (max-height: 700px) {
   .walk-stick {
-    width: 140px;
-    height: 140px;
+    width: 130px;
+    height: 130px;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     left: 10px;
   }
 
   .walk-stick__knob {
-    width: 58px;
-    height: 58px;
-    margin: -29px 0 0 -29px;
+    width: 54px;
+    height: 54px;
+    margin: -27px 0 0 -27px;
   }
 
   .walk-confirm {
-    width: 64px;
-    height: 64px;
+    width: 76px;
+    height: 76px;
     right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     font-size: 14px;
@@ -1600,8 +1600,8 @@ body.is-booted .app-bar {
   position: fixed;
   right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 76px;
-  height: 76px;
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
   background: var(--accent);
   border: none;
@@ -1629,9 +1629,9 @@ body.is-booted .app-bar {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 70px;
-  height: 70px;
-  margin: -35px 0 0 -35px;
+  width: 66px;
+  height: 66px;
+  margin: -33px 0 0 -33px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);

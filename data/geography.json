@@ -208,5 +208,95 @@
     "explanation": "양옆이 절벽처럼 서고 물이 깊어 큰 배가 안쪽까지 들어갑니다. 뉴질랜드와 칠레 남부 해안에도 발달했습니다.",
     "difficulty": "hard",
     "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-022",
+    "category": "geography",
+    "question": "서울 한가운데를 동서로 지나 서해로 흘러드는 강은?",
+    "choices": ["금강", "낙동강", "한강", "영산강"],
+    "answerIndex": 2,
+    "explanation": "강원도 태백에서 시작해 남한강과 북한강이 양평 부근에서 만난 뒤 서울을 지납니다.",
+    "difficulty": "easy",
+    "tags": ["한국지리", "강"]
+  },
+  {
+    "id": "geography-023",
+    "category": "geography",
+    "question": "적도 부근에서 일 년 내내 덥고 비가 많이 내리는 기후를 무엇이라 하는가?",
+    "choices": ["열대 우림 기후", "지중해성 기후", "툰드라 기후", "사막 기후"],
+    "answerIndex": 0,
+    "explanation": "기온이 늘 높고 강수량이 많아 키 큰 나무가 빽빽한 숲을 이룹니다. 아마존과 콩고 분지가 대표적입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "기후"]
+  },
+  {
+    "id": "geography-024",
+    "category": "geography",
+    "question": "대한민국의 광역자치단체 가운데 면적이 가장 넓은 곳은?",
+    "choices": ["강원특별자치도", "경기도", "전라남도", "경상북도"],
+    "answerIndex": 3,
+    "explanation": "1만 9천 제곱킬로미터가 넘어 전 국토의 5분의 1에 가깝습니다. 강원도가 더 넓다고 여기기 쉽지만 2천 제곱킬로미터 넘게 좁습니다.",
+    "difficulty": "normal",
+    "tags": ["한국지리", "행정구역"]
+  },
+  {
+    "id": "geography-025",
+    "category": "geography",
+    "question": "유럽과 아프리카 사이에서 지중해와 대서양을 잇는 좁은 해협은?",
+    "choices": ["도버 해협", "지브롤터 해협", "말라카 해협", "베링 해협"],
+    "answerIndex": 1,
+    "explanation": "가장 좁은 곳의 너비가 14킬로미터쯤이어서 맑은 날에는 맞은편 대륙이 보입니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-026",
+    "category": "geography",
+    "question": "국토 면적을 기준으로 세계에서 가장 넓은 나라는?",
+    "choices": ["캐나다", "중국", "미국", "러시아"],
+    "answerIndex": 3,
+    "explanation": "1천7백만 제곱킬로미터가 넘어 2위 캐나다보다 700만 제곱킬로미터 이상 넓고, 표준시가 열한 개나 됩니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-027",
+    "category": "geography",
+    "question": "대한민국 표준시의 기준으로 삼는 경선은 동경 몇 도인가?",
+    "choices": ["동경 120도", "동경 127도", "동경 135도", "동경 140도"],
+    "answerIndex": 2,
+    "explanation": "국토의 한가운데는 동경 127도쯤이지만 일본과 같은 경선을 써서 세계 표준시보다 아홉 시간 빠릅니다.",
+    "difficulty": "normal",
+    "tags": ["한국지리", "시간"]
+  },
+  {
+    "id": "geography-028",
+    "category": "geography",
+    "question": "태평양을 둘러싸고 화산과 지진이 잦아 '불의 고리'라 불리는 지대는?",
+    "choices": ["환태평양 조산대", "알프스·히말라야 조산대", "중앙 해령", "대륙붕"],
+    "answerIndex": 0,
+    "explanation": "판이 서로 부딪히거나 밀려 들어가는 경계를 따라 이어져 있어, 세계 지진의 대부분이 이곳에서 일어납니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-029",
+    "category": "geography",
+    "question": "아프리카 대륙에서 인구가 가장 많은 나라는?",
+    "choices": ["이집트", "남아프리카공화국", "에티오피아", "나이지리아"],
+    "answerIndex": 3,
+    "explanation": "2억 명이 넘어 2위와도 차이가 큽니다. 서아프리카 기니만에 접해 있고 최대 도시는 라고스입니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-030",
+    "category": "geography",
+    "question": "낙차를 기준으로 세계에서 가장 높은 폭포로 알려진, 베네수엘라의 폭포는?",
+    "choices": ["앙헬 폭포", "빅토리아 폭포", "이구아수 폭포", "나이아가라 폭포"],
+    "answerIndex": 0,
+    "explanation": "떨어지는 높이가 979미터에 이르러, 물이 바닥에 닿기 전에 안개처럼 흩어집니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "지형"]
   }
 ]

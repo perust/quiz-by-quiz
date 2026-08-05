@@ -29,12 +29,21 @@ export function shuffle(items, random = Math.random) {
  * @returns {object[]}
  */
 export function sampleQuestions(bank, count, recentIds = [], random = Math.random) {
-  const recent = new Set(recentIds);
-  const fresh = bank.filter((question) => !recent.has(question.id));
-  const stale = bank.filter((question) => recent.has(question.id));
+  // recentIds는 최신순이다. 인덱스가 클수록 오래전에 본 문제다
+  const seenAt = new Map(recentIds.map((id, index) => [id, index]));
 
-  // 신규 문제를 먼저 소진하고, 모자랄 때만 직전 판 문제를 채운다
-  const ordered = [...shuffle(fresh, random), ...shuffle(stale, random)];
+  const fresh = bank.filter((question) => !seenAt.has(question.id));
+
+  // 본 문제끼리는 섞지 않고 «오래전에 본 것»부터 앞에 둔다.
+  // 은행이 출제 수보다 작으면 fresh만으로 채울 수 없는데, 그때 무작위로 섞으면
+  // 방금 본 문제가 바로 다음 판에 되돌아온다. filter가 새 배열을 주므로
+  // sort가 bank를 건드리지는 않는다.
+  const stale = bank
+    .filter((question) => seenAt.has(question.id))
+    .sort((a, b) => seenAt.get(b.id) - seenAt.get(a.id));
+
+  // 신규 문제를 먼저 소진하고, 모자랄 때만 본 문제를 채운다
+  const ordered = [...shuffle(fresh, random), ...stale];
   return ordered.slice(0, Math.min(count, ordered.length));
 }
 

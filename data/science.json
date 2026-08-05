@@ -248,5 +248,55 @@
     "explanation": "1869년에 발표했으며, 뒤에 갈륨과 게르마늄이 발견되면서 예측이 맞아떨어졌습니다.",
     "difficulty": "hard",
     "tags": ["화학", "과학사"]
+  },
+  {
+    "id": "science-026",
+    "category": "science",
+    "question": "물이 얼음이 될 때처럼 액체가 고체로 변하는 현상을 무엇이라 하는가?",
+    "choices": ["기화", "융해", "응고", "액화"],
+    "answerIndex": 2,
+    "explanation": "반대로 고체가 액체가 되는 것은 융해입니다. 두 경우 모두 물질의 종류는 그대로이고 상태만 바뀝니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "물질의 상태"]
+  },
+  {
+    "id": "science-027",
+    "category": "science",
+    "question": "달이 지구 둘레를 한 바퀴 도는 데 걸리는 시간에 가장 가까운 것은?",
+    "choices": ["약 하루", "약 한 달", "약 세 달", "약 한 해"],
+    "answerIndex": 1,
+    "explanation": "약 27일이 걸리고, 달의 모양이 다시 같아지기까지는 약 29.5일이 걸립니다. 한 달이라는 말 자체가 여기서 나왔습니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "지구과학"]
+  },
+  {
+    "id": "science-028",
+    "category": "science",
+    "question": "성인 한 사람의 몸을 이루는 뼈는 모두 몇 개인가?",
+    "choices": ["106개", "206개", "306개", "406개"],
+    "answerIndex": 1,
+    "explanation": "갓 태어났을 때는 300개가 넘지만 자라면서 여러 뼈가 서로 붙어 수가 줄어듭니다.",
+    "difficulty": "normal",
+    "tags": ["인체", "생명과학"]
+  },
+  {
+    "id": "science-029",
+    "category": "science",
+    "question": "전기 회로에서 전압이 전류와 저항의 곱과 같다는 관계를 나타낸 법칙은?",
+    "choices": ["쿨롱의 법칙", "패러데이의 법칙", "옴의 법칙", "키르히호프의 법칙"],
+    "answerIndex": 2,
+    "explanation": "같은 전압을 걸어도 저항이 클수록 전류가 적게 흐릅니다. 저항의 단위인 옴도 이 사람의 이름에서 왔습니다.",
+    "difficulty": "hard",
+    "tags": ["물리", "전기"]
+  },
+  {
+    "id": "science-030",
+    "category": "science",
+    "question": "1912년 대륙이 하나로 붙어 있다가 갈라져 이동했다는 학설을 처음 내놓은 사람은?",
+    "choices": ["알프레트 베게너", "제임스 허턴", "찰스 라이엘", "아서 홈스"],
+    "answerIndex": 0,
+    "explanation": "대륙의 해안선 모양과 화석 분포를 근거로 삼았습니다. 움직이는 힘을 설명하지 못해 오래 외면받다가 판 구조론으로 이어졌습니다.",
+    "difficulty": "hard",
+    "tags": ["지구과학", "과학사"]
   }
 ]
