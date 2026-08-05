@@ -49,6 +49,9 @@ export interface RankingView {
 export interface RankingScreen {
   /** 랭킹 화면을 그린다 */
   show(view?: RankingView): Promise<void>;
+
+  /** 화면을 떠난다. 캐릭터와 손가락 조작부를 함께 거둔다 */
+  hide(): void;
 }
 
 export function createRankingScreen(
@@ -215,6 +218,10 @@ export function createRankingScreen(
   });
 
   return {
+    hide() {
+      walker.hide();
+    },
+
     async show({ target = null, highlightId: nextHighlight = null, characterId } = {}) {
       walker.show(characterId);
       if (target) {
