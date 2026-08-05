@@ -10,11 +10,12 @@ import { formatDuration, formatPercent } from './format.js';
  * @param {{
  *   onRetry: () => void,
  *   onHome: () => void,
+ *   onRoom: () => void,      방에서 시작한 판이면 대기실로 되돌아간다
  *   onRanking: () => void,
  *   onRegister: (nickname: string) => Promise<{rank: number, kept: boolean, stored: boolean}>
  * }} callbacks
  */
-export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
+export function createResultScreen({ onRetry, onHome, onRoom, onRanking, onRegister }) {
   const el = {
     mode: document.getElementById('result-mode'),
     score: document.getElementById('result-score'),
@@ -36,6 +37,7 @@ export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
     retryButton: document.getElementById('result-retry'),
     rankingButton: document.getElementById('result-ranking'),
     homeButton: document.getElementById('result-home'),
+    roomButton: document.getElementById('result-room'),
   };
 
   // 걸어 다니며 버튼을 고를 수 있다. 닉네임 칸에 커서가 있으면 방향키는 그쪽 것이다.
@@ -207,6 +209,7 @@ export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
   el.retryButton.addEventListener('click', () => onRetry());
   el.rankingButton.addEventListener('click', () => onRanking());
   el.homeButton.addEventListener('click', () => onHome());
+  el.roomButton.addEventListener('click', () => onRoom());
 
   return {
     /**
@@ -219,8 +222,11 @@ export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
      *   nickname: string
      * }} view bestScore는 이번 기록을 저장하기 전의 최고 점수다
      */
-    show({ summary, modeLabel, bestScore, nickname, characterId }) {
+    show({ summary, modeLabel, bestScore, nickname, characterId, inRoom }) {
       walker.show(characterId);
+      // 방에서 시작한 판이면 돌아갈 길을 준다. 홈으로 가는 길도 그대로 둔다 —
+      // 방을 떠나고 싶을 수도 있고, 방은 로비에서 코드로 다시 찾을 수 있다
+      el.roomButton.hidden = !inRoom;
       registered = false;
       el.input.disabled = false;
       el.registerButton.disabled = false;
