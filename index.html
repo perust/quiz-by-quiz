@@ -225,16 +225,17 @@
            비공개 방은 아래 공개방 목록에 나오지 않아, 여기가 없으면 코드를 적어
            두지 않은 사람은 제 방으로 돌아갈 길이 없다. -->
       <div class="online-block" id="my-rooms-block" hidden>
-        <h2 class="online-block__title">내가 있는 방</h2>
-        <ul class="room-list" id="my-room-list"></ul>
+        <h2 class="online-block__title" id="my-rooms-title">내가 있는 방</h2>
+        <!-- 방 목록이 둘이라 «어느 목록인지»가 들려야 한다. 제목을 목록의 이름으로 잇는다 -->
+        <ul class="room-list" id="my-room-list" aria-labelledby="my-rooms-title"></ul>
       </div>
 
       <div class="online-block">
         <div class="online-block__head">
-          <h2 class="online-block__title">공개방</h2>
+          <h2 class="online-block__title" id="public-rooms-title">공개방</h2>
           <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
         </div>
-        <ul class="room-list" id="room-list"></ul>
+        <ul class="room-list" id="room-list" aria-labelledby="public-rooms-title"></ul>
         <p class="room-empty" id="room-empty" hidden></p>
       </div>
 
@@ -487,7 +488,9 @@
       <h2 class="dialog__title" id="nickname-dialog-title">닉네임 바꾸기</h2>
       <p class="dialog__body">랭킹과 온라인 방에서 이 이름으로 보입니다.</p>
       <form id="nickname-form" novalidate>
-        <input class="room-form__input" id="nickname-edit" type="text"
+        <!-- 눈으로는 위 제목이 무엇을 적는 칸인지 알려주지만, 스크린리더는 칸 자체의
+             이름을 읽는다. placeholder 는 이름이 아니다 — 글자를 넣는 순간 사라진다 -->
+        <input class="room-form__input" id="nickname-edit" type="text" aria-label="닉네임"
                maxlength="10" autocomplete="off" placeholder="2~10자">
         <p class="room-message" id="nickname-message" role="status" hidden></p>
         <div class="dialog__actions">
