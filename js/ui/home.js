@@ -31,40 +31,22 @@ export function createHomeScreen({
     note: document.getElementById('home-note'),
   };
 
-  /** 걸어서 밟을 수 있는 칸과 그 칸을 밟았을 때 할 일 */
-  let zones = [];
-
-  function collectZones(categories) {
-    zones = [
-      ...[...el.grid.children].map((node, index) => ({
-        node,
-        run: () => onSelectCategory(categories[index].id),
-      })),
-      { node: el.startAll, run: () => onStartAll() },
-      { node: el.openCharacters, run: () => onOpenCharacters() },
-      { node: el.openRanking, run: () => onOpenRanking() },
-    // 아직 못 쓰는 메뉴(문제가 없는 카테고리 등)에는 올라가지 않는다
-    ].filter(({ node }) => !node.disabled);
-  }
-
+  // 화면 전체를 걸어 다닌다. 칸 목록을 따로 만들지 않고 발밑에 실제로 무엇이
+  // 있는지 그때그때 보므로, 카드를 더하거나 빼도 여기를 고칠 일이 없다.
+  // 고르는 것도 워커가 그 자리를 진짜로 누르는 것이라, 버튼에 달린 리스너가
+  // 마우스로 눌렀을 때와 똑같이 움직인다 — 아래 세 줄이 그대로 쓰인다.
   const walker = createWalker({
     stage: el.stage,
     character: el.walker,
-    getZones: () => zones.map(({ node }) => node),
-    onZoneChange: (index, previous) => {
-      zones[previous]?.node.classList.remove('is-standing');
-      if (index !== null) zones[index].node.classList.add('is-standing');
-    },
-    onPick: (index) => zones[index]?.run(),
+    roam: true,
     // 처음에는 「내 캐릭터」 위에 선다. 무엇을 할 수 있는지 눈이 먼저 간다
     startAt: () => {
-      const base = el.stage.getBoundingClientRect();
       const box = el.openCharacters.getBoundingClientRect();
       if (box.width === 0) return null;
       return {
         // 카드 오른쪽 끝에 세운다. 가운데면 이름을 가린다
-        x: box.right - base.left - 26,
-        y: box.bottom - base.top - 10,
+        x: box.right - 26,
+        y: box.bottom - 10,
       };
     },
   });
@@ -159,7 +141,6 @@ export function createHomeScreen({
       el.characterFigure.replaceChildren(createBody(characterId));
       paintCharacter(el.walker, characterId);
 
-      collectZones(categories);
       walker.setEnabled(true);
     },
 
