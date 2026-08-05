@@ -76,6 +76,14 @@
               <span class="menu-card__desc">내 최고 기록</span>
             </span>
           </button>
+          <!-- 메뉴가 홀수 개면 마지막 카드가 두 칸을 쓴다 (.menu-card:nth-child(odd):last-child) -->
+          <button type="button" class="menu-card" id="open-online" disabled>
+            <span class="menu-card__figure" aria-hidden="true">🌐</span>
+            <span class="menu-card__body">
+              <span class="menu-card__name">온라인</span>
+              <span class="menu-card__desc">친구와 같이 풀기</span>
+            </span>
+          </button>
         </div>
 
         <div class="category-grid" id="category-grid"></div>
@@ -190,6 +198,79 @@
         <div class="walker walker--home" id="character-walker" aria-hidden="true">
           <span class="walker__shadow"></span>
         </div>
+      </div>
+    </section>
+
+    <!-- ─────────── 온라인 로비 (PRD 밖의 확장) ───────────
+         방을 나눠 가지려면 서버가 있어야 한다. 지금은 브라우저 안에서만 도는
+         구현이 끼워져 있고(js/online/adapter.js), 화면은 그 사실을 모른다. -->
+    <section class="screen" data-screen="online" aria-labelledby="online-title" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <h1 class="screen-title" id="online-title">온라인</h1>
+        <button type="button" class="button button--ghost" id="online-home">홈으로</button>
+      </header>
+
+      <p class="online-note" id="online-note"></p>
+
+      <div class="online-block">
+        <div class="online-block__head">
+          <h2 class="online-block__title">공개방</h2>
+          <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
+        </div>
+        <ul class="room-list" id="room-list"></ul>
+        <p class="room-empty" id="room-empty" hidden></p>
+      </div>
+
+      <div class="online-block">
+        <h2 class="online-block__title">코드로 참가</h2>
+        <form class="room-form" id="join-form" novalidate>
+          <div class="room-form__row">
+            <label class="room-form__label" for="join-code">방 코드</label>
+            <input class="room-form__input" id="join-code" type="text" inputmode="latin"
+                   maxlength="8" autocomplete="off" placeholder="예: ABCD23">
+          </div>
+          <div class="room-form__row">
+            <label class="room-form__label" for="join-password">비밀번호</label>
+            <input class="room-form__input" id="join-password" type="password"
+                   maxlength="12" autocomplete="off" placeholder="공개방은 비워 두세요">
+          </div>
+          <button type="submit" class="button button--primary">참가</button>
+        </form>
+        <p class="room-message" id="join-message" role="status" hidden></p>
+      </div>
+
+      <div class="online-block">
+        <h2 class="online-block__title">방 만들기</h2>
+        <form class="room-form" id="create-form" novalidate>
+          <div class="room-form__row">
+            <label class="room-form__label" for="create-name">방 이름</label>
+            <input class="room-form__input" id="create-name" type="text"
+                   maxlength="16" autocomplete="off" placeholder="같이 풀어요">
+          </div>
+          <div class="room-form__row">
+            <label class="room-form__label" for="create-category">분야</label>
+            <select class="room-form__input" id="create-category"></select>
+          </div>
+          <div class="room-form__row">
+            <label class="room-form__label" for="create-capacity">인원</label>
+            <select class="room-form__input" id="create-capacity"></select>
+          </div>
+          <div class="room-form__row room-form__row--check">
+            <input type="checkbox" id="create-private">
+            <label for="create-private">비공개로 만들기 (코드와 비밀번호를 아는 사람만)</label>
+          </div>
+          <div class="room-form__row" id="create-password-row" hidden>
+            <label class="room-form__label" for="create-password">비밀번호</label>
+            <input class="room-form__input" id="create-password" type="password"
+                   maxlength="12" autocomplete="off" placeholder="4~12자">
+          </div>
+          <button type="submit" class="button button--primary">만들기</button>
+        </form>
+        <p class="room-message" id="create-message" role="status" hidden></p>
+      </div>
+
+      <div class="walker walker--home" id="online-character" aria-hidden="true">
+        <span class="walker__shadow"></span>
       </div>
     </section>
 

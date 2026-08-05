@@ -15,6 +15,8 @@ import { preferences, rankingStore } from './storage/adapter.js';
 import { setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen } from './ui/screens.js';
 import { createHomeScreen } from './ui/home.js';
+import { createOnlineScreen } from './ui/online.js';
+import { roomStore } from './online/adapter.js';
 import { createQuizScreen } from './ui/quiz.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
@@ -115,6 +117,9 @@ async function main() {
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
 
+  // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
+  let savedNickname = await preferences.getNickname();
+
   /** 다시 하기가 되풀이할 판 종류 */
   let lastRound = null;
   /** 결과 화면이 들고 있는 이번 판 정보. 랭킹 등록에 쓴다 */
@@ -132,6 +137,14 @@ async function main() {
     onStartAll: () => startRound({ mode: 'all', categoryId: null }),
     onOpenRanking: () => openRanking(),
     onOpenCharacters: () => openCharacters(),
+    onOpenOnline: () => openOnline(),
+  });
+
+  // 온라인 로비. 방을 어디에 두는지는 어댑터가 정하고 화면은 모른다
+  const onlineScreen = createOnlineScreen({
+    roomStore,
+    onHome: goHome,
+    getPlayer: () => ({ nickname: savedNickname || '손님', characterId }),
   });
 
   const charactersScreen = createCharactersScreen({
@@ -207,6 +220,7 @@ async function main() {
 
   async function goHome() {
     charactersScreen.hide();
+    onlineScreen.hide();
     homeScreen.render({
       categories: CATEGORIES,
       banks,
@@ -321,6 +335,7 @@ async function main() {
       questionResults: summary.questionResults,
     });
 
+    savedNickname = nickname;
     await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)
     registeredId = outcome.kept ? outcome.record.id : null;
     pending = { summary, target, playedAt };
@@ -334,6 +349,14 @@ async function main() {
     homeScreen.hide();
     await rankingScreen.show({ target, highlightId: registeredId, characterId });
     showScreen('ranking');
+  }
+
+  // ── 온라인 ─────────────────────────────────────────────────────
+
+  async function openOnline() {
+    homeScreen.hide();
+    await onlineScreen.show(characterId);
+    showScreen('online');
   }
 
   // ── 내 캐릭터 ──────────────────────────────────────────────────

@@ -13,11 +13,12 @@ import { paintCharacter, createBody } from './sprite.js';
  *   onSelectCategory: (categoryId: string) => void,
  *   onStartAll: () => void,
  *   onOpenRanking: () => void,
- *   onOpenCharacters: () => void
+ *   onOpenCharacters: () => void,
+ *   onOpenOnline: () => void
  * }} callbacks
  */
 export function createHomeScreen({
-  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters,
+  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline,
 }) {
   const el = {
     stage: document.getElementById('home-stage'),
@@ -26,6 +27,7 @@ export function createHomeScreen({
     startAllMeta: document.getElementById('start-all-meta'),
     openRanking: document.getElementById('open-ranking'),
     openCharacters: document.getElementById('open-characters'),
+    openOnline: document.getElementById('open-online'),
     characterFigure: document.getElementById('my-character-figure'),
     walker: document.getElementById('home-character'),
     note: document.getElementById('home-note'),
@@ -54,6 +56,7 @@ export function createHomeScreen({
   el.startAll.addEventListener('click', () => onStartAll());
   el.openRanking.addEventListener('click', () => onOpenRanking());
   el.openCharacters.addEventListener('click', () => onOpenCharacters());
+  el.openOnline.addEventListener('click', () => onOpenOnline());
 
   document.addEventListener('keydown', (event) => {
     const screen = el.stage.closest('[data-screen]');
@@ -129,6 +132,7 @@ export function createHomeScreen({
 
       // 정적 버튼은 HTML에서 disabled로 시작한다. 리스너가 달린 지금 열어준다
       el.openRanking.disabled = false;
+      el.openOnline.disabled = false;
       el.startAll.disabled = allCount === 0;
 
       const best = bestScores.all;

@@ -54,7 +54,8 @@ index.html          화면마다 <section data-screen="...">. 해시 라우팅 �
 js/constants.js     제한 시간·출제 수·배점·카테고리 정의. 상수는 여기 한 곳에만 둔다
 js/core/            게임 로직. DOM을 절대 건드리지 않고 입력을 받아 값을 반환한다
 js/ui/              DOM 렌더링. 게임 규칙을 갖지 않는다
-js/storage/         저장소. adapter.js가 구현체를 고르고, local-store.js만 localStorage를 만진다
+js/storage/         랭킹·설정 저장소. adapter.js가 구현체를 고르고, local-store.js만 localStorage를 만진다
+js/online/          온라인 방 저장소. 같은 방식이고 local-rooms.js만 localStorage를 만진다
 js/data/            JSON 로드 + 형식 검증
 js/app.js           위를 잇는 진입점. 화면 흐름만 담당
 data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
@@ -208,7 +209,7 @@ data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
 
 - 인터페이스: `saveRecord` / `getRankings` / `getBestScore` / `clearAll`
 - 로컬 구현이 동기여도 **모든 메서드는 Promise를 반환**한다
-- `localStorage` 직접 호출은 `js/storage/local-store.js` **한 곳에만** 존재한다. `core/`나 `ui/`에서 부르면 설계 위반이다
+- `localStorage` 직접 호출은 `js/storage/local-store.js`와 `js/online/local-rooms.js` **두 곳에만** 존재한다. `core/`나 `ui/`에서 부르면 설계 위반이다
 - `core/`와 `ui/`는 저장소를 아예 import하지 않는다. 저장이 필요하면 `app.js`가 콜백으로 넘긴다
 - 교체 지점은 `js/storage/adapter.js`의 `rankingStore` 한 줄이다
 - 닉네임과 `recentQuestionIds`는 `preferences`로 분리했다. v2에서도 브라우저에 남을 값이라 서버로 갈 랭킹 어댑터와 섞지 않는다
@@ -221,6 +222,30 @@ data/<카테고리>.json  문제 은행. 파일명 = 카테고리 코드
 문제 텍스트는 넣지 않는다. `data/*.json`과 중복되고 용량만 늘어난다. 읽는 쪽이 `id`로 이어 붙인다.
 
 점수는 정답당 10점 고정. **속도 보너스나 난이도 배점을 넣지 않는다** — 곱씹을 시간을 보장한다는 PRD 2.1 설계 원칙과 정면으로 충돌한다. 소요 시간은 개인 지표일 뿐 순위에 반영하지 않는다.
+
+## 온라인 로비 (PRD 밖의 확장)
+
+**이 앱에는 서버가 없다.** 정적 파일로만 배포되므로 다른 사람과 방을 나눠 가질 길이 없다.
+그래서 **화면과 흐름을 먼저 온전히 만들고, 네트워크 자리는 어댑터로 비워 두었다.**
+지금 끼워져 있는 `local-rooms.js`는 방을 이 브라우저의 localStorage에 담는다.
+
+- 교체 지점은 `js/online/adapter.js`의 `roomStore` **한 줄**이다 (랭킹 저장소와 같은 방식)
+- 인터페이스: `isNetworked` / `me` / `listRooms` / `myRooms` / `createRoom` / `joinRoom` / `leaveRoom`
+- 로컬 구현이 동기여도 **모든 메서드는 Promise를 반환한다**
+- 방 코드·이름·비밀번호 규칙은 `js/online/rules.js`에 순수 함수로 둔다. 화면과 저장소가
+  **같은 규칙을 쓰게** 하려는 것이다 — 화면에서만 검사하면 서버가 다른 기준으로 거절해 말이 어긋난다
+
+**비밀번호를 목록에 실어 보내지 말 것.** `listRooms`는 잠김 여부(`hasPassword`)만 알린다.
+견주는 일은 구현체 안에서 하고 화면은 입력값을 그대로 넘기기만 한다 — 그래야 서버 구현이
+됐을 때 그 검사가 **자연히 서버에서** 일어난다. 비밀번호를 내려보내는 순간 잠금은 아무 뜻이 없다.
+
+**진짜로 이어지는지를 화면에서 숨기지 않는다.** `roomStore.isNetworked`를 보고 안내 문구를
+고른다. 친구를 불렀는데 아무도 못 들어오는 편이 더 나쁘다.
+
+**방 코드에는 `0·O·1·I·L`을 쓰지 않는다** (`rules.js`의 `ALPHABET`). 코드는 사람이 불러 주고
+받아 적는 것이라 눈으로 헷갈리는 글자를 빼 두었다. 입력은 소문자와 공백도 받아준다.
+
+지금은 **로비까지**다. 방에 들어간 뒤의 대기실과 같이 푸는 화면은 아직 없다.
 
 ## 문제 데이터
 
