@@ -182,9 +182,14 @@
         </p>
       </div>
 
-      <div class="feedback" id="feedback" role="status" hidden>
-        <p class="feedback__verdict" id="feedback-verdict"></p>
-        <p class="feedback__explanation" id="feedback-explanation"></p>
+      <div class="feedback" id="feedback" hidden>
+        <!-- 라이브 리전은 «알리는 말»까지다. 버튼을 안에 두면 role="status"가
+             암묵적으로 aria-atomic 이라 「정답입니다 … 다음 문제」가 한 덩어리로
+             낭독되고, 곧이어 포커스가 그 버튼으로 가서 같은 말이 또 들린다. -->
+        <div role="status">
+          <p class="feedback__verdict" id="feedback-verdict"></p>
+          <p class="feedback__explanation" id="feedback-explanation"></p>
+        </div>
         <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
         <button type="button" class="button button--primary" id="next-button">
           <span id="next-label">다음 문제</span>

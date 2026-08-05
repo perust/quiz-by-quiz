@@ -156,18 +156,34 @@ export function createResultScreen({ onRetry, onHome, onRoom, onRanking, onRegis
 
   // ── 랭킹 등록 (FR-6.1) ─────────────────────────────────────────
 
+  /**
+   * `#register-message`는 `role="status"`다. **숨긴 채로 글을 넣으면 낭독되지 않으므로
+   * 먼저 펼치고 넣는다** — 로비의 `say()`와 같은 규칙이다.
+   */
   function setMessage(text, tone) {
-    el.message.textContent = text ?? '';
     el.message.hidden = !text;
+    el.message.textContent = text ?? '';
     el.message.classList.toggle('register__message--error', tone === 'error');
     el.message.classList.toggle('register__message--done', tone === 'done');
   }
 
+  /**
+   * 잠근 **뒤에** 포커스가 살아 있는지 보고 옮긴다.
+   *
+   * 입력칸과 버튼을 `disabled`로 만들면 거기 있던 포커스가 `<body>`로 떨어져 Tab
+   * 자리를 잃는다. 되돌릴 수 없는 조작이라 그다음에 갈 곳이 없으면 안 된다.
+   *
+   * **잠그기 전에 «어디 있을 것»이라고 넘겨짚지 않는다.** 폼 제출은 브라우저가
+   * 포커스를 옮길 수도 있어, 미리 검사하면 맞지 않는다 — 실제로 그래서 한 번
+   * 놓쳤다. 잠근 뒤의 실제 상태만 본다.
+   */
   function lockForm() {
     registered = true;
     el.input.disabled = true;
     el.registerButton.disabled = true;
     el.registerButton.textContent = '등록 완료';
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) el.retryButton.focus();
   }
 
   async function submitNickname(event) {

@@ -567,8 +567,16 @@ export function createWalker(config) {
       if (locked) return false;
 
       if (PICK_KEYS.includes(event.key)) {
-        // 버튼에 포커스가 있으면 그건 버튼이 처리할 입력이다
-        if (document.activeElement?.closest('button')) return false;
+        // **제 키를 스스로 쓰는 것에 포커스가 있으면 그건 그쪽 입력이다.**
+        // 버튼만 비켜 주면 모자란다 — 체크박스는 Space가 곧 조작인데, 여기서
+        // 가로채면 `preventDefault`가 그 기본 동작까지 죽인다. 실제로 그래서
+        // 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없었고(Enter는 폼 제출이라
+        // 우회로도 없다), 그 Space가 대신 발밑의 「만들기」를 눌러 버렸다.
+        //
+        // 무엇이 «제 키를 쓰는 것»인지는 `pickable`이 이미 알고 있다. 화면이 포커스를
+        // 얹어 두는 `<section data-screen>`이나 문제 제목은 여기 걸리지 않아 걷기는 그대로다.
+        const focused = document.activeElement;
+        if (focused && focused !== document.body && focused.closest(pickable)) return false;
         pick();
         return true;
       }

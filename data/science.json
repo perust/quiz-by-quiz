@@ -123,7 +123,7 @@
     "id": "science-013",
     "category": "science",
     "question": "사람의 장기 가운데 면적이 가장 넓은 것은?",
-    "choices": ["심장", "폐", "간", "피부"],
+    "choices": ["심장", "위", "간", "피부"],
     "answerIndex": 3,
     "explanation": "성인 기준 1.5~2㎡로, 몸을 덮어 수분을 지키고 체온을 조절하는 기관입니다.",
     "difficulty": "normal",

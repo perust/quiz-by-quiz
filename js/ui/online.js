@@ -104,11 +104,19 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
     return CATEGORIES.find((category) => category.id === id)?.name ?? ALL_CATEGORY;
   }
 
-  function makeButton(label, variant, run) {
+  /**
+   * @param {string} [subject] 무엇에 대한 버튼인지. 스크린리더에만 덧붙는다.
+   *
+   * **목록에서는 글자만으로 부족하다.** 방이 셋이면 Tab으로 「참가, 참가, 참가」만
+   * 들리고, 「내가 있는 방」과 공개방이 위아래로 놓이면 어느 방을 누르는지 알 수 없다.
+   * 눈으로 보는 사람에게는 버튼 글자가 그대로라 잃는 것이 없다.
+   */
+  function makeButton(label, variant, run, subject) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `button ${variant} button--small`;
     button.textContent = label;
+    if (subject) button.setAttribute('aria-label', `${subject} ${label}`);
     button.addEventListener('click', run);
     return button;
   }
@@ -147,12 +155,12 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
       // 홈에 다녀오면 대기실을 떠나 있을 뿐 방에서 나간 것은 아니다.
       // 나갈 길도 함께 준다 — 없으면 빈 방이 목록에 쌓인다
       actions.append(
-        makeButton('들어가기', 'button--primary', () => onEnterRoom(room.code)),
-        makeButton('나가기', 'button--ghost', () => leave(room.code))
+        makeButton('들어가기', 'button--primary', () => onEnterRoom(room.code), room.name),
+        makeButton('나가기', 'button--ghost', () => leave(room.code), room.name)
       );
     } else {
       const join = makeButton(full ? '가득 참' : '참가', 'button--primary',
-        () => joinByCode(room.code, ''));
+        () => joinByCode(room.code, ''), room.name);
       join.disabled = full;
       actions.append(join);
     }

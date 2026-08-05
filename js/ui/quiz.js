@@ -229,6 +229,12 @@ export function createQuizScreen({ onExit, onComplete }) {
     });
 
     el.feedback.classList.add(record.correct ? 'feedback--correct' : 'feedback--wrong');
+
+    // **먼저 펼치고 넣는다.** 숨긴 채로 라이브 리전을 채우면 낭독되지 않는다.
+    // 같은 태스크 안에서 내용까지 채우므로 이전 문항의 피드백이 비치지는 않는다.
+    // 자동 전환 없이 「다음 문제」를 눌러야 넘어간다 (FR-4.4)
+    el.feedback.hidden = false;
+
     if (record.correct) {
       el.verdict.textContent = '정답입니다';
       playCorrect();
@@ -243,9 +249,6 @@ export function createQuizScreen({ onExit, onComplete }) {
 
     // 버튼이 아니라 글자 span만 바꾼다. 버튼째 갈아치우면 Enter 표시가 지워진다
     el.nextLabel.textContent = session.hasNext() ? '다음 문제' : '결과 보기';
-
-    // 자동 전환 없이 "다음 문제" 버튼을 눌러야 넘어간다 (FR-4.4)
-    el.feedback.hidden = false;
 
     // 다이얼로그가 열려 있으면 포커스를 가져오지 않는다.
     // 시간 초과는 다이얼로그 뒤에서도 일어나는데, 그때 포커스를 옮기면

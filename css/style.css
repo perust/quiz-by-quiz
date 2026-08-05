@@ -6,14 +6,18 @@
   --surface: #ffffff;
   --border: #e2e5ea;
   --text: #1c1f24;
-  --text-muted: #6b7280;
+  /* 상태 색은 WCAG AA(4.5:1)를 제 배경과 흰 배경 양쪽에서 넘긴다.
+     이 색들은 12~13px 이나 상속 크기로만 쓰여 «큰 글자» 예외에 드는 곳이 없다.
+     기호(✓ ✗)와 글자가 뜻을 지고 색은 거들 뿐이지만(FR-4.1, FR-4.2),
+     거드는 것도 보여야 거든다. 밝기만 낮추고 색상·채도는 그대로 두었다. */
+  --text-muted: #69707e;
   --accent: #3b5bdb;
   --accent-soft: #edf0fd;
-  --correct: #2f9e44;
+  --correct: #268037;
   --correct-soft: #ebfbee;
-  --wrong: #e03131;
+  --wrong: #db2121;
   --wrong-soft: #fff5f5;
-  --warning: #e8590c;
+  --warning: #bf490a;
   --radius: 14px;
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
@@ -620,15 +624,6 @@ body.is-booted .app-bar {
   font-size: 14px;
   color: var(--text-muted);
   word-break: keep-all;
-}
-
-.feedback__notice {
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 13px;
 }
 
 .feedback .button {
