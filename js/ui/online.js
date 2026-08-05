@@ -19,10 +19,11 @@ const ALL_CATEGORY = '전체 도전';
  * @param {{
  *   roomStore: object,                방 저장소 어댑터
  *   onHome: () => void,
+ *   onEnterRoom: (code: string) => void,   방에 들어가면 대기실로 넘긴다
  *   getPlayer: () => {nickname: string, characterId: string}
  * }} deps
  */
-export function createOnlineScreen({ roomStore, onHome, getPlayer }) {
+export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }) {
   const el = {
     screen: document.querySelector('[data-screen="online"]'),
     note: document.getElementById('online-note'),
@@ -187,9 +188,8 @@ export function createOnlineScreen({ roomStore, onHome, getPlayer }) {
       return;
     }
 
-    say(el.joinMessage, `«${result.room.name}» 방에 들어왔어요. 코드는 ${result.room.code} 입니다.`);
     el.joinForm.reset();
-    await renderList();
+    onEnterRoom(result.room.code);
   }
 
   el.joinForm.addEventListener('submit', async (event) => {
@@ -223,13 +223,10 @@ export function createOnlineScreen({ roomStore, onHome, getPlayer }) {
       return;
     }
 
-    const how = result.room.isPublic
-      ? '공개방으로 열렸어요.'
-      : '비공개 방이에요. 코드와 비밀번호를 함께 알려주세요.';
-    say(el.createMessage, `방을 만들었어요. 코드는 ${result.room.code} — ${how}`);
     el.createForm.reset();
     el.createPasswordRow.hidden = true;
-    await renderList();
+    // 만들자마자 대기실로 들어간다. 목록으로 돌아가 다시 찾을 이유가 없다
+    onEnterRoom(result.room.code);
   });
 
   el.refresh.addEventListener('click', () => renderList());

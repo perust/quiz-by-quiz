@@ -12,15 +12,21 @@ import { paintCharacter } from './sprite.js';
  * @param {{
  *   screen: HTMLElement,          이 화면이 보일 때만 키를 받는다
  *   character: HTMLElement,       움직일 요소
- *   startAt?: () => HTMLElement|null  곁에서 시작할 버튼. 없으면 화면 한가운데
+ *   startAt?: () => HTMLElement|null  곁에서 시작할 버튼
+ *   startPoint?: () => {x, y}|null    자리를 직접 정할 때 (대기실 바닥 등)
+ *
+ *   둘 다 없으면 화면 한가운데에서 시작한다.
  * }} config
  */
-export function createScreenWalker({ screen, character, startAt }) {
+export function createScreenWalker({ screen, character, startAt, startPoint }) {
   const walker = createWalker({
     stage: screen,
     character,
     roam: true,
     startAt: () => {
+      const point = startPoint?.();
+      if (point) return point;
+
       const box = startAt?.()?.getBoundingClientRect();
       if (!box || box.width === 0) return null;
       // 버튼 «위»가 아니라 바로 아래에 선다. 위에 세우면 글자를 가린다 —
