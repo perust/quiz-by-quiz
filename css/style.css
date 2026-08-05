@@ -1683,6 +1683,12 @@ body.is-booted .app-bar {
   transition: border-color 0.15s;
 }
 
+/* 닉네임 카드는 메뉴 줄 위에 홀로 놓여 폭을 다 쓴다 */
+.menu-card--wide {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .menu-card:hover:not(:disabled) {
   border-color: var(--accent);
 }
@@ -2330,4 +2336,10 @@ body.is-booted .app-bar {
   .waiting-settings {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* 닉네임 다이얼로그. 입력칸과 버튼 줄 사이를 띄운다 */
+#nickname-form .room-form__input {
+  width: 100%;
+  margin-bottom: 8px;
 }

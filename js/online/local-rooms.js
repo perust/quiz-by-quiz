@@ -9,7 +9,9 @@
 // 화면(`ui/`)에서 직접 부르면 설계 위반이다.
 
 import { ROOM_CAPACITY_CHOICES } from '../constants.js';
-import { checkPassword, checkRoomName, makeCode, normalizeCode } from './rules.js';
+import {
+  checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
+} from './rules.js';
 
 const KEY = 'quiz.rooms';
 const ME_KEY = 'quiz.playerId';
@@ -219,7 +221,9 @@ export const localRooms = {
 
     room.players.push({
       id: meId,
-      nickname: player?.nickname || '손님',
+      // 방 안에서 이름이 겹치면 뒤에 숫자를 붙인다. 같은 이름이 둘이면
+      // 누가 누구인지, 말풍선이 누구 것인지 알 수 없다
+      nickname: uniqueNickname(player?.nickname, room.players.map((p) => p.nickname)),
       characterId: player?.characterId,
       seenAt: Date.now(),
     });

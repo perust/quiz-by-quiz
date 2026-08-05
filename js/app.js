@@ -3,6 +3,7 @@
 
 import {
   CATEGORIES,
+  DEFAULT_NICKNAME,
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
   RECENT_QUESTION_MEMORY,
@@ -119,7 +120,7 @@ async function main() {
   let recentQuestionIds = await preferences.getRecentQuestionIds();
 
   // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
-  let savedNickname = await preferences.getNickname();
+  let savedNickname = (await preferences.getNickname()) || DEFAULT_NICKNAME;
 
   /** 다시 하기가 되풀이할 판 종류 */
   let lastRound = null;
@@ -144,6 +145,10 @@ async function main() {
     onOpenRanking: () => openRanking(),
     onOpenCharacters: () => openCharacters(),
     onOpenOnline: () => openOnline(),
+    onNickname: (value) => {
+      savedNickname = value;
+      preferences.setNickname(value);
+    },
   });
 
   // 온라인 로비. 방을 어디에 두는지는 어댑터가 정하고 화면은 모른다
@@ -151,7 +156,7 @@ async function main() {
     roomStore,
     onHome: goHome,
     onEnterRoom: (code) => openWaitingRoom(code),
-    getPlayer: () => ({ nickname: savedNickname || '손님', characterId }),
+    getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
 
   // 대기실. 방 설정으로 한 판을 시작한다 — 서버가 없어 지금은 혼자 푸는 판이다
@@ -165,7 +170,7 @@ async function main() {
       gameModeToggle.set(gameMode);
       startRound(categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null });
     },
-    getPlayer: () => ({ nickname: savedNickname || '손님', characterId }),
+    getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
 
   const charactersScreen = createCharactersScreen({
@@ -253,6 +258,7 @@ async function main() {
       allCount: allModeCount(),
       questionsPerRound: QUESTIONS_PER_ROUND,
       characterId,
+      nickname: savedNickname,
     });
     showScreen('home');
   }

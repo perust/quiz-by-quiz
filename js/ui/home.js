@@ -5,7 +5,9 @@
 // 걷기는 «또 하나의 길»이고, 게임 모드 조작을 미리 익히는 자리이기도 하다.
 // 그래서 게임 모드가 꺼져 있어도 홈에서는 늘 걸어 다닌다.
 
+import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { createWalker } from './walker.js';
+import { trapFocus } from './quiz.js';
 import { paintCharacter, createBody } from './sprite.js';
 
 /**
@@ -14,11 +16,12 @@ import { paintCharacter, createBody } from './sprite.js';
  *   onStartAll: () => void,
  *   onOpenRanking: () => void,
  *   onOpenCharacters: () => void,
- *   onOpenOnline: () => void
+ *   onOpenOnline: () => void,
+ *   onNickname: (nickname: string) => void   닉네임을 바꿨을 때
  * }} callbacks
  */
 export function createHomeScreen({
-  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline,
+  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onNickname,
 }) {
   const el = {
     stage: document.getElementById('home-stage'),
@@ -28,6 +31,13 @@ export function createHomeScreen({
     openRanking: document.getElementById('open-ranking'),
     openCharacters: document.getElementById('open-characters'),
     openOnline: document.getElementById('open-online'),
+    nicknameCard: document.getElementById('open-nickname'),
+    nicknameValue: document.getElementById('nickname-value'),
+    dialog: document.getElementById('nickname-dialog'),
+    dialogForm: document.getElementById('nickname-form'),
+    dialogInput: document.getElementById('nickname-edit'),
+    dialogMessage: document.getElementById('nickname-message'),
+    dialogCancel: document.getElementById('nickname-cancel'),
     characterFigure: document.getElementById('my-character-figure'),
     walker: document.getElementById('home-character'),
     note: document.getElementById('home-note'),
@@ -57,6 +67,56 @@ export function createHomeScreen({
   el.openRanking.addEventListener('click', () => onOpenRanking());
   el.openCharacters.addEventListener('click', () => onOpenCharacters());
   el.openOnline.addEventListener('click', () => onOpenOnline());
+
+  // ── 닉네임 바꾸기 ──────────────────────────────────────────────
+  // window.prompt 대신 페이지 안 다이얼로그를 쓴다. 열려 있는 동안에는
+  // 워커가 키를 받지 않으므로(isBlocked) 캐릭터가 뒤에서 걸어 다니지 않는다.
+
+  /** 다이얼로그를 연 자리. 닫을 때 포커스를 되돌린다 */
+  let nickname = '';
+
+  function closeNicknameDialog() {
+    if (el.dialog.hidden) return;
+    el.dialog.hidden = true;
+    el.dialogMessage.hidden = true;
+    el.nicknameCard.focus();
+  }
+
+  el.nicknameCard.addEventListener('click', () => {
+    el.dialogInput.value = nickname;
+    el.dialogMessage.hidden = true;
+    el.dialog.hidden = false;
+    el.dialogInput.focus();
+    el.dialogInput.select();
+  });
+
+  el.dialogCancel.addEventListener('click', closeNicknameDialog);
+
+  el.dialogForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const wanted = el.dialogInput.value.trim();
+    if (wanted.length < NICKNAME_MIN_LENGTH || wanted.length > NICKNAME_MAX_LENGTH) {
+      el.dialogMessage.hidden = false;
+      el.dialogMessage.textContent =
+        `닉네임은 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 적어주세요.`;
+      el.dialogInput.focus();
+      return;
+    }
+    nickname = wanted;
+    el.nicknameValue.textContent = nickname;
+    closeNicknameDialog();
+    onNickname(nickname);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (el.dialog.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeNicknameDialog();
+    } else if (event.key === 'Tab') {
+      trapFocus(el.dialog, event);
+    }
+  });
 
   document.addEventListener('keydown', (event) => {
     const screen = el.stage.closest('[data-screen]');
@@ -125,7 +185,12 @@ export function createHomeScreen({
      *   characterId: string
      * }} view bestScores는 카테고리 id와 'all' 키를 갖는다
      */
-    render({ categories, banks, bestScores, allCount, questionsPerRound, characterId }) {
+    render({
+      categories, banks, bestScores, allCount, questionsPerRound, characterId,
+      nickname: currentNickname,
+    }) {
+      nickname = currentNickname;
+      el.nicknameValue.textContent = nickname;
       renderCategories({
         categories, banks, bestScores, questionsPerRound, onSelect: onSelectCategory,
       });
