@@ -38,7 +38,14 @@ const ALL_CATEGORY: RoundCategory = { id: null, name: '전체 도전' };
 
 export interface WaitingRoomDeps {
   roomStore: RoomStore;
-  onLeave: () => void;
+  /**
+   * 대기실을 떠난다.
+   *
+   * `reason` 이 있으면 **내가 나간 것이 아니라 들어갈 수 없어서 되돌아간 것**이다.
+   * 로비가 그 말을 띄운다 — 조용히 되돌리면 「들어가기를 눌렀는데 아무 일도
+   * 없다」로 보인다.
+   */
+  onLeave: (reason?: string) => void;
   /** 방 설정으로 여는 한 판. «시작됐다»는 이벤트가 이 값을 싣고 온다 */
   onStart: (setup: MatchSetup) => void;
   getPlayer: () => PlayerInfo;
@@ -279,7 +286,10 @@ export function createWaitingRoom(
     async show(code, characterId) {
       room = await roomStore.getRoom(code);
       if (!room) {
-        onLeave();
+        // 목록을 보는 사이 사라졌을 수 있다. 마지막 사람이 나가면 방이 지워진다.
+        // **왜 되돌아왔는지 말해 준다** — 공개방의 「참가」는 이미 그렇게 하는데
+        // 여기만 조용하면 같은 일에 두 가지 얼굴이 된다
+        onLeave('그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
         return;
       }
 

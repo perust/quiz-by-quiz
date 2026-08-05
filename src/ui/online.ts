@@ -29,7 +29,8 @@ export interface OnlineScreenDeps {
 }
 
 export interface OnlineScreen {
-  show(characterId: string): Promise<void>;
+  /** notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다 */
+  show(characterId: string, notice?: string): Promise<void>;
   hide(): void;
 }
 
@@ -39,6 +40,8 @@ export function createOnlineScreen(
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online"]'),
     note: need('online-note'),
+    // 로비 전체에 걸리는 알림. 대기실에서 되돌아온 이유가 여기 뜬다
+    message: need('online-message'),
     home: need<HTMLButtonElement>('online-home'),
     list: need('room-list'),
     empty: need('room-empty'),
@@ -314,9 +317,10 @@ export function createOnlineScreen(
   fillOptions();
 
   return {
-    async show(characterId) {
+    async show(characterId, notice) {
       say(el.joinMessage, '');
       say(el.createMessage, '');
+      say(el.message, notice ?? '', 'bad');
       await renderList();
       walker.show(characterId);
     },
