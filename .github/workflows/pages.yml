@@ -1,7 +1,11 @@
 # GitHub Pages 배포
 #
-# 빌드 단계가 없다. 정적 파일을 그대로 올린다.
+# TypeScript 를 컴파일한 뒤, **올릴 것만 골라 담아** 배포한다.
 # 저장소 설정에서 Settings → Pages → Source 를 "GitHub Actions"로 바꿔야 동작한다.
+#
+# 한때 저장소 루트를 통째로 올렸다(SOURCE_DIR: .). 소스가 곧 배포물이라 단순했지만,
+# 루트에 둔 것이 전부 공개된다는 뜻이라 teacher/ 같은 폴더를 .gitignore 로 막아야 했다.
+# 지금은 **담은 것만 나간다** — src/ 도 node_modules/ 도 저절로 빠진다.
 
 name: Deploy to GitHub Pages
 
@@ -9,11 +13,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-
-# 이 프로젝트가 저장소 루트가 아니라면 그 폴더 이름으로 고친다.
-# 예: 하위 폴더가 quiz-vanilla 라면 SOURCE_DIR: quiz-vanilla
-env:
-  SOURCE_DIR: .
 
 permissions:
   contents: read
@@ -34,11 +33,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입 검사와 컴파일
+        # tsc 가 실패하면 여기서 멈춘다. 타입이 깨진 채로 배포되지 않는다.
+        run: npm run build
+
+      - name: 배포할 것만 담기
+        # src/ 는 소스맵이 가리키므로 함께 올린다 — 개발자 도구에서 .ts 원본이 보인다.
+        # 그 밖의 것(node_modules, teacher, docs, tools, .claude)은 담지 않는다.
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          cp -r css data js src dist/
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ env.SOURCE_DIR }}
+          path: dist
 
       - id: deployment
         uses: actions/deploy-pages@v4
