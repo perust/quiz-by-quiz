@@ -196,6 +196,10 @@ async function main(): Promise<void> {
       openOnline(reason);
     },
     onStart: ({ categoryId, gameMode }) => {
+      // **나간 방의 판은 열지 않는다.** 「게임 시작」은 저장소에 알리고 되돌아온
+      // 이벤트를 보고 움직이므로, 그 사이에 대기실을 떠났으면 여기 늦게 도착한다.
+      // 그대로 열면 로비에 있는 사람 앞에서 판이 시작된다.
+      if (!activeRoomCode) return;
       gameModeToggle.set(gameMode);
       startRound(categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null });
     },
@@ -305,6 +309,7 @@ async function main(): Promise<void> {
   async function goHome(): Promise<void> {
     // 홈으로 가도 방에서 나가지는 않는다. 로비에서 코드로 다시 들어갈 수 있다
     restoreMyGameMode();
+    quizScreen.hide();
     charactersScreen.hide();
     onlineScreen.hide();
     waitingRoom.hide();
@@ -433,6 +438,7 @@ async function main(): Promise<void> {
   // ── 랭킹 ───────────────────────────────────────────────────────
 
   async function openRanking(target: RankingTarget | null = null): Promise<void> {
+    quizScreen.hide();
     homeScreen.hide();
     await rankingScreen.show({ target, highlightId: registeredId, characterId });
     showScreen('ranking');
@@ -441,6 +447,7 @@ async function main(): Promise<void> {
   // ── 온라인 ─────────────────────────────────────────────────────
 
   async function openOnline(notice?: string): Promise<void> {
+    quizScreen.hide();
     homeScreen.hide();
     waitingRoom.hide();
     await onlineScreen.show(characterId, notice);
@@ -449,6 +456,7 @@ async function main(): Promise<void> {
 
   async function openWaitingRoom(code: string): Promise<void> {
     activeRoomCode = code;
+    quizScreen.hide();
     // 방 판이 끝나 돌아온 길일 수 있다. 방 설정은 대기실의 「모드」 버튼이 보여주므로
     // 앱 바까지 그 값을 들고 있을 이유가 없다
     restoreMyGameMode();
@@ -460,6 +468,7 @@ async function main(): Promise<void> {
   // ── 내 캐릭터 ──────────────────────────────────────────────────
 
   function openCharacters(): void {
+    quizScreen.hide();
     homeScreen.hide();
     showScreen('characters');
     charactersScreen.show(characterId);

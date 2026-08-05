@@ -41,6 +41,18 @@ export interface QuizScreen {
    * 무대는 보기 버튼을 대신 눌러줄 뿐이라 게임 상태를 갖지 않는다.
    */
   setGameMode(value: boolean): void;
+
+  /**
+   * 판을 접고 화면을 정리한다.
+   *
+   * **다른 화면으로 옮길 때 반드시 부른다.** 퀴즈는 제 안에서 나가는 길
+   * (나가기·완주)만 정리했는데, 그 길을 거치지 않고 화면이 바뀌면 **세션과
+   * 타이머가 살아남는다.** 그러면 로비에서 방 이름을 적는 중에 「시간 초과입니다」가
+   * 뜨고, 피드백 시트는 `<main>` 밖이라 어느 화면에서든 보인다.
+   *
+   * 이미 접혀 있으면 아무 일도 하지 않으므로 어디서 불러도 안전하다.
+   */
+  hide(): void;
 }
 
 export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizScreen {
@@ -410,6 +422,18 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
     setCharacter(id) {
       arena.setCharacter(id);
+    },
+
+    hide() {
+      if (!session && el.feedback.hidden && el.dialog.hidden) return;
+      session = null;
+      stopTicking();
+      hideFeedback();
+      // 닫기만 한다. `closeExitDialog` 는 열기 전 자리로 포커스를 돌려주는데,
+      // 화면을 떠나는 중이라 그 자리는 이미 숨겨져 있다
+      el.dialog.hidden = true;
+      dialogOpener = null;
+      arena.closeDialog();
     },
 
     setGameMode(value) {
