@@ -447,6 +447,14 @@ export function createWalker(config: WalkerConfig): Walker {
     if (stageSize.width === 0) return; // 아직 크기를 얻지 못했다. placed는 false로 남는다
 
     const start = startAt?.();
+    // **`startAt` 이 null 을 주면 «아직 잴 수 없다»는 뜻이다.** 화면이 보이기 전에는
+    // `getBoundingClientRect` 가 0을 준다. 그때 한가운데로 세워 버리면 엉뚱한 칸에
+    // 불이 들어오고, `placed` 가 true 라 다시 세우지도 않는다.
+    //
+    // `stageSize` 는 화면 크기(`window.innerWidth`)라 0이 될 일이 없어 위의 검사로는
+    // 이 경우가 걸리지 않는다. `placed` 를 false 로 두면 루프와 `relayout` 이 다시 세운다.
+    if (startAt && !start) return;
+
     pos.x = start ? start.x : stageSize.width / 2;
     pos.y = start ? start.y : stageSize.height / 2;
     clampPosition();
@@ -584,8 +592,14 @@ export function createWalker(config: WalkerConfig): Walker {
       showControls(true);
       locked = false;
       placed = false;
-      // 배치가 잡힌 다음 프레임에 좌표를 잰다
+      // 배치가 잡힌 다음 프레임에 좌표를 잰다.
+      //
+      // **그 사이에 다른 워커가 켜져 이쪽이 꺼졌을 수 있다.** 여기서 예약한 프레임은
+      // `frameId` 에 담기지 않아 `stop()` 이 취소하지 못하므로, 도는 순간에 다시 본다.
+      // 확인하지 않으면 **꺼진 워커가 `place()` → `render()` 로 지금 화면의 요소에
+      // 발자국(`is-standing`)을 남기고**, 그 워커는 꺼져 있으니 아무도 떼지 않는다.
       requestAnimationFrame(() => {
+        if (!enabled) return;
         place();
         start();
       });
