@@ -196,8 +196,24 @@ async function main() {
     on: { icon: '🕹️', label: '게임 모드' },
     off: { icon: '📋', label: '보통 모드' },
     apply: (enabled) => quizScreen.setGameMode(enabled),
-    onChange: (enabled) => preferences.setSettings({ gameMode: enabled }),
+    onChange: (enabled) => {
+      // 내가 직접 고른 값만 여기 남는다. 방 설정으로 바뀐 것은 저장하지 않으므로
+      // (`set`은 onChange를 부르지 않는다) 이 값이 곧 «되돌아갈 자리»가 된다
+      settings.gameMode = enabled;
+      preferences.setSettings({ gameMode: enabled });
+    },
   });
+
+  /**
+   * 방 설정으로 잠시 바뀐 게임 모드를 내 값으로 되돌린다.
+   *
+   * **방 설정은 그 판의 것이지 내 설정이 아니다.** 되돌리지 않으면 방을 나온 뒤에도
+   * 앱 바가 켜진 채로 남는데, 저장된 값은 그대로라 **새로고침 한 번에 화면이 뒤집힌다.**
+   * 홈에서 카테고리를 고르면 켠 적 없는 게임 모드로 판이 열리기도 한다.
+   */
+  function restoreMyGameMode() {
+    gameModeToggle.set(settings.gameMode);
+  }
   gameModeToggle.set(settings.gameMode);
   quizScreen.setCharacter(characterId);
 
@@ -248,6 +264,7 @@ async function main() {
 
   async function goHome() {
     // 홈으로 가도 방에서 나가지는 않는다. 로비에서 코드로 다시 들어갈 수 있다
+    restoreMyGameMode();
     charactersScreen.hide();
     onlineScreen.hide();
     waitingRoom.hide();
@@ -395,6 +412,9 @@ async function main() {
 
   async function openWaitingRoom(code) {
     activeRoomCode = code;
+    // 방 판이 끝나 돌아온 길일 수 있다. 방 설정은 대기실의 「모드」 버튼이 보여주므로
+    // 앱 바까지 그 값을 들고 있을 이유가 없다
+    restoreMyGameMode();
     onlineScreen.hide();
     await waitingRoom.show(code, characterId);
     showScreen('waiting');
