@@ -14,7 +14,7 @@ import { createSession, type QuizSession } from './core/session.js';
 import { summarizeRound } from './core/scoring.js';
 import { preferences, rankingStore } from './storage/adapter.js';
 import { setEnabled as setSoundEnabled } from './audio.js';
-import { showScreen } from './ui/screens.js';
+import { showScreen, type ScreenName } from './ui/screens.js';
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
@@ -273,6 +273,37 @@ async function main(): Promise<void> {
     clearRankings: () => rankingStore.clearAll(),
   });
 
+  /**
+   * 화면을 옮긴다. **가는 곳만 남기고 나머지는 모두 접는다.**
+   *
+   * 전에는 옮기는 함수마다 손으로 `hide()` 를 나열했다. 그러면 **하나씩 빠뜨린다** —
+   * 실제로 퀴즈가 빠져 세션과 타이머가 살아남았고(로비에서 방 이름을 적는 중에
+   * 「시간 초과입니다」가 떴다), 결과·랭킹은 `hide` 자체가 없어 손가락 조작부가
+   * 다음 화면까지 따라갔다.
+   *
+   * 화면이 늘어도 아래 표에 한 줄만 더하면 된다. **접는 것을 잊을 자리가 없다.**
+   * 각 `hide()` 는 이미 접혀 있으면 아무 일도 하지 않으므로 몇 번 불러도 안전하다.
+   *
+   * **내용을 그린 뒤에 부른다.** 먼저 부르면 아직 비어 있는 화면이 한 번 스친다 —
+   * 랭킹이나 대기실처럼 저장소를 기다리는 화면에서 눈에 띈다.
+   */
+  const closers: Record<ScreenName, () => void> = {
+    home: () => homeScreen.hide(),
+    quiz: () => quizScreen.hide(),
+    result: () => resultScreen.hide(),
+    ranking: () => rankingScreen.hide(),
+    online: () => onlineScreen.hide(),
+    waiting: () => waitingRoom.hide(),
+    characters: () => charactersScreen.hide(),
+  };
+
+  function goTo(name: ScreenName): void {
+    for (const [key, close] of Object.entries(closers)) {
+      if (key !== name) close();
+    }
+    showScreen(name);
+  }
+
   // ── 홈 ─────────────────────────────────────────────────────────
 
   /** 전체 도전에 실제로 나갈 문항 수. 은행이 적으면 있는 만큼만 나간다 */
@@ -309,10 +340,6 @@ async function main(): Promise<void> {
   async function goHome(): Promise<void> {
     // 홈으로 가도 방에서 나가지는 않는다. 로비에서 코드로 다시 들어갈 수 있다
     restoreMyGameMode();
-    quizScreen.hide();
-    charactersScreen.hide();
-    onlineScreen.hide();
-    waitingRoom.hide();
     homeScreen.render({
       categories: CATEGORIES,
       banks,
@@ -322,7 +349,7 @@ async function main(): Promise<void> {
       characterId,
       nickname: savedNickname,
     });
-    showScreen('home');
+    goTo('home');
   }
 
   // ── 퀴즈 ───────────────────────────────────────────────────────
@@ -363,9 +390,7 @@ async function main(): Promise<void> {
       categoryId: round.categoryId,
     });
 
-    homeScreen.hide();
-    waitingRoom.hide();
-    showScreen('quiz');
+    goTo('quiz');
     quizScreen.start(session, { categoryLabel: labelFor(round) });
   }
 
@@ -403,7 +428,7 @@ async function main(): Promise<void> {
       characterId,
       inRoom: Boolean(activeRoomCode),
     });
-    showScreen('result');
+    goTo('result');
   }
 
   /**
@@ -438,40 +463,34 @@ async function main(): Promise<void> {
   // ── 랭킹 ───────────────────────────────────────────────────────
 
   async function openRanking(target: RankingTarget | null = null): Promise<void> {
-    quizScreen.hide();
-    homeScreen.hide();
     await rankingScreen.show({ target, highlightId: registeredId, characterId });
-    showScreen('ranking');
+    goTo('ranking');
   }
 
   // ── 온라인 ─────────────────────────────────────────────────────
 
   async function openOnline(notice?: string): Promise<void> {
-    quizScreen.hide();
-    homeScreen.hide();
-    waitingRoom.hide();
     await onlineScreen.show(characterId, notice);
-    showScreen('online');
+    goTo('online');
   }
 
   async function openWaitingRoom(code: string): Promise<void> {
     activeRoomCode = code;
-    quizScreen.hide();
     // 방 판이 끝나 돌아온 길일 수 있다. 방 설정은 대기실의 「모드」 버튼이 보여주므로
     // 앱 바까지 그 값을 들고 있을 이유가 없다
     restoreMyGameMode();
-    onlineScreen.hide();
     await waitingRoom.show(code, characterId);
-    showScreen('waiting');
+    // 방이 사라졌으면 `show` 가 `onLeave` 로 로비에 되돌려 놓고 activeRoomCode 를
+    // 비운다. 그때 대기실로 옮기면 방금 되돌아온 것을 무르는 셈이다
+    if (activeRoomCode !== code) return;
+    goTo('waiting');
   }
 
   // ── 내 캐릭터 ──────────────────────────────────────────────────
 
   function openCharacters(): void {
-    quizScreen.hide();
-    homeScreen.hide();
-    showScreen('characters');
     charactersScreen.show(characterId);
+    goTo('characters');
   }
 
   // ── 시작 ───────────────────────────────────────────────────────

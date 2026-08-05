@@ -41,6 +41,9 @@ export interface ResultView {
 export interface ResultScreen {
   /** 결과를 화면에 올린다 */
   show(view: ResultView): void;
+
+  /** 화면을 떠난다. 캐릭터와 손가락 조작부를 함께 거둔다 */
+  hide(): void;
 }
 
 /** 메시지의 결. null이면 아무 색도 입히지 않는다 */
@@ -266,6 +269,10 @@ export function createResultScreen(
   el.roomButton.addEventListener('click', () => onRoom());
 
   return {
+    hide() {
+      walker.hide();
+    },
+
     show({ summary, modeLabel, bestScore, nickname, characterId, inRoom }) {
       walker.show(characterId);
       // 방에서 시작한 판이면 돌아갈 길을 준다. 홈으로 가는 길도 그대로 둔다 —
