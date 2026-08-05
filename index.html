@@ -254,6 +254,11 @@
         <button type="button" class="button button--ghost" id="result-ranking">랭킹 보기</button>
         <button type="button" class="button button--ghost" id="result-home">홈으로</button>
       </div>
+
+      <!-- 이 화면도 걸어 다닐 수 있다. 화면에 붙어(fixed) 있어 자리를 차지하지 않는다 -->
+      <div class="walker walker--home" id="result-character" aria-hidden="true">
+        <span class="walker__shadow"></span>
+      </div>
     </section>
 
     <!-- ─────────── 랭킹 (FR-6.2 ~ FR-6.12) ─────────── -->
@@ -275,6 +280,11 @@
 
       <div class="ranking-footer">
         <button type="button" class="button button--ghost" id="ranking-clear">전체 기록 초기화</button>
+      </div>
+
+      <!-- 이 화면도 걸어 다닐 수 있다. 화면에 붙어(fixed) 있어 자리를 차지하지 않는다 -->
+      <div class="walker walker--home" id="ranking-character" aria-hidden="true">
+        <span class="walker__shadow"></span>
       </div>
     </section>
 

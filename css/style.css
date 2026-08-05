@@ -1261,13 +1261,15 @@ body.is-booted .app-bar {
   line-height: 1;
 }
 
-/* 캐릭터가 서 있는 칸. 불이 들어온 것처럼 보이게 한다 */
-.arena-tile--lit {
+/* 캐릭터가 서 있는 칸. 불이 들어온 것처럼 보이게 한다.
+   클래스 이름은 워커가 붙이는 is-standing 하나로 통일했다 —
+   홈이든 무대든 «발밑»을 나타내는 것은 같은 개념이다. */
+.arena-tile.is-standing {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(59, 91, 219, 0.45);
 }
 
-.arena-tile--lit .arena-tile__number {
+.arena-tile.is-standing .arena-tile__number {
   color: var(--accent);
 }
 
@@ -1712,6 +1714,12 @@ body.is-booted .app-bar {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 캐릭터가 보기 버튼 위에 섰을 때. 바닥 칸과 같은 뜻이라 같은 결로 칠한다 */
+.choice.is-standing:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* 캐릭터가 올라선 칸. 눌러서 고를 수 있다는 표시다 */

@@ -3,6 +3,7 @@
 // 이 파일은 값을 그리고 닉네임 입력을 검사하는 일만 한다.
 
 import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
+import { createScreenWalker } from './screen-walker.js';
 import { formatDuration, formatPercent } from './format.js';
 
 /**
@@ -36,6 +37,16 @@ export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
     rankingButton: document.getElementById('result-ranking'),
     homeButton: document.getElementById('result-home'),
   };
+
+  // 걸어 다니며 버튼을 고를 수 있다. 닉네임 칸에 커서가 있으면 방향키는 그쪽 것이다.
+  //
+  // 처음 설 자리를 지정하지 않아 화면 한가운데에서 시작한다. 결과 화면은 세로로 길어
+  // 버튼이 접힌 자리 밖에 있는데, 거기를 시작점으로 잡으면 점수와 해설을 지나쳐
+  // 아래로 끌려 내려간다 — 결과는 위에서부터 읽어야 한다.
+  const walker = createScreenWalker({
+    screen: document.querySelector('[data-screen="result"]'),
+    character: document.getElementById('result-character'),
+  });
 
   /** 한 판에 한 번만 등록할 수 있다 */
   let registered = false;
@@ -208,7 +219,8 @@ export function createResultScreen({ onRetry, onHome, onRanking, onRegister }) {
      *   nickname: string
      * }} view bestScore는 이번 기록을 저장하기 전의 최고 점수다
      */
-    show({ summary, modeLabel, bestScore, nickname }) {
+    show({ summary, modeLabel, bestScore, nickname, characterId }) {
+      walker.show(characterId);
       registered = false;
       el.input.disabled = false;
       el.registerButton.disabled = false;
