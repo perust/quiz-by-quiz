@@ -57,6 +57,28 @@ export function checkPassword(password) {
   return { ok: true, value };
 }
 
+/**
+ * 방 안에서 겹치지 않는 이름을 만든다. 겹치면 뒤에 1부터 숫자를 붙인다.
+ *
+ * 이름이 같으면 누가 누구인지 알 수 없고, 말풍선이 떠도 누가 한 말인지 모른다.
+ * **거절하지 않고 조용히 비켜 준다** — 방에 들어가려는 사람에게 이름을 고쳐 오라고
+ * 돌려보낼 일이 아니다.
+ *
+ * @param {string} wanted 쓰고 싶은 이름
+ * @param {string[]} taken 이미 방에 있는 이름들
+ */
+export function uniqueNickname(wanted, taken) {
+  const base = String(wanted ?? '').trim() || '손님';
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+
+  for (let n = 1; n < 1000; n += 1) {
+    const candidate = `${base}${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `${base}${Date.now() % 1000}`;
+}
+
 /** 참가가 거절된 이유를 화면에 띄울 말로 옮긴다 */
 export const JOIN_MESSAGES = {
   'not-found': '그런 코드의 방이 없어요. 코드를 다시 확인해 주세요.',

@@ -55,6 +55,12 @@ export const ROOM_PASSWORD_MAX_LENGTH = 12;
 /** 랭킹 하나에 보관하고 표시할 상위 기록 수 (FR-6.4) */
 export const RANKING_TOP_N = 10;
 
+/**
+ * 처음 쓰는 닉네임. 비워 두면 결과 화면에서 매번 새로 지어야 하고,
+ * 온라인 방에서는 이름 없는 사람이 된다.
+ */
+export const DEFAULT_NICKNAME = '퀴즈왕';
+
 /** 닉네임 길이 제한 (FR-6.1) */
 export const NICKNAME_MIN_LENGTH = 2;
 export const NICKNAME_MAX_LENGTH = 10;

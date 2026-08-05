@@ -61,6 +61,15 @@
       <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
            버튼은 그대로 눌러도 되고, 걷기는 게임 모드 조작을 미리 익히는 길이다. -->
       <div class="home-stage" id="home-stage">
+        <!-- 랭킹과 온라인 방에서 쓰는 이름. 제일 위에 두어 무엇으로 불리는지 먼저 보인다 -->
+        <button type="button" class="menu-card menu-card--wide" id="open-nickname">
+          <span class="menu-card__figure" aria-hidden="true">🏷️</span>
+          <span class="menu-card__body">
+            <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
+            <span class="menu-card__desc">내 닉네임 · 눌러서 바꾸기</span>
+          </span>
+        </button>
+
         <div class="home-menu">
           <button type="button" class="menu-card" id="open-characters">
             <span class="menu-card__figure" id="my-character-figure" aria-hidden="true"></span>
@@ -462,6 +471,22 @@
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="help-close">닫기</button>
       </div>
+    </div>
+  </div>
+
+  <div class="dialog-backdrop" id="nickname-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="nickname-dialog-title">
+      <h2 class="dialog__title" id="nickname-dialog-title">닉네임 바꾸기</h2>
+      <p class="dialog__body">랭킹과 온라인 방에서 이 이름으로 보입니다.</p>
+      <form id="nickname-form" novalidate>
+        <input class="room-form__input" id="nickname-edit" type="text"
+               maxlength="10" autocomplete="off" placeholder="2~10자">
+        <p class="room-message" id="nickname-message" role="status" hidden></p>
+        <div class="dialog__actions">
+          <button type="button" class="button button--ghost" id="nickname-cancel">취소</button>
+          <button type="submit" class="button button--primary">저장</button>
+        </div>
+      </form>
     </div>
   </div>
 

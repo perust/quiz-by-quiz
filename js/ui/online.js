@@ -81,6 +81,9 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
       option.textContent = `${size}명`;
       el.createCapacity.append(option);
     }
+    // 가장 큰 값으로 연다. 좁게 열어 두면 친구를 더 부르려 할 때 방을 다시
+    // 만들어야 하지만, 넓게 열어 둔 것은 대기실에서 언제든 줄일 수 있다
+    el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
   }
 
   // 비공개일 때만 비밀번호 칸을 연다. 늘 열어 두면 공개방에도 적어야 하나 헷갈린다
