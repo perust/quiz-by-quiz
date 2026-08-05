@@ -31,6 +31,8 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
     list: document.getElementById('room-list'),
     empty: document.getElementById('room-empty'),
     refresh: document.getElementById('room-refresh'),
+    mineBlock: document.getElementById('my-rooms-block'),
+    mineList: document.getElementById('my-room-list'),
     joinForm: document.getElementById('join-form'),
     joinCode: document.getElementById('join-code'),
     joinPassword: document.getElementById('join-password'),
@@ -154,13 +156,32 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
     return item;
   }
 
+  /**
+   * 두 목록을 함께 그린다.
+   *
+   * **들어가 있는 방은 위로 올리고 공개방 목록에서는 뺀다.** 같은 방이 두 번
+   * 나오면 다른 방인가 싶고, «참가»와 «들어가기»가 나란히 놓여 뜻이 흐려진다.
+   *
+   * `myRooms()`가 아니면 **비공개 방으로 돌아갈 길이 없다.** 공개방 목록에는
+   * 나오지 않으므로, 코드를 적어 두지 않은 사람은 제가 만든 방을 다시 찾지 못한다.
+   */
   async function renderList() {
-    const rooms = await roomStore.listRooms();
+    const [mine, rooms] = await Promise.all([roomStore.myRooms(), roomStore.listRooms()]);
+    const joined = new Set(mine.map((room) => room.code));
+
+    el.mineList.replaceChildren();
+    // 하나도 없는 것이 보통이다. 빈 안내를 두지 않고 묶음째 감춘다
+    el.mineBlock.hidden = mine.length === 0;
+    mine.forEach((room) => el.mineList.append(createItem(room)));
+
+    const others = rooms.filter((room) => !joined.has(room.code));
     el.list.replaceChildren();
 
-    if (rooms.length === 0) {
+    if (others.length === 0) {
       // 가상의 방을 심지 않고 빈 상태를 그대로 안내한다 (랭킹과 같은 원칙)
-      el.empty.textContent = '아직 열린 공개방이 없어요. 아래에서 하나 만들어 보세요.';
+      el.empty.textContent = mine.length > 0
+        ? '들어갈 수 있는 다른 공개방이 없어요.'
+        : '아직 열린 공개방이 없어요. 아래에서 하나 만들어 보세요.';
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -168,7 +189,7 @@ export function createOnlineScreen({ roomStore, onHome, onEnterRoom, getPlayer }
 
     el.empty.hidden = true;
     el.list.hidden = false;
-    rooms.forEach((room) => el.list.append(createItem(room)));
+    others.forEach((room) => el.list.append(createItem(room)));
   }
 
   // ── 참가 ───────────────────────────────────────────────────────
