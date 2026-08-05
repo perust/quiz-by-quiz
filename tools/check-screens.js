@@ -17,6 +17,10 @@
 //   ④ 피드백 시트는 <main> 밖에 있어 어느 화면에서든 보인다
 //   ⑤ 다이얼로그를 닫으면 포커스가 그 버튼으로 돌아오는데, 그대로 두면 캐릭터를
 //      옮겨 Enter 를 눌러도 포커스에 남은 버튼이 눌렸다 (#67)
+//   ⑥ **키의 임자 다툼.** 워커·버튼·입력칸이 같은 키를 노린다. 한쪽을 고치면
+//      다른 쪽이 깨지는 일이 되풀이됐다 — 입력칸을 밟게 하자 체크박스 Space 가
+//      죽었고(#58), 포커스를 비켜 주게 하자 걸어가서 고르는 것이 막혔다(#67).
+//      그래서 넷을 한자리에서 함께 본다.
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -223,6 +227,53 @@
     await 눌러('open-online', 700);
     살펴본다('로비', 'online', true);
     잠든퀴즈를깨워본다('로비');
+
+    // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다
+    const 키를보낸다 = (키, 옵션 = {}) => {
+      const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true, ...옵션 });
+      document.dispatchEvent(이벤트);
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
+      return 이벤트.defaultPrevented;
+    };
+
+    // 체크박스에서 Space 는 체크박스 것이다. 워커가 가로채면 preventDefault 가
+    // 기본 동작까지 죽여 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없다
+    const 체크박스 = document.getElementById('create-private');
+    체크박스.focus();
+    const 스페이스를가로챘나 = 키를보낸다(' ');
+    결과.push({
+      자리: '로비', 이름: '체크박스의 Space 를 워커가 가로채지 않는다',
+      통과: !스페이스를가로챘나,
+      무엇: 스페이스를가로챘나 ? '!! 워커가 가로챈다' : '체크박스 것이다',
+    });
+
+    // Tab 으로 버튼에 간 사람의 Enter 는 그 버튼 것이다
+    document.getElementById('online-home').focus();
+    결과.push({
+      자리: '로비', 이름: 'Tab 으로 간 버튼의 Enter 를 워커가 가로채지 않는다',
+      통과: !키를보낸다('Enter'), 무엇: document.activeElement.id,
+    });
+
+    // 글자를 적는 중이면 방향키는 커서 것이다. 캐릭터가 같이 걸어가면 안 된다
+    const 코드칸 = document.getElementById('join-code');
+    코드칸.focus();
+    코드칸.value = 'ABCD';
+    키를보낸다('ArrowDown');
+    결과.push({
+      자리: '로비', 이름: '입력칸에서는 방향키가 커서 것이다',
+      통과: document.activeElement === 코드칸 && 코드칸.value === 'ABCD',
+      무엇: `커서 ${document.activeElement.id || '(잃음)'} · 적은 값 ${코드칸.value || '(지워짐)'}`,
+    });
+
+    // 들어갔으면 나올 길이 있어야 한다. Esc 는 화면 쪽으로 새지 않는다 —
+    // 로비의 Esc 는 «홈으로»라, 새면 적던 것이 통째로 날아간다
+    키를보낸다('Escape');
+    결과.push({
+      자리: '로비', 이름: 'Esc 로 입력칸에서 나오고 화면은 그대로다',
+      통과: document.activeElement !== 코드칸 && 지금화면() === 'online' && 코드칸.value === 'ABCD',
+      무엇: `화면 ${지금화면()} · 적은 값 ${코드칸.value || '(지워짐)'}`,
+    });
+    코드칸.value = '';
 
     const 이름칸 = document.getElementById('create-name');
     이름칸.value = '점검용 방';
