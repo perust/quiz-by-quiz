@@ -3,6 +3,7 @@
 // 이 파일은 저장소를 직접 알지 못한다.
 
 import { CATEGORIES } from '../constants.js';
+import { createScreenWalker } from './screen-walker.js';
 import { formatPlayedAt } from './format.js';
 import { trapFocus } from './quiz.js';
 import { announce } from './screens.js';
@@ -38,6 +39,12 @@ export function createRankingScreen({ onHome, loadRankings, clearRankings }) {
     dialogCancel: document.getElementById('clear-cancel'),
     dialogConfirm: document.getElementById('clear-confirm'),
   };
+
+  const walker = createScreenWalker({
+    screen: document.querySelector('[data-screen="ranking"]'),
+    character: document.getElementById('ranking-character'),
+    startAt: () => document.getElementById('ranking-home'),
+  });
 
   let activeKey = TABS[0].key;
   /** 방금 등록한 기록 ID. 다른 탭으로 옮기면 지운다 (FR-6.5) */
@@ -189,7 +196,8 @@ export function createRankingScreen({ onHome, loadRankings, clearRankings }) {
      * @param {{ target?: object, highlightId?: string|null }} view
      *   target을 주면 그 랭킹 탭을 열고, highlightId를 주면 그 기록을 강조한다.
      */
-    async show({ target = null, highlightId: nextHighlight = null } = {}) {
+    async show({ target = null, highlightId: nextHighlight = null, characterId } = {}) {
+      walker.show(characterId);
       if (target) {
         const matched = TABS.find(
           (tab) =>

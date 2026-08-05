@@ -295,6 +295,7 @@ async function main() {
       modeLabel: labelFor({ mode: summary.mode, categoryId: summary.categoryId }),
       bestScore,
       nickname,
+      characterId,
     });
     showScreen('result');
   }
@@ -331,7 +332,7 @@ async function main() {
 
   async function openRanking(target = null) {
     homeScreen.hide();
-    await rankingScreen.show({ target, highlightId: registeredId });
+    await rankingScreen.show({ target, highlightId: registeredId, characterId });
     showScreen('ranking');
   }
 

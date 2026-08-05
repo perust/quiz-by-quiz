@@ -26,9 +26,11 @@ import { paintCharacter } from './sprite.js';
 
 /**
  * @param {{ onChoose: (index: number) => void,
+ *           getChoiceNodes: () => HTMLElement[],
  *           trapFocus: (container: HTMLElement, event: KeyboardEvent) => void }} deps
+ *   getChoiceNodes는 위 패널의 보기 버튼들. 캐릭터가 그 위에 서도 같은 번호로 본다.
  */
-export function createArena({ onChoose, trapFocus }) {
+export function createArena({ onChoose, getChoiceNodes, trapFocus }) {
   const el = {
     root: document.getElementById('arena'),
     character: document.getElementById('arena-character'),
@@ -46,13 +48,26 @@ export function createArena({ onChoose, trapFocus }) {
   const walker = createWalker({
     stage: el.tiles.parentElement,
     character: el.character,
-    getZones: () => tileNodes,
-    onZoneChange: (index, previous) => {
-      tileNodes[previous]?.classList.remove('arena-tile--lit');
-      if (index !== null) tileNodes[index].classList.add('arena-tile--lit');
+    // 무대 밖으로도 걸어 나갈 수 있다. 다만 «밟을 수 있는 것»은 바닥 칸과 위 보기뿐이라,
+    // 무대를 벗어나면 아무 칸도 밟지 않은 것이 된다 — 시간 초과의 뜻이 그대로 유지된다
+    roam: true,
+    pickable: '.arena-tile, .choice',
+    startAt: () => {
+      const box = el.tiles.getBoundingClientRect();
+      if (box.width === 0) return null;
+      // 십자 한가운데(중립). 칸 사이 틈이라 아무 칸도 밟지 않은 자리다
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
     },
-    onPick: (index) => onChoose(index),
   });
+
+  /** 발밑에 있는 것이 몇 번 보기인가. 바닥 칸이든 위 보기든 같은 번호로 본다 */
+  function indexOfNode(node) {
+    if (!node) return null;
+    const tile = tileNodes.indexOf(node);
+    if (tile !== -1) return tile;
+    const choice = [...getChoiceNodes()].indexOf(node);
+    return choice === -1 ? null : choice;
+  }
 
   // ── 도움말 ─────────────────────────────────────────────────────
   // 조작법을 무대에 늘 펼쳐두면 세로를 너무 먹어 대화상자로 옮겼다.
@@ -94,8 +109,9 @@ export function createArena({ onChoose, trapFocus }) {
       mark.className = 'arena-tile__mark';
 
       tile.append(number, mark);
-      // 포인터 이벤트를 쓴다. 터치에서 클릭보다 반응이 빠르다
-      tile.addEventListener('pointerdown', () => walker.goTo(index));
+      // 걸어가서 Enter로 고르든 손가락으로 바로 누르든 이 한 곳으로 모인다 —
+      // 워커의 «고르기»도 결국 발밑 요소의 click 을 부른다
+      tile.addEventListener('click', () => onChoose(index));
 
       el.tiles.append(tile);
       tileNodes.push(tile);
@@ -157,7 +173,7 @@ export function createArena({ onChoose, trapFocus }) {
      * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다.
      */
     standingIndex() {
-      return enabled ? walker.standingIndex() : null;
+      return enabled ? indexOfNode(walker.standingElement()) : null;
     },
 
     /**
@@ -170,7 +186,7 @@ export function createArena({ onChoose, trapFocus }) {
       tileNodes.forEach((tile, index) => {
         // 채점 뒤에는 «밟고 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면
         // 아무 칸도 안 밟은 경우에 엉뚱한 칸이 골라진 것처럼 보인다.
-        tile.classList.remove('arena-tile--lit');
+        tile.classList.remove('is-standing');
 
         if (index === answerIndex) tile.classList.add('arena-tile--correct');
         else if (index === chosenIndex) tile.classList.add('arena-tile--wrong');

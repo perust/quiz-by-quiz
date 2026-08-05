@@ -48,7 +48,12 @@ export function createQuizScreen({ onExit, onComplete }) {
 
   // 게임 모드 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
   // 조작법 대화상자도 여기와 같은 포커스 가두기를 쓰라고 trapFocus를 넘긴다.
-  const arena = createArena({ onChoose: (index) => selectChoice(index), trapFocus });
+  const arena = createArena({
+    onChoose: (index) => selectChoice(index),
+    // 캐릭터가 위 보기 버튼 위에 서도 같은 번호로 본다
+    getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
+    trapFocus,
+  });
 
   let session = null;
   let categoryLabel = '';

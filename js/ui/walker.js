@@ -43,6 +43,18 @@ const DIRECTIONS = {
 
 export const PICK_KEYS = ['Enter', ' '];
 
+/**
+ * 글자를 입력하는 중인가. 그렇다면 방향키와 Enter는 그쪽 것이다.
+ *
+ * 결과 화면에는 닉네임 칸이 있다. 이 검사가 없으면 이름을 적는 동안
+ * 캐릭터가 같이 걸어가고 커서는 움직이지 않는다.
+ */
+function isTyping() {
+  const node = document.activeElement;
+  if (!node) return false;
+  return node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName);
+}
+
 // ── 입력 (모듈 하나에 모아둔다) ──────────────────────────────────
 
 /**
@@ -191,6 +203,7 @@ function showControls(value) {
  *   onPick?: (index: number) => void,          무대 방식
  *   onZoneChange?: (index: number|null, previous: number|null) => void,  무대 방식
  *   pickable?: string,            자유 방식에서 «누를 수 있는 것»으로 볼 선택자
+ *   standClass?: string,          발밑에 붙일 클래스. 기본 is-standing
  *   onStep?: (element: HTMLElement|null) => void,  자유 방식에서 발밑이 바뀔 때
  *   edge?: number,                안쪽 여백
  *   startAt?: () => {x: number, y: number}|null  처음 설 자리. 없으면 한가운데
@@ -201,6 +214,7 @@ export function createWalker(config) {
   const {
     stage, character, getZones, onPick, onZoneChange,
     roam = false, pickable = 'button, a[href], [role="button"], summary', onStep,
+    standClass = 'is-standing',
     edge = 7, startAt, footInset = 10,
   } = config;
 
@@ -298,9 +312,9 @@ export function createWalker(config) {
     if (roam) {
       const next = pickableUnderFoot();
       if (next === underFoot) return;
-      underFoot?.classList.remove('is-standing');
+      underFoot?.classList.remove(standClass);
       underFoot = next;
-      underFoot?.classList.add('is-standing');
+      underFoot?.classList.add(standClass);
       onStep?.(underFoot);
       return;
     }
@@ -479,7 +493,7 @@ export function createWalker(config) {
         character.classList.remove('walker--walking', 'walker--idle', 'walker--hop');
         // 화면을 떠나면서 밟고 있던 표시도 거둔다. 남겨 두면 돌아왔을 때
         // 캐릭터가 없는 자리에 불이 켜져 있다
-        underFoot?.classList.remove('is-standing');
+        underFoot?.classList.remove(standClass);
         underFoot = null;
         return;
       }
@@ -522,9 +536,14 @@ export function createWalker(config) {
       pick();
     },
 
-    /** 지금 밟고 있는 칸. 아무 칸도 아니면 null */
+    /** 지금 밟고 있는 칸. 아무 칸도 아니면 null (무대 방식) */
     standingIndex() {
       return enabled ? standing : null;
+    },
+
+    /** 지금 발밑에 있는 요소. 아무것도 없으면 null (자유 방식) */
+    standingElement() {
+      return enabled ? underFoot : null;
     },
 
     /**
@@ -580,7 +599,7 @@ export function createWalker(config) {
      * 방향키는 «눌린 상태»로만 기록하고 실제 이동은 루프가 한다.
      */
     handleKey(event) {
-      if (!enabled) return false;
+      if (!enabled || isTyping()) return false;
 
       if (DIRECTIONS[event.key]) {
         // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음에 유령 방향이 생긴다
