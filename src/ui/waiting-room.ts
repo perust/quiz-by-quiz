@@ -210,7 +210,15 @@ export function createWaitingRoom(
     if (result.ok) {
       room = result.room;
       render();
+      return;
     }
+    // **실패를 삼키지 않는다.** 바로 아래 「게임 시작」이 이미 이렇게 하는데
+    // 설정만 조용하면 눌러도 아무 일이 없어 버튼이 고장 난 것처럼 보인다.
+    // 방장이 아닌 경우는 `render` 가 버튼을 잠가 두므로 실제로 여기 오는 것은
+    // 대기실에 있는 사이 방이 사라진 때다.
+    notice(result.reason === 'not-host'
+      ? '방장만 방 설정을 바꿀 수 있어요.'
+      : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
   }
 
   el.category.addEventListener('click', () => {
