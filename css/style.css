@@ -2029,6 +2029,12 @@ body.is-booted .app-bar {
   border-radius: 10px;
 }
 
+.room-item__actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 .room-item__body {
   display: flex;
   flex-direction: column;

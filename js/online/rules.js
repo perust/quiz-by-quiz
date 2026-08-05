@@ -63,5 +63,4 @@ export const JOIN_MESSAGES = {
   'wrong-password': '비밀번호가 맞지 않아요.',
   'need-password': '비밀번호가 필요한 방이에요.',
   full: '방이 이미 가득 찼어요.',
-  already: '이미 들어가 있는 방이에요.',
 };

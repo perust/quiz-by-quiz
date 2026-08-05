@@ -12,12 +12,38 @@ import { ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { checkPassword, checkRoomName, makeCode, normalizeCode } from './rules.js';
 
 const KEY = 'quiz.rooms';
+const ME_KEY = 'quiz.playerId';
 
 /**
- * 이 브라우저를 가리키는 값. 새로고침하면 새로 생긴다.
+ * 참가자를 «없는 사람»으로 보기까지의 시간.
+ *
+ * 서버라면 연결이 끊긴 순간을 알지만 여기서는 알 길이 없다. 그래서 마지막으로
+ * 본 시각을 적어 두고 오래된 사람을 떨군다. **`seenAt`이 아예 없는 참가자도
+ * 떨군다** — 신분을 남기기 전에 만들어진 자취라 주인이 다시 찾아올 수 없다.
+ */
+const GHOST_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * 이 브라우저를 가리키는 값. **새로고침해도 그대로여야 한다.**
+ *
+ * 예전에는 페이지를 열 때마다 새로 만들었는데, 그러면 새로고침한 뒤의 내가
+ * 방에게는 «다른 사람»이 된다. 들어갔던 자취가 남아 자리를 차지하고, 두 번
+ * 새로고침하면 2인용 방이 나 혼자로 가득 차 다시 들어갈 수 없었다.
+ *
  * 서버 구현에서는 계정이나 세션이 이 자리를 대신한다.
  */
-const meId = globalThis.crypto?.randomUUID?.() ?? `me-${Date.now()}`;
+const meId = (() => {
+  try {
+    const saved = localStorage.getItem(ME_KEY);
+    if (saved) return saved;
+    const fresh = globalThis.crypto?.randomUUID?.() ?? `me-${Date.now()}`;
+    localStorage.setItem(ME_KEY, fresh);
+    return fresh;
+  } catch {
+    // 저장을 못 하면 이번 세션에만 쓰는 값으로 버틴다
+    return globalThis.crypto?.randomUUID?.() ?? `me-${Date.now()}`;
+  }
+})();
 
 /**
  * 방마다 «무슨 일이 있었는지»를 듣는 사람들.
@@ -32,15 +58,42 @@ function emit(code, event) {
   listeners.get(code)?.forEach((handler) => handler(event));
 }
 
+/**
+ * 오래 안 보인 참가자를 떨군다. 아무도 남지 않은 방은 사라진다.
+ *
+ * 방 자체는 사람이 잠깐 나갔다 와도 남아 있어야 한다 — 새로고침하거나 연결이
+ * 끊겼다고 방이 없어지면 남은 사람들이 함께 튕긴다. 그래서 **방이 아니라
+ * 참가자를 정리한다.**
+ */
+function prune(rooms) {
+  const now = Date.now();
+  return rooms
+    .map((room) => ({
+      ...room,
+      players: (room.players ?? []).filter((player) => player.seenAt && now - player.seenAt < GHOST_MS),
+    }))
+    .filter((room) => room.players.length > 0);
+}
+
 function readAll() {
   try {
     const raw = localStorage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     // 저장 데이터가 깨져도 앱이 죽지 않는다 (PRD 8). 성한 것만 살린다
-    return Array.isArray(parsed) ? parsed.filter((room) => room && typeof room.code === 'string') : [];
+    const rooms = Array.isArray(parsed)
+      ? parsed.filter((room) => room && typeof room.code === 'string')
+      : [];
+    return prune(rooms);
   } catch {
     return [];
   }
+}
+
+/** 내가 아직 여기 있다고 알린다. 방을 읽거나 무엇을 할 때마다 찍는다 */
+function touch(room) {
+  const me = room.players.find((player) => player.id === meId);
+  if (me) me.seenAt = Date.now();
+  return room;
 }
 
 function writeAll(rooms) {
@@ -125,7 +178,12 @@ export const localRooms = {
       gameMode: false,
       password: isPublic ? '' : String(password),
       hostId: meId,
-      players: [{ id: meId, nickname: player?.nickname || '나', characterId: player?.characterId }],
+      players: [{
+        id: meId,
+        nickname: player?.nickname || '나',
+        characterId: player?.characterId,
+        seenAt: Date.now(),
+      }],
       createdAt: new Date().toISOString(),
     };
 
@@ -145,7 +203,14 @@ export const localRooms = {
     const room = rooms.find((item) => item.code === wanted);
 
     if (!room) return { ok: false, reason: 'not-found' };
-    if (room.players.some((p) => p.id === meId)) return { ok: false, reason: 'already' };
+
+    // 이미 들어가 있으면 그대로 들어간다. 새로고침하고 돌아온 것이 «거절»일 이유가 없다
+    if (room.players.some((p) => p.id === meId)) {
+      touch(room);
+      writeAll(rooms);
+      return { ok: true, room: toPublic(room) };
+    }
+
     if (room.password) {
       if (!password) return { ok: false, reason: 'need-password' };
       if (String(password) !== room.password) return { ok: false, reason: 'wrong-password' };
@@ -156,6 +221,7 @@ export const localRooms = {
       id: meId,
       nickname: player?.nickname || '손님',
       characterId: player?.characterId,
+      seenAt: Date.now(),
     });
     writeAll(rooms);
     return { ok: true, room: toPublic(room) };
@@ -163,8 +229,13 @@ export const localRooms = {
 
   /** 방 하나를 읽는다. 없으면 null */
   async getRoom(code) {
-    const room = readAll().find((item) => item.code === normalizeCode(code));
-    return room ? toPublic(room) : null;
+    const rooms = readAll();
+    const room = rooms.find((item) => item.code === normalizeCode(code));
+    if (!room) return null;
+    // 방을 보고 있는 동안에는 «여기 있다»고 계속 알린다
+    touch(room);
+    writeAll(rooms);
+    return toPublic(room);
   },
 
   /**
