@@ -354,7 +354,7 @@ export function createWalker(config) {
           showControls(false);
         }
         stop();
-        character.classList.remove('walker--walking', 'walker--idle');
+        character.classList.remove('walker--walking', 'walker--idle', 'walker--hop');
         return;
       }
 
@@ -362,6 +362,10 @@ export function createWalker(config) {
       active = walker;
       held.clear();
       releaseStick();
+      // 고를 때 붙인 «한 번 뛰기»를 여기서 뗀다. 이 클래스는 겹칠 때 이기려고
+      // --idle 뒤에 두었기 때문에, 남아 있으면 제자리 뛰기가 영영 가려진다.
+      // 실제로 그래서 2번 문제부터 캐릭터가 굳어 있었다.
+      character.classList.remove('walker--hop');
       showControls(true);
       locked = false;
       placed = false;
