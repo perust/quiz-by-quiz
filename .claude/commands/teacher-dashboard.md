@@ -34,12 +34,14 @@ python3 - <<'PY'
 # 앱은 서버가 없어 기록이 각 학생 브라우저에만 남는다 (PRD 9.1).
 import json, glob, os, re, sys
 from collections import defaultdict
+from pathlib import Path
+from tools.check_bank import load_project_config
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
-      'general': '일반상식', 'art': '예술과문화'}
+CONFIG = load_project_config(Path.cwd())
+CATEGORIES = CONFIG.category_codes
+KO = {category.code: category.name for category in CONFIG.categories}
 ALIASES = {v: k for k, v in KO.items()}
 
 
@@ -666,8 +668,8 @@ HTML 안에는 그리는 마크업과 함께 **원본 데이터가 JSON 으로 �
 `/export-report` 가 그 JSON 을 읽어 CSV 와 PDF 로 바꾼다. 표를 긁는 게 아니라서
 화면 서식이 바뀌어도 내보내기가 깨지지 않는다.
 
-**`teacher/` 안에 쓰는 이유가 있다.** 저장소 루트가 곧 배포 루트라(`SOURCE_DIR: .`)
-리포트를 루트에 두면 공개 사이트에 학생 이름과 성적이 올라간다. 이 경로를 바꾸지 말 것.
+**`teacher/` 안에 쓰는 이유가 있다.** Pages 아티팩트에는 이 폴더를 넣지 않고 `.gitignore`도
+내용 전체를 막는다. 공개 저장소 Git 이력에 학생 이름과 성적을 남기지 않도록 이 경로와 제외 규칙을 바꾸지 말 것.
 
 ## 3. 출력
 

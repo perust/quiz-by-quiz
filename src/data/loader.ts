@@ -40,7 +40,7 @@ interface LoadedCategory {
 }
 
 /**
- * 앱 시작 시 한 번 호출한다. 네 개 파일을 동시에 요청하고,
+ * 앱 시작 시 한 번 호출한다. 선언된 카테고리 파일을 동시에 요청하고,
  * 검증은 ID 중복 판정이 일정하도록 카테고리 정의 순서대로 처리한다.
  */
 export async function loadQuestionBanks(): Promise<{ banks: QuestionBanks; failedCategories: FailedCategory[] }> {

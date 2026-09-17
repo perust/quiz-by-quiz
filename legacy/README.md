@@ -1,7 +1,7 @@
 # legacy — 이전 버전 보관
 
-저장소의 주력 앱이 **React/TypeScript 버전에서 빌드 도구 없는 순수 HTML/CSS/JS 버전으로 교체**되면서,
-이전 코드를 지우지 않고 이곳에 그대로 옮겨 두었습니다. 현재 앱은 저장소 루트에 있습니다.
+저장소의 주력 앱이 **React/TypeScript 버전에서 프레임워크 없는 TypeScript + HTML/CSS 버전으로 교체**되면서,
+이전 코드를 지우지 않고 이곳에 그대로 옮겨 두었습니다. 현재 앱은 저장소 루트에서 `tsc`로 컴파일합니다.
 
 이 폴더의 코드는 **더 이상 유지보수하지 않습니다.** 참고와 이력 보존이 목적입니다.
 
@@ -20,10 +20,10 @@
 
 | | 현재 (루트) | 이전 (`legacy/quiz-challenge/`) |
 | --- | --- | --- |
-| 스택 | 순수 HTML/CSS/JS | React + TypeScript + Tailwind |
-| 빌드 | 없음 | Create React App (`npm ci` → `npm run build`) |
-| 문제 데이터 | `data/*.json` 4개 파일 | `src/data/questions.ts` |
-| 카테고리 | 한국사·과학·지리·일반상식 | 한국사·과학·지리·예술과문화 |
+| 스택 | TypeScript + 순수 HTML/CSS | React + TypeScript + Tailwind |
+| 빌드 | `tsc` (`npm ci` → `npm run build`) | Create React App (`npm ci` → `npm run build`) |
+| 문제 데이터 | `data/*.json` 5개 파일 | `src/data/questions.ts` |
+| 카테고리 | 한국사·과학·지리·일반상식·예술과문화 | 한국사·과학·지리·예술과문화 |
 
 코드를 섞을 수 없어 통째로 보존하는 쪽을 택했습니다.
 

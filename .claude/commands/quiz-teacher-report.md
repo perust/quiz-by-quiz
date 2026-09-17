@@ -17,12 +17,14 @@ python3 - <<'PY'
 # 앱은 서버가 없어 기록이 각 학생 브라우저에만 남는다 (PRD 9.1).
 import json, glob, os, re, sys
 from collections import defaultdict
+from pathlib import Path
+from tools.check_bank import load_project_config
 
 SUB_DIR = 'teacher/submissions'
 MODES = ('category', 'all')
-CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
-      'general': '일반상식', 'art': '예술과문화'}
+CONFIG = load_project_config(Path.cwd())
+CATEGORIES = CONFIG.category_codes
+KO = {category.code: category.name for category in CONFIG.categories}
 ALIASES = {v: k for k, v in KO.items()}
 
 

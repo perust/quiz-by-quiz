@@ -24,7 +24,7 @@ allowed-tools: Bash(python3:*), Read
 
 ```bash
 python3 - <<'PY'
-import glob, os, re
+import glob, re, sys
 
 def strip_comments(text):
     # 주석에 적힌 window.confirm 같은 말이 호출로 오인되지 않게 걷어낸다
@@ -38,18 +38,18 @@ def read(p):
     except OSError:
         return ''
 
-src = {p: read(p) for p in glob.glob('js/**/*.js', recursive=True)}
+src = {p: read(p) for p in glob.glob('src/**/*.ts', recursive=True)}
 joined = '\n'.join(src.values())
-core = {p: t for p, t in src.items() if p.startswith('js/core/')}
-ui = {p: t for p, t in src.items() if p.startswith('js/ui/')}
+core = {p: t for p, t in src.items() if p.startswith('src/core/')}
+ui = {p: t for p, t in src.items() if p.startswith('src/ui/')}
 
 checks = []
 def ok(name, cond, detail=''):
     checks.append((cond, name, detail))
 
 # FR-6.8 / 6.9 — 어댑터 경계
-adapter = read('js/storage/adapter.js')
-store = read('js/storage/local-store.js')
+adapter = read('src/storage/adapter.ts')
+store = read('src/storage/local-store.ts')
 iface = ['saveRecord', 'getRankings', 'getBestScore', 'clearAll']
 ok('어댑터 인터페이스 4종', all(m in store for m in iface),
    ', '.join(m for m in iface if m not in store) or '전부 존재')
@@ -61,7 +61,7 @@ ok('교체 지점이 adapter.js 한 곳', 'createLocalRankingStore()' in adapter
 
 # localStorage 경계
 touch = sorted(p for p, t in src.items() if 'window.localStorage' in t)
-ok('localStorage 직접 호출이 한 파일뿐', touch == ['js/storage/local-store.js'], ', '.join(touch) or '없음')
+ok('localStorage 직접 호출이 한 파일뿐', touch == ['src/storage/safe-storage.ts'], ', '.join(touch) or '없음')
 leak = sorted(p for p, t in {**core, **ui}.items() if 'storage/' in t)
 ok('core·ui가 저장소를 import하지 않음', not leak, ', '.join(leak) or '없음')
 ok('core에 DOM 참조 없음',
@@ -69,14 +69,14 @@ ok('core에 DOM 참조 없음',
    ', '.join(p for p, t in core.items() if re.search(r'\b(document|window)\.', t)) or '없음')
 
 # FR-6.3 — 정렬 규칙
-rank = read('js/core/ranking.js')
+rank = read('src/core/ranking.ts')
 ok('점수 내림차순 정렬', 'b.score - a.score' in rank)
 ok('동점 시 먼저 달성한 순', 'playedAtValue(a) - playedAtValue(b)' in rank)
 ok('소요 시간이 정렬에 안 쓰임', 'durationMs' not in rank, 'durationMs 미등장')
 ok('깨진 시각은 뒤로', 'POSITIVE_INFINITY' in rank)
 
 # FR-6.4 — 상위 N
-const = read('js/constants.js')
+const = read('src/constants.ts')
 m = re.search(r'RANKING_TOP_N\s*=\s*(\d+)', const)
 ok('RANKING_TOP_N 상수 존재', bool(m), f'값 {m.group(1)}' if m else '없음')
 ok('저장 시에도 상위 N개로 자름', 'placeRecord' in store and 'RANKING_TOP_N' in store)
@@ -87,7 +87,7 @@ ok('배열 아님/파싱 실패 복구', 'Array.isArray(parsed)' in store and 'w
 ok('스키마 버전 관리', 'ensureSchemaVersion' in store and 'quiz.schemaVersion' in store)
 
 # FR-6.5 / 6.10 / 6.12 — 화면
-lb = read('js/ui/ranking.js')
+lb = read('src/ui/ranking.ts')
 html = read('index.html')
 ok('방금 등록 기록 강조', 'ranking-item--mine' in lb and '방금 등록' in lb)
 ok('저장 범위 안내 문구', '이 브라우저에 저장된' in html)
@@ -104,6 +104,7 @@ for cond, name, detail in checks:
     print(f"  {'OK  ' if cond else '!!  '}{name:<{width}}  {detail}")
 if passed != len(checks):
     print('\n실패 항목은 FR 위반이거나 리팩터링 중 경계가 무너진 것이다. 코드를 열어 확인한다.')
+    sys.exit(1)
 PY
 ```
 
@@ -132,11 +133,12 @@ PY
 
 점검을 마친 뒤 아래를 읽고 개선점을 찾는다.
 
-- `js/core/ranking.js` — 정렬·상위 N·최고 점수. 순수 함수라 저장소를 모른다
-- `js/storage/local-store.js` — localStorage 구현체. 손상 복구와 스키마 버전
-- `js/storage/adapter.js` — 인터페이스와 교체 지점
-- `js/ui/ranking.js` — 탭·목록·초기화 다이얼로그
-- `js/app.js` — 등록 흐름 (`registerRecord`)
+- `src/core/ranking.ts` — 정렬·상위 N·최고 점수. 순수 함수라 저장소를 모른다
+- `src/storage/local-store.ts` — 안전 저장소를 쓰는 랭킹 구현체. 손상 복구와 스키마 버전
+- `src/storage/safe-storage.ts` — localStorage 직접 접근과 메모리 대체
+- `src/storage/adapter.ts` — 인터페이스와 교체 지점
+- `src/ui/ranking.ts` — 탭·목록·초기화 다이얼로그
+- `src/app.ts` — 등록 흐름 (`registerRecord`)
 
 볼 것: 정렬 안정성, 동점·빈 목록·같은 닉네임 같은 경계 상황, 상위 10위 밖 기록의 처리,
 저장 실패(용량 초과) 시 사용자에게 알리는지, 접근성.
@@ -180,6 +182,6 @@ localStorage.removeItem('quiz.rankings');  // 닉네임·설정은 남는다
 
 - **v1 랭킹은 경쟁용이 아니다.** 배포해서 여러 사람이 들어와도 기록은 공유되지 않는다.
   자기 최고 기록 갱신용이고, 사용자 간 경쟁은 서버를 붙여야 성립한다(PRD 9.1)
-- 서버 랭킹으로 갈 때 고칠 곳은 `js/storage/adapter.js` 의 `rankingStore` 한 줄이다.
+- 서버 랭킹으로 갈 때 고칠 곳은 `src/storage/adapter.ts`의 `rankingStore` 한 줄이다.
   점검 항목에 그 경계가 들어 있는 이유가 이것이다
 - 문제 은행 통계는 `/quiz-stats`, 문항 검토는 `/quiz-range` 다. 이 명령어는 순위 시스템만 본다
