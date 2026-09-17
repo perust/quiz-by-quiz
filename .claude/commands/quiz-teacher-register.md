@@ -1,6 +1,6 @@
 ---
 description: 선생님이 학생 점수를 직접 입력한다. 학생이 내보내기를 못 할 때 쓰는 두 번째 경로
-argument-hint: <이름> <분야> <맞은개수> — 예 "홍길동 한국사 8", "홍길동 8,7,9,6"
+argument-hint: <이름> <분야> <맞은개수> — 예 "홍길동 한국사 8", "홍길동 8,7,9,6,5"
 allowed-tools: Bash(python3:*), Read
 ---
 
@@ -24,7 +24,7 @@ allowed-tools: Bash(python3:*), Read
 | `홍길동 한국사 8` | 한국사 8/10 |
 | `홍길동 과학 7/10` | 총문항을 밝힐 때 |
 | `홍길동 8,7,9,6,5` | 모든 분야를 한 번에 (한국사·과학·지리·일반상식·예술과문화 순) |
-| `홍길동 전체 40/50` | 전체 도전 |
+| `홍길동 전체 20/25` | 전체 도전 |
 
 분야는 `한국사` · `과학` · `지리` · `일반상식` · `예술과문화` · `전체` 를 받는다.
 인자가 없으면 사용법을 보여주고 멈춘다.
@@ -36,11 +36,13 @@ QUIZ_ARGS="$ARGUMENTS" python3 - <<'PY'
 """선생님이 학생 점수를 직접 입력한다. 학생이 내보내기를 못 할 때 쓰는 두 번째 경로."""
 import json, os, re, sys
 from datetime import datetime
+from pathlib import Path
+from tools.check_bank import load_project_config
 
 SUB_DIR = 'teacher/submissions'
-CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
-KO = {'history': '한국사', 'science': '과학', 'geography': '지리',
-      'general': '일반상식', 'art': '예술과문화'}
+CONFIG = load_project_config(Path.cwd())
+CATEGORIES = CONFIG.category_codes
+KO = {category.code: category.name for category in CONFIG.categories}
 ALIASES = {v: k for k, v in KO.items()}
 ALIASES.update({'전체': 'all', 'all': 'all'})
 
@@ -56,7 +58,7 @@ USAGE = """사용법
   /quiz-teacher-register 홍길동 한국사 8          한국사 8/10
   /quiz-teacher-register 홍길동 과학 7/10         총문항을 밝힐 때
   /quiz-teacher-register 홍길동 8,7,9,6,5         한국사·과학·지리·일반상식·예술과문화 순
-  /quiz-teacher-register 홍길동 전체 40/50        전체 도전
+  /quiz-teacher-register 홍길동 전체 20/25        전체 도전
 
 분야: """ + ' · '.join(KO[c] for c in CATEGORIES) + ' · 전체'
 
@@ -87,7 +89,7 @@ if comma:
         m = re.fullmatch(r'(\d+)(?:/(\d+))?', p)
         if not m:
             print(f"!! '{p}' 를 점수로 읽을 수 없습니다.\n"); print(USAGE); sys.exit(1)
-        entries.append(('category', c, int(m.group(1)), int(m.group(2) or 10)))
+        entries.append(('category', c, int(m.group(1)), int(m.group(2) or CONFIG.questions_per_round)))
 else:
     # 형태 2 — 분야 하나
     cat_token = next((t for t in rest if ALIASES.get(t) or t.lower() in CATEGORIES), None)
@@ -97,7 +99,9 @@ else:
     code = ALIASES.get(cat_token) or cat_token.lower()
     m = re.fullmatch(r'(\d+)(?:/(\d+))?', score_token)
     correct = int(m.group(1))
-    total = int(m.group(2) or (10 * len(CATEGORIES) if code == 'all' else 10))
+    total = int(m.group(2) or (
+        CONFIG.all_round_questions if code == 'all' else CONFIG.questions_per_round
+    ))
     entries.append(('all' if code == 'all' else 'category',
                     None if code == 'all' else code, correct, total))
 

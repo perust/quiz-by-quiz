@@ -1,5 +1,10 @@
 # 상식 퀴즈 게임 — 클로드 코드 3단계 프롬프트
 
+> **역사 자료 — 현행 작업에 실행하지 않는다.** 2026-08-04 초기 구현 당시의
+> 4개 카테고리·40문제·순수 JavaScript 전제를 보존한 기록이다. 현재 제품 요구사항은
+> [`quiz-game-prd.md`](quiz-game-prd.md), 문제 추가 절차는
+> [`question-bank-maintenance.md`](question-bank-maintenance.md)를 따른다.
+
 PRD v1.0(`quiz-game-prd.md`) 기준. 각 단계 시작 시 **PRD 파일을 프로젝트에 넣거나 첨부**하고, 아래 프롬프트를 붙여넣는다.
 
 | 단계 | 목표 | 끝났을 때 되는 것 |

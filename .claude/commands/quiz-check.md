@@ -1,168 +1,68 @@
 ---
-description: 모든 문제의 정답이 사실에 맞는지 검증한다 (형식 검사 + 교차 검증)
-argument-hint: [카테고리 (한국사·과학·지리·일반상식, 생략하면 전체)]
+description: 문제 은행의 구조·중복을 검사하고 정답과 해설의 사실성을 교차 검증한다
+argument-hint: [카테고리 (한국사·과학·지리·일반상식·예술과문화 또는 영문 코드, 생략하면 전체)]
 allowed-tools: Bash(python3:*), Read, WebSearch, WebFetch
 ---
 
-`data/` 의 모든 문제에 대해 **정답이 사실에 맞는지** 검증해줘.
+`$ARGUMENTS`가 가리키는 문제를 **수정하지 말고 검토**해줘. 단일 기준은
+`docs/question-bank-maintenance.md`다.
 
-형식 검사와 사실 검증은 다르다. `answerIndex` 가 0~3 범위에 있어도 그 보기가 틀린 답일 수 있다.
-스크립트는 형식만 걸러내고, **정답이 맞는지는 읽고 판단해야 한다.** 이 명령어의 무게는 뒤쪽에 있다.
+## 1. 자동 검증
 
-40문항 전체를 한 번에 보면 주의가 흩어진다. 인자로 카테고리를 주고 한 번에 하나씩 보는 편이 낫다.
-
-## 1. 형식 검사와 자료 수집
-
-아래를 그대로 실행한다.
+전체 은행을 먼저 검증한다.
 
 ```bash
-QUIZ_CATEGORY="$ARGUMENTS" python3 - <<'PY'
-import json, glob, os, re
-from difflib import SequenceMatcher
-
-CATEGORIES = ('history', 'science', 'geography', 'general', 'art')
-ALIASES = {'한국사': 'history', '과학': 'science', '지리': 'geography',
-           '일반상식': 'general', '예술과문화': 'art'}
-NAMES = {c: k for k, c in ALIASES.items()}
-LEVELS = ('easy', 'normal', 'hard')
-REQUIRED = ('id', 'category', 'question', 'choices', 'answerIndex', 'explanation', 'difficulty', 'tags')
-
-raw = (os.environ.get('QUIZ_CATEGORY') or '').strip()
-if re.fullmatch(r'\$\w+', raw):
-    raw = ''
-target = raw.lower() if raw.lower() in CATEGORIES else ALIASES.get(raw)
-if raw and target is None:
-    print(f"'{raw}'은(는) 카테고리가 아닙니다. 전체를 검사합니다.")
-    print('쓸 수 있는 값: ' + ', '.join(f'{k}({c})' for k, c in ALIASES.items()) + '\n')
-
-paths = [f'data/{target}.json'] if target else sorted(glob.glob('data/*.json'))
-print(f"검사 대상: {NAMES[target] if target else '전체 카테고리'}\n")
-
-items, defects = [], []
-for path in paths:
-    cat = os.path.basename(path)[:-5]
-    try:
-        bank = json.load(open(path, encoding='utf-8'))
-    except Exception as e:
-        defects.append(f'{path}: 파싱 실패 {e}')
-        continue
-    for q in bank:
-        qid = q.get('id', '?')
-        for key in REQUIRED:
-            if key not in q or q[key] in (None, '', []):
-                defects.append(f'{qid}: 필드 누락/빈값 — {key}')
-        ch = q.get('choices') or []
-        idx = q.get('answerIndex')
-        if len(ch) != 4:
-            defects.append(f'{qid}: 보기 {len(ch)}개 (4개여야 함)')
-        if len(set(ch)) != len(ch):
-            defects.append(f'{qid}: 보기 중복 — {[c for c in ch if ch.count(c) > 1]}')
-        if not isinstance(idx, int) or not (0 <= idx < len(ch)):
-            defects.append(f'{qid}: answerIndex 범위 밖 ({idx})')
-        if q.get('category') != cat:
-            defects.append(f'{qid}: category({q.get("category")}) ≠ 파일명({cat})')
-        if q.get('difficulty') not in LEVELS:
-            defects.append(f'{qid}: difficulty 값 이상 ({q.get("difficulty")})')
-        if not re.fullmatch(r'[a-z]+-\d{3}', qid or ''):
-            defects.append(f'{qid}: ID 형식이 <카테고리>-<3자리>가 아님')
-        items.append(q)
-
-# ID 전역 중복 (범위와 무관하게 항상 본다)
-all_ids = [q['id'] for p in sorted(glob.glob('data/*.json')) for q in json.load(open(p, encoding='utf-8'))]
-dups = sorted({i for i in all_ids if all_ids.count(i) > 1})
-if dups:
-    defects.append(f'ID 중복: {dups}')
-
-print(f'■ 기계 검사 — {"이상 없음" if not defects else str(len(defects)) + "건"}')
-for d in defects:
-    print('   !!', d)
-
-def norm(s):
-    return re.sub(r'[^가-힣a-zA-Z0-9]', '', s or '')
-
-print('\n■ 중복·유사 문제 후보')
-pairs = []
-for i in range(len(items)):
-    for j in range(i + 1, len(items)):
-        a, b = items[i], items[j]
-        r = SequenceMatcher(None, norm(a['question']), norm(b['question'])).ratio()
-        same_ans = a['choices'][a['answerIndex']] == b['choices'][b['answerIndex']]
-        if r >= 0.55 or same_ans:
-            pairs.append((r, same_ans, a['id'], b['id'], a['question'][:26], b['question'][:26]))
-if pairs:
-    for r, same, ida, idb, qa, qb in sorted(pairs, reverse=True):
-        tag = '정답동일' if same else f'유사도 {r:.2f}'
-        print(f'   [{ida}] × [{idb}]  {tag}\n      {qa} / {qb}')
-else:
-    print('   없음')
-
-print(f'\n■ 사실 검증 대상 {len(items)}문항\n')
-for q in items:
-    ch = q['choices']
-    idx = q['answerIndex']
-    print(f"[{q['id']}] {q['difficulty']}")
-    print(f"  Q. {q['question']}")
-    for k, c in enumerate(ch):
-        print(f"     {'▶' if k == idx else ' '} {k}. {c}")
-    print(f"  해설: {q['explanation']}\n")
-PY
+python3 tools/check_bank.py
 ```
 
-## 2. 정답 검증
+실패가 있으면 사실 검토보다 구조 오류를 먼저 보고한다. 카테고리가 지정됐으면 다음처럼
+문항 원문을 출력한다.
 
-문항마다 아래를 확인한다. `▶` 표시가 현재 정답으로 지정된 보기다.
+```bash
+python3 tools/check_bank.py --category "<카테고리>" --show-questions --show-similar
+```
 
-### 2-1. 지정된 정답이 실제로 맞는가
+인자가 없으면 `src/constants.ts` 순서대로 카테고리를 하나씩 출력해 검토한다. 전체 은행을 한 번에
+출력해 도구 결과가 잘리지 않게 한다. 알 수 없는 인자는 전체로 대체하지 말고 중단한다.
 
-가장 중요한 항목이다. 질문과 `▶` 보기의 조합이 사실인지 본다.
+자동 검증 결과에서 다음을 확인한다.
 
-- **연도·수치·순위**는 특히 틀리기 쉽다. 기억에 의존하지 말고 웹으로 확인한다
-- **순위 주장**은 1·2위 격차를 본다. 근소하면 자료마다 갈려 정답이 흔들린다
-- **과학적 사실**은 학계 합의가 있는지 본다. 교과 과정 표기와 다르면 짚는다
-- 확신이 서지 않으면 `⚠️ 확인 필요`로 남긴다. 넘겨짚어 `정확`으로 표시하지 않는다
+- 필수 필드, ID·카테고리, 보기·정답 인덱스, 난이도·태그
+- 완전히 같은 질문과 같은 카테고리 안의 같은 정답
+- 카테고리 수와 난이도·정답 위치·정답 길이 분포
+- 기준이 빠졌을 가능성이 있는 최상급·순위 표현
 
-### 2-2. 오답 보기 중 정답이 될 만한 것이 없는가
+## 2. 내용 검토
 
-정답이 둘이 되면 문제가 깨진다. 조건이 빠져 오답 보기도 성립하는 경우를 찾는다.
-반대로 오답이 너무 허술해 소거법으로 풀리는 경우도 짚는다.
+각 문항을 읽고 아래를 판정한다.
 
-### 2-3. 해설이 정답을 뒷받침하는가
+1. 정답이 정확히 하나인가
+2. 질문과 해설이 같은 정답을 가리키는가
+3. 오답이 사실상 정답이거나 질문 조건에서 성립할 여지가 없는가
+4. 최상급·순위에 지역·시대·측정 기준이 있는가
+5. 변할 수 있는 정보에 기준 시점이 있는가
+6. 해설이 단순 반복이 아니라 이유와 맥락을 설명하는가
+7. 기존 문항과 같은 지식을 표현만 바꿔 묻지 않는가
+8. 선언된 난이도가 한국 성인 기준 체감 난도와 맞는가
 
-- 해설 안의 연도·수치·고유명사도 검증 대상이다. 문제는 맞는데 해설이 틀린 경우가 있다
-- 해설이 문제의 기준과 어긋나지 않는지 본다 (문제는 면적 기준인데 해설은 인구 순위를 말하는 식)
-- 문제 문장을 그대로 되풀이하고 있지 않은지 본다
-
-### 2-4. 중복·유사 문제
-
-스크립트가 후보를 뽑아 준다. 정답이 같은 문항 쌍은 실제로 겹치는지 읽고 판단한다.
-질문 형태만 다르고 같은 지식을 묻는다면 한쪽을 바꾸도록 제안한다.
+연도·수치·순위·법률·과학 수치, 또는 읽어서 의심이 드는 주장만 웹에서 확인한다.
+검색 결과 문구만 인용하지 말고 신뢰할 수 있는 원문 두 곳 이상을 읽는다. 출처가 충돌하면
+정답으로 단정하지 말고 `판정 보류`로 분리한다.
 
 ## 3. 출력
 
-**문항별 결과**
+먼저 자동 검사 결과를 요약하고, 내용 문제가 있는 문항만 아래 표로 적는다.
 
-| ID | 문제 | 정답 | 정확성 | 해설 | 비고 |
-| --- | --- | --- | --- | --- | --- |
+| ID | 판정 | 문제점 | 근거 | 권장 수정 |
+| --- | --- | --- | --- | --- |
 
-`정확성` 은 `✅ 정확` / `⚠️ 확인 필요` / `❌ 오류` 셋 중 하나다.
-`⚠️` 와 `❌` 는 표 아래에 **무엇이 왜 문제이고 어떻게 고칠지**를 문항별로 적는다.
+판정은 다음 셋 중 하나다.
 
-이어서 이렇게 정리한다.
+- `오류`: 정답·해설이 틀렸거나 복수 정답이 가능함
+- `주의`: 기준·시점·표현을 더 명확히 해야 함
+- `보류`: 신뢰할 수 있는 출처끼리 충돌하거나 확인하지 못함
 
-- **교차 검증한 항목** — 무엇을 어떤 출처로 확인했는지. 확인 결과 값이 달랐다면 그 사실도 적는다
-- **중복 의심 쌍** — 스크립트 후보 중 실제로 겹친다고 판단한 것만
-- **종합** — 검사 문항 수 / 정확 / 확인 필요 / 오류 / 중복 의심
+문제가 없으면 `검토 범위 N문항, 내용 지적 0건`이라고 명확히 쓴다. 마지막에는 구조 오류 수,
+내용 오류·주의·보류 수와 확인한 출처를 요약한다.
 
-## 4. 고치기
-
-**지시가 없으면 파일을 건드리지 않는다.** 수정안 제시까지만 한다.
-고치라는 지시가 있으면 `data/<카테고리>.json` 을 Edit 로 고친 뒤 이 명령어를 다시 돌려 확인한다.
-
-## 알아둘 것
-
-- 스크립트는 형식만 본다. `정확성` 판정은 전부 읽고 하는 일이다
-- 웹 검색은 **의심스러운 것에만** 쓴다. 40문항을 전부 검색하면 오래 걸리고 얻는 것도 적다.
-  연도·수치·순위·최신성이 걸린 항목이 대상이다
-- ID 중복은 카테고리를 좁혀도 항상 전체를 대상으로 검사한다 (FR-1.8)
-- 이 명령어는 정답의 **사실성**을 본다. 최상급 표현의 기준·범위는 `/quiz-validate` 가,
-  난이도·분포는 `/quiz-stats` 가 본다
+고치라는 지시가 없으면 JSON이나 코드를 변경하지 않는다.

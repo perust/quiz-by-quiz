@@ -5,7 +5,7 @@
 #
 # 한때 저장소 루트를 통째로 올렸다(SOURCE_DIR: .). 소스가 곧 배포물이라 단순했지만,
 # 루트에 둔 것이 전부 공개된다는 뜻이라 teacher/ 같은 폴더를 .gitignore 로 막아야 했다.
-# 지금은 **담은 것만 나간다** — src/ 도 node_modules/ 도 저절로 빠진다.
+# 지금은 **담은 것만 나간다** — node_modules/와 teacher/는 빠지고, 소스맵용 src/만 명시해 담는다.
 
 name: Deploy to GitHub Pages
 
@@ -32,11 +32,22 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Python 설정
+        uses: actions/setup-python@v5
         with:
-          node-version: '22'
+          python-version: '3.13'
+
+      - name: 문제 은행 검증
+        run: |
+          python3 tools/check_bank.py
+          python3 -m unittest discover -s tests -v
+
+      - name: Node 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: 의존성 설치
         run: npm ci

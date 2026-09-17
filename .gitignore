@@ -22,3 +22,7 @@ teacher/*
 # 브라우저는 이 폴더를 그대로 읽으므로 로컬에서 확인하려면 먼저 `npm run build`
 # (또는 `npm run watch`) 를 돌려야 한다. 배포는 워크플로가 만들어 올린다.
 js/
+
+# Python 검증기와 테스트의 로컬 캐시
+**/__pycache__/
+*.py[cod]
