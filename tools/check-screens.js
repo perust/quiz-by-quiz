@@ -5,9 +5,15 @@
 //   npm run build && python3 -m http.server 8765
 //   → http://localhost:8765 를 열고 콘솔에 붙여넣기
 //
-// **이 프로젝트에는 테스트 러너가 없다(의도적).** 그래서 «한 번 물렸던 것»만
+// **이 수동 브라우저 점검에는 테스트 러너가 없다(의도적).** 그래서 «한 번 물렸던 것»만
 // 골라 검사한다. 새 기능을 덮는 것이 목적이 아니라, 같은 데를 두 번 물리지 않는
 // 것이 목적이다. 여기 있는 검사는 모두 실제로 났던 버그에서 왔다.
+//
+// 이 스크립트는 로컬 브라우저 화면 전환만 직접 만진다. API가 권위를 가진
+// `online-quiz`·`online-result`와 재접속 invalidation은 가짜 서버 상태를 만들지 않고
+// `tests/online-match-controller.test.mjs`, `tests/online-quiz-view.test.mjs`,
+// `tests/online-result-view.test.mjs`, `tests/match-recovery.test.mjs`의 Node 회귀로
+// 검사한다. 실제 두 브라우저/HTTPS/WSS 흐름은 API activation 뒤의 별도 stage 점검이다.
 //
 //   ① 화면을 옮겼는데 퀴즈 세션이 살아남아, 로비에서 방 이름을 적는 중에
 //      「시간 초과입니다」가 떴다 (#64)

@@ -1,0 +1,39 @@
+quiz-by-quiz-api.150.230.222.142.sslip.io {
+	encode zstd gzip
+
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# WSS tickets travel in a one-time subprotocol header, never in the URI.
+	# Keep this route out of access logs as defense in depth.
+	@ticket_bearing_events path /v1/rooms/*/events
+	log_skip @ticket_bearing_events
+
+	# Database readiness is for Docker/Caddy internal probes only. Public callers
+	# must not turn /readyz into an unbounded PostgreSQL health-query endpoint.
+	@private_health path /healthz /readyz
+	respond @private_health 404
+
+	reverse_proxy quiz-by-quiz-api:8000 {
+		health_uri /readyz
+		health_headers {
+			Host quiz-by-quiz-api.150.230.222.142.sslip.io
+		}
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

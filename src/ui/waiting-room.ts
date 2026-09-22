@@ -13,6 +13,11 @@
 import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
+import { createLatestRequestGuard } from './latest-request.js';
+import {
+  isCurrentWaitingRoomAction,
+  type WaitingRoomActionOwnership,
+} from './waiting-room-action.js';
 import { createBody } from './sprite.js';
 import type {
   MatchSetup, PlayerInfo, PublicRoom, RoomEvent, RoomPatch, RoomStore,
@@ -45,20 +50,22 @@ export interface WaitingRoomDeps {
    * 로비가 그 말을 띄운다 — 조용히 되돌리면 「들어가기를 눌렀는데 아무 일도
    * 없다」로 보인다.
    */
-  onLeave: (reason?: string) => void;
-  /** 방 설정으로 여는 한 판. «시작됐다»는 이벤트가 이 값을 싣고 온다 */
-  onStart: (setup: MatchSetup) => void;
+  onLeave: (code: string, entryGeneration: number, reason?: string) => void;
+  /** 방 설정으로 여는 한 판. 방 진입 소유권을 함께 넘겨 늦은 socket event를 가둔다. */
+  onStart: (code: string, setup: MatchSetup, entryGeneration: number) => void;
+  /** Socket은 invalidation만 알린다. app.ts가 REST snapshot으로 복구 여부를 판정한다. */
+  onMatchInvalidated: (code: string, entryGeneration: number) => void;
   getPlayer: () => PlayerInfo;
 }
 
 export interface WaitingRoom {
   /** @param code 들어온 방 */
-  show(code: string, characterId: string): Promise<void>;
+  show(code: string, characterId: string, entryGeneration: number): Promise<void>;
   hide(): void;
 }
 
 export function createWaitingRoom(
-  { roomStore, onLeave, onStart, getPlayer }: WaitingRoomDeps,
+  { roomStore, onLeave, onStart, onMatchInvalidated, getPlayer }: WaitingRoomDeps,
 ): WaitingRoom {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="waiting"]'),
@@ -66,6 +73,7 @@ export function createWaitingRoom(
     lead: need('waiting-lead'),
     leave: need<HTMLButtonElement>('waiting-leave'),
     start: need<HTMLButtonElement>('waiting-start'),
+    ready: need<HTMLButtonElement>('waiting-ready'),
     category: need<HTMLButtonElement>('setting-category'),
     categoryValue: need('setting-category-value'),
     capacity: need<HTMLButtonElement>('setting-capacity'),
@@ -95,6 +103,12 @@ export function createWaitingRoom(
   let room: PublicRoom | null = null;
   /** 구독을 끊는 함수 */
   let unsubscribe: (() => void) | null = null;
+  /** 늦게 도착한 이전 방 조회/이벤트가 현재 대기실을 덮지 못하게 한다 */
+  const showGuard = createLatestRequestGuard();
+  /** 현재 화면을 소유한 show 요청. hide/new show에서 즉시 바뀐다. */
+  let visibleRequest: number | null = null;
+  /** 이 show를 연 앱 navigation generation. 앱의 mutable 현재값을 다시 읽지 않는다. */
+  let visibleEntry: { code: string; entryGeneration: number } | null = null;
   /** 말풍선을 스스로 지우는 타이머. 없으면 undefined — clearTimeout이 그대로 받는다 */
   let bubbleTimer: number | undefined;
 
@@ -114,6 +128,11 @@ export function createWaitingRoom(
     el.capacityValue.textContent = `${room.capacity}명`;
     el.modeValue.textContent = room.gameMode ? '게임 모드' : '보통 모드';
 
+    const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
+    el.ready.disabled = !room.joined || me === null;
+    el.ready.textContent = me?.isReady ? '준비 취소' : '준비 완료';
+    el.ready.setAttribute('aria-pressed', String(Boolean(me?.isReady)));
+
     // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
     for (const button of [el.category, el.capacity, el.mode]) {
       button.disabled = !room.isMine;
@@ -132,7 +151,11 @@ export function createWaitingRoom(
       name.className = 'lounge__name';
       name.textContent = player.nickname;
 
-      item.append(figure, name);
+      const readiness = document.createElement('span');
+      readiness.className = 'lounge__ready';
+      readiness.textContent = player.isReady ? '준비' : '대기';
+
+      item.append(figure, name, readiness);
       el.players.append(item);
     }
   }
@@ -172,16 +195,24 @@ export function createWaitingRoom(
     while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
   }
 
-  function onEvent(event: RoomEvent): void {
+  function onEvent(
+    event: RoomEvent,
+    owner: { code: string; entryGeneration: number },
+  ): void {
     if (event.type === 'room') {
       room = event.room;
       render();
       return;
     }
-    // 판이 열렸다. **내가 눌렀는지 묻지 않는다** — 서버가 붙으면 방장이 누른 시작이
-    // 모두에게 같은 이벤트로 오고, 그때도 이 줄이 그대로 판을 연다
+    // 판이 열렸다. room code도 함께 건넨다. 나간 방의 늦은 event가 지금 방을 열면 안 된다.
     if (event.type === 'match' && event.phase === 'started') {
-      onStart(event.setup);
+      if (room) onStart(owner.code, event.setup, owner.entryGeneration);
+      return;
+    }
+    if (event.type === 'match' && event.phase === 'invalidated') {
+      // socket payload로 match state를 정하지 않는다. 아직 보이는 이 방의 인증된
+      // REST snapshot을 app.ts가 다시 읽어야 한다.
+      if (room) onMatchInvalidated(owner.code, owner.entryGeneration);
       return;
     }
     if (event.type !== 'chat') return;
@@ -204,21 +235,45 @@ export function createWaitingRoom(
   // ── 설정 바꾸기 ────────────────────────────────────────────────
   // 누를 때마다 다음 값으로 돈다. 캐릭터가 밟고 Enter만 눌러도 바뀐다
 
+  function captureAction(): WaitingRoomActionOwnership | null {
+    if (visibleRequest === null || !room) return null;
+    return { request: visibleRequest, code: room.code, snapshot: room };
+  }
+
+  function ownsAction(
+    action: WaitingRoomActionOwnership,
+    requireSameSnapshot = true,
+  ): boolean {
+    return showGuard.isCurrent(action.request)
+      && isCurrentWaitingRoomAction(
+        action,
+        { request: visibleRequest, room },
+        requireSameSnapshot,
+      );
+  }
+
   async function patch(change: RoomPatch): Promise<void> {
-    if (!room) return;
-    const result = await roomStore.updateRoom({ code: room.code, patch: change });
-    if (result.ok) {
-      room = result.room;
-      render();
-      return;
+    const action = captureAction();
+    if (!action) return;
+    try {
+      const result = await roomStore.updateRoom({ code: action.code, patch: change });
+      if (!ownsAction(action)) return;
+      if (result.ok) {
+        room = result.room;
+        render();
+        return;
+      }
+      // **실패를 삼키지 않는다.** 바로 아래 「게임 시작」이 이미 이렇게 하는데
+      // 설정만 조용하면 눌러도 아무 일이 없어 버튼이 고장 난 것처럼 보인다.
+      // 방장이 아닌 경우는 `render` 가 버튼을 잠가 두므로 실제로 여기 오는 것은
+      // 대기실에 있는 사이 방이 사라진 때다.
+      notice(result.reason === 'not-host'
+        ? '방장만 방 설정을 바꿀 수 있어요.'
+        : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+    } catch {
+      if (!ownsAction(action)) return;
+      notice('방 설정을 바꾸지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
     }
-    // **실패를 삼키지 않는다.** 바로 아래 「게임 시작」이 이미 이렇게 하는데
-    // 설정만 조용하면 눌러도 아무 일이 없어 버튼이 고장 난 것처럼 보인다.
-    // 방장이 아닌 경우는 `render` 가 버튼을 잠가 두므로 실제로 여기 오는 것은
-    // 대기실에 있는 사이 방이 사라진 때다.
-    notice(result.reason === 'not-host'
-      ? '방장만 방 설정을 바꿀 수 있어요.'
-      : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
   }
 
   el.category.addEventListener('click', () => {
@@ -241,22 +296,73 @@ export function createWaitingRoom(
 
   el.mode.addEventListener('click', () => patch({ gameMode: !room?.gameMode }));
 
+  el.ready.addEventListener('click', async () => {
+    const action = captureAction();
+    if (!action) return;
+    const me = action.snapshot.players.find((player) => player.id === roomStore.me());
+    if (!me) {
+      notice('이 방의 참가자 정보가 갱신됐어요. 방 목록으로 돌아가 다시 참가해 주세요.');
+      return;
+    }
+    try {
+      const result = await roomStore.setReady({ code: action.code, isReady: !me.isReady });
+      if (!ownsAction(action)) return;
+      if (result.ok) {
+        room = result.room;
+        render();
+        return;
+      }
+      notice(result.reason === 'game-in-progress'
+        ? '이미 게임이 진행 중이라 준비 상태를 바꿀 수 없어요.'
+        : result.reason === 'not-member'
+          ? '먼저 이 방에 참가해 주세요.'
+          : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+    } catch {
+      if (!ownsAction(action)) return;
+      notice('준비 상태를 바꾸지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    }
+  });
+
   // 여기서 판을 열지 않는다. 저장소에 «열어 달라»고 하고, 열렸다는 이벤트를
   // 받아서 움직인다 (onEvent 참고). 그래야 서버가 붙었을 때 방에 있는 모두가
   // 같은 순간에 같은 길로 시작한다
   el.start.addEventListener('click', async () => {
-    if (!room) return;
-    const result = await roomStore.startGame({ code: room.code });
-    if (!result.ok) {
-      notice(result.reason === 'not-host'
-        ? '방장만 판을 시작할 수 있어요.'
-        : '판을 시작하지 못했어요.');
+    const action = captureAction();
+    if (!action) return;
+    try {
+      const result = await roomStore.startGame({ code: action.code });
+      if (!ownsAction(action)) return;
+      if (!result.ok) {
+        notice(result.reason === 'not-host'
+          ? '방장만 판을 시작할 수 있어요.'
+          : result.reason === 'not-ready'
+            ? '참가자가 두 명 이상이고 모두 준비해야 시작할 수 있어요.'
+            : result.reason === 'game-in-progress'
+              ? '이미 게임이 진행 중이에요.'
+              : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+      }
+    } catch {
+      if (!ownsAction(action)) return;
+      notice('판을 시작하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
     }
   });
 
   el.leave.addEventListener('click', async () => {
-    if (room) await roomStore.leaveRoom({ code: room.code });
-    onLeave();
+    const action = captureAction();
+    const entryGeneration = visibleEntry?.entryGeneration;
+    if (!action) {
+      if (visibleEntry) onLeave(visibleEntry.code, visibleEntry.entryGeneration);
+      return;
+    }
+    if (entryGeneration === undefined) return;
+    try {
+      await roomStore.leaveRoom({ code: action.code });
+      if (!ownsAction(action, false)) return;
+      onLeave(action.code, entryGeneration);
+    } catch {
+      if (!ownsAction(action, false)) return;
+      notice('방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    }
   });
 
   // ── 채팅 ───────────────────────────────────────────────────────
@@ -264,11 +370,24 @@ export function createWaitingRoom(
   el.chatForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = el.chatInput.value;
-    el.chatInput.value = '';
-    if (!room) return;
-    await roomStore.sendChat({ code: room.code, text, player: getPlayer() });
-    // 보내고 나면 곧바로 다시 걸어 다닐 수 있게 손을 뗀다
-    el.chatInput.blur();
+    const action = captureAction();
+    if (!action) return;
+    try {
+      const result = await roomStore.sendChat({ code: action.code, text, player: getPlayer() });
+      if (!ownsAction(action, false)) return;
+      if (!result.ok) {
+        notice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      if (el.chatInput.value === text) {
+        el.chatInput.value = '';
+        // 보내고 나면 곧바로 다시 걸어 다닐 수 있게 손을 뗀다
+        el.chatInput.blur();
+      }
+    } catch {
+      if (!ownsAction(action, false)) return;
+      notice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    }
   });
 
   /**
@@ -291,18 +410,31 @@ export function createWaitingRoom(
   });
 
   return {
-    async show(code, characterId) {
-      room = await roomStore.getRoom(code);
+    async show(code, characterId, entryGeneration) {
+      const request = showGuard.begin();
+      visibleRequest = request;
+      visibleEntry = { code, entryGeneration };
+      // 새 방을 읽는 동안 이전 방을 계속 조작할 수 있으면 activeRoomCode와 화면이
+      // 갈라진다. 먼저 끊고 비워 둔다; 새 응답만 아래에서 다시 붙인다.
+      unsubscribe?.();
+      unsubscribe = null;
+      room = null;
+
+      const loadedRoom = await roomStore.getRoom(code);
+      if (!showGuard.isCurrent(request)) return;
+
+      room = loadedRoom;
       if (!room) {
         // 목록을 보는 사이 사라졌을 수 있다. 마지막 사람이 나가면 방이 지워진다.
         // **왜 되돌아왔는지 말해 준다** — 공개방의 「참가」는 이미 그렇게 하는데
         // 여기만 조용하면 같은 일에 두 가지 얼굴이 된다
-        onLeave('그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+        onLeave(code, entryGeneration, '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
         return;
       }
 
-      unsubscribe?.();
-      unsubscribe = roomStore.subscribe(code, onEvent);
+      unsubscribe = roomStore.subscribe(code, (event) => {
+        if (showGuard.isCurrent(request)) onEvent(event, { code, entryGeneration });
+      });
 
       el.bubble.hidden = true;
       el.chatInput.value = '';
@@ -312,6 +444,9 @@ export function createWaitingRoom(
     },
 
     hide() {
+      showGuard.invalidate();
+      visibleRequest = null;
+      visibleEntry = null;
       unsubscribe?.();
       unsubscribe = null;
       room = null;

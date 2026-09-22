@@ -5,7 +5,7 @@
 import { all, maybe } from '../dom.js';
 
 /** index.html 의 `data-screen` 값. 화면이 늘면 여기와 HTML 을 함께 고친다 */
-export type ScreenName = 'home' | 'quiz' | 'characters' | 'online' | 'waiting' | 'result' | 'ranking';
+export type ScreenName = 'home' | 'quiz' | 'online-quiz' | 'characters' | 'online' | 'waiting' | 'result' | 'online-result' | 'ranking';
 
 /** @param name 보여줄 화면 이름 */
 export function showScreen(name: ScreenName): void {

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>quiz by quiz</title>
   <meta name="description" content="브라우저에서 바로 즐기는 4지선다 상식 퀴즈. 한국사·과학·지리·일반상식·예술과문화 다섯 분야.">
+  <meta name="quiz-api-base" content="https://quiz-by-quiz-api.150.230.222.142.sslip.io">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧠</text></svg>">
   <script>
@@ -184,6 +185,52 @@
 
     </section>
 
+    <!-- ─────────── 서버 권위 온라인 퀴즈 ───────────
+         local quiz 화면을 재사용하지 않는다. 이 화면은 REST snapshot과 position/choice
+         submission만 다루므로 browser가 sampler·채점·점수를 가질 자리가 없다. -->
+    <section class="screen online-quiz" data-screen="online-quiz" aria-labelledby="online-question-text" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <div class="quiz-meta">
+          <span class="quiz-category" id="online-quiz-category"></span>
+          <span class="quiz-position" id="online-quiz-position"></span>
+        </div>
+        <button type="button" class="button button--ghost" id="online-quiz-exit">나가기</button>
+      </header>
+
+      <div class="progress" id="online-progress" role="progressbar"
+           aria-label="온라인 매치 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress__fill" id="online-progress-fill"></div>
+      </div>
+
+      <!-- server deadline의 시각적 안내일 뿐 timeout·채점·다음 문제 전환은 server가 한다. -->
+      <div class="timer" id="online-timer" aria-hidden="true">
+        <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
+        <p class="timer__label"><span class="timer__icon" id="online-timer-icon">⏱</span>
+          <span id="online-timer-text">서버 시간을 확인하는 중입니다</span></p>
+      </div>
+
+      <h1 class="question" id="online-question-text" tabindex="-1"></h1>
+      <ul class="choices" id="online-choices" aria-label="온라인 보기"></ul>
+      <p class="online-match-status" id="online-match-status" role="status"></p>
+      <section class="online-reveal" id="online-reveal" aria-live="polite" hidden>
+        <h2 class="online-reveal__verdict" id="online-reveal-verdict"></h2>
+        <p class="online-reveal__explanation" id="online-reveal-explanation"></p>
+      </section>
+    </section>
+
+    <!-- ─────────── 서버 권위 온라인 최종 순위 ─────────── -->
+    <section class="screen online-final" data-screen="online-result" aria-labelledby="online-final-title" tabindex="-1" hidden>
+      <header class="quiz-header">
+        <h1 class="screen-title" id="online-final-title">온라인 매치 결과</h1>
+      </header>
+      <p class="online-final__summary" id="online-final-summary" role="status"></p>
+      <ol class="online-final-ranking" id="online-final-ranking" aria-label="서버 최종 순위"></ol>
+      <div class="result-actions">
+        <button type="button" class="button button--primary" id="online-final-room">대기실로</button>
+        <button type="button" class="button button--ghost" id="online-final-home">홈으로</button>
+      </div>
+    </section>
+
     <!-- ─────────── 내 캐릭터 ─────────── -->
     <section class="screen" data-screen="characters" aria-labelledby="characters-title" tabindex="-1" hidden>
       <header class="quiz-header">
@@ -216,26 +263,58 @@
            맨 위에 둔다. 지금은 대기실에 들어가려다 방이 이미 사라진 경우가 쓴다. -->
       <p class="room-message" id="online-message" role="status" hidden></p>
 
-      <!-- 들어가 있는 방. 새로고침하거나 홈에 다녀와도 돌아갈 자리가 있어야 한다.
-           비공개 방은 아래 공개방 목록에 나오지 않아, 여기가 없으면 코드를 적어
-           두지 않은 사람은 제 방으로 돌아갈 길이 없다. -->
-      <div class="online-block" id="my-rooms-block" hidden>
-        <h2 class="online-block__title" id="my-rooms-title">내가 있는 방</h2>
-        <!-- 방 목록이 둘이라 «어느 목록인지»가 들려야 한다. 제목을 목록의 이름으로 잇는다 -->
-        <ul class="room-list" id="my-room-list" aria-labelledby="my-rooms-title"></ul>
-      </div>
+      <nav class="online-actions" aria-label="온라인 주요 동작">
+        <button type="button" class="button button--primary" id="open-public-rooms">공개방 참가</button>
+        <button type="button" class="button button--ghost" id="open-private-join">비공개방 참가</button>
+        <button type="button" class="button button--ghost" id="open-create-room">방 만들기</button>
+      </nav>
 
       <div class="online-block">
         <div class="online-block__head">
-          <h2 class="online-block__title" id="public-rooms-title">공개방</h2>
+          <div>
+            <h2 class="online-block__title" id="rooms-title">방 목록</h2>
+            <p class="online-block__caption">빈자리가 있는 방, 공개방, 비공개방 순으로 보여줘요.</p>
+          </div>
           <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
         </div>
-        <ul class="room-list" id="room-list" aria-labelledby="public-rooms-title"></ul>
+
+        <form class="room-filters" id="room-filters">
+          <label class="room-filter room-filter--search" for="room-search">
+            <span>방 찾기</span>
+            <input class="room-form__input" id="room-search" type="search"
+                   autocomplete="off" placeholder="방 제목 또는 코드">
+          </label>
+          <label class="room-filter" for="room-visibility">
+            <span>공개 여부</span>
+            <select class="room-form__input" id="room-visibility">
+              <option value="all">전체</option>
+              <option value="public">공개방</option>
+              <option value="private">비공개방</option>
+            </select>
+          </label>
+          <label class="room-filter" for="room-availability">
+            <span>인원</span>
+            <select class="room-form__input" id="room-availability">
+              <option value="all">전체</option>
+              <option value="joinable">참가 가능</option>
+              <option value="full">가득 참</option>
+            </select>
+          </label>
+          <label class="room-filter" for="room-category-filter">
+            <span>게임 형식</span>
+            <select class="room-form__input" id="room-category-filter"></select>
+          </label>
+          <button type="reset" class="button button--ghost button--small room-filters__reset">필터 초기화</button>
+        </form>
+
+        <p class="room-list-summary" id="room-list-summary" role="status"></p>
+        <ul class="room-list" id="room-list" aria-labelledby="rooms-title"></ul>
         <p class="room-empty" id="room-empty" hidden></p>
       </div>
 
-      <div class="online-block">
-        <h2 class="online-block__title">코드로 참가</h2>
+      <div class="online-block" id="private-join-block">
+        <h2 class="online-block__title">방 코드로 참가</h2>
+        <p class="online-block__caption">비공개방은 방 코드와 비밀번호를 모두 입력해 주세요.</p>
         <form class="room-form" id="join-form" novalidate>
           <div class="room-form__row">
             <label class="room-form__label" for="join-code">방 코드</label>
@@ -252,7 +331,7 @@
         <p class="room-message" id="join-message" role="status" hidden></p>
       </div>
 
-      <div class="online-block">
+      <div class="online-block" id="create-room-block">
         <h2 class="online-block__title">방 만들기</h2>
         <form class="room-form" id="create-form" novalidate>
           <div class="room-form__row">
@@ -313,6 +392,7 @@
         </button>
       </div>
 
+      <button type="button" class="button button--ghost waiting-ready" id="waiting-ready" aria-pressed="false">준비 완료</button>
       <button type="button" class="button button--primary waiting-start" id="waiting-start">게임 시작</button>
 
       <!-- 대기실 바닥. 참가자가 서 있고 내 캐릭터가 걸어 다닌다 -->

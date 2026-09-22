@@ -18,7 +18,11 @@ import { showScreen, type ScreenName } from './ui/screens.js';
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
-import { roomStore } from './online/adapter.js';
+import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
+import { createOnlineMatchController } from './online/match-controller.js';
+import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { createOnlineQuizScreen } from './ui/online-quiz.js';
+import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen } from './ui/quiz.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
@@ -159,6 +163,12 @@ async function main(): Promise<void> {
    * 방을 나가면 비운다 — 그때부터는 홈이 돌아갈 곳이다.
    */
   let activeRoomCode: string | null = null;
+  /** 서버 권위 매치 controller가 붙어 있는 방. 대기실 socket과 분리한다. */
+  let onlineMatchRoomCode: string | null = null;
+  /** controller callback이 현재 앱 navigation을 소유하는지 확인하는 세대. */
+  let onlineMatchNavigationGeneration: number | null = null;
+  /** 늦게 끝난 REST/저장소 요청이 더 새 화면 전환을 덮지 못하게 하는 소유권 세대. */
+  let waitingRoomEntryGeneration = 0;
   /** 방금 등록한 기록 ID. 랭킹 화면에서 강조한다 (FR-6.5) */
   let registeredId: string | null = null;
 
@@ -187,21 +197,47 @@ async function main(): Promise<void> {
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
 
-  // 대기실. 방 설정으로 한 판을 시작한다 — 서버가 없어 지금은 혼자 푸는 판이다
+  // 대기실. server-authoritative event로 시작을 알리고, 독립 개발 문서에서는
+  // 동일한 adapter contract를 따르는 local implementation이 한 판을 연다.
   const waitingRoom = createWaitingRoom({
     roomStore,
-    onLeave: (reason) => {
+    onLeave: (code, entryGeneration, reason) => {
+      if (!isCurrentWaitingRoomEntry({
+        code,
+        activeRoomCode,
+        onlineMatchRoomCode,
+        entryGeneration,
+        currentGeneration: waitingRoomEntryGeneration,
+      })) return;
+      stopOnlineMatch();
       activeRoomCode = null;
       // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
-      openOnline(reason);
+      void openOnline(reason);
     },
-    onStart: ({ categoryId, gameMode }) => {
+    onStart: (code, { categoryId, gameMode }, entryGeneration) => {
       // **나간 방의 판은 열지 않는다.** 「게임 시작」은 저장소에 알리고 되돌아온
       // 이벤트를 보고 움직이므로, 그 사이에 대기실을 떠났으면 여기 늦게 도착한다.
       // 그대로 열면 로비에 있는 사람 앞에서 판이 시작된다.
-      if (!activeRoomCode) return;
+      const ownsStartedEntry = () => isCurrentWaitingRoomEntry({
+        code,
+        activeRoomCode,
+        onlineMatchRoomCode,
+        entryGeneration,
+        currentGeneration: waitingRoomEntryGeneration,
+      });
+      if (!ownsStartedEntry()) return;
+      if (roomStore.isNetworked) {
+        void openOnlineMatch(code);
+        return;
+      }
       gameModeToggle.set(gameMode);
-      startRound(categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null });
+      void startRound(
+        categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null },
+        ownsStartedEntry,
+      );
+    },
+    onMatchInvalidated: (code, entryGeneration) => {
+      void resumeActiveNetworkMatch(code, entryGeneration);
     },
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
@@ -273,6 +309,115 @@ async function main(): Promise<void> {
     clearRankings: () => rankingStore.clearAll(),
   });
 
+  // ── 서버 권위 온라인 매치 ──────────────────────────────────────
+  //
+  // 대기실의 subscription은 화면이 바뀌면 정리된다. 따라서 active match는 별도
+  // controller가 socket invalidation → authenticated snapshot 재조회만 맡는다.
+  let onlineMatchController: ReturnType<typeof createOnlineMatchController> | null = null;
+
+  const onlineQuizScreen = createOnlineQuizScreen({
+    onSubmit: async (spec) => {
+      if (!onlineMatchController) return;
+      await onlineMatchController.submit(spec);
+    },
+    onExit: () => {
+      stopOnlineMatch();
+      void openOnline('매치는 서버에서 계속 진행됩니다. 방에 다시 들어가 이어서 풀 수 있어요.');
+    },
+    onFinished: showOnlineFinal,
+  });
+
+  const onlineResultScreen = createOnlineResultScreen({
+    onRoom: () => {
+      if (activeRoomCode) void openWaitingRoom(activeRoomCode);
+      else void openOnline();
+    },
+    onHome: () => { void goHome(); },
+    getPlayerId: () => roomStore.me(),
+  });
+
+  onlineMatchController = createOnlineMatchController({
+    gateway: roomStore,
+    onSnapshot: (snapshot) => {
+      if (!ownsOnlineMatchNavigation()) return;
+      onlineQuizScreen.render(snapshot);
+      if (snapshot.state !== 'finished') {
+        goTo('online-quiz');
+        onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
+      }
+    },
+    onMissing: () => {
+      if (!ownsOnlineMatchNavigation()) return;
+      const code = onlineMatchRoomCode;
+      stopOnlineMatch();
+      if (code && activeRoomCode === code) void openWaitingRoom(code);
+      else void openOnline('진행 중인 온라인 매치를 찾지 못했습니다.');
+    },
+    onError: (message) => {
+      if (ownsOnlineMatchNavigation()) onlineQuizScreen.setError(message);
+    },
+  });
+
+  /** finished ranking 역시 server snapshot만 받는다. local ranking store에 쓰지 않는다. */
+  function showOnlineFinal(snapshot: OnlineFinishedMatch): void {
+    stopOnlineMatch();
+    onlineResultScreen.show(snapshot);
+    goTo('online-result');
+  }
+
+  function stopOnlineMatch(): void {
+    onlineMatchNavigationGeneration = null;
+    onlineMatchController?.close();
+    onlineMatchRoomCode = null;
+  }
+
+  function invalidateWaitingRoomEntry(): number {
+    waitingRoomEntryGeneration += 1;
+    return waitingRoomEntryGeneration;
+  }
+
+  function isCurrentNavigation(generation: number): boolean {
+    return generation === waitingRoomEntryGeneration;
+  }
+
+  function ownsOnlineMatchNavigation(): boolean {
+    return onlineMatchRoomCode !== null
+      && onlineMatchNavigationGeneration !== null
+      && isCurrentNavigation(onlineMatchNavigationGeneration);
+  }
+
+  /** start event/reconnect 직후 이 controller가 room socket을 독립적으로 소유한다. */
+  async function openOnlineMatch(code: string): Promise<void> {
+    if (!roomStore.isNetworked) return;
+    if (onlineMatchRoomCode === code && ownsOnlineMatchNavigation()) return;
+    stopOnlineMatch();
+    onlineMatchRoomCode = code;
+    onlineQuizScreen.setNotice('서버 매치 상태를 불러오는 중입니다.');
+    goTo('online-quiz');
+    onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
+    await onlineMatchController?.open(code);
+  }
+
+  /**
+   * 대기실 socket은 «무효화됐다»만 알려 준다. 실제로 판을 열지는 REST snapshot으로
+   * 다시 판정한다. 이미 끝난 판·다른 방으로 옮긴 판·통신 실패는 대기실에 남긴다.
+   */
+  async function resumeActiveNetworkMatch(code: string, entryGeneration: number): Promise<boolean> {
+    if (!roomStore.isNetworked || activeRoomCode !== code || onlineMatchRoomCode === code) return false;
+    return recoverActiveNetworkMatch(code, {
+      getMatch: (roomCode) => roomStore.getMatch(roomCode),
+      isStillCurrent: () => isCurrentWaitingRoomEntry({
+        code,
+        activeRoomCode,
+        onlineMatchRoomCode,
+        entryGeneration,
+        currentGeneration: waitingRoomEntryGeneration,
+      }),
+      hasOpenMatch: () => onlineMatchRoomCode === code,
+      openMatch: openOnlineMatch,
+    });
+  }
+
   /**
    * 화면을 옮긴다. **가는 곳만 남기고 나머지는 모두 접는다.**
    *
@@ -290,7 +435,9 @@ async function main(): Promise<void> {
   const closers: Record<ScreenName, () => void> = {
     home: () => homeScreen.hide(),
     quiz: () => quizScreen.hide(),
+    'online-quiz': () => onlineQuizScreen.hide(),
     result: () => resultScreen.hide(),
+    'online-result': () => onlineResultScreen.hide(),
     ranking: () => rankingScreen.hide(),
     online: () => onlineScreen.hide(),
     waiting: () => waitingRoom.hide(),
@@ -298,6 +445,7 @@ async function main(): Promise<void> {
   };
 
   function goTo(name: ScreenName): void {
+    if (name !== 'waiting') invalidateWaitingRoomEntry();
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
@@ -338,12 +486,16 @@ async function main(): Promise<void> {
   }
 
   async function goHome(): Promise<void> {
-    // 홈으로 가도 방에서 나가지는 않는다. 로비에서 코드로 다시 들어갈 수 있다
+    const navigationGeneration = invalidateWaitingRoomEntry();
+    // 홈으로 가도 방에서 나가지는 않는다. 다만 매치 socket은 닫아 재접속 경계를 분명히 한다.
+    stopOnlineMatch();
     restoreMyGameMode();
+    const bestScores = await loadBestScores();
+    if (!isCurrentNavigation(navigationGeneration)) return;
     homeScreen.render({
       categories: CATEGORIES,
       banks,
-      bestScores: await loadBestScores(),
+      bestScores,
       allCount: allModeCount(),
       questionsPerRound: QUESTIONS_PER_ROUND,
       characterId,
@@ -354,7 +506,15 @@ async function main(): Promise<void> {
 
   // ── 퀴즈 ───────────────────────────────────────────────────────
 
-  async function startRound(round: Round): Promise<void> {
+  async function startRound(
+    round: Round,
+    ownsEntry?: () => boolean,
+  ): Promise<void> {
+    if (ownsEntry && !ownsEntry()) return;
+    // 대기실 event의 owner는 여기서 일반 navigation owner로 인계한다. 그 뒤에는
+    // 원래 entry generation이 아니라 이 요청의 generation만 commit 권한을 가진다.
+    const navigationGeneration = invalidateWaitingRoomEntry();
+    if (ownsEntry) waitingRoom.hide();
     const questions =
       round.mode === 'all'
         ? buildAllRound({
@@ -369,17 +529,26 @@ async function main(): Promise<void> {
           });
 
     if (questions.length === 0) {
+      restoreMyGameMode();
       homeScreen.setNote('이 카테고리에는 출제할 문제가 없습니다.');
+      goTo('home');
       return;
     }
 
     // 이번 판에 낸 문제는 다음 판에서 후순위가 된다. 중간에 나가도 마찬가지다.
     // 한 판만 기억하면 은행이 커져도 같은 문제가 금방 되돌아오므로 여러 판을
     // 쌓아 두되, 오래된 것부터 잘라 낸다. 새 문제가 앞에 오게 이어 붙인다.
-    recentQuestionIds = [
+    const nextRecentQuestionIds = [
       ...new Set([...questions.map((question) => question.id), ...recentQuestionIds]),
     ].slice(0, RECENT_QUESTION_MEMORY);
-    await preferences.setRecentQuestionIds(recentQuestionIds);
+    try {
+      await preferences.setRecentQuestionIds(nextRecentQuestionIds);
+    } catch {
+      // 최근 출제 기록은 중복 완화용일 뿐 판의 권위가 아니다. 저장 실패가
+      // 이미 인계받은 화면을 멈추게 하지 않고, 현재 세션에서는 계속 기억한다.
+    }
+    if (!isCurrentNavigation(navigationGeneration)) return;
+    recentQuestionIds = nextRecentQuestionIds;
 
     lastRound = round;
     registeredId = null;
@@ -401,6 +570,7 @@ async function main(): Promise<void> {
   // ── 결과 ───────────────────────────────────────────────────────
 
   async function showResult(session: QuizSession): Promise<void> {
+    const navigationGeneration = invalidateWaitingRoomEntry();
     const summary = summarizeRound({
       questions: session.getQuestions(),
       answers: session.getAnswers(),
@@ -415,6 +585,7 @@ async function main(): Promise<void> {
       rankingStore.getBestScore(target),
       preferences.getNickname(),
     ]);
+    if (!isCurrentNavigation(navigationGeneration)) return;
 
     // playedAt은 판이 끝난 시각이다. 닉네임을 입력한 시각이 아니다
     pending = { summary, target, playedAt: new Date().toISOString() };
@@ -463,26 +634,64 @@ async function main(): Promise<void> {
   // ── 랭킹 ───────────────────────────────────────────────────────
 
   async function openRanking(target: RankingTarget | null = null): Promise<void> {
+    const navigationGeneration = invalidateWaitingRoomEntry();
     await rankingScreen.show({ target, highlightId: registeredId, characterId });
+    if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('ranking');
   }
 
   // ── 온라인 ─────────────────────────────────────────────────────
 
   async function openOnline(notice?: string): Promise<void> {
+    const navigationGeneration = invalidateWaitingRoomEntry();
     await onlineScreen.show(characterId, notice);
+    if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('online');
   }
 
   async function openWaitingRoom(code: string): Promise<void> {
+    const entryGeneration = invalidateWaitingRoomEntry();
+    if (onlineMatchRoomCode) stopOnlineMatch();
     activeRoomCode = code;
     // 방 판이 끝나 돌아온 길일 수 있다. 방 설정은 대기실의 「모드」 버튼이 보여주므로
     // 앱 바까지 그 값을 들고 있을 이유가 없다
     restoreMyGameMode();
-    await waitingRoom.show(code, characterId);
+    try {
+      await waitingRoom.show(code, characterId, entryGeneration);
+    } catch {
+      // 방 정보를 받기 전에 network fetch가 거절될 수 있다. 클릭 handler까지 Promise를
+      // 흘리거나 임의의 로컬 방을 만들지 말고, 이유를 보이는 온라인 로비로 돌아간다.
+      if (!isCurrentWaitingRoomEntry({
+        code,
+        activeRoomCode,
+        onlineMatchRoomCode,
+        entryGeneration,
+        currentGeneration: waitingRoomEntryGeneration,
+      })) return;
+      if (activeRoomCode === code) activeRoomCode = null;
+      await openOnline('방 정보를 불러오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      return;
+    }
     // 방이 사라졌으면 `show` 가 `onLeave` 로 로비에 되돌려 놓고 activeRoomCode 를
     // 비운다. 그때 대기실로 옮기면 방금 되돌아온 것을 무르는 셈이다
-    if (activeRoomCode !== code) return;
+    if (!isCurrentWaitingRoomEntry({
+      code,
+      activeRoomCode,
+      onlineMatchRoomCode,
+      entryGeneration,
+      currentGeneration: waitingRoomEntryGeneration,
+    })) return;
+
+    // 새로고침/재접속한 참가자는 start event를 못 봤을 수 있다. Socket event는
+    // invalidation일 뿐이므로 동일한 REST snapshot recovery로만 active match를 연다.
+    const recovered = await resumeActiveNetworkMatch(code, entryGeneration);
+    if (recovered || !isCurrentWaitingRoomEntry({
+      code,
+      activeRoomCode,
+      onlineMatchRoomCode,
+      entryGeneration,
+      currentGeneration: waitingRoomEntryGeneration,
+    })) return;
     goTo('waiting');
   }
 

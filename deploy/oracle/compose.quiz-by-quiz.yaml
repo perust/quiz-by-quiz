@@ -1,0 +1,88 @@
+services:
+  quiz-by-quiz-migrate:
+    build:
+      context: "${QUIZ_BY_QUIZ_SOURCE_DIR:?set QUIZ_BY_QUIZ_SOURCE_DIR to the quiz-by-quiz repository root}"
+      dockerfile: server/Dockerfile
+      target: runtime
+    command: ["/app/.venv/bin/python", "-m", "app.migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_started
+    environment:
+      MIGRATOR_DATABASE_URL: "${QUIZ_MIGRATOR_DATABASE_URL:?set QUIZ_MIGRATOR_DATABASE_URL to the migration-owner PostgreSQL URL}"
+      QUIZ_DB_PASSWORD: "${QUIZ_DB_PASSWORD:?set QUIZ_DB_PASSWORD in platform .env}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 192m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - internal
+
+  quiz-by-quiz-api:
+    build:
+      context: "${QUIZ_BY_QUIZ_SOURCE_DIR:?set QUIZ_BY_QUIZ_SOURCE_DIR to the quiz-by-quiz repository root}"
+      dockerfile: server/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+      quiz-by-quiz-migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://quiz_by_quiz_app:${QUIZ_DB_PASSWORD:?set QUIZ_DB_PASSWORD in platform .env}@postgres:5432/quiz_by_quiz
+      QUESTION_BANK_DIR: /run/quiz-by-quiz/online-bank
+      CORS_ALLOW_ORIGINS: https://perust.github.io
+      TRUSTED_HOSTS: quiz-by-quiz-api.150.230.222.142.sslip.io
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: "${QUIZ_ONLINE_BANK_DIR:?set QUIZ_ONLINE_BANK_DIR to a private online question-bank directory}"
+        target: /run/quiz-by-quiz/online-bank
+        read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 384m
+    cpus: 0.50
+    pids_limit: 128
+    stop_grace_period: 20s
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - >-
+          import urllib.request; request = urllib.request.Request(
+          "http://127.0.0.1:8000/readyz", headers={"Host": "quiz-by-quiz-api.150.230.222.142.sslip.io"}
+          ); urllib.request.urlopen(request, timeout=3).read()
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - internal
