@@ -36,6 +36,8 @@ interface RoomPlayer {
   id: string;
   nickname: string;
   characterId?: string;
+  /** 오래된 localStorage 방에는 없을 수 있으므로 읽을 때 false로 좁힌다. */
+  isReady?: boolean;
   seenAt?: number;
 }
 
@@ -185,7 +187,12 @@ function toPublic(room: Room): PublicRoom {
     categoryId: room.categoryId,
     capacity: room.capacity,
     gameMode: Boolean(room.gameMode),
-    players: room.players.map(({ id, nickname, characterId }) => ({ id, nickname, characterId })),
+    players: room.players.map(({ id, nickname, characterId, isReady }) => ({
+      id,
+      nickname,
+      characterId,
+      isReady: Boolean(isReady),
+    })),
     isPublic: room.isPublic,
     hasPassword: Boolean(room.password),
     isMine: room.hostId === meId,
@@ -212,9 +219,9 @@ export const localRooms = {
     return meId;
   },
 
-  /** 공개방만 돌려준다. 비공개 방은 코드를 아는 사람만 들어간다 */
+  /** 공개방과 비공개방을 모두 돌려준다. 비밀번호 원문은 `toPublic`이 제거한다 */
   async listRooms(): Promise<PublicRoom[]> {
-    return readAll().filter((room) => room.isPublic).map(toPublic);
+    return readAll().map(toPublic);
   },
 
   /** 내가 들어가 있는 방. 목록과 따로 보여 준다 */
@@ -256,6 +263,7 @@ export const localRooms = {
         id: meId,
         nickname: player?.nickname || '나',
         characterId: player?.characterId,
+        isReady: false,
         seenAt: Date.now(),
       }],
       createdAt: new Date().toISOString(),
@@ -295,6 +303,7 @@ export const localRooms = {
       // 누가 누구인지, 말풍선이 누구 것인지 알 수 없다
       nickname: uniqueNickname(player?.nickname, room.players.map((p) => p.nickname)),
       characterId: player?.characterId,
+      isReady: false,
       seenAt: Date.now(),
     });
     // 들어간 것이 저장되지 않으면 대기실에 가자마자 «없는 방»이 된다
@@ -350,6 +359,21 @@ export const localRooms = {
     return { ok: true, room: toPublic(room) };
   },
 
+  /** local 구현도 browser가 자기 준비 상태만 바꾸는 RoomStore 계약을 따른다. */
+  async setReady({ code, isReady }: { code: string; isReady: boolean }) {
+    const rooms = readAll();
+    const room = rooms.find((item) => item.code === normalizeCode(code));
+    if (!room) return { ok: false as const, reason: 'not-found' as const };
+    const player = room.players.find((item) => item.id === meId);
+    if (!player) return { ok: false as const, reason: 'not-member' as const };
+
+    player.isReady = Boolean(isReady);
+    writeAll(rooms);
+    const publicRoom = toPublic(room);
+    emit(room.code, { type: 'room', room: publicRoom });
+    return { ok: true as const, room: publicRoom };
+  },
+
   /**
    * 한 마디 보낸다. 로컬 구현에서는 **내가 보낸 것이 나에게만** 되돌아온다 —
    * 다른 브라우저로 나갈 길이 없기 때문이다. 서버 구현에서는 같은 이벤트가
@@ -389,6 +413,19 @@ export const localRooms = {
     const setup = { categoryId: room.categoryId, gameMode: Boolean(room.gameMode) };
     emit(room.code, { type: 'match', phase: 'started', setup });
     return { ok: true, setup };
+  },
+
+  /** local room에는 server-authoritative match가 없으므로 snapshot을 꾸며 내지 않는다. */
+  async getMatch() {
+    return null;
+  },
+
+  /**
+   * local session으로 online API를 흉내 내면 client 채점 경계를 다시 열어 버린다.
+   * app은 isNetworked가 true일 때만 이 호출을 하지만, 잘못 연결돼도 fail-closed 한다.
+   */
+  async submitMatchAnswer() {
+    throw new Error('로컬 방은 서버 권위 온라인 답안 제출을 지원하지 않습니다.');
   },
 
   /** 방을 나간다. 아무도 남지 않으면 방을 지운다 */

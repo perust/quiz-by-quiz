@@ -1,0 +1,37 @@
+# Credentials and VCS metadata must never enter an image build context.
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+# The test stage reads one public CI contract. Keep all other GitHub metadata
+# out of the build context, including any future action configuration.
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/pages.yml
+
+# Pages data contains answer keys. The online API receives a separate private
+# question bank only as a runtime bind mount, never through the build context.
+data/
+
+# Local dependencies, test caches, generated artifacts, and repository-local
+# personal/classroom material must not be sent to the Docker daemon.
+node_modules
+dist
+.astro
+coverage
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+server/.venv
+.venv
+teacher/
+backups/
+
+# Local tooling and editor files.
+.DS_Store
+.vscode
+.idea
+*.log

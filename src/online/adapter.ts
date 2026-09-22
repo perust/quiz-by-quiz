@@ -8,7 +8,7 @@
 //   isNetworked            진짜 네트워크인가 (화면이 안내 문구를 정할 때 쓴다)
 //   isPersistent           만든 방이 새로고침 뒤에도 남는가 (같은 이유로 쓴다)
 //   me()                   지금 나를 가리키는 값
-//   listRooms()            공개방 목록
+//   listRooms()            공개·비공개 방 목록(비밀번호 원문 제외)
 //   myRooms()              내가 들어가 있는 방
 //   createRoom(spec)       {ok, room} | {ok:false, message}
 //   joinRoom(spec)         {ok, room} | {ok:false, reason}
@@ -40,15 +40,19 @@
 // **비밀번호는 구현체 안에서만 견준다.** 목록에는 잠김 여부만 나가고, 화면은
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
-import { localRooms } from './local-rooms.js';
-import type { JoinFailReason } from './rules.js';
+import { safeStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
+import { localRooms } from './local-rooms.js';
+import { createNetworkRoomStore } from './network-rooms.js';
+import type { JoinFailReason } from './rules.js';
 
 /** 방에 서 있는 사람. **밖으로 나가는 모습이라 `seenAt` 같은 속사정은 없다** */
 export interface PublicPlayer {
   id: string;
   nickname: string;
   characterId?: string;
+  /** 이 참가자가 server-authoritative 시작 조건에 준비됐는가 */
+  isReady: boolean;
 }
 
 /**
@@ -134,20 +138,109 @@ export type RoomActionResult =
   | { ok: true; room: PublicRoom }
   | { ok: false; reason: 'not-found' | 'not-host' };
 
+/** 본인만 바꿀 수 있는 준비 상태. 준비 충족 여부와 시작 권한은 서버가 판정한다. */
+export type ReadyResult =
+  | { ok: true; room: PublicRoom }
+  | { ok: false; reason: 'not-found' | 'not-member' | 'game-in-progress' };
+
 export type StartGameResult =
   | { ok: true; setup: MatchSetup }
-  | { ok: false; reason: 'not-found' | 'not-host' };
+  | { ok: false; reason: 'not-found' | 'not-host' | 'not-ready' | 'game-in-progress' };
+
+/** 서버가 고른 문항. `answerIndex`와 해설은 **여기에 존재하지 않는다.** */
+export interface OnlineMatchQuestion {
+  id: string;
+  categoryId: CategoryId;
+  question: string;
+  choices: string[];
+  position: number;
+  total: number;
+}
+
+/** running 중에는 이 acknowledgement만 보인다. 정답·점수는 타입에 없다. */
+export interface OnlineOwnSubmission {
+  position: number;
+  choiceIndex: number | null;
+  timedOut: boolean;
+}
+
+/** revealing 때만 자기 답의 정오답과 해설을 받는다. */
+export interface OnlineReveal extends OnlineOwnSubmission {
+  correct: boolean;
+  answerIndex: number;
+  explanation: string;
+}
+
+/** 배열 순서 자체가 서버가 결정한 순위다. client는 재정렬하지 않는다. */
+export interface OnlineScore {
+  playerId: string;
+  nickname: string;
+  characterId: string | null;
+  score: number;
+  correctCount: number;
+  answeredCount: number;
+}
+
+interface OnlineMatchBase {
+  matchId: string;
+  categoryId: CategoryId | null;
+  gameMode: boolean;
+  currentPosition: number;
+  totalQuestions: number;
+}
+
+/** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
+interface OnlineActiveMatchBase extends OnlineMatchBase {
+  deadlineAt: string;
+}
+
+export interface OnlineRunningMatch extends OnlineActiveMatchBase {
+  state: 'running';
+  question: OnlineMatchQuestion;
+  ownSubmission: OnlineOwnSubmission | null;
+  reveal: null;
+  scores: [];
+}
+
+export interface OnlineRevealingMatch extends OnlineActiveMatchBase {
+  state: 'revealing';
+  question: OnlineMatchQuestion;
+  ownSubmission: null;
+  reveal: OnlineReveal | null;
+  scores: OnlineScore[];
+}
+
+export interface OnlineFinishedMatch extends OnlineMatchBase {
+  state: 'finished';
+  /** 최종 공개가 끝난 terminal state에는 활성 문제 deadline이 없다. */
+  deadlineAt: null;
+  question: null;
+  ownSubmission: null;
+  reveal: null;
+  scores: OnlineScore[];
+}
+
+/** API가 준 상태는 이 union 밖으로 넓히지 않는다. */
+export type OnlineMatchSnapshot = OnlineRunningMatch | OnlineRevealingMatch | OnlineFinishedMatch;
+
+export interface OnlineMatchAnswerResult {
+  match: OnlineMatchSnapshot;
+  accepted: true;
+  /** 제출 요청이 deadline transition도 함께 commit했는가 */
+  advanced: boolean;
+}
 
 /**
  * 구독으로 오는 이벤트.
  *
- * `match`의 phase는 지금 `'started'` 하나뿐이다. 여럿이 같은 문제를 푸는 판이
- * 생기면 `'question' | 'reveal' | 'over'`가 여기 붙는다 — **지금 미리 짓지 않는다.**
+ * `invalidated`에는 상태 자체를 싣지 않는다. 누가 보낸 값이든 신뢰하지 않고,
+ * 각 browser가 자신의 authorization으로 match snapshot을 다시 읽는다.
  */
 export type RoomEvent =
   | { type: 'room'; room: PublicRoom }
   | { type: 'chat'; playerId: string; nickname: string; text: string; at: number }
-  | { type: 'match'; phase: 'started'; setup: MatchSetup };
+  | { type: 'match'; phase: 'started'; setup: MatchSetup }
+  | { type: 'match'; phase: 'invalidated'; matchId: string | null };
 
 export type RoomEventHandler = (event: RoomEvent) => void;
 
@@ -167,7 +260,7 @@ export interface RoomStore {
   readonly isPersistent: boolean;
   /** 지금 나를 가리키는 값. **새로고침해도 그대로여야 한다** */
   me(): string;
-  /** 공개방 목록 */
+  /** 공개·비공개 방 목록. 비밀번호 원문은 PublicRoom에 존재하지 않는다 */
   listRooms(): Promise<PublicRoom[]>;
   /** 내가 들어가 있는 방 */
   myRooms(): Promise<PublicRoom[]>;
@@ -177,10 +270,35 @@ export interface RoomStore {
   /** 방 하나. 없으면 null */
   getRoom(code: string): Promise<PublicRoom | null>;
   updateRoom(spec: { code: string; patch: RoomPatch }): Promise<RoomActionResult>;
+  /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */
+  setReady(spec: { code: string; isReady: boolean }): Promise<ReadyResult>;
   sendChat(spec: { code: string; text: string; player?: PlayerInfo }): Promise<{ ok: boolean }>;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
+  /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */
+  getMatch(code: string): Promise<OnlineMatchSnapshot | null>;
+  /** browser는 position과 choice index만 보낸다. 채점·점수는 server snapshot을 따른다 */
+  submitMatchAnswer(spec: {
+    code: string;
+    position: number;
+    choiceIndex: number;
+  }): Promise<OnlineMatchAnswerResult>;
   subscribe(code: string, handler: RoomEventHandler): Unsubscribe;
 }
 
-export const roomStore: RoomStore = localRooms;
+function configuredApiBase(): string | null {
+  if (typeof document === 'undefined') return null;
+  const value = document.querySelector<HTMLMetaElement>('meta[name="quiz-api-base"]')?.content.trim();
+  return value || null;
+}
+
+const apiBase = configuredApiBase();
+
+/**
+ * 배포본에는 `quiz-api-base`가 있어 원격 저장소만 쓴다. 연결 실패를 로컬방으로
+ * 숨기면 같은 이름의 서로 다른 방이 생기므로 조용한 fallback은 두지 않는다.
+ * 메타가 없는 단위 테스트·독립 개발 문서에서만 로컬 구현을 유지한다.
+ */
+export const roomStore: RoomStore = apiBase
+  ? createNetworkRoomStore({ baseUrl: apiBase, storage: safeStorage })
+  : localRooms;

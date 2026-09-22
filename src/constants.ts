@@ -49,7 +49,7 @@ export const RECENT_QUESTION_MEMORY = 90;
  * 방이 생겨 고르기가 어려워진다.
  */
 export const ROOM_CODE_LENGTH = 6;
-export const ROOM_CAPACITY_CHOICES: number[] = [2, 4, 6, 8];
+export const ROOM_CAPACITY_CHOICES: number[] = [2, 4, 6, 8, 10, 12];
 export const ROOM_NAME_MAX_LENGTH = 16;
 export const ROOM_PASSWORD_MIN_LENGTH = 4;
 export const ROOM_PASSWORD_MAX_LENGTH = 12;

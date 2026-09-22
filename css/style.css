@@ -599,6 +599,85 @@ body.is-booted .app-bar {
   opacity: 0.55;
 }
 
+/* Online running state deliberately has a third visual status: submitted, not judged. */
+.choice--submitted {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.choice--submitted .choice__mark {
+  color: var(--accent);
+}
+
+.online-match-status {
+  margin: -8px 0 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.online-reveal {
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.online-reveal__verdict {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.online-reveal__explanation {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.online-final__summary {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}
+
+.online-final-ranking {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.online-final-ranking__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.online-final-ranking__item--mine {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.online-final-ranking__place,
+.online-final-ranking__score {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.online-final-ranking__name {
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── 피드백 ── */
 /* 화면 맨 아래에 붙는 시트.
    답을 고른 뒤 스크롤을 내려 찾지 않아도 되고, 엄지가 닿는 자리에 버튼이 온다.
@@ -2013,6 +2092,18 @@ select.is-standing {
   word-break: keep-all;
 }
 
+.online-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.online-actions .button {
+  min-width: 0;
+  white-space: normal;
+}
+
 .online-block {
   margin-bottom: 20px;
   padding: 14px;
@@ -2036,6 +2127,56 @@ select.is-standing {
 
 .online-block__head .online-block__title {
   margin-bottom: 10px;
+}
+
+.online-block__caption {
+  margin: -6px 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  word-break: keep-all;
+}
+
+.online-block__head .online-block__caption {
+  margin-bottom: 10px;
+}
+
+.room-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px;
+  margin: 4px 0 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.room-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.room-filter .room-form__input {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 9px;
+  font-size: 13px;
+}
+
+.room-filters__reset {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.room-list-summary {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* 목록과 폼에서 함께 쓰는 작은 버튼 */
@@ -2074,6 +2215,35 @@ select.is-standing {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+.room-item__title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.room-item__visibility {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.room-item__visibility--public {
+  background: var(--correct-soft);
+  color: var(--correct);
+}
+
+.room-item__visibility--private {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.room-item--full {
+  background: var(--bg);
 }
 
 .room-item__name {
@@ -2144,6 +2314,48 @@ select.is-standing {
   color: var(--wrong);
 }
 
+@media (max-width: 560px) {
+  .room-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .room-filter--search {
+    grid-column: 1 / -1;
+  }
+
+  .room-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .room-item__actions {
+    width: 100%;
+  }
+
+  .room-item__actions .button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .online-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .room-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .room-filter--search,
+  .room-filters__reset {
+    grid-column: auto;
+  }
+
+  .room-filters__reset {
+    justify-self: stretch;
+  }
+}
+
 /* 좁은 화면에서는 라벨을 위로 올린다. 68px 라벨이 입력칸을 너무 좁힌다 */
 @media (max-width: 380px) {
   .room-form__row:not(.room-form__row--check) {
@@ -2201,6 +2413,7 @@ select.is-standing {
   font-weight: 700;
 }
 
+.waiting-ready,
 .waiting-start {
   width: 100%;
   margin-bottom: 12px;
@@ -2251,6 +2464,15 @@ select.is-standing {
   white-space: nowrap;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.lounge__ready {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 /* 캐릭터 위에 뜨는 말풍선. .walker 안에 있어 캐릭터를 따라다닌다.

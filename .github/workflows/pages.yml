@@ -1,43 +1,48 @@
 # GitHub Pages 배포
 #
-# TypeScript 를 컴파일한 뒤, **올릴 것만 골라 담아** 배포한다.
-# 저장소 설정에서 Settings → Pages → Source 를 "GitHub Actions"로 바꿔야 동작한다.
+# TypeScript를 컴파일한 뒤, **올릴 것만 골라 담아** 배포한다.
+# 저장소 설정에서 Settings → Pages → Source를 "GitHub Actions"로 바꿔야 동작한다.
 #
 # 한때 저장소 루트를 통째로 올렸다(SOURCE_DIR: .). 소스가 곧 배포물이라 단순했지만,
-# 루트에 둔 것이 전부 공개된다는 뜻이라 teacher/ 같은 폴더를 .gitignore 로 막아야 했다.
-# 지금은 **담은 것만 나간다** — node_modules/와 teacher/는 빠지고, 소스맵용 src/만 명시해 담는다.
+# 루트에 둔 것이 전부 공개된다는 뜻이라 teacher/ 같은 폴더를 .gitignore로 막아야 했다.
+# 지금은 **담은 것만 나간다** — node_modules와 teacher/는 빠지고, 소스맵용 src/만 명시해 담는다.
 
-name: Deploy to GitHub Pages
+name: Verify and deploy GitHub Pages
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# 배포는 한 번에 하나만. 진행 중인 것을 취소하지는 않는다
+# PR은 PR별 그룹으로 main과 격리하고 최신 검증만 남긴다. main은 같은 full-workflow
+# 그룹에서 취소 없이 끝까지 직렬화한 뒤 publish 직전 authoritative main HEAD를
+# 확인한다. 비-FIFO queue, 과거 run 재실행, 비동기 취소가 롤백을 만들면 안 된다.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('pages-pr-{0}', github.event.pull_request.number)
+        || (github.ref == 'refs/heads/main'
+            && 'pages-main'
+            || format('pages-check-{0}', github.ref_name)) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  deploy:
+  verify:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Python 설정
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: 문제 은행 검증
+      - name: 공개 문제 은행 검증
         run: |
           python3 tools/check_bank.py
           python3 -m unittest discover -s tests -v
@@ -52,12 +57,58 @@ jobs:
       - name: 의존성 설치
         run: npm ci
 
+      - name: 타입 검사·컴파일·온라인 클라이언트 회귀
+        # node test는 tsc가 만든 js/를 읽으므로 컴파일 뒤에 실행한다.
+        run: |
+          npm run build
+          node --test tests/*.test.mjs
+
+      - name: uv 설정
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      - name: 서버 정적 검사와 회귀
+        working-directory: server
+        run: |
+          uv run --locked ruff check app tests
+          uv run --locked python -m pytest -q
+
+      - name: 서버 Docker test stage
+        # runtime build와 별도로 test stage도 실제로 빌드해 Ruff/pytest를 강제한다.
+        run: docker build --target test --file server/Dockerfile .
+
+  deploy:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 의존성 설치
+        run: npm ci
+
       - name: 타입 검사와 컴파일
-        # tsc 가 실패하면 여기서 멈춘다. 타입이 깨진 채로 배포되지 않는다.
+        # verify가 이미 통과했더라도, 배포 아티팩트는 이 job에서 새로 만든다.
         run: npm run build
 
       - name: 배포할 것만 담기
-        # src/ 는 소스맵이 가리키므로 함께 올린다 — 개발자 도구에서 .ts 원본이 보인다.
+        # src/는 소스맵이 가리키므로 함께 올린다 — 개발자 도구에서 .ts 원본이 보인다.
         # 그 밖의 것(node_modules, teacher, docs, tools, .claude)은 담지 않는다.
         run: |
           mkdir -p dist
@@ -69,6 +120,14 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+      - name: 공개 직전 최신 main revision 확인
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          head_sha="$(git rev-parse --verify refs/remotes/origin/main)"
+          node tools/check-pages-head.mjs "$GITHUB_SHA" "$head_sha"
 
       - id: deployment
         uses: actions/deploy-pages@v4
