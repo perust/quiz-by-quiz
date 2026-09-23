@@ -59,9 +59,12 @@ Do not increase the worker count or horizontally scale this service without a
 shared distributed limiter and a fresh memory/rate-envelope review.
 
 The in-process event hub admits at most two sockets per actor+room, 32 per room,
-and 256 total. Each admitted socket accepts at most 12 inbound frames per minute;
-excess closes with 4429. Broadcast sends run concurrently with a two-second per-socket
-deadline. Leaving a room closes that actor's sockets immediately, and the
+and 256 total. Movement and heartbeat frames share an actor+room budget of 30 per
+second and 1,200 per minute, plus a process-wide budget of 15,000 per minute;
+excess closes with 4429. The browser coalesces movement to eight frames per second
+and sends standing positions every two seconds for reconnect recovery. Broadcast
+sends run concurrently with a two-second per-socket deadline. Leaving a room closes
+that actor's sockets immediately, and the
 60-second cleanup sweep revalidates all admitted memberships. These bounds also
 depend on the single-worker deployment contract.
 

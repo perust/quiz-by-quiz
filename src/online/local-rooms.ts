@@ -105,6 +105,7 @@ const meId: string = (() => {
  * 그대로다.** 지금 쓸 데가 없다고 빼 두면 서버를 붙일 때 화면을 다시 짜야 한다.
  */
 const listeners = new Map<string, Set<RoomEventHandler>>();
+let movementSequence = 0;
 
 function emit(code: string, event: RoomEvent): void {
   listeners.get(code)?.forEach((handler) => handler(event));
@@ -403,6 +404,36 @@ export const localRooms = {
       at: Date.now(),
     });
     return { ok: true };
+  },
+
+  /** local adapter도 network와 같은 bounded movement event를 되돌려 준다. */
+  sendMovement({
+    code, x, y, moving,
+  }: {
+    code: string;
+    x: number;
+    y: number;
+    moving: boolean;
+  }): boolean {
+    if (
+      !Number.isFinite(x) || x < 0 || x > 1
+      || !Number.isFinite(y) || y < 0 || y > 1
+      || typeof moving !== 'boolean'
+    ) return false;
+    const key = normalizeCode(code);
+    const room = readAll().find((candidate) => candidate.code === key);
+    if (!room?.players.some((player) => player.id === meId)) return false;
+    movementSequence += 1;
+    emit(key, {
+      type: 'movement',
+      playerId: meId,
+      x,
+      y,
+      moving,
+      sequence: movementSequence,
+      connectionGeneration: 0,
+    });
+    return true;
   },
 
   /**

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+import math
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from itertools import count
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -90,6 +93,34 @@ def _websocket_ticket(websocket: WebSocket) -> str | None:
     if any(not (character.isalnum() or character in "-_") for character in ticket):
         return None
     return ticket
+
+
+def _movement_message(message: str) -> tuple[float, float, bool] | None:
+    """Return one strict, bounded movement payload without trusting client identity."""
+    if len(message) > 256:
+        return None
+    try:
+        value = json.loads(message)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(value, dict) or set(value) != {"type", "x", "y", "moving"}:
+        return None
+    if value["type"] != "movement" or type(value["moving"]) is not bool:
+        return None
+    x = value["x"]
+    y = value["y"]
+    if (
+        isinstance(x, bool)
+        or not isinstance(x, (int, float))
+        or isinstance(y, bool)
+        or not isinstance(y, (int, float))
+    ):
+        return None
+    x = float(x)
+    y = float(y)
+    if not math.isfinite(x) or not math.isfinite(y) or not 0 <= x <= 1 or not 0 <= y <= 1:
+        return None
+    return x, y, value["moving"]
 
 
 class StrictBody(BaseModel):
@@ -556,7 +587,9 @@ def create_app(
     chat_limiter = AtomicMultiWindowLimiter()
     answer_limiter = AtomicMultiWindowLimiter()
     ticket_limiter = AtomicMultiWindowLimiter()
+    websocket_inbound_limiter = AtomicMultiWindowLimiter()
     release_readiness_limiter = AtomicMultiWindowLimiter()
+    movement_sequences = count(1)
 
     def allow_actor_room(
         limiter: AtomicMultiWindowLimiter,
@@ -1257,16 +1290,25 @@ def create_app(
                 await websocket.close(code=1012)
                 return
             touch_gate = MinimumIntervalGate(interval_seconds=15)
-            inbound_limiter = AtomicMultiWindowLimiter()
             if touch_gate.allow():
                 await repo.touch_member(actor_id, code)
             while True:
-                await websocket.receive_text()
-                if not inbound_limiter.allow(
+                message = await websocket.receive_text()
+                if not websocket_inbound_limiter.allow(
                     (
                         RateLimitClaim(
+                            key=f"websocket-inbound:burst:{actor_id}:{code}",
+                            limit=30,
+                            window_seconds=1,
+                        ),
+                        RateLimitClaim(
+                            key=f"websocket-inbound:sustained:{actor_id}:{code}",
+                            limit=1_200,
+                            window_seconds=60,
+                        ),
+                        RateLimitClaim(
                             key="websocket-inbound",
-                            limit=12,
+                            limit=15_000,
                             window_seconds=60,
                         ),
                     )
@@ -1275,6 +1317,21 @@ def create_app(
                     return
                 if touch_gate.allow():
                     await repo.touch_member(actor_id, code)
+                movement = _movement_message(message)
+                if movement is None:
+                    continue
+                x, y, moving = movement
+                await hub.broadcast(
+                    code,
+                    {
+                        "type": "movement",
+                        "playerId": str(actor_id),
+                        "x": x,
+                        "y": y,
+                        "moving": moving,
+                        "sequence": next(movement_sequences),
+                    },
+                )
         except (RuntimeError, WebSocketDisconnect):
             pass
         finally:

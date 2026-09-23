@@ -16,6 +16,10 @@ import { createScreenWalker } from './screen-walker.js';
 import { createLatestRequestGuard } from './latest-request.js';
 import { createPlayerBubbleController } from './player-bubbles.js';
 import {
+  createMovementPublisher,
+  createPlayerMovementController,
+} from './player-movement.js';
+import {
   isCurrentWaitingRoomAction,
   type WaitingRoomActionOwnership,
 } from './waiting-room-action.js';
@@ -81,6 +85,7 @@ export function createWaitingRoom(
     capacityValue: need('setting-capacity-value'),
     lounge: need('lounge'),
     players: need('lounge-players'),
+    remoteCharacters: need('waiting-remote-characters'),
     character: need('waiting-character'),
     bubble: need('waiting-bubble'),
     chatForm: need<HTMLFormElement>('chat-form'),
@@ -96,6 +101,14 @@ export function createWaitingRoom(
       const box = el.lounge.getBoundingClientRect();
       if (box.width === 0) return null;
       return { x: box.left + box.width / 2, y: box.bottom - 18 };
+    },
+    onMove: (point, moving) => {
+      if (window.innerWidth <= 0 || window.innerHeight <= 0) return;
+      movementPublisher.update({
+        x: Number(Math.min(1, Math.max(0, point.x / window.innerWidth)).toFixed(4)),
+        y: Number(Math.min(1, Math.max(0, point.y / window.innerHeight)).toFixed(4)),
+        moving,
+      });
     },
   });
 
@@ -113,6 +126,17 @@ export function createWaitingRoom(
   let bubbleTimer: number | undefined;
   /** room snapshot이 참가자 DOM을 다시 만들어도 아직 살아 있는 남의 말은 유지한다. */
   const remoteBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
+  /** room snapshot rerender와 socket reconnect를 건너서 상대 좌표를 보존한다. */
+  const remoteMovements = createPlayerMovementController();
+  /** 걷는 frame은 125ms(초당 8회)로 합치고, stop은 즉시 보낸다. */
+  const movementPublisher = createMovementPublisher({
+    send: (sample) => {
+      if (!visibleEntry) return;
+      roomStore.sendMovement({ code: visibleEntry.code, ...sample });
+    },
+  });
+  /** reconnect한 상대도 정지 위치를 복구할 수 있게 마지막 좌표를 다시 보내는 timer. */
+  let movementHeartbeat: number | undefined;
   /** 화면 가장자리 안으로 말풍선을 맞추기 위한 현재 player figure lookup. */
   const remoteBubbleNodes = new Map<string, HTMLElement>();
 
@@ -141,9 +165,13 @@ export function createWaitingRoom(
       button.disabled = !room.isMine;
     }
 
+    const remotePlayers = room.players.filter((player) => player.id !== roomStore.me());
+    remoteMovements.unbindAll();
+    remoteMovements.reconcile(remotePlayers.map((player) => player.id));
     remoteBubbles.unbindAll();
     remoteBubbleNodes.clear();
     el.players.replaceChildren();
+    el.remoteCharacters.replaceChildren();
     for (const player of room.players) {
       const item = document.createElement('li');
       item.className = 'lounge__player';
@@ -151,15 +179,6 @@ export function createWaitingRoom(
 
       const figure = document.createElement('span');
       figure.className = 'lounge__figure';
-      if (player.id !== roomStore.me()) {
-        // 채팅 로그가 접근성용 live region이므로 시각 말풍선은 중복 낭독하지 않는다.
-        const bubble = document.createElement('span');
-        bubble.className = 'lounge__bubble';
-        bubble.setAttribute('aria-hidden', 'true');
-        bubble.hidden = true;
-        figure.append(bubble);
-        remoteBubbleNodes.set(player.id, bubble);
-      }
       figure.append(createBody(player.characterId));
 
       const name = document.createElement('span');
@@ -172,12 +191,32 @@ export function createWaitingRoom(
 
       item.append(figure, name, readiness);
       el.players.append(item);
-      const bubble = remoteBubbleNodes.get(player.id);
-      if (bubble) {
-        remoteBubbles.bind(player.id, bubble);
-        if (!bubble.hidden) fitRemoteBubble(bubble);
-      }
+
+      if (player.id === roomStore.me()) continue;
+      const remoteCharacter = document.createElement('div');
+      remoteCharacter.className = 'walker walker--home walker--remote';
+      remoteCharacter.dataset.movingPlayerId = player.id;
+      remoteCharacter.hidden = true;
+
+      // 채팅 로그가 접근성용 live region이므로 시각 말풍선은 중복 낭독하지 않는다.
+      const bubble = document.createElement('span');
+      bubble.className = 'walker__bubble';
+      bubble.setAttribute('aria-hidden', 'true');
+      bubble.hidden = true;
+      const shadow = document.createElement('span');
+      shadow.className = 'walker__shadow';
+      const movingName = document.createElement('span');
+      movingName.className = 'walker__name';
+      movingName.textContent = player.nickname;
+      remoteCharacter.append(bubble, shadow, createBody(player.characterId), movingName);
+      el.remoteCharacters.append(remoteCharacter);
+
+      remoteBubbleNodes.set(player.id, bubble);
+      remoteMovements.bind(player.id, remoteCharacter);
+      remoteBubbles.bind(player.id, bubble);
+      if (!bubble.hidden) fitRemoteBubble(bubble);
     }
+    movementPublisher.resend();
   }
 
   // ── 말풍선 ─────────────────────────────────────────────────────
@@ -194,19 +233,23 @@ export function createWaitingRoom(
     bubbleTimer = setTimeout(() => { el.bubble.hidden = true; }, BUBBLE_MS);
   }
 
-  /** Center a remote bubble on its figure, then shift only enough to stay inside the lounge. */
+  /** 움직이는 상대 위에 두되 viewport 밖으로 나간 만큼만 안쪽으로 민다. */
   function fitRemoteBubble(bubble: HTMLElement): void {
     bubble.style.removeProperty('--bubble-shift');
     if (bubble.hidden) return;
-    const loungeBox = el.lounge.getBoundingClientRect();
+    const characterBox = bubble.parentElement?.getBoundingClientRect();
+    bubble.classList.toggle(
+      'walker__bubble--below',
+      Boolean(characterBox && characterBox.top < BUBBLE_ROOM),
+    );
     const bubbleBox = bubble.getBoundingClientRect();
-    if (loungeBox.width === 0 || bubbleBox.width === 0) return;
+    if (bubbleBox.width === 0) return;
     const inset = 6;
     let shift = 0;
-    if (bubbleBox.left < loungeBox.left + inset) {
-      shift = loungeBox.left + inset - bubbleBox.left;
-    } else if (bubbleBox.right > loungeBox.right - inset) {
-      shift = loungeBox.right - inset - bubbleBox.right;
+    if (bubbleBox.left < inset) {
+      shift = inset - bubbleBox.left;
+    } else if (bubbleBox.right > window.innerWidth - inset) {
+      shift = window.innerWidth - inset - bubbleBox.right;
     }
     if (shift !== 0) bubble.style.setProperty('--bubble-shift', `${Math.round(shift)}px`);
   }
@@ -239,6 +282,14 @@ export function createWaitingRoom(
     if (event.type === 'room') {
       room = event.room;
       render();
+      return;
+    }
+    if (event.type === 'movement') {
+      if (event.playerId !== roomStore.me()) {
+        remoteMovements.update(event);
+        const bubble = remoteBubbleNodes.get(event.playerId);
+        if (bubble && !bubble.hidden) fitRemoteBubble(bubble);
+      }
       return;
     }
     // 판이 열렸다. room code도 함께 건넨다. 나간 방의 늦은 event가 지금 방을 열면 안 된다.
@@ -453,18 +504,25 @@ export function createWaitingRoom(
     async show(code, characterId, entryGeneration) {
       const request = showGuard.begin();
       visibleRequest = request;
-      visibleEntry = { code, entryGeneration };
+      const nextEntry = { code, entryGeneration };
       // 새 방을 읽는 동안 이전 방을 계속 조작할 수 있으면 activeRoomCode와 화면이
       // 갈라진다. 먼저 끊고 비워 둔다; 새 응답만 아래에서 다시 붙인다.
+      visibleEntry = null;
       unsubscribe?.();
       unsubscribe = null;
+      clearInterval(movementHeartbeat);
+      movementHeartbeat = undefined;
+      walker.hide();
+      movementPublisher.reset();
       room = null;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
       el.bubble.hidden = true;
       el.bubble.textContent = '';
       remoteBubbles.reset();
+      remoteMovements.reset();
       remoteBubbleNodes.clear();
+      el.remoteCharacters.replaceChildren();
 
       const loadedRoom = await roomStore.getRoom(code);
       if (!showGuard.isCurrent(request)) return;
@@ -478,6 +536,7 @@ export function createWaitingRoom(
         return;
       }
 
+      visibleEntry = nextEntry;
       unsubscribe = roomStore.subscribe(code, (event) => {
         if (showGuard.isCurrent(request)) onEvent(event, { code, entryGeneration });
       });
@@ -486,6 +545,7 @@ export function createWaitingRoom(
       el.chatLog.replaceChildren();
       render();
       walker.show(characterId);
+      movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
     },
 
     hide() {
@@ -494,14 +554,19 @@ export function createWaitingRoom(
       visibleEntry = null;
       unsubscribe?.();
       unsubscribe = null;
+      clearInterval(movementHeartbeat);
+      movementHeartbeat = undefined;
+      walker.hide();
+      movementPublisher.reset();
       room = null;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
       el.bubble.hidden = true;
       el.bubble.textContent = '';
       remoteBubbles.reset();
+      remoteMovements.reset();
       remoteBubbleNodes.clear();
-      walker.hide();
+      el.remoteCharacters.replaceChildren();
     },
   };
 }

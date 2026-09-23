@@ -79,10 +79,13 @@ test('WaitingRoom.show clears prior ownership before fetch and checks it before 
 
   assert.match(waiting, /import \{ createLatestRequestGuard \} from '\.\/latest-request\.js';/);
   assert.match(waiting, /const showGuard = createLatestRequestGuard\(\);/);
-  assert.match(
-    uncommentedShow,
-    /const request = showGuard\.begin\(\);\s*visibleRequest = request;\s*visibleEntry = \{ code, entryGeneration \};\s*unsubscribe\?\.\(\);\s*unsubscribe = null;\s*room = null;/,
-  );
+  const begin = show.indexOf('const request = showGuard.begin();');
+  const clearEntry = show.indexOf('visibleEntry = null;');
+  const unsubscribe = show.indexOf('unsubscribe?.();');
+  const clearRoom = show.indexOf('room = null;');
+  const fetchRoom = show.indexOf('await roomStore.getRoom(code)');
+  assert.ok(begin < clearEntry && clearEntry < unsubscribe && unsubscribe < clearRoom);
+  assert.ok(clearRoom < fetchRoom, 'previous room ownership must be cleared before fetch');
   assert.ok(
     show.indexOf('remoteBubbles.reset();') < show.indexOf('await roomStore.getRoom(code)'),
     'previous-room bubbles must be reset before the new room fetch',
@@ -93,7 +96,7 @@ test('WaitingRoom.show clears prior ownership before fetch and checks it before 
   );
   assert.match(
     show,
-    /if \(!room\) \{[\s\S]*?onLeave\(code, entryGeneration, '그 방은 이미 사라졌어요\. 마지막 사람이 나가면 방이 지워집니다\.'\);[\s\S]*?return;\s*\}[\s\S]*?unsubscribe = roomStore\.subscribe\(code, \(event\) => \{\s*if \(showGuard\.isCurrent\(request\)\) onEvent\(event, \{ code, entryGeneration \}\);\s*\}\);/,
+    /if \(!room\) \{[\s\S]*?onLeave\(code, entryGeneration, '그 방은 이미 사라졌어요\. 마지막 사람이 나가면 방이 지워집니다\.'\);[\s\S]*?return;\s*\}[\s\S]*?visibleEntry = nextEntry;[\s\S]*?unsubscribe = roomStore\.subscribe\(code, \(event\) => \{\s*if \(showGuard\.isCurrent\(request\)\) onEvent\(event, \{ code, entryGeneration \}\);\s*\}\);/,
   );
   assert.match(hide, /hide\(\) \{\s*showGuard\.invalidate\(\);\s*visibleRequest = null;\s*visibleEntry = null;\s*unsubscribe\?\.\(\);/);
 });

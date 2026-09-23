@@ -1443,6 +1443,30 @@ body.is-booted .app-bar {
   height: 48px;
 }
 
+/* 상대는 125ms 간격으로 오는 server 좌표 사이를 짧게 이어서 순간이동처럼 보이지 않게 한다. */
+.walker--remote {
+  transition: transform 145ms linear;
+}
+
+.walker__name {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 50%;
+  translate: -50% 0;
+  max-width: 112px;
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
+}
+
 .walker__body {
   position: absolute;
   inset: 0;
@@ -2514,6 +2538,11 @@ select.is-standing {
   pointer-events: none;
 }
 
+.walker--remote .walker__bubble {
+  z-index: 1;
+  max-width: min(280px, calc(100vw - 48px));
+}
+
 .chat {
   display: flex;
   gap: 8px;
@@ -2548,6 +2577,11 @@ select.is-standing {
   bottom: 100%;
   border-top-color: transparent;
   border-bottom-color: var(--text);
+}
+
+/* 아래로 뒤집힌 말풍선과 닉네임이 겹치면 말풍선을 우선한다. */
+.walker__bubble--below ~ .walker__name {
+  visibility: hidden;
 }
 
 /* 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다 */

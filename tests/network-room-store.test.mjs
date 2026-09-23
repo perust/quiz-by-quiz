@@ -461,6 +461,99 @@ test('WebSocket에는 단회 티켓만 넣고 무효화 이벤트는 내 권한�
   }
 });
 
+test('movement is cached until the room socket opens and never falls back to an HTTP request', async () => {
+  FakeWebSocket.instances.length = 0;
+  const calls = [];
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'movement-ticket' }, 201);
+    if (url.endsWith('/v1/rooms/ABC234')) return json(room());
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const unsubscribe = store.subscribe('ABC234', () => undefined);
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    const socket = FakeWebSocket.instances[0];
+    assert.equal(store.sendMovement({ code: 'ABC234', x: 0.25, y: 0.75, moving: true }), false);
+    assert.deepEqual(socket.sent, []);
+
+    socket.emit('open');
+    assert.deepEqual(JSON.parse(socket.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: true,
+    });
+    assert.equal(store.sendMovement({ code: 'ABC234', x: 0.4, y: 0.6, moving: false }), true);
+    assert.deepEqual(JSON.parse(socket.sent[1]), {
+      type: 'movement', x: 0.4, y: 0.6, moving: false,
+    });
+    assert.equal(calls.some((url) => url.endsWith('/movement')), false);
+  } finally {
+    unsubscribe();
+  }
+  assert.equal(store.sendMovement({ code: 'ABC234', x: 0.5, y: 0.5, moving: false }), false);
+});
+
+test('movement events are validated and carry the local socket generation for stale-event rejection', async () => {
+  FakeWebSocket.instances.length = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'movement-event-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    const socket = FakeWebSocket.instances[0];
+    socket.emit('message', { data: JSON.stringify({
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 0.2,
+      y: 0.8,
+      moving: true,
+      sequence: 9,
+    }) });
+    socket.emit('message', { data: JSON.stringify({
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 2,
+      y: 0.8,
+      moving: true,
+      sequence: 10,
+    }) });
+
+    assert.deepEqual(events, [{
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 0.2,
+      y: 0.8,
+      moving: true,
+      sequence: 9,
+      connectionGeneration: 1,
+    }]);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test('같은 socket의 겹친 room refresh는 가장 늦게 시작한 응답만 내보낸다', async () => {
   FakeWebSocket.instances.length = 0;
   const pending = [];
