@@ -325,10 +325,6 @@ async function main(): Promise<void> {
     onSnapshot: (snapshot) => {
       if (!ownsOnlineMatchNavigation()) return;
       onlineQuizScreen.render(snapshot);
-      if (snapshot.state !== 'finished') {
-        goTo('online-quiz');
-        onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
-      }
     },
     onMissing: () => {
       if (!ownsOnlineMatchNavigation()) return;

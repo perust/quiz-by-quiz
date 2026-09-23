@@ -195,6 +195,8 @@ test('online match callbacks retain navigation ownership and waiting-room transf
   const waiting = between(app, '  async function openWaitingRoom(code: string)', '  // ── 내 캐릭터');
 
   assert.match(callbacks, /onSnapshot: \(snapshot\) => \{\s*if \(!ownsOnlineMatchNavigation\(\)\) return;/);
+  assert.doesNotMatch(callbacks, /goTo\('online-quiz'\)/);
+  assert.doesNotMatch(callbacks, /onlineMatchNavigationGeneration = waitingRoomEntryGeneration/);
   assert.match(callbacks, /onMissing: \(\) => \{\s*if \(!ownsOnlineMatchNavigation\(\)\) return;/);
   assert.match(callbacks, /onError: \(message\) => \{\s*if \(ownsOnlineMatchNavigation\(\)\)/);
   assert.match(lifecycle, /onlineMatchNavigationGeneration = null;/);
