@@ -556,6 +556,7 @@ def create_app(
     chat_limiter = AtomicMultiWindowLimiter()
     answer_limiter = AtomicMultiWindowLimiter()
     ticket_limiter = AtomicMultiWindowLimiter()
+    release_readiness_limiter = AtomicMultiWindowLimiter()
 
     def allow_actor_room(
         limiter: AtomicMultiWindowLimiter,
@@ -685,6 +686,42 @@ def create_app(
         if not await repo.health():
             raise _error(503, "database-unavailable", "데이터베이스에 연결할 수 없습니다.")
         return {"status": "ready"}
+
+    @app.get("/v1/release-readiness")
+    async def release_readiness(request: Request) -> dict[str, str | int]:
+        client_key = _client_key(request)
+        if not release_readiness_limiter.allow(
+            (
+                RateLimitClaim(
+                    key=f"release-readiness:client:{client_key}",
+                    limit=12,
+                    window_seconds=60,
+                ),
+                RateLimitClaim(
+                    key="release-readiness:process",
+                    limit=120,
+                    window_seconds=60,
+                ),
+            )
+        ):
+            raise _error(
+                429,
+                "rate-limited",
+                "요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
+                headers={"Retry-After": "60"},
+            )
+        version = await repo.schema_version()
+        if version != 10:
+            raise _error(
+                503,
+                "migration-required",
+                "캐릭터 전용 데이터베이스 전환이 완료되지 않았습니다.",
+            )
+        return {
+            "status": "ready",
+            "contract": "character-only-v1",
+            "schemaVersion": version,
+        }
 
     @app.put("/v1/session")
     async def put_session(

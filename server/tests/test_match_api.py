@@ -113,6 +113,9 @@ class MatchApiRepository:
     async def health(self) -> bool:
         return True
 
+    async def schema_version(self) -> int:
+        return 10
+
     async def authenticate(self, player_id: UUID, token_hash: bytes) -> bool:
         expected = hashlib.sha256(PLAYER_TOKEN.encode()).digest()
         return player_id == PLAYER_ID and token_hash == expected

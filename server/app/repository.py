@@ -154,6 +154,8 @@ class RoomsRepository(Protocol):
 
     async def health(self) -> bool: ...
 
+    async def schema_version(self) -> int: ...
+
     async def upsert_player(
         self,
         player_id: UUID,

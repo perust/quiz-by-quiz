@@ -1,5 +1,6 @@
 services:
   quiz-by-quiz-migrate:
+    profiles: ["migration"]
     build:
       context: "${QUIZ_BY_QUIZ_SOURCE_DIR:?set QUIZ_BY_QUIZ_SOURCE_DIR to the quiz-by-quiz repository root}"
       dockerfile: server/Dockerfile
@@ -40,8 +41,6 @@ services:
     depends_on:
       postgres:
         condition: service_started
-      quiz-by-quiz-migrate:
-        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://quiz_by_quiz_app:${QUIZ_DB_PASSWORD:?set QUIZ_DB_PASSWORD in platform .env}@postgres:5432/quiz_by_quiz
       QUESTION_BANK_DIR: /run/quiz-by-quiz/online-bank

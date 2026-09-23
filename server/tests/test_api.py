@@ -66,6 +66,8 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
+        self.current_schema_version = 10
+        self.schema_version_calls = 0
 
     async def open(self) -> None:
         return None
@@ -75,6 +77,10 @@ class FakeRepository:
 
     async def health(self) -> bool:
         return True
+
+    async def schema_version(self) -> int:
+        self.schema_version_calls += 1
+        return self.current_schema_version
 
     async def upsert_player(
         self,
@@ -191,6 +197,34 @@ def public_room_body(index: int) -> dict[str, object]:
 
 def make_client(repository: FakeRepository, *, password_hasher: Any | None = None) -> TestClient:
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
+
+
+def test_release_readiness_requires_character_only_contract_and_migration_10() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        ready = client.get("/v1/release-readiness")
+        assert ready.status_code == 200
+        assert ready.json() == {
+            "status": "ready",
+            "contract": "character-only-v1",
+            "schemaVersion": 10,
+        }
+
+        repository.current_schema_version = 9
+        blocked = client.get("/v1/release-readiness")
+        assert blocked.status_code == 503
+        assert blocked.json()["detail"]["code"] == "migration-required"
+
+
+def test_release_readiness_database_queries_are_rate_limited() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        responses = [client.get("/v1/release-readiness") for _ in range(13)]
+
+    assert [response.status_code for response in responses[:12]] == [200] * 12
+    assert responses[12].status_code == 429
+    assert responses[12].json()["detail"]["code"] == "rate-limited"
+    assert repository.schema_version_calls == 12
 
 
 def register(client: TestClient) -> None:

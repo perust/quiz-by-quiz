@@ -103,8 +103,10 @@ in depth; normal REST access logging remains enabled. The API itself runs with
 Uvicorn access logging disabled and warning-level server logs so routine accepted
 or rejected handshakes cannot persist ticket-bearing request metadata. Caddy
 returns public `/healthz` and `/readyz` requests as 404; Docker and Caddy active
-health checks reach `/readyz` only on the private container network, so public
-traffic cannot create unbounded PostgreSQL readiness queries.
+health checks reach `/readyz` only on the private container network. The public
+`/v1/release-readiness` gate exposes only the fixed compatibility contract and
+schema version, and bounds database probes to 12 requests per client and 120
+per process per minute.
 
 ### Client identity boundary
 
@@ -118,16 +120,27 @@ rate-limit contract.
 
 ## Fail-closed staging order
 
+The compatibility boundary is **API → migration 010 → Pages**. Never run the
+constraint migration while a legacy API process can still write `false` or
+`NULL` values.
+
 1. Recompute and verify the source and private-bank hashes against the approved
    candidate; stop on any mismatch.
 2. Render the overlay with the platform base and inspect the result. Do not
    `up`, restart, reload, migrate, or expose anything at this step.
-3. Run only the dedicated Quiz migration against the dedicated database. Never
-   modify the platform PostgreSQL topology or public port exposure.
-4. Start only the Quiz migration/API services and require internal `/readyz`.
-5. Validate and then publish the Caddy fragment; verify HTTPS and WSS.
-6. Only after verified API health may the independent public Pages source be
-   merged and published.
+3. Build and replace only `quiz-by-quiz-api` with the candidate while the
+   database is still at migration 009. Require internal `/readyz` and verify
+   that omitted characters and legacy `gameMode:false` requests are normalized.
+   The profiled `quiz-by-quiz-migrate` service must not start in this step.
+4. After the candidate API is the sole writer, run only the explicit
+   `quiz-by-quiz-migrate` service. Require ledger versions 001–010, all five
+   character-only constraints, and the exact public `/v1/release-readiness`
+   response `{status: ready, contract: character-only-v1, schemaVersion: 10}`.
+5. Verify HTTPS and WSS through the existing Caddy route without changing any
+   unrelated platform service or host-port exposure.
+6. Only after the production readiness response passes may the independent
+   public Pages source be merged and published. The Pages workflow repeats this
+   gate and fails closed before `deploy-pages`.
 
 If a stage fails, remove or stop only the task-owned release/service artifacts.
 Do not restart, reload, alter, or roll back unrelated n8n, BTC, Caddy,
