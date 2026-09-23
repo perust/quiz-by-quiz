@@ -12,6 +12,7 @@
 // 화면(`ui/`)에서 저장소를 직접 부르면 설계 위반이다.
 
 import { ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import { isPersistent, safeStorage } from '../storage/safe-storage.js';
 import {
   checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
@@ -136,7 +137,14 @@ function readAll(): Room[] {
     const rooms = Array.isArray(parsed)
       ? (parsed as unknown[]).filter((room): room is Room => isObject(room) && typeof room.code === 'string')
       : [];
-    return prune(rooms);
+    return prune(rooms).map((room) => ({
+      ...room,
+      gameMode: true,
+      players: room.players.map((player) => ({
+        ...player,
+        characterId: player.characterId || DEFAULT_CHARACTER_ID,
+      })),
+    }));
   } catch {
     return [];
   }
@@ -186,11 +194,11 @@ function toPublic(room: Room): PublicRoom {
     name: room.name,
     categoryId: room.categoryId,
     capacity: room.capacity,
-    gameMode: Boolean(room.gameMode),
+    gameMode: true,
     players: room.players.map(({ id, nickname, characterId, isReady }) => ({
       id,
       nickname,
-      characterId,
+      characterId: characterId || DEFAULT_CHARACTER_ID,
       isReady: Boolean(isReady),
     })),
     isPublic: room.isPublic,
@@ -218,6 +226,9 @@ export const localRooms = {
   me(): string {
     return meId;
   },
+
+  /** local 구현은 mutation마다 player를 직접 받으므로 현재 profile을 따로 저장하지 않는다. */
+  setPlayer(_player: PlayerInfo): void {},
 
   /** 공개방과 비공개방을 모두 돌려준다. 비밀번호 원문은 `toPublic`이 제거한다 */
   async listRooms(): Promise<PublicRoom[]> {
@@ -256,13 +267,13 @@ export const localRooms = {
       categoryId: categoryId || null,
       capacity: size,
       isPublic: Boolean(isPublic),
-      gameMode: false,
+      gameMode: true,
       password: isPublic ? '' : String(password),
       hostId: meId,
       players: [{
         id: meId,
-        nickname: player?.nickname || '나',
-        characterId: player?.characterId,
+        nickname: player.nickname || '나',
+        characterId: player.characterId,
         isReady: false,
         seenAt: Date.now(),
       }],
@@ -301,8 +312,8 @@ export const localRooms = {
       id: meId,
       // 방 안에서 이름이 겹치면 뒤에 숫자를 붙인다. 같은 이름이 둘이면
       // 누가 누구인지, 말풍선이 누구 것인지 알 수 없다
-      nickname: uniqueNickname(player?.nickname, room.players.map((p) => p.nickname)),
-      characterId: player?.characterId,
+      nickname: uniqueNickname(player.nickname, room.players.map((p) => p.nickname)),
+      characterId: player.characterId,
       isReady: false,
       seenAt: Date.now(),
     });
@@ -345,7 +356,7 @@ export const localRooms = {
     if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
 
     if ('categoryId' in patch) room.categoryId = patch.categoryId || null;
-    if ('gameMode' in patch) room.gameMode = Boolean(patch.gameMode);
+
     if ('capacity' in patch) {
       const size = Number(patch.capacity);
       // 이미 들어와 있는 사람보다 작게 줄일 수는 없다
@@ -410,8 +421,13 @@ export const localRooms = {
     if (!room) return { ok: false, reason: 'not-found' };
     if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
 
-    const setup = { categoryId: room.categoryId, gameMode: Boolean(room.gameMode) };
-    emit(room.code, { type: 'match', phase: 'started', setup });
+    const setup = { categoryId: room.categoryId, gameMode: true as const };
+    // 실제 서버의 started 이벤트는 요청 응답과 같은 call stack에서 오지 않는다.
+    // local adapter도 다음 task에 보내야 같은 turn의 «나가기»가 subscription을 먼저
+    // 정리할 수 있고, 나간 방의 stale start가 퀴즈를 다시 열지 않는다.
+    setTimeout(() => emit(room.code, {
+      type: 'match', phase: 'started', matchId: null, setup,
+    }), 0);
     return { ok: true, setup };
   },
 

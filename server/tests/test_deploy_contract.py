@@ -52,7 +52,11 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "${QUIZ_MIGRATOR_DATABASE_URL:?" in compose
     migrate_service = compose.split("  quiz-by-quiz-api:", 1)[0]
     assert "QUIZ_DB_PASSWORD: \"${QUIZ_DB_PASSWORD:?" in migrate_service
-    assert "service_completed_successfully" in compose
+    assert 'profiles: ["migration"]' in migrate_service
+    api_service = compose.split("  quiz-by-quiz-api:", 1)[1]
+    assert "service_completed_successfully" not in api_service
+    guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
+    assert "API → migration 010 → Pages" in guide
 
 
 def test_api_resource_envelope_and_single_worker_contract_are_explicit() -> None:
@@ -138,7 +142,24 @@ def test_pages_workflow_verifies_client_server_and_container_before_deploy() -> 
     assert "uv run --locked ruff check app tests" in workflow
     assert "uv run --locked python -m pytest -q" in workflow
     assert "docker build --target test --file server/Dockerfile ." in workflow
-    assert "needs: verify" in workflow
+    assert "backend-ready:" in workflow
+    assert "needs: [verify, backend-ready]" in workflow
+    assert "/v1/release-readiness" in workflow
+    assert "jq -e '. == {" in workflow
+    assert '"contract": "character-only-v1"' in workflow
+    assert '"schemaVersion": 10' in workflow
+
+
+def test_pages_workflow_executes_migrations_and_postgres_integration() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+
+    assert "services:" in workflow and "postgres:" in workflow
+    assert "MIGRATOR_DATABASE_URL:" in workflow
+    assert "QUIZ_DB_PASSWORD:" in workflow
+    assert "TEST_DATABASE_URL:" in workflow
+    assert "uv run --locked python -m app.migrate" in workflow
+    assert "MIGRATION_UPGRADE_DATABASE_URL" in workflow
+    assert "test_character_only_migration_integration.py" in workflow
 
 
 def test_oracle_overlay_has_an_explicit_platform_base_contract() -> None:

@@ -32,7 +32,7 @@ function room(changes = {}) {
     name: '온라인 퀴즈',
     categoryId: 'history',
     capacity: 12,
-    gameMode: false,
+    gameMode: true,
     players: [{
       id: '12345678-1234-5678-9234-567812345678',
       nickname: '퀴즈왕',
@@ -132,6 +132,56 @@ test('네트워크 저장소는 토큰을 헤더에만 보내고 방 비밀번�
   assert.equal(JSON.stringify(rooms).includes('passwordHash'), false);
 });
 
+test('네트워크 저장소는 프로필을 먼저 고정하고 캐릭터 없는 세션을 만들지 않는다', async () => {
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    calls.push({ url: String(input), init });
+    if (String(input).endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (String(input).endsWith('/v1/rooms')) return json([]);
+    throw new Error(`unexpected request: ${input}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+
+  store.setPlayer({ nickname: '퀴즈왕', characterId: 'slime-blue' });
+  await store.listRooms();
+
+  const session = calls.find(({ url }) => url.endsWith('/v1/session'));
+  assert.deepEqual(JSON.parse(session.init.body), {
+    nickname: '퀴즈왕',
+    characterId: 'slime-blue',
+  });
+});
+
+test('네트워크 저장소는 normal-mode 방과 캐릭터 없는 참가자 snapshot을 거부한다', async () => {
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  for (const invalidRoom of [
+    room({ gameMode: false }),
+    room({ gameMode: true, players: [{ id: identity.id, nickname: '퀴즈왕', isReady: false }] }),
+  ]) {
+    const fetchImpl = async (input) => {
+      if (String(input).endsWith('/v1/session')) return json({ playerId: identity.id });
+      if (String(input).endsWith('/v1/rooms')) return json([invalidRoom]);
+      throw new Error(`unexpected request: ${input}`);
+    };
+    const store = createNetworkRoomStore({
+      baseUrl: 'https://quiz-api.example.test',
+      storage: memoryStorage(),
+      fetchImpl,
+      newIdentity: () => identity,
+      webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+    });
+    store.setPlayer({ nickname: '퀴즈왕', characterId: 'slime-blue' });
+    await assert.rejects(store.listRooms(), /캐릭터|전용/);
+  }
+});
+
 test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 보내고 새 방 snapshot을 받는다', async () => {
   const calls = [];
   const readyRoom = room({
@@ -192,7 +242,7 @@ function runningMatch(changes = {}) {
     matchId: '12345678-1234-5678-9234-567812345678',
     state: 'running',
     categoryId: 'history',
-    gameMode: false,
+    gameMode: true,
     currentPosition: 1,
     totalQuestions: 10,
     deadlineAt: '2026-09-18T11:00:20+00:00',
@@ -216,7 +266,7 @@ function finishedMatch(changes = {}) {
     matchId: '12345678-1234-5678-9234-567812345678',
     state: 'finished',
     categoryId: 'history',
-    gameMode: false,
+    gameMode: true,
     currentPosition: 10,
     totalQuestions: 10,
     deadlineAt: null,
@@ -676,6 +726,86 @@ test('match invalidation은 snapshot을 socket에 싣지 않고 app에 authoriza
       type: 'match', phase: 'invalidated', matchId: runningMatch().matchId,
     });
     assert.equal(calls.some(({ url }) => url.endsWith('/match')), false);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('unsubscribe 뒤 old socket의 delayed game-started event는 전달하지 않는다', async () => {
+  FakeWebSocket.instances.length = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'stale-socket-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+  const oldSocket = FakeWebSocket.instances[0];
+  unsubscribe();
+
+  oldSocket.emit('message', {
+    data: JSON.stringify({
+      type: 'game-started',
+      matchId: '22345678-1234-5678-9234-567812345678',
+      categoryId: 'history',
+      gameMode: true,
+      totalQuestions: 10,
+    }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(events, []);
+});
+
+test('game-started event는 replacement match identity를 검증해 보존한다', async () => {
+  FakeWebSocket.instances.length = 0;
+  const matchId = '22345678-1234-5678-9234-567812345678';
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'started-event-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    FakeWebSocket.instances[0].emit('message', {
+      data: JSON.stringify({
+        type: 'game-started',
+        matchId,
+        categoryId: 'history',
+        gameMode: true,
+        totalQuestions: 10,
+      }),
+    });
+    await waitFor(
+      () => events.some((event) => event.type === 'match' && event.phase === 'started'),
+      'game-started event was not translated',
+    );
+    assert.deepEqual(events.find((event) => event.type === 'match'), {
+      type: 'match',
+      phase: 'started',
+      matchId,
+      setup: { categoryId: 'history', gameMode: true },
+    });
   } finally {
     unsubscribe();
   }

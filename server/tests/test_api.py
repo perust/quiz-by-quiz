@@ -39,7 +39,7 @@ def room_view(**changes: Any) -> RoomView:
         name="온라인 퀴즈",
         category_id="history",
         capacity=12,
-        game_mode=False,
+        game_mode=True,
         players=(PlayerView(id=PLAYER_ID, nickname="퀴즈왕", character_id="slime-blue"),),
         is_public=False,
         has_password=True,
@@ -57,11 +57,17 @@ class FakeRepository:
         self.password_hash: str | None = None
         self.created_password_hash: str | None = None
         self.create_calls = 0
+        self.created_spec: Any | None = None
         self.session_token_hash: bytes | None = None
+        self.session_player: Any | None = None
         self.join_calls = 0
+        self.update_calls = 0
+        self.updated_patch: Any | None = None
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
+        self.current_schema_version = 10
+        self.schema_version_calls = 0
 
     async def open(self) -> None:
         return None
@@ -71,6 +77,10 @@ class FakeRepository:
 
     async def health(self) -> bool:
         return True
+
+    async def schema_version(self) -> int:
+        self.schema_version_calls += 1
+        return self.current_schema_version
 
     async def upsert_player(
         self,
@@ -82,6 +92,7 @@ class FakeRepository:
         assert player_id == PLAYER_ID
         assert isinstance(update_profile, bool)
         self.session_token_hash = token_hash
+        self.session_player = player
 
     async def authenticate(self, player_id: UUID, token_hash: bytes) -> bool:
         self.authenticate_calls += 1
@@ -94,6 +105,7 @@ class FakeRepository:
 
     async def create_room(self, actor_id: UUID, spec: Any, password_hash: str | None) -> RoomView:
         self.create_calls += 1
+        self.created_spec = spec
         self.created_password_hash = password_hash
         return self.room
 
@@ -113,6 +125,8 @@ class FakeRepository:
         return None
 
     async def update_room(self, actor_id: UUID, code: str, patch: Any) -> RoomView:
+        self.update_calls += 1
+        self.updated_patch = patch
         return self.room
 
     async def send_chat(self, actor_id: UUID, code: str, text: str) -> PlayerView:
@@ -176,13 +190,41 @@ def public_room_body(index: int) -> dict[str, object]:
         "capacity": 12,
         "isPublic": True,
         "password": None,
-        "gameMode": False,
+        "gameMode": True,
     }
 
 
 
 def make_client(repository: FakeRepository, *, password_hasher: Any | None = None) -> TestClient:
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
+
+
+def test_release_readiness_requires_character_only_contract_and_migration_10() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        ready = client.get("/v1/release-readiness")
+        assert ready.status_code == 200
+        assert ready.json() == {
+            "status": "ready",
+            "contract": "character-only-v1",
+            "schemaVersion": 10,
+        }
+
+        repository.current_schema_version = 9
+        blocked = client.get("/v1/release-readiness")
+        assert blocked.status_code == 503
+        assert blocked.json()["detail"]["code"] == "migration-required"
+
+
+def test_release_readiness_database_queries_are_rate_limited() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        responses = [client.get("/v1/release-readiness") for _ in range(13)]
+
+    assert [response.status_code for response in responses[:12]] == [200] * 12
+    assert responses[12].status_code == 429
+    assert responses[12].json()["detail"]["code"] == "rate-limited"
+    assert repository.schema_version_calls == 12
 
 
 def register(client: TestClient) -> None:
@@ -207,6 +249,75 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
     assert response.json() == {"playerId": str(PLAYER_ID)}
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text
+
+
+def test_session_assigns_a_default_character_to_a_legacy_client() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        response = client.put(
+            "/v1/session",
+            headers=HEADERS,
+            json={},
+        )
+
+    assert response.status_code == 200
+    assert repository.session_token_hash is not None
+    assert repository.session_player is not None
+    assert repository.session_player.nickname == "손님"
+    assert repository.session_player.character_id == "slime-blue"
+
+
+def test_room_create_normalizes_legacy_false_to_character_only() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        response = client.post(
+            "/v1/rooms",
+            headers=HEADERS,
+            json={
+                "name": "보통 모드 금지",
+                "categoryId": None,
+                "capacity": 12,
+                "isPublic": True,
+                "gameMode": False,
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["gameMode"] is True
+    assert repository.create_calls == 1
+    assert repository.created_spec is not None
+    assert repository.created_spec.game_mode is True
+
+
+def test_room_update_treats_legacy_false_as_a_character_only_noop() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        response = client.patch(
+            "/v1/rooms/ABC234",
+            headers=HEADERS,
+            json={"gameMode": False},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["gameMode"] is True
+    assert repository.update_calls == 1
+    assert repository.updated_patch == {}
+
+
+def test_session_rejects_invalid_character_as_a_client_error() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        response = client.put(
+            "/v1/session",
+            headers=HEADERS,
+            json={"nickname": "퀴즈왕", "characterId": "UPPERCASE"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid-character"
+    assert repository.session_token_hash is None
 
 
 def test_session_process_limit_survives_client_and_identity_rotation() -> None:

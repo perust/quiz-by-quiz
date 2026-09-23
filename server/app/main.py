@@ -105,7 +105,7 @@ class CreateRoomBody(StrictBody):
     name: str
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt
-    game_mode: StrictBool = Field(default=False, alias="gameMode")
+    game_mode: StrictBool = Field(default=True, alias="gameMode")
     is_public: StrictBool = Field(alias="isPublic")
     password: str | None = None
 
@@ -556,6 +556,7 @@ def create_app(
     chat_limiter = AtomicMultiWindowLimiter()
     answer_limiter = AtomicMultiWindowLimiter()
     ticket_limiter = AtomicMultiWindowLimiter()
+    release_readiness_limiter = AtomicMultiWindowLimiter()
 
     def allow_actor_room(
         limiter: AtomicMultiWindowLimiter,
@@ -686,6 +687,42 @@ def create_app(
             raise _error(503, "database-unavailable", "데이터베이스에 연결할 수 없습니다.")
         return {"status": "ready"}
 
+    @app.get("/v1/release-readiness")
+    async def release_readiness(request: Request) -> dict[str, str | int]:
+        client_key = _client_key(request)
+        if not release_readiness_limiter.allow(
+            (
+                RateLimitClaim(
+                    key=f"release-readiness:client:{client_key}",
+                    limit=12,
+                    window_seconds=60,
+                ),
+                RateLimitClaim(
+                    key="release-readiness:process",
+                    limit=120,
+                    window_seconds=60,
+                ),
+            )
+        ):
+            raise _error(
+                429,
+                "rate-limited",
+                "요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
+                headers={"Retry-After": "60"},
+            )
+        version = await repo.schema_version()
+        if version != 10:
+            raise _error(
+                503,
+                "migration-required",
+                "캐릭터 전용 데이터베이스 전환이 완료되지 않았습니다.",
+            )
+        return {
+            "status": "ready",
+            "contract": "character-only-v1",
+            "schemaVersion": version,
+        }
+
     @app.put("/v1/session")
     async def put_session(
         request: Request,
@@ -708,7 +745,10 @@ def create_app(
             )
         ):
             raise _error(429, "rate-limited", "잠시 뒤 다시 시도해 주세요.")
-        player = validate_player(body.nickname, body.character_id)
+        try:
+            player = validate_player(body.nickname, body.character_id)
+        except DomainError as error:
+            raise _error(400, error.code, str(error)) from error
         try:
             await repo.upsert_player(
                 identity.player_id,
@@ -950,6 +990,10 @@ def create_app(
             )
 
         patch = body.model_dump(exclude_unset=True)
+        if "game_mode" in patch:
+            # 구버전 client의 true/false는 모두 호환 입력일 뿐이다. 어떤 값이 와도
+            # 캐릭터 전용 설정은 바뀌지 않으며 DB mutation에도 전달하지 않는다.
+            patch.pop("game_mode")
         if "category_id" in patch:
             category = patch["category_id"]
             if category is not None and category not in ALLOWED_CATEGORIES:

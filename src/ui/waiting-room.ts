@@ -4,7 +4,7 @@
 // 걸어 다닌다. 한마디 적으면 캐릭터 위에 말풍선이 뜬다.
 //
 // **설정은 «누르면 다음 값으로 도는» 버튼이다.** `select`로 두면 캐릭터가 밟아도
-// 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. 분야·인원·모드·시작·나가기가
+// 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. 분야·인원·시작·나가기가
 // 모두 그냥 버튼이라 발밑에 두고 Enter만 누르면 된다.
 //
 // **방이 어디에 있는지 이 파일은 모른다.** `roomStore`만 부르고, 무슨 일이 있었는지는
@@ -78,8 +78,6 @@ export function createWaitingRoom(
     categoryValue: need('setting-category-value'),
     capacity: need<HTMLButtonElement>('setting-capacity'),
     capacityValue: need('setting-capacity-value'),
-    mode: need<HTMLButtonElement>('setting-mode'),
-    modeValue: need('setting-mode-value'),
     players: need('lounge-players'),
     character: need('waiting-character'),
     bubble: need('waiting-bubble'),
@@ -126,7 +124,6 @@ export function createWaitingRoom(
     const category = categories.find((item) => item.id === room!.categoryId) ?? ALL_CATEGORY;
     el.categoryValue.textContent = category.name;
     el.capacityValue.textContent = `${room.capacity}명`;
-    el.modeValue.textContent = room.gameMode ? '게임 모드' : '보통 모드';
 
     const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
     el.ready.disabled = !room.joined || me === null;
@@ -134,7 +131,7 @@ export function createWaitingRoom(
     el.ready.setAttribute('aria-pressed', String(Boolean(me?.isReady)));
 
     // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
-    for (const button of [el.category, el.capacity, el.mode]) {
+    for (const button of [el.category, el.capacity]) {
       button.disabled = !room.isMine;
     }
 
@@ -294,7 +291,6 @@ export function createWaitingRoom(
     patch({ capacity: usable[(index + 1) % usable.length] });
   });
 
-  el.mode.addEventListener('click', () => patch({ gameMode: !room?.gameMode }));
 
   el.ready.addEventListener('click', async () => {
     const action = captureAction();

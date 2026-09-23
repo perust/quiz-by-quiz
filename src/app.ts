@@ -23,7 +23,8 @@ import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
-import { createQuizScreen } from './ui/quiz.js';
+import { createQuizScreen, trapFocus } from './ui/quiz.js';
+import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
@@ -96,7 +97,7 @@ interface Toggle {
 }
 
 /**
- * 앱 바의 켬/끔 버튼 한 쌍. 소리와 게임 모드가 같은 모양을 쓴다.
+ * 앱 바의 소리 켬/끔 버튼.
  */
 function createToggle({ ids, on, off, apply, onChange }: ToggleSpec): Toggle {
   const button = need(ids.button);
@@ -176,6 +177,10 @@ async function main(): Promise<void> {
 
   // 쓰고 있는 캐릭터. 없는 id가 저장돼 있어도 findCharacter가 기본값으로 되돌린다
   let characterId = findCharacter(settings.characterId ?? DEFAULT_CHARACTER_ID).id;
+  const syncRoomPlayer = (): void => {
+    roomStore.setPlayer({ nickname: savedNickname, characterId });
+  };
+  syncRoomPlayer();
 
   const homeScreen = createHomeScreen({
     onSelectCategory: (categoryId) => startRound({ mode: 'category', categoryId }),
@@ -185,6 +190,7 @@ async function main(): Promise<void> {
     onOpenOnline: () => openOnline(),
     onNickname: (value) => {
       savedNickname = value;
+      syncRoomPlayer();
       preferences.setNickname(value);
     },
   });
@@ -214,7 +220,7 @@ async function main(): Promise<void> {
       // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
       void openOnline(reason);
     },
-    onStart: (code, { categoryId, gameMode }, entryGeneration) => {
+    onStart: (code, { categoryId }, entryGeneration) => {
       // **나간 방의 판은 열지 않는다.** 「게임 시작」은 저장소에 알리고 되돌아온
       // 이벤트를 보고 움직이므로, 그 사이에 대기실을 떠났으면 여기 늦게 도착한다.
       // 그대로 열면 로비에 있는 사람 앞에서 판이 시작된다.
@@ -230,7 +236,6 @@ async function main(): Promise<void> {
         void openOnlineMatch(code);
         return;
       }
-      gameModeToggle.set(gameMode);
       void startRound(
         categoryId ? { mode: 'category', categoryId } : { mode: 'all', categoryId: null },
         ownsStartedEntry,
@@ -247,6 +252,8 @@ async function main(): Promise<void> {
     onSelect: (id) => {
       characterId = id;
       quizScreen.setCharacter(id);
+      onlineQuizScreen.setCharacter(id);
+      syncRoomPlayer();
       preferences.setSettings({ characterId: id });
     },
     onBack: goHome,
@@ -261,32 +268,6 @@ async function main(): Promise<void> {
     onComplete: showResult,
   });
 
-  // 게임 모드는 화면을 바꿀 뿐 출제·채점·점수에는 영향을 주지 않는다.
-  // 판 도중에 켜고 꺼도 세션이 유지되므로 언제 눌러도 안전하다.
-  const gameModeToggle = createToggle({
-    ids: { button: 'game-mode-toggle', icon: 'game-mode-icon', label: 'game-mode-label' },
-    on: { icon: '🕹️', label: '게임 모드' },
-    off: { icon: '📋', label: '보통 모드' },
-    apply: (enabled) => quizScreen.setGameMode(enabled),
-    onChange: (enabled) => {
-      // 내가 직접 고른 값만 여기 남는다. 방 설정으로 바뀐 것은 저장하지 않으므로
-      // (`set`은 onChange를 부르지 않는다) 이 값이 곧 «되돌아갈 자리»가 된다
-      settings.gameMode = enabled;
-      preferences.setSettings({ gameMode: enabled });
-    },
-  });
-
-  /**
-   * 방 설정으로 잠시 바뀐 게임 모드를 내 값으로 되돌린다.
-   *
-   * **방 설정은 그 판의 것이지 내 설정이 아니다.** 되돌리지 않으면 방을 나온 뒤에도
-   * 앱 바가 켜진 채로 남는데, 저장된 값은 그대로라 **새로고침 한 번에 화면이 뒤집힌다.**
-   * 홈에서 카테고리를 고르면 켠 적 없는 게임 모드로 판이 열리기도 한다.
-   */
-  function restoreMyGameMode(): void {
-    gameModeToggle.set(settings.gameMode);
-  }
-  gameModeToggle.set(settings.gameMode);
   quizScreen.setCharacter(characterId);
 
   const resultScreen = createResultScreen({
@@ -316,6 +297,8 @@ async function main(): Promise<void> {
   let onlineMatchController: ReturnType<typeof createOnlineMatchController> | null = null;
 
   const onlineQuizScreen = createOnlineQuizScreen({
+    createCharacterArena: createArena,
+    trapFocus,
     onSubmit: async (spec) => {
       if (!onlineMatchController) return;
       await onlineMatchController.submit(spec);
@@ -326,6 +309,7 @@ async function main(): Promise<void> {
     },
     onFinished: showOnlineFinal,
   });
+  onlineQuizScreen.setCharacter(characterId);
 
   const onlineResultScreen = createOnlineResultScreen({
     onRoom: () => {
@@ -341,10 +325,6 @@ async function main(): Promise<void> {
     onSnapshot: (snapshot) => {
       if (!ownsOnlineMatchNavigation()) return;
       onlineQuizScreen.render(snapshot);
-      if (snapshot.state !== 'finished') {
-        goTo('online-quiz');
-        onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
-      }
     },
     onMissing: () => {
       if (!ownsOnlineMatchNavigation()) return;
@@ -353,8 +333,10 @@ async function main(): Promise<void> {
       if (code && activeRoomCode === code) void openWaitingRoom(code);
       else void openOnline('진행 중인 온라인 매치를 찾지 못했습니다.');
     },
-    onError: (message) => {
-      if (ownsOnlineMatchNavigation()) onlineQuizScreen.setError(message);
+    onError: (message, context) => {
+      if (!ownsOnlineMatchNavigation()) return;
+      if (context.source === 'refresh') onlineQuizScreen.setRefreshError(message);
+      else onlineQuizScreen.setSubmitError(message, context);
     },
   });
 
@@ -489,7 +471,6 @@ async function main(): Promise<void> {
     const navigationGeneration = invalidateWaitingRoomEntry();
     // 홈으로 가도 방에서 나가지는 않는다. 다만 매치 socket은 닫아 재접속 경계를 분명히 한다.
     stopOnlineMatch();
-    restoreMyGameMode();
     const bestScores = await loadBestScores();
     if (!isCurrentNavigation(navigationGeneration)) return;
     homeScreen.render({
@@ -529,7 +510,6 @@ async function main(): Promise<void> {
           });
 
     if (questions.length === 0) {
-      restoreMyGameMode();
       homeScreen.setNote('이 카테고리에는 출제할 문제가 없습니다.');
       goTo('home');
       return;
@@ -624,6 +604,7 @@ async function main(): Promise<void> {
     });
 
     savedNickname = nickname;
+    syncRoomPlayer();
     await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)
     registeredId = outcome.kept ? outcome.record.id : null;
     pending = { summary, target, playedAt };
@@ -653,9 +634,6 @@ async function main(): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
     if (onlineMatchRoomCode) stopOnlineMatch();
     activeRoomCode = code;
-    // 방 판이 끝나 돌아온 길일 수 있다. 방 설정은 대기실의 「모드」 버튼이 보여주므로
-    // 앱 바까지 그 값을 들고 있을 이유가 없다
-    restoreMyGameMode();
     try {
       await waitingRoom.show(code, characterId, entryGeneration);
     } catch {

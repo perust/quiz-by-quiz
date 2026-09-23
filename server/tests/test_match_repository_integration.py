@@ -49,7 +49,7 @@ async def _exercise_match_lifecycle() -> None:
                 capacity=2,
                 is_public=True,
                 password=None,
-                game_mode=False,
+                game_mode=True,
             ),
             None,
         )

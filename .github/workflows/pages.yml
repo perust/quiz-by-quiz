@@ -34,6 +34,20 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qbbv-ci-migrator-password
+          POSTGRES_DB: quiz_by_quiz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d quiz_by_quiz_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
 
@@ -71,16 +85,42 @@ jobs:
 
       - name: 서버 정적 검사와 회귀
         working-directory: server
+        env:
+          MIGRATOR_DATABASE_URL: postgresql://postgres:qbbv-ci-migrator-password@127.0.0.1:5432/quiz_by_quiz_test
+          QUIZ_DB_PASSWORD: qbbv-ci-runtime-password
+          TEST_DATABASE_URL: postgresql://quiz_by_quiz_app:qbbv-ci-runtime-password@127.0.0.1:5432/quiz_by_quiz_test
         run: |
           uv run --locked ruff check app tests
+          MIGRATION_UPGRADE_DATABASE_URL="$MIGRATOR_DATABASE_URL" \
+          MIGRATION_UPGRADE_RUNTIME_URL="$TEST_DATABASE_URL" \
+            uv run --locked python -m pytest -q \
+              tests/test_character_only_migration_integration.py
+          uv run --locked python -m app.migrate
           uv run --locked python -m pytest -q
 
       - name: 서버 Docker test stage
         # runtime build와 별도로 test stage도 실제로 빌드해 Ruff/pytest를 강제한다.
         run: docker build --target test --file server/Dockerfile .
 
-  deploy:
+  backend-ready:
     needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 프로덕션 캐릭터 전용 API·migration 010 확인
+        env:
+          READINESS_URL: https://quiz-by-quiz-api.150.230.222.142.sslip.io/v1/release-readiness
+        run: |
+          set -euo pipefail
+          payload="$(curl --fail --show-error --silent --max-time 15 "$READINESS_URL")"
+          jq -e '. == {
+            "status": "ready",
+            "contract": "character-only-v1",
+            "schemaVersion": 10
+          }' <<<"$payload" >/dev/null
+
+  deploy:
+    needs: [verify, backend-ready]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:

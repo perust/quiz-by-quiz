@@ -36,10 +36,6 @@
   </div>
 
   <div class="app-bar">
-    <button type="button" class="icon-button" id="game-mode-toggle" aria-pressed="false">
-      <span class="icon-button__icon" id="game-mode-icon" aria-hidden="true">📋</span>
-      <span id="game-mode-label">보통 모드</span>
-    </button>
     <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
       <span class="icon-button__icon" id="sound-icon" aria-hidden="true">🔊</span>
       <span id="sound-label">소리 켜짐</span>
@@ -60,7 +56,7 @@
       </header>
 
       <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
-           버튼은 그대로 눌러도 되고, 걷기는 게임 모드 조작을 미리 익히는 길이다. -->
+           버튼은 그대로 눌러도 되고, 걷기는 문제 화면 조작을 미리 익히는 길이다. -->
       <div class="home-stage" id="home-stage">
         <!-- 랭킹과 온라인 방에서 쓰는 이름. 제일 위에 두어 무엇으로 불리는지 먼저 보인다 -->
         <button type="button" class="menu-card menu-card--wide" id="open-nickname">
@@ -126,16 +122,16 @@
     </section>
 
     <!-- ─────────── 퀴즈 ─────────── -->
-    <section class="screen" data-screen="quiz" aria-labelledby="question-text" tabindex="-1" hidden>
+    <section class="screen quiz--character" data-screen="quiz" aria-labelledby="question-text" tabindex="-1" hidden>
       <header class="quiz-header">
         <div class="quiz-meta">
           <span class="quiz-category" id="quiz-category"></span>
           <span class="quiz-position" id="quiz-position"></span>
         </div>
-        <!-- 게임 모드일 때만 보인다. 조작법은 무대에 펼치지 않고 여기서 연다 -->
+        <!-- 조작법은 무대에 펼치지 않고 여기서 연다 -->
         <button type="button" class="arena__help" id="arena-help" aria-haspopup="dialog">
           <span aria-hidden="true">?</span>
-          <span class="sr-only">게임 모드 조작법</span>
+          <span class="sr-only">캐릭터 퀴즈 조작법</span>
         </button>
         <button type="button" class="button button--ghost" id="quiz-exit">나가기</button>
       </header>
@@ -160,7 +156,7 @@
 
       <ul class="choices" id="choices" aria-label="보기"></ul>
 
-      <!-- 게임 모드 무대 (FR 밖의 선택 기능).
+      <!-- 캐릭터 퀴즈 무대.
            진짜 조작 대상은 위 보기 버튼이다. 여기 타일은 같은 동작을 부르는
            시각적 조작부이고 aria-hidden이라 보기를 두 번 낭독하지 않는다. -->
       <!-- 방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
@@ -188,12 +184,16 @@
     <!-- ─────────── 서버 권위 온라인 퀴즈 ───────────
          local quiz 화면을 재사용하지 않는다. 이 화면은 REST snapshot과 position/choice
          submission만 다루므로 browser가 sampler·채점·점수를 가질 자리가 없다. -->
-    <section class="screen online-quiz" data-screen="online-quiz" aria-labelledby="online-question-text" tabindex="-1" hidden>
+    <section class="screen online-quiz quiz--character" data-screen="online-quiz" aria-labelledby="online-question-text" tabindex="-1" hidden>
       <header class="quiz-header">
         <div class="quiz-meta">
           <span class="quiz-category" id="online-quiz-category"></span>
           <span class="quiz-position" id="online-quiz-position"></span>
         </div>
+        <button type="button" class="arena__help" id="online-arena-help" aria-haspopup="dialog">
+          <span aria-hidden="true">?</span>
+          <span class="sr-only">온라인 캐릭터 퀴즈 조작법</span>
+        </button>
         <button type="button" class="button button--ghost" id="online-quiz-exit">나가기</button>
       </header>
 
@@ -211,6 +211,18 @@
 
       <h1 class="question" id="online-question-text" tabindex="-1"></h1>
       <ul class="choices" id="online-choices" aria-label="온라인 보기"></ul>
+      <div class="arena" id="online-arena" hidden>
+        <div class="arena__stage" aria-hidden="true">
+          <div class="arena__grid" id="online-arena-tiles"></div>
+          <div class="walker" id="online-arena-character">
+            <span class="walker__shadow"></span>
+          </div>
+        </div>
+        <p class="arena__hint" aria-hidden="true">
+          <span class="arena__hint-key">방향키로 움직이고 Enter/Space로 제출하세요</span>
+          <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 제출하세요</span>
+        </p>
+      </div>
       <p class="online-match-status" id="online-match-status" role="status"></p>
       <section class="online-reveal" id="online-reveal" aria-live="polite" hidden>
         <h2 class="online-reveal__verdict" id="online-reveal-verdict"></h2>
@@ -386,10 +398,7 @@
           <span class="setting-card__label">인원</span>
           <span class="setting-card__value" id="setting-capacity-value"></span>
         </button>
-        <button type="button" class="setting-card" id="setting-mode">
-          <span class="setting-card__label">모드</span>
-          <span class="setting-card__value" id="setting-mode-value"></span>
-        </button>
+
       </div>
 
       <button type="button" class="button button--ghost waiting-ready" id="waiting-ready" aria-pressed="false">준비 완료</button>
@@ -544,11 +553,10 @@
     </button>
   </div>
 
-  <!-- ─────────── 나가기 확인 (FR-3.6) ─────────── -->
-  <!-- 게임 모드 조작법. 무대에 늘 펼쳐두면 세로를 너무 먹어 여기로 옮겼다 -->
+  <!-- 캐릭터 퀴즈 조작법. 무대에 늘 펼쳐두면 세로를 너무 먹어 여기로 옮겼다 -->
   <div class="dialog-backdrop" id="help-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-dialog-title">
-      <h2 class="dialog__title" id="help-dialog-title">게임 모드 조작법</h2>
+      <h2 class="dialog__title" id="help-dialog-title">캐릭터 퀴즈 조작법</h2>
       <p class="dialog__body">
         캐릭터는 십자 한가운데에서 시작합니다.
         <strong>시간이 다 되면 그때 밟고 있는 칸이 답</strong>이 됩니다.
@@ -570,10 +578,33 @@
           바닥을 직접 눌러도 걸어가서 냅니다</dd>
 
         <dt>번호로</dt>
-        <dd><kbd>1</kbd> ~ <kbd>4</kbd> 는 게임 모드와 상관없이 늘 됩니다</dd>
+        <dd><kbd>1</kbd> ~ <kbd>4</kbd> 로도 답을 바로 고를 수 있습니다</dd>
       </dl>
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="help-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-backdrop" id="online-help-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="online-help-dialog-title">
+      <h2 class="dialog__title" id="online-help-dialog-title">온라인 캐릭터 퀴즈 조작법</h2>
+      <p class="dialog__body">
+        캐릭터를 답 칸으로 움직인 뒤 <strong>Enter · Space 또는 선택 버튼으로 제출</strong>합니다.
+        바닥을 직접 눌러도 그 칸으로 이동해 제출합니다. 제한 시간과 채점은 서버가 관리합니다.
+      </p>
+      <dl class="help-list">
+        <dt>움직이기</dt>
+        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> 를 누르는 동안 움직입니다</dd>
+        <dt>대각선</dt>
+        <dd>두 방향을 함께 누릅니다</dd>
+        <dt>제출</dt>
+        <dd><kbd>Enter</kbd> · <kbd>Space</kbd> 또는 오른쪽 <strong>선택</strong> 버튼을 누릅니다</dd>
+        <dt>번호로</dt>
+        <dd><kbd>1</kbd> ~ <kbd>4</kbd> 로도 답을 바로 고를 수 있습니다</dd>
+      </dl>
+      <div class="dialog__actions">
+        <button type="button" class="button button--primary" id="online-help-close">닫기</button>
       </div>
     </div>
   </div>

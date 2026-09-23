@@ -10,6 +10,7 @@ import type {
   OnlineMatchQuestion,
   OnlineMatchSnapshot,
 } from '../online/adapter.js';
+import type { Arena, ArenaDeps } from './arena.js';
 
 export interface OnlineQuizRevealView {
   chosenChoiceIndex: number | null;
@@ -29,6 +30,75 @@ export interface OnlineQuizView {
   showFinalResult: boolean;
 }
 
+export interface OnlineSubmissionOwner {
+  readonly token: number;
+  readonly matchId: string;
+  readonly position: number;
+}
+
+export interface OnlineSubmissionGate {
+  begin(snapshot: Extract<OnlineMatchSnapshot, { state: 'running' }>): OnlineSubmissionOwner;
+  reconcile(snapshot: OnlineMatchSnapshot | null): void;
+  pendingFor(snapshot: OnlineMatchSnapshot | null): boolean;
+  owns(owner: OnlineSubmissionOwner): boolean;
+  finish(owner: OnlineSubmissionOwner, snapshot: OnlineMatchSnapshot | null): boolean;
+  invalidate(owner?: OnlineSubmissionOwner): void;
+}
+
+function sameSubmissionOwner(
+  left: OnlineSubmissionOwner,
+  right: OnlineSubmissionOwner,
+): boolean {
+  return left.token === right.token
+    && left.matchId === right.matchId
+    && left.position === right.position;
+}
+
+function ownsQuestion(
+  owner: OnlineSubmissionOwner,
+  snapshot: OnlineMatchSnapshot | null,
+): boolean {
+  return snapshot !== null
+    && snapshot.state !== 'finished'
+    && snapshot.matchId === owner.matchId
+    && snapshot.question.position === owner.position;
+}
+
+/** A stale submit promise must never unlock or redraw a newer match/question. */
+export function createOnlineSubmissionGate(): OnlineSubmissionGate {
+  let sequence = 0;
+  let pending: OnlineSubmissionOwner | null = null;
+  return {
+    begin(snapshot) {
+      pending = {
+        token: ++sequence,
+        matchId: snapshot.matchId,
+        position: snapshot.question.position,
+      };
+      return pending;
+    },
+    reconcile(snapshot) {
+      if (pending && !ownsQuestion(pending, snapshot)) pending = null;
+    },
+    pendingFor(snapshot) {
+      return pending !== null && ownsQuestion(pending, snapshot);
+    },
+    owns(owner) {
+      return pending !== null && sameSubmissionOwner(pending, owner);
+    },
+    finish(owner, snapshot) {
+      if (pending === null || !sameSubmissionOwner(pending, owner) || !ownsQuestion(owner, snapshot)) {
+        return false;
+      }
+      pending = null;
+      return true;
+    },
+    invalidate(owner) {
+      if (!owner || (pending !== null && sameSubmissionOwner(pending, owner))) pending = null;
+    },
+  };
+}
+
 /**
  * A browser may render a server deadline, but never decides whether it has elapsed.
  * Only a server-recorded submission closes the client-side submit affordance.
@@ -37,6 +107,50 @@ export function canAttemptOnlineSubmission(
   snapshot: Extract<OnlineMatchSnapshot, { state: 'running' }>,
 ): boolean {
   return snapshot.ownSubmission === null;
+}
+
+export function ownsOnlineSubmitError(
+  snapshot: OnlineMatchSnapshot | null,
+  owner: OnlineSubmissionOwner,
+): snapshot is Extract<OnlineMatchSnapshot, { state: 'running' }> {
+  return snapshot?.state === 'running'
+    && snapshot.matchId === owner.matchId
+    && snapshot.question.position === owner.position;
+}
+
+/** Phase/submission changes restyle existing choices; only a new question rebuilds their nodes. */
+export function onlineChoiceStructureKey(snapshot: OnlineMatchSnapshot): string | null {
+  if (snapshot.state === 'finished') return null;
+  return JSON.stringify([
+    snapshot.matchId,
+    snapshot.question.position,
+    snapshot.question.choices,
+  ]);
+}
+
+export function setTextIfChanged(
+  target: { textContent: string | null },
+  text: string,
+): boolean {
+  if (target.textContent === text) return false;
+  target.textContent = text;
+  return true;
+}
+
+export function reconcileOnlineChoiceNodes<T>(
+  existing: readonly T[],
+  previousKey: string | null,
+  nextKey: string,
+  count: number,
+  create: (index: number) => T,
+): { nodes: T[]; rebuilt: boolean } {
+  if (previousKey === nextKey && existing.length === count) {
+    return { nodes: Array.from(existing), rebuilt: false };
+  }
+  return {
+    nodes: Array.from({ length: count }, (_, index) => create(index)),
+    rebuilt: true,
+  };
 }
 
 /** Pure projection: hidden match data has no path into a running UI. */
@@ -50,7 +164,7 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
       selectedChoiceIndex: submission?.choiceIndex ?? null,
       reveal: null,
       status: submission === null
-        ? '답을 고르면 서버에 제출합니다.'
+        ? '캐릭터로 답을 고르면 서버에 제출합니다.'
         : '답안을 제출했습니다. 서버 결과를 기다려 주세요.',
       showFinalResult: false,
     };
@@ -85,21 +199,28 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
 }
 
 export interface OnlineQuizScreenDeps {
-  onSubmit: (spec: { position: number; choiceIndex: number }) => Promise<void>;
+  onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
+  createCharacterArena: (deps: ArenaDeps) => Arena;
+  trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
 }
 
 export interface OnlineQuizScreen {
   render(snapshot: OnlineMatchSnapshot): void;
+  /** 홈에서 고른 캐릭터를 온라인 문제 무대에도 적용한다. */
+  setCharacter(id: string): void;
   /** 오류가 아닌 안내용 transport/state 문구. */
   setNotice(message: string): void;
-  setError(message: string): void;
+  /** Background refresh failures are visible but never release an in-flight submit. */
+  setRefreshError(message: string): void;
+  /** A failed submit releases only the exact token/match/question owner. */
+  setSubmitError(message: string, owner: OnlineSubmissionOwner): void;
   hide(): void;
 }
 
 export function createOnlineQuizScreen(
-  { onSubmit, onExit, onFinished }: OnlineQuizScreenDeps,
+  { onSubmit, onExit, onFinished, createCharacterArena, trapFocus }: OnlineQuizScreenDeps,
 ): OnlineQuizScreen {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online-quiz"]'),
@@ -121,12 +242,28 @@ export function createOnlineQuizScreen(
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
   let snapshot: OnlineMatchSnapshot | null = null;
-  let submissionPending = false;
+  const submissionGate = createOnlineSubmissionGate();
   let lastQuestionKey: string | null = null;
+  let lastArenaQuestionKey: string | null = null;
+  let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
 
+  const arena = createCharacterArena({
+    onChoose: (index) => { void submitChoice(index); },
+    getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
+    trapFocus,
+    ids: {
+      root: 'online-arena',
+      character: 'online-arena-character',
+      tiles: 'online-arena-tiles',
+      help: 'online-arena-help',
+      helpDialog: 'online-help-dialog',
+      helpClose: 'online-help-close',
+    },
+  });
+
   function setStatus(text: string): void {
-    el.status.textContent = text;
+    setTextIfChanged(el.status, text);
   }
 
   /** The server owns expiry. This is an informational label, not a local countdown. */
@@ -137,30 +274,97 @@ export function createOnlineQuizScreen(
     el.timerText.textContent = '제출 시간은 서버가 관리합니다.';
   }
 
-  function renderChoices(view: OnlineQuizView): void {
-    const question = view.question;
-    if (!question) {
-      el.choices.replaceChildren();
+  async function submitChoice(index: number): Promise<void> {
+    const current = snapshot;
+    if (
+      !current
+      || current.state !== 'running'
+      || current.ownSubmission !== null
+      || submissionGate.pendingFor(current)
+      || index < 0
+      || index >= current.question.choices.length
+    ) return;
+
+    const owner = submissionGate.begin(current);
+    arena.lock();
+    render(current);
+    try {
+      await onSubmit({ ...owner, choiceIndex: index });
+    } catch (error) {
+      const latest = snapshot;
+      if (!submissionGate.finish(owner, latest)) return;
+      if (latest?.state === 'running' && latest.ownSubmission === null) {
+        lastArenaQuestionKey = null;
+        render(latest);
+      }
+      const message = error instanceof Error ? error.message : '답안을 제출하지 못했습니다.';
+      setStatus(`온라인 매치 오류: ${message}`);
       return;
     }
-    el.choices.replaceChildren();
-    question.choices.forEach((text, index) => {
-      const item = document.createElement('li');
-      const button = document.createElement('button');
-      button.type = 'button';
+
+    const latest = snapshot;
+    if (!submissionGate.finish(owner, latest)) return;
+    // 전송이 성공했지만 authoritative snapshot에 제출이 없다면 다시 시도할 수 있다.
+    if (latest?.state === 'running' && latest.ownSubmission === null) {
+      lastArenaQuestionKey = null;
+      render(latest);
+    }
+  }
+
+  function renderChoices(view: OnlineQuizView, structureKey: string): void {
+    const question = view.question;
+    if (!question) {
+      if (el.choices.childElementCount > 0) el.choices.replaceChildren();
+      lastChoiceStructureKey = null;
+      return;
+    }
+
+    const existing = Array.from(el.choices.querySelectorAll<HTMLButtonElement>('.choice'));
+    const reconciliation = reconcileOnlineChoiceNodes(
+      existing,
+      lastChoiceStructureKey,
+      structureKey,
+      question.choices.length,
+      (index) => {
+        const text = question.choices[index]!;
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'choice';
+
+        const key = document.createElement('span');
+        key.className = 'choice__key';
+        key.textContent = String(index + 1);
+        key.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'choice__text';
+        label.textContent = text;
+        const mark = document.createElement('span');
+        mark.className = 'choice__mark';
+
+        button.append(key, label, mark);
+        button.addEventListener('click', () => { void submitChoice(index); });
+        item.append(button);
+        return button;
+      },
+    );
+    if (reconciliation.rebuilt) {
+      const items = reconciliation.nodes.map((button) => {
+        const item = button.parentElement;
+        if (!(item instanceof HTMLLIElement)) throw new Error('online choice item is missing');
+        return item;
+      });
+      el.choices.replaceChildren(...items);
+    }
+    lastChoiceStructureKey = structureKey;
+    const buttons = reconciliation.nodes;
+
+    buttons.forEach((button, index) => {
       button.className = 'choice';
-      button.disabled = !view.canSubmit || submissionPending;
-
-      const key = document.createElement('span');
-      key.className = 'choice__key';
-      key.textContent = String(index + 1);
-      key.setAttribute('aria-hidden', 'true');
-      const label = document.createElement('span');
-      label.className = 'choice__text';
-      label.textContent = text;
-      const mark = document.createElement('span');
-      mark.className = 'choice__mark';
-
+      button.disabled = !view.canSubmit || submissionGate.pendingFor(snapshot);
+      const mark = button.querySelector<HTMLElement>('.choice__mark');
+      if (!mark) throw new Error('online choice mark is missing');
+      mark.textContent = '';
       if (view.phase === 'running' && view.selectedChoiceIndex === index) {
         button.classList.add('choice--submitted');
         mark.textContent = '제출됨';
@@ -176,18 +380,6 @@ export function createOnlineQuizScreen(
           button.classList.add('choice--muted');
         }
       }
-      button.append(key, label, mark);
-      button.addEventListener('click', () => {
-        if (!snapshot || snapshot.state !== 'running' || !view.canSubmit || submissionPending) return;
-        submissionPending = true;
-        render(snapshot);
-        void onSubmit({ position: question.position, choiceIndex: index }).finally(() => {
-          submissionPending = false;
-          if (snapshot) render(snapshot);
-        });
-      });
-      item.append(button);
-      el.choices.append(item);
     });
   }
 
@@ -195,16 +387,21 @@ export function createOnlineQuizScreen(
     const reveal = view.reveal;
     el.reveal.hidden = reveal === null;
     if (reveal === null) return;
-    if (reveal.correct) el.verdict.textContent = '정답입니다';
-    else if (reveal.timedOut) el.verdict.textContent = '시간 초과입니다';
-    else el.verdict.textContent = '아쉽네요, 오답입니다';
-    el.explanation.textContent = reveal.explanation;
+    const verdict = reveal.correct
+      ? '정답입니다'
+      : reveal.timedOut
+        ? '시간 초과입니다'
+        : '아쉽네요, 오답입니다';
+    setTextIfChanged(el.verdict, verdict);
+    setTextIfChanged(el.explanation, reveal.explanation);
   }
 
   function render(nextSnapshot: OnlineMatchSnapshot): void {
+    submissionGate.reconcile(nextSnapshot);
     snapshot = nextSnapshot;
     const view = onlineQuizView(nextSnapshot);
     if (nextSnapshot.state === 'finished') {
+      arena.setEnabled(false);
       if (finishedMatchId !== nextSnapshot.matchId) {
         finishedMatchId = nextSnapshot.matchId;
         onFinished(nextSnapshot);
@@ -223,39 +420,80 @@ export function createOnlineQuizScreen(
     el.question.textContent = question.question;
     renderServerTimeNotice();
     setStatus(view.status);
-    renderChoices(view);
+    const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
+    if (choiceStructureKey === null) throw new Error('active match choice key is missing');
+    renderChoices(view, choiceStructureKey);
     renderReveal(view);
+
+    const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
+    if (arenaQuestionKey !== lastArenaQuestionKey) {
+      lastArenaQuestionKey = arenaQuestionKey;
+      arena.setEnabled(true);
+      arena.reset(question.choices.length);
+    }
+    if (view.reveal !== null) {
+      arena.showOutcome({
+        answerIndex: view.reveal.answerIndex,
+        chosenIndex: view.reveal.chosenChoiceIndex,
+        correct: view.reveal.correct,
+      });
+    } else if (!view.canSubmit || submissionGate.pendingFor(nextSnapshot)) {
+      arena.lock();
+    }
 
     const questionKey = `${nextSnapshot.matchId}:${nextSnapshot.state}:${question.position}`;
     if (questionKey !== lastQuestionKey) {
       lastQuestionKey = questionKey;
-      el.question.focus({ preventScroll: true });
+      if (!arena.isDialogOpen()) el.question.focus({ preventScroll: true });
     }
   }
 
   el.exit.addEventListener('click', onExit);
   document.addEventListener('keydown', (event) => {
+    if (arena.handleDialogKey(event)) return;
     if (el.screen.hidden || !snapshot || snapshot.state !== 'running') return;
     const choiceIndex = ['1', '2', '3', '4'].indexOf(event.key);
-    if (choiceIndex === -1 || document.activeElement?.closest('button')) return;
-    const button = el.choices.querySelectorAll<HTMLButtonElement>('.choice')[choiceIndex];
-    if (!button || button.disabled) return;
-    event.preventDefault();
-    button.click();
+    if (choiceIndex !== -1 && !document.activeElement?.closest('button')) {
+      const button = el.choices.querySelectorAll<HTMLButtonElement>('.choice')[choiceIndex];
+      if (button && !button.disabled) {
+        event.preventDefault();
+        button.click();
+        return;
+      }
+    }
+    if (arena.handleKey(event)) event.preventDefault();
   });
 
   return {
     render,
+    setCharacter(id) {
+      arena.setCharacter(id);
+    },
     setNotice(message) {
       setStatus(message);
     },
-    setError(message) {
+    setRefreshError(message) {
+      setStatus(`온라인 매치 오류: ${message}`);
+    },
+    setSubmitError(message, owner) {
+      const current = snapshot;
+      if (!ownsOnlineSubmitError(current, owner) || !submissionGate.owns(owner)) return;
+      const interrupted = submissionGate.pendingFor(current);
+      submissionGate.invalidate(owner);
+      if (interrupted && current.ownSubmission === null) {
+        lastArenaQuestionKey = null;
+        render(current);
+      }
       setStatus(`온라인 매치 오류: ${message}`);
     },
     hide() {
+      arena.setEnabled(false);
+      arena.closeDialog();
+      submissionGate.invalidate();
       snapshot = null;
-      submissionPending = false;
       lastQuestionKey = null;
+      lastArenaQuestionKey = null;
+      lastChoiceStructureKey = null;
       el.reveal.hidden = true;
       el.choices.replaceChildren();
     },

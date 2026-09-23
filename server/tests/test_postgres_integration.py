@@ -111,7 +111,7 @@ async def _exercise_bounded_lobby() -> None:
                 capacity=12,
                 is_public=True,
                 password=None,
-                game_mode=False,
+                game_mode=True,
             ),
             None,
         )
@@ -129,7 +129,7 @@ async def _exercise_bounded_lobby() -> None:
                     capacity=2,
                     is_public=True,
                     password=None,
-                    game_mode=False,
+                    game_mode=True,
                 ),
                 None,
             )
@@ -185,9 +185,9 @@ async def _exercise_resource_cleanup() -> None:
                     password_hash, host_player_id, expires_at
                 )
                 VALUES
-                    (%s, %s, '활성 방', 2, false, true, NULL, %s,
+                    (%s, %s, '활성 방', 2, true, true, NULL, %s,
                      now() + interval '1 hour'),
-                    (%s, %s, '경기 방', 2, false, true, NULL, %s,
+                    (%s, %s, '경기 방', 2, true, true, NULL, %s,
                      now() - interval '1 minute')
                 """,
                 (
@@ -280,7 +280,7 @@ async def _exercise_cleanup_lock_interlock() -> None:
                 capacity=2,
                 is_public=True,
                 password=None,
-                game_mode=False,
+                game_mode=True,
             ),
             None,
         )

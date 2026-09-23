@@ -78,6 +78,19 @@ def test_validate_room_rejects_unknown_category_and_bool_capacity() -> None:
     assert capacity.value.code == "invalid-capacity"
 
 
+def test_validate_room_normalizes_legacy_false_to_character_only() -> None:
+    room = validate_room(
+        name="캐릭터 전용 방",
+        category_id="art",
+        capacity=4,
+        is_public=True,
+        password=None,
+        game_mode=False,
+    )
+
+    assert room.game_mode is True
+
+
 def test_validate_player_and_chat_bound_untrusted_text() -> None:
     player = validate_player("  퀴즈왕  ", "pixel-dragon")
     assert player.nickname == "퀴즈왕"
@@ -89,6 +102,18 @@ def test_validate_player_and_chat_bound_untrusted_text() -> None:
     with pytest.raises(DomainError) as empty:
         validate_chat("   ")
     assert empty.value.code == "invalid-chat"
+
+
+def test_validate_player_assigns_a_character_to_legacy_clients() -> None:
+    assert validate_player("퀴즈왕", None).character_id == "slime-blue"
+
+
+@pytest.mark.parametrize("character_id", ["", "not valid!", "UPPERCASE"])
+def test_validate_player_requires_supported_character_identifier(character_id: str) -> None:
+    with pytest.raises(DomainError) as caught:
+        validate_player("퀴즈왕", character_id)
+
+    assert caught.value.code == "invalid-character"
 
 
 def test_normalize_code_accepts_human_separators_but_requires_six_characters() -> None:

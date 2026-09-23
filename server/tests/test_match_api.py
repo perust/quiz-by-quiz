@@ -45,7 +45,7 @@ def _room(*, ready: bool = False) -> RoomView:
         name="온라인 퀴즈",
         category_id="history",
         capacity=2,
-        game_mode=False,
+        game_mode=True,
         players=(
             PlayerView(
                 id=PLAYER_ID,
@@ -79,7 +79,7 @@ class MatchApiRepository:
             id=MATCH_ID,
             state="running",
             category_id="history",
-            game_mode=False,
+            game_mode=True,
             current_position=1,
             total_questions=10,
             deadline_at="2026-09-18T00:00:20+00:00",
@@ -113,6 +113,9 @@ class MatchApiRepository:
     async def health(self) -> bool:
         return True
 
+    async def schema_version(self) -> int:
+        return 10
+
     async def authenticate(self, player_id: UUID, token_hash: bytes) -> bool:
         expected = hashlib.sha256(PLAYER_TOKEN.encode()).digest()
         return player_id == PLAYER_ID and token_hash == expected
@@ -124,7 +127,7 @@ class MatchApiRepository:
 
     async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
         assert actor_id == PLAYER_ID and code == self.room.code
-        return MatchSetup(id=MATCH_ID, category_id="history", game_mode=False, total_questions=10)
+        return MatchSetup(id=MATCH_ID, category_id="history", game_mode=True, total_questions=10)
 
     async def get_match(self, actor_id: UUID, code: str) -> MatchRead:
         assert actor_id == PLAYER_ID and code == self.room.code
@@ -255,7 +258,7 @@ def test_match_routes_hide_answer_feedback_and_scores_until_reveal() -> None:
     assert started.json() == {
         "matchId": str(MATCH_ID),
         "categoryId": "history",
-        "gameMode": False,
+        "gameMode": True,
         "totalQuestions": 10,
     }
     assert initial.status_code == 200

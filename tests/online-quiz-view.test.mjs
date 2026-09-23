@@ -8,7 +8,7 @@ function runningMatch(changes = {}) {
     matchId: MATCH_ID,
     state: 'running',
     categoryId: 'history',
-    gameMode: false,
+    gameMode: true,
     currentPosition: 1,
     totalQuestions: 10,
     deadlineAt: '2026-09-18T11:00:20+00:00',
@@ -75,7 +75,7 @@ test('finished online quiz view는 질문을 다시 만들지 않고 server fina
   const view = onlineQuizView({
     matchId: MATCH_ID,
     state: 'finished',
-    categoryId: 'history', gameMode: false, currentPosition: 10, totalQuestions: 10,
+    categoryId: 'history', gameMode: true, currentPosition: 10, totalQuestions: 10,
     deadlineAt: null,
     question: null, ownSubmission: null, reveal: null,
     scores: [{
@@ -87,4 +87,130 @@ test('finished online quiz view는 질문을 다시 만들지 않고 server fina
   assert.equal(view.phase, 'finished');
   assert.equal(view.question, null);
   assert.equal(view.showFinalResult, true);
+});
+
+test('stale online submission completion은 재진입한 새 match owner를 바꾸지 못한다', async () => {
+  const { createOnlineSubmissionGate } = await import('../js/ui/online-quiz.js');
+  const firstSnapshot = runningMatch();
+  const secondSnapshot = runningMatch({
+    matchId: '22345678-1234-5678-9234-567812345678',
+    question: { ...runningMatch().question, position: 2 },
+    currentPosition: 2,
+  });
+  const gate = createOnlineSubmissionGate();
+
+  const first = gate.begin(firstSnapshot);
+  assert.equal(gate.pendingFor(firstSnapshot), true);
+  assert.equal(gate.owns({ ...first }), true);
+  gate.reconcile(secondSnapshot);
+  const second = gate.begin(secondSnapshot);
+
+  assert.equal(gate.finish(first, secondSnapshot), false);
+  assert.equal(gate.owns({ ...first }), false);
+  assert.equal(gate.owns({ ...second }), true);
+  assert.equal(gate.pendingFor(secondSnapshot), true);
+  assert.equal(gate.finish(second, secondSnapshot), true);
+  assert.equal(gate.pendingFor(secondSnapshot), false);
+
+  const interrupted = gate.begin(secondSnapshot);
+  gate.invalidate(interrupted);
+  assert.equal(gate.finish(interrupted, secondSnapshot), false);
+  assert.equal(gate.pendingFor(secondSnapshot), false);
+});
+
+test('same-question snapshot은 choice DOM 구조 key를 유지하고 새 질문만 바꾼다', async () => {
+  const { onlineChoiceStructureKey } = await import('../js/ui/online-quiz.js');
+  const running = runningMatch();
+  const submitted = runningMatch({
+    ownSubmission: { position: 1, choiceIndex: 2, timedOut: false },
+  });
+  const revealing = {
+    ...runningMatch(),
+    state: 'revealing',
+    reveal: { position: 1, choiceIndex: 2, timedOut: false, correct: true, answerIndex: 2, explanation: '서버 해설' },
+  };
+  const nextQuestion = runningMatch({
+    currentPosition: 2,
+    question: {
+      ...runningMatch().question,
+      id: 'history-002',
+      question: '다음 서버 문제',
+      position: 2,
+    },
+  });
+
+  const key = onlineChoiceStructureKey(running);
+  assert.equal(onlineChoiceStructureKey(submitted), key);
+  assert.equal(onlineChoiceStructureKey(revealing), key);
+  assert.notEqual(onlineChoiceStructureKey(nextQuestion), key);
+});
+
+test('submit error owner는 같은 running question position에만 일치한다', async () => {
+  const { ownsOnlineSubmitError } = await import('../js/ui/online-quiz.js');
+  const running = runningMatch();
+  const nextQuestion = runningMatch({
+    currentPosition: 2,
+    question: { ...runningMatch().question, position: 2 },
+  });
+  const revealing = {
+    ...running,
+    state: 'revealing',
+    ownSubmission: { position: 1, choiceIndex: 0, timedOut: false },
+    reveal: {
+      position: 1,
+      choiceIndex: 0,
+      timedOut: false,
+      correct: true,
+      answerIndex: 0,
+      explanation: '서버 해설',
+    },
+  };
+
+  const owner = { token: 1, matchId: MATCH_ID, position: 1 };
+  const otherMatch = runningMatch({ matchId: '32345678-1234-5678-9234-567812345678' });
+  assert.equal(ownsOnlineSubmitError(running, owner), true);
+  assert.equal(ownsOnlineSubmitError(nextQuestion, owner), false);
+  assert.equal(ownsOnlineSubmitError(revealing, owner), false);
+  assert.equal(ownsOnlineSubmitError(otherMatch, owner), false);
+});
+
+test('aria-live text는 값이 바뀔 때만 DOM을 mutate한다', async () => {
+  const { setTextIfChanged } = await import('../js/ui/online-quiz.js');
+  let value = '같은 문구';
+  let writes = 0;
+  const target = {
+    get textContent() { return value; },
+    set textContent(next) { value = next; writes += 1; },
+  };
+
+  assert.equal(setTextIfChanged(target, '같은 문구'), false);
+  assert.equal(writes, 0);
+  assert.equal(setTextIfChanged(target, '새 문구'), true);
+  assert.equal(writes, 1);
+  assert.equal(setTextIfChanged(target, '새 문구'), false);
+  assert.equal(writes, 1);
+});
+
+test('choice node reconciliation은 same-question objects를 그대로 재사용한다', async () => {
+  const { reconcileOnlineChoiceNodes } = await import('../js/ui/online-quiz.js');
+  const first = { id: 'first' };
+  const second = { id: 'second' };
+  let creates = 0;
+  const create = (index) => { creates += 1; return { id: `new-${index}` }; };
+
+  const stable = reconcileOnlineChoiceNodes(
+    [first, second], 'same-key', 'same-key', 2, create,
+  );
+  assert.equal(stable.rebuilt, false);
+  assert.equal(stable.nodes[0], first);
+  assert.equal(stable.nodes[1], second);
+  assert.equal(creates, 0);
+
+  const changed = reconcileOnlineChoiceNodes(
+    stable.nodes, 'same-key', 'next-key', 2, create,
+  );
+  assert.equal(changed.rebuilt, true);
+  assert.notEqual(changed.nodes[0], first);
+  assert.notEqual(changed.nodes[1], second);
+  assert.equal(creates, 2);
 });

@@ -11,7 +11,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from .domain import ValidatedPlayer, ValidatedRoom
+from .domain import DEFAULT_CHARACTER_ID, ValidatedPlayer, ValidatedRoom
 from .question_catalog import CatalogError, QuestionCatalog, SelectedQuestion
 from .repository import (
     AccessInfo,
@@ -231,6 +231,19 @@ class PostgresRoomsRepository:
         except Exception:
             return False
 
+    async def schema_version(self) -> int:
+        try:
+            async with self._pool.connection(timeout=3) as connection:
+                cursor = await connection.execute(
+                    "SELECT quiz_online.character_only_schema_version() AS schema_version"
+                )
+                row = await cursor.fetchone()
+        except errors.UndefinedFunction:
+            return 0
+        if row is None:
+            return 0
+        return int(row["schema_version"])
+
     async def upsert_player(
         self,
         player_id: UUID,
@@ -249,7 +262,7 @@ class PostgresRoomsRepository:
                 ELSE current_player.nickname
             END,
             character_id = CASE
-                WHEN %s THEN EXCLUDED.character_id
+                WHEN %s OR current_player.character_id IS NULL THEN EXCLUDED.character_id
                 ELSE current_player.character_id
             END,
             last_seen_at = now(),
@@ -357,7 +370,7 @@ class PostgresRoomsRepository:
                                 room["id"],
                                 actor_id,
                                 player["nickname"],
-                                player["character_id"],
+                                player["character_id"] or DEFAULT_CHARACTER_ID,
                             ),
                         )
                         created = await self._fetch_room(
@@ -457,7 +470,12 @@ class PostgresRoomsRepository:
                         )
                         VALUES (%s, %s, %s, %s)
                         """,
-                        (room["id"], actor_id, nickname, player["character_id"]),
+                        (
+                            room["id"],
+                            actor_id,
+                            nickname,
+                            player["character_id"] or DEFAULT_CHARACTER_ID,
+                        ),
                     )
 
                 await self._touch_member(connection, actor_id, code)
@@ -553,7 +571,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, capacity, category_id, game_mode
+                    SELECT id, host_player_id, capacity, category_id
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -586,15 +604,14 @@ class PostgresRoomsRepository:
                     raise RoomFull
 
                 category = patch.get("category_id", room["category_id"])
-                game_mode = patch.get("game_mode", room["game_mode"])
                 await connection.execute(
                     """
                     UPDATE quiz_online.rooms
-                    SET category_id = %s, capacity = %s, game_mode = %s,
+                    SET category_id = %s, capacity = %s,
                         updated_at = now(), expires_at = now() + %s::interval
                     WHERE id = %s
                     """,
-                    (category, capacity, game_mode, _ROOM_LIFETIME, room["id"]),
+                    (category, capacity, _ROOM_LIFETIME, room["id"]),
                 )
                 updated = await self._fetch_room(
                     connection,
@@ -636,7 +653,7 @@ class PostgresRoomsRepository:
             return PlayerView(
                 id=row["player_id"],
                 nickname=str(row["nickname"]),
-                character_id=row["character_id"],
+                character_id=row["character_id"] or DEFAULT_CHARACTER_ID,
             )
 
     async def set_ready(self, actor_id: UUID, code: str, is_ready: bool) -> RoomView:
@@ -750,7 +767,7 @@ class PostgresRoomsRepository:
                     (
                         room["id"],
                         room["category_id"],
-                        room["game_mode"],
+                        True,
                         len(selected),
                         _QUESTION_TIMEOUT,
                         _MATCH_LIFETIME,
@@ -773,7 +790,7 @@ class PostgresRoomsRepository:
                             match_id,
                             member["player_id"],
                             member["nickname"],
-                            member["character_id"],
+                            member["character_id"] or DEFAULT_CHARACTER_ID,
                         ),
                     )
                 for position, question in enumerate(selected, start=1):
@@ -809,7 +826,7 @@ class PostgresRoomsRepository:
                 return MatchSetup(
                     id=match_id,
                     category_id=room["category_id"],
-                    game_mode=bool(room["game_mode"]),
+                    game_mode=True,
                     total_questions=len(selected),
                 )
 
@@ -1169,7 +1186,7 @@ class PostgresRoomsRepository:
             id=match["id"],
             state=str(match["state"]),
             category_id=match["category_id"],
-            game_mode=bool(match["game_mode"]),
+            game_mode=True,
             current_position=int(match["current_position"]),
             total_questions=int(match["total_questions"]),
             deadline_at=_iso(deadline_at) if isinstance(deadline_at, datetime) else None,
@@ -1205,7 +1222,7 @@ class PostgresRoomsRepository:
             MatchScoreView(
                 player_id=row["player_id"],
                 nickname=str(row["nickname"]),
-                character_id=row["character_id"],
+                character_id=row["character_id"] or DEFAULT_CHARACTER_ID,
                 score=int(row["score"]),
                 correct_count=int(row["correct_count"]),
                 answered_count=int(row["answered_count"]),
@@ -1367,7 +1384,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 "name": str(row["name"]),
                 "category_id": row["category_id"],
                 "capacity": int(row["capacity"]),
-                "game_mode": bool(row["game_mode"]),
+                "game_mode": True,
                 "players": [],
                 "is_public": bool(row["is_public"]),
                 "has_password": bool(row["has_password"]),
@@ -1381,7 +1398,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 PlayerView(
                     id=row["player_id"],
                     nickname=str(row["nickname"]),
-                    character_id=row["character_id"],
+                    character_id=row["character_id"] or DEFAULT_CHARACTER_ID,
                     is_ready=bool(row["is_ready"]),
                 )
             )

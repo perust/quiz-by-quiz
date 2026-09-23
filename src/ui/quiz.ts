@@ -14,7 +14,7 @@ import type { AnswerRecord, Question } from '../types.js';
 /** 키보드로 보기를 선택할 때 쓰는 키 (FR-3.5) */
 const CHOICE_KEYS = ['1', '2', '3', '4'];
 
-/** 채점 뒤 다음 문제로 넘어가는 키. 게임 모드 버튼에 적어둔 것과 같아야 한다 */
+/** 채점 뒤 다음 문제로 넘어가는 키. 캐릭터 조작 안내와 같아야 한다. */
 const NEXT_KEYS = ['Enter', ' '];
 
 /** 다이얼로그 안에서 Tab이 맴돌게 할 대상 */
@@ -36,11 +36,6 @@ export interface QuizScreen {
   /** 무대에서 쓸 캐릭터를 갈아 끼운다. 홈에서 고른 것이 여기로 온다 */
   setCharacter(id: string): void;
 
-  /**
-   * 게임 모드를 켜고 끈다. 판 도중에 바꿔도 세션은 그대로다 —
-   * 무대는 보기 버튼을 대신 눌러줄 뿐이라 게임 상태를 갖지 않는다.
-   */
-  setGameMode(value: boolean): void;
 
   /**
    * 판을 접고 화면을 정리한다.
@@ -81,7 +76,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
   const timer = createQuestionTimer();
 
-  // 게임 모드 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
+  // 캐릭터 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
   // 조작법 대화상자도 여기와 같은 포커스 가두기를 쓰라고 trapFocus를 넘긴다.
   const arena = createArena({
     onChoose: (index) => selectChoice(index),
@@ -243,9 +238,9 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     if (!session || session.isAnswered()) return;
     timer.stop();
 
-    // 게임 모드에서는 시간이 다 됐을 때 «밟고 있는 칸»이 답이다.
+    // 시간이 다 됐을 때 «밟고 있는 칸»이 답이다.
     // 십자 한가운데에서 시작하므로, 움직이지 않았으면 밟은 칸이 없어 null이 된다.
-    // 즉 가만히 있으면 보통 모드와 똑같이 시간 초과 오답이다.
+    // 즉 가만히 있으면 시간 초과 오답이다.
     const standing = arena.standingIndex();
 
     // choiceIndex가 null이면 시간 초과다. 오답과 똑같이 정답과 해설을 보여준다 (FR-3.10)
@@ -331,6 +326,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     // 화면을 떠나므로 조작법 대화상자도 함께 닫는다.
     // 열어 둔 채 나가면 다음 화면 위에 남아 화면을 덮고 포커스를 가둔다.
     arena.closeDialog();
+    arena.setEnabled(false);
     onComplete(finished);
   }
 
@@ -359,6 +355,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     session = null;
     hideFeedback();
     arena.closeDialog(); // 같은 이유로 여기서도 닫는다
+    arena.setEnabled(false);
     onExit();
   }
 
@@ -385,7 +382,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
     if (el.screen.hidden || !session) return;
 
-    // 게임 모드는 «다음 문제» 버튼에 Space/Enter라고 적어 두었으므로,
+    // 캐릭터 조작 안내에는 «다음 문제»가 Space/Enter로 된다고 적어 두었으므로,
     // 포커스가 버튼에서 벗어나 있어도 그 말이 참이어야 한다.
     // 어떤 버튼에든 포커스가 있으면 건드리지 않는다 — 그건 브라우저가 알아서 누른다.
     // Space는 preventDefault가 없으면 화면이 한 판 스크롤된다.
@@ -407,7 +404,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
       return;
     }
 
-    // 게임 모드가 꺼져 있으면 무대는 아무 키도 가져가지 않는다
+    // 다른 화면에서는 무대가 아무 키도 가져가지 않는다.
     if (arena.handleKey(event)) event.preventDefault();
   });
 
@@ -417,6 +414,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
       categoryLabel = label;
       el.dialog.hidden = true;
       dialogOpener = null;
+      arena.setEnabled(true);
       renderQuestion();
     },
 
@@ -425,6 +423,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     },
 
     hide() {
+      arena.setEnabled(false);
       if (!session && el.feedback.hidden && el.dialog.hidden) return;
       session = null;
       stopTicking();
@@ -434,22 +433,6 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
       el.dialog.hidden = true;
       dialogOpener = null;
       arena.closeDialog();
-    },
-
-    setGameMode(value) {
-      arena.setEnabled(value);
-      el.screen.classList.toggle('quiz--game', Boolean(value));
-      if (!value || !session) return;
-
-      if (session.isAnswered()) {
-        // 이미 답을 낸 문항이다. setEnabled가 잠금을 풀어 놓으므로 다시 잠근다 —
-        // 안 그러면 조작부가 «다음 문제» 버튼을 가리고, 채점이 끝난 바닥 위를
-        // 캐릭터가 다시 걸어 다닌다. 칸에 칠한 정답·오답은 그대로 두므로
-        // reset은 부르지 않는다.
-        arena.lock();
-        return;
-      }
-      arena.reset(session.currentQuestion().choices.length);
     },
   };
 }

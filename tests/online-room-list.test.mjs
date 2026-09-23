@@ -15,7 +15,7 @@ function room({
   capacity = 4,
   playerCount = 1,
   isPublic = true,
-  gameMode = false,
+  gameMode = true,
   createdAt = '2026-09-17T00:00:00.000Z',
 }) {
   return {
