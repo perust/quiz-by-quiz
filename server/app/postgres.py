@@ -553,7 +553,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, capacity, category_id, game_mode
+                    SELECT id, host_player_id, capacity, category_id
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -586,15 +586,14 @@ class PostgresRoomsRepository:
                     raise RoomFull
 
                 category = patch.get("category_id", room["category_id"])
-                game_mode = patch.get("game_mode", room["game_mode"])
                 await connection.execute(
                     """
                     UPDATE quiz_online.rooms
-                    SET category_id = %s, capacity = %s, game_mode = %s,
+                    SET category_id = %s, capacity = %s,
                         updated_at = now(), expires_at = now() + %s::interval
                     WHERE id = %s
                     """,
-                    (category, capacity, game_mode, _ROOM_LIFETIME, room["id"]),
+                    (category, capacity, _ROOM_LIFETIME, room["id"]),
                 )
                 updated = await self._fetch_room(
                     connection,

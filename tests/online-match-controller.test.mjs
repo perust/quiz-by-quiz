@@ -8,7 +8,7 @@ function runningMatch(changes = {}) {
     matchId: MATCH_ID,
     state: 'running',
     categoryId: 'history',
-    gameMode: false,
+    gameMode: true,
     currentPosition: 1,
     totalQuestions: 10,
     deadlineAt: '2026-09-18T11:00:20+00:00',

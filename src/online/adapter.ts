@@ -50,7 +50,7 @@ import type { JoinFailReason } from './rules.js';
 export interface PublicPlayer {
   id: string;
   nickname: string;
-  characterId?: string;
+  characterId: string;
   /** 이 참가자가 server-authoritative 시작 조건에 준비됐는가 */
   isReady: boolean;
 }
@@ -66,7 +66,8 @@ export interface PublicRoom {
   name: string;
   categoryId: CategoryId | null;
   capacity: number;
-  gameMode: boolean;
+  /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
+  gameMode: true;
   players: PublicPlayer[];
   isPublic: boolean;
   hasPassword: boolean;
@@ -80,13 +81,14 @@ export interface PublicRoom {
 /** 판을 열 때 쓰는 방 설정 */
 export interface MatchSetup {
   categoryId: CategoryId | null;
-  gameMode: boolean;
+  /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
+  gameMode: true;
 }
 
 /** 방에 들어갈 때 알리는 나. 저장소가 이것으로 참가자를 만든다 */
 export interface PlayerInfo {
   nickname: string;
-  characterId?: string;
+  characterId: string;
 }
 
 /**
@@ -109,19 +111,18 @@ export interface CreateRoomSpec {
   isPublic: boolean;
   /** 비공개 방일 때만 본다 */
   password?: string;
-  player?: PlayerInfo;
+  player: PlayerInfo;
 }
 
 export interface JoinRoomSpec {
   code: string;
   password?: string;
-  player?: PlayerInfo;
+  player: PlayerInfo;
 }
 
 /** 방장만 바꿀 수 있다. 넘긴 것만 바뀐다 */
 export interface RoomPatch {
   categoryId?: CategoryId | null;
-  gameMode?: boolean;
   capacity?: number;
 }
 
@@ -175,7 +176,7 @@ export interface OnlineReveal extends OnlineOwnSubmission {
 export interface OnlineScore {
   playerId: string;
   nickname: string;
-  characterId: string | null;
+  characterId: string;
   score: number;
   correctCount: number;
   answeredCount: number;
@@ -184,7 +185,8 @@ export interface OnlineScore {
 interface OnlineMatchBase {
   matchId: string;
   categoryId: CategoryId | null;
-  gameMode: boolean;
+  /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
+  gameMode: true;
   currentPosition: number;
   totalQuestions: number;
 }
@@ -260,6 +262,8 @@ export interface RoomStore {
   readonly isPersistent: boolean;
   /** 지금 나를 가리키는 값. **새로고침해도 그대로여야 한다** */
   me(): string;
+  /** 모든 network 요청 전에 사용할 현재 닉네임·캐릭터를 고정한다. */
+  setPlayer(player: PlayerInfo): void;
   /** 공개·비공개 방 목록. 비밀번호 원문은 PublicRoom에 존재하지 않는다 */
   listRooms(): Promise<PublicRoom[]>;
   /** 내가 들어가 있는 방 */

@@ -208,7 +208,7 @@ export function createOnlineScreen(
   }
 
   function gameFormat(room: PublicRoom): string {
-    return `${categoryName(room.categoryId)} · ${room.gameMode ? '게임 모드' : '보통 모드'}`;
+    return categoryName(room.categoryId);
   }
 
   /**

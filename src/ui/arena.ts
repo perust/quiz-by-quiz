@@ -1,4 +1,4 @@
-// 게임 모드 무대
+// 캐릭터 퀴즈 무대
 //
 // 바닥을 십자로 나눈 2×2 칸 위를 캐릭터가 자유롭게 돌아다닌다.
 // 밟고 있는 칸에 불이 들어오고, 시간이 다 되면 **그때 서 있는 칸이 답**이다.
@@ -10,8 +10,7 @@
 //   └─────┴─────┘
 //
 // 가운데에서 시작하는 것이 중요하다. 가만히 있으면 아무 칸도 밟지 않은 채로
-// 시간이 끝나 지금까지처럼 시간 초과 오답이 된다. 보통 모드와 난이도가 같아지고,
-// 두 모드가 같은 랭킹에 쌓여도 공정하다.
+// 시간이 끝나면 시간 초과 오답이 된다.
 //
 // 걷는 일은 ui/walker.js가 한다. 여기서는 «몇 번 칸 = 몇 번 보기»만 잇는다.
 //
@@ -36,7 +35,27 @@ export interface ArenaDeps {
    */
   getChoiceNodes: () => Iterable<Element>;
   trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
+  /** 로컬·온라인 화면이 독립된 무대를 가질 수 있게 DOM id를 주입한다. */
+  ids?: ArenaElementIds;
 }
+
+export interface ArenaElementIds {
+  root: string;
+  character: string;
+  tiles: string;
+  help: string;
+  helpDialog: string;
+  helpClose: string;
+}
+
+const DEFAULT_IDS: ArenaElementIds = {
+  root: 'arena',
+  character: 'arena-character',
+  tiles: 'arena-tiles',
+  help: 'arena-help',
+  helpDialog: 'help-dialog',
+  helpClose: 'help-close',
+};
 
 /** 채점 결과. 무엇이 정답인지는 quiz.js가 알려준다 */
 export interface ArenaOutcome {
@@ -47,7 +66,7 @@ export interface ArenaOutcome {
 }
 
 export interface Arena {
-  /** 게임 모드를 켜고 끈다 */
+  /** 화면 진입·이탈에 맞춰 캐릭터 무대를 켜고 끈다. */
   setEnabled(value: boolean): void;
   isEnabled(): boolean;
   /** 쓰고 있는 캐릭터를 갈아 끼운다. id 가 없으면 기본 캐릭터가 된다 */
@@ -70,14 +89,19 @@ export interface Arena {
   handleKey(event: KeyboardEvent): boolean;
 }
 
-export function createArena({ onChoose, getChoiceNodes, trapFocus }: ArenaDeps): Arena {
+export function createArena({
+  onChoose,
+  getChoiceNodes,
+  trapFocus,
+  ids = DEFAULT_IDS,
+}: ArenaDeps): Arena {
   const el = {
-    root: need('arena'),
-    character: need('arena-character'),
-    tiles: need('arena-tiles'),
-    help: need('arena-help'),
-    helpDialog: need('help-dialog'),
-    helpClose: need('help-close'),
+    root: need(ids.root),
+    character: need(ids.character),
+    tiles: need(ids.tiles),
+    help: need(ids.help),
+    helpDialog: need(ids.helpDialog),
+    helpClose: need(ids.helpClose),
   };
 
   let enabled = false;
@@ -160,7 +184,7 @@ export function createArena({ onChoose, getChoiceNodes, trapFocus }: ArenaDeps):
   }
 
   return {
-    /** 게임 모드를 켜고 끈다 */
+    /** 화면 진입·이탈에 맞춰 캐릭터 무대를 켜고 끈다. */
     setEnabled(value) {
       enabled = Boolean(value);
       el.root.hidden = !enabled;
@@ -199,10 +223,7 @@ export function createArena({ onChoose, getChoiceNodes, trapFocus }: ArenaDeps):
 
     /**
      * 더 움직이지도 고르지도 못하게 잠근다. 조작부도 함께 사라진다.
-     *
-     * 채점은 showOutcome이 알아서 잠그므로 보통은 부를 일이 없다.
-     * 이미 답을 낸 문항에서 게임 모드를 켜는 경우에만 필요하다 —
-     * setEnabled가 잠금을 풀어 놓기 때문이다.
+     * 채점과 온라인 제출 대기 중에 사용한다.
      */
     lock() {
       walker.setLocked(true);

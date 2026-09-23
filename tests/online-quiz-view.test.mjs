@@ -8,7 +8,7 @@ function runningMatch(changes = {}) {
     matchId: MATCH_ID,
     state: 'running',
     categoryId: 'history',
-    gameMode: false,
+    gameMode: true,
     currentPosition: 1,
     totalQuestions: 10,
     deadlineAt: '2026-09-18T11:00:20+00:00',
@@ -75,7 +75,7 @@ test('finished online quiz view는 질문을 다시 만들지 않고 server fina
   const view = onlineQuizView({
     matchId: MATCH_ID,
     state: 'finished',
-    categoryId: 'history', gameMode: false, currentPosition: 10, totalQuestions: 10,
+    categoryId: 'history', gameMode: true, currentPosition: 10, totalQuestions: 10,
     deadlineAt: null,
     question: null, ownSubmission: null, reveal: null,
     scores: [{

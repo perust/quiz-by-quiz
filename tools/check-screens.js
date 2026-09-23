@@ -89,7 +89,7 @@
    *
    * @param 화면 지금 있어야 할 화면 이름
    * @param 걷는가 이 화면에서 캐릭터가 걸어 다니는가.
-   *   보통 모드 퀴즈에는 캐릭터가 없어 방향키를 아무도 받지 않는 것이 맞다.
+   *   모든 퀴즈 화면은 캐릭터가 방향키를 받는다.
    */
   function 살펴본다(자리, 화면, 걷는가) {
     const 본다 = (이름, 참인가, 무엇) => {
@@ -119,6 +119,12 @@
     document.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true }));
     본다('방향키의 임자가 맞는다', 키.defaultPrevented === 걷는가,
       키.defaultPrevented ? '캐릭터가 받는다' : '아무도 안 받는다');
+
+    if (화면 === 'quiz') {
+      const 무대 = document.getElementById('arena');
+      본다('캐릭터 무대가 항상 열려 있다', 무대 && !무대.hidden,
+        무대 ? (무대.hidden ? '숨김' : '보임') : '없음');
+    }
   }
 
   /**
@@ -154,6 +160,16 @@
     if (지금화면() === 'waiting') await 눌러('waiting-leave');
     if (지금화면() === 'online') await 눌러('online-home');
     살펴본다('홈', 'home', true);
+    결과.push({
+      자리: '홈', 이름: '모드 토글이 없다',
+      통과: !document.getElementById('game-mode-toggle'),
+      무엇: document.getElementById('game-mode-toggle') ? '!! 남아 있음' : '없음',
+    });
+    결과.push({
+      자리: '대기실 계약', 이름: '모드 설정 카드가 없다',
+      통과: !document.getElementById('setting-mode'),
+      무엇: document.getElementById('setting-mode') ? '!! 남아 있음' : '없음',
+    });
 
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
@@ -196,6 +212,7 @@
     // 퀴즈에 들어갔다가 **답을 낸 채로** 나온다. 시트와 세션이 함께 접혀야 한다
     document.querySelector('.category-card').click();
     await 잠깐(800);
+    살펴본다('처음 연 퀴즈', 'quiz', true);
     document.querySelector('.choice').click();
     await 잠깐(400);
     결과.push({
@@ -222,9 +239,7 @@
     }
     살펴본다('결과', 'result', true);
     await 눌러('result-retry', 800);
-    // 앱 바가 보통 모드이면 퀴즈에는 캐릭터가 없다
-    const 게임모드 = document.getElementById('game-mode-label').textContent === '게임 모드';
-    살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', 게임모드);
+    살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', true);
     await 눌러('quiz-exit', 300);
     await 눌러('exit-confirm', 700);
     살펴본곳.push('결과 → 다시 하기');

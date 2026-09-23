@@ -734,7 +734,7 @@ body.is-booted .app-bar {
 }
 
 /* ── 키 표시 ──
-   게임 모드에서는 손이 방향키에 있으므로, 마우스로 옮겨 가지 않아도
+   손이 방향키에 있으므로, 마우스로 옮겨 가지 않아도
    Enter 로 이어갈 수 있다는 것을 버튼에서 바로 알린다.
    키보드가 없는 기기에는 쓸모가 없어 pointer: fine 에서만 그린다. */
 .key-hint {
@@ -765,7 +765,7 @@ body.is-booted .app-bar {
 }
 
 @media (pointer: fine) {
-  .quiz--game .key-hint {
+  .quiz--character .key-hint {
     display: inline-flex;
   }
 }
@@ -773,7 +773,7 @@ body.is-booted .app-bar {
 /* 좁으면 버튼 글자와 부딪힌다. 키 표시는 부가 정보라 접는다 —
    조작법은 ? 대화상자에 그대로 있다. 뒤에 와야 위 규칙을 이긴다. */
 @media (max-width: 400px) {
-  .quiz--game .key-hint {
+  .quiz--character .key-hint {
     display: none;
   }
 }
@@ -1280,26 +1280,26 @@ body.is-booted .app-bar {
     transform: translateY(0);
   }
 }
-/* ── 게임 모드 무대 ──
+/* ── 캐릭터 퀴즈 무대 ──
    바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
    조작의 실체는 위 보기 버튼이고 여기는 그 버튼을 부르는 시각적 조작부다.
-   그래서 게임 모드를 꺼도 잃는 기능이 없다. */
+   그래서 번호 선택 접근성도 그대로 유지된다. */
 
-/* 게임 모드에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
+/* 캐릭터 퀴즈에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
    무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
-.quiz--game .choices {
+.quiz--character .choices {
   gap: 6px;
   margin-bottom: 14px;
 }
 
-.quiz--game .choice {
+.quiz--character .choice {
   min-height: 40px;
   padding: 7px 12px;
   font-size: 14px;
   box-shadow: none;
 }
 
-.quiz--game .choice__key {
+.quiz--character .choice__key {
   width: 20px;
   height: 20px;
   font-size: 11px;
@@ -1924,8 +1924,7 @@ select.is-standing {
 
 
 /* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
-   무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다.
-   게임 모드가 아니면 쓸모가 없으므로 아예 그리지 않는다. */
+   무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다. */
 .arena__help {
   display: none;
   flex: none;
@@ -1945,7 +1944,7 @@ select.is-standing {
   touch-action: manipulation;
 }
 
-.quiz--game .arena__help {
+.quiz--character .arena__help {
   display: grid;
 }
 
@@ -2373,7 +2372,7 @@ select.is-standing {
    방에 들어오면 오는 곳. 참가자가 바닥에 서 있고 내 캐릭터가 그 사이를 걷는다. */
 .waiting-settings {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 10px;
 }

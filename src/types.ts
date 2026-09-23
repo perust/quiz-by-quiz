@@ -127,7 +127,6 @@ export interface ReviewItem {
 /** 사용자 설정 (localStorage) */
 export interface Settings {
   soundEnabled: boolean;
-  gameMode: boolean;
   characterId: string | null;
 }
 

@@ -105,7 +105,7 @@ class CreateRoomBody(StrictBody):
     name: str
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt
-    game_mode: StrictBool = Field(default=False, alias="gameMode")
+    game_mode: StrictBool = Field(default=True, alias="gameMode")
     is_public: StrictBool = Field(alias="isPublic")
     password: str | None = None
 
@@ -950,6 +950,11 @@ def create_app(
             )
 
         patch = body.model_dump(exclude_unset=True)
+        if "game_mode" in patch:
+            if patch["game_mode"] is not True:
+                raise _error(400, "invalid-game-mode", "모든 퀴즈는 캐릭터로 진행합니다.")
+            # 구버전 client가 보내는 true는 허용하되 실제 설정 mutation은 만들지 않는다.
+            patch.pop("game_mode")
         if "category_id" in patch:
             category = patch["category_id"]
             if category is not None and category not in ALLOWED_CATEGORIES:

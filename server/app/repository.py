@@ -11,7 +11,7 @@ from .domain import ValidatedPlayer, ValidatedRoom
 class PlayerView:
     id: UUID
     nickname: str
-    character_id: str | None
+    character_id: str
     is_ready: bool = False
 
 
@@ -72,7 +72,7 @@ class MatchAnswerView:
 class MatchScoreView:
     player_id: UUID
     nickname: str
-    character_id: str | None
+    character_id: str
     score: int
     correct_count: int
     answered_count: int

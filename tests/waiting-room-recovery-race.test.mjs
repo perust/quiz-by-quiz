@@ -107,7 +107,7 @@ test('waiting-room events keep the immutable entry generation captured by their 
   );
   assert.match(
     callbacks,
-    /onStart: \(code, \{ categoryId, gameMode \}, entryGeneration\) => \{[\s\S]*?isCurrentWaitingRoomEntry\(\{[\s\S]*?entryGeneration,[\s\S]*?currentGeneration: waitingRoomEntryGeneration/,
+    /onStart: \(code, \{ categoryId \}, entryGeneration\) => \{[\s\S]*?isCurrentWaitingRoomEntry\(\{[\s\S]*?entryGeneration,[\s\S]*?currentGeneration: waitingRoomEntryGeneration/,
   );
   assert.match(
     callbacks,
@@ -168,7 +168,7 @@ test('an empty local room round restores an actionable home screen before return
     '    // 이번 판에 낸 문제는',
   );
 
-  assert.match(emptyRound, /restoreMyGameMode\(\);/);
+  assert.doesNotMatch(emptyRound, /gameMode|restoreMyGameMode/);
   assert.match(emptyRound, /homeScreen\.setNote\('이 카테고리에는 출제할 문제가 없습니다\.'\);/);
   assert.match(emptyRound, /goTo\('home'\);/);
   assert.ok(emptyRound.indexOf("goTo('home');") < emptyRound.indexOf('return;'));

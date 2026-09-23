@@ -1,4 +1,5 @@
 import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import type { KeyValueStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
 import type {
@@ -40,6 +41,7 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   'save-failed',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CHARACTER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const REQUEST_TIMEOUT_MS = 10_000;
 const PING_INTERVAL_MS = 25_000;
@@ -159,7 +161,7 @@ function parsePlayer(value: unknown): PublicPlayer {
     throw new Error('서버 참가자 이름이 올바르지 않습니다.');
   }
   const characterId = value.characterId;
-  if (characterId !== null && characterId !== undefined && typeof characterId !== 'string') {
+  if (typeof characterId !== 'string' || !CHARACTER_ID_PATTERN.test(characterId)) {
     throw new Error('서버 참가자 캐릭터가 올바르지 않습니다.');
   }
   if (typeof value.isReady !== 'boolean') {
@@ -168,7 +170,7 @@ function parsePlayer(value: unknown): PublicPlayer {
   return {
     id: value.id,
     nickname: value.nickname,
-    ...(typeof characterId === 'string' ? { characterId } : {}),
+    characterId,
     isReady: value.isReady,
   };
 }
@@ -200,13 +202,15 @@ function parseRoom(value: unknown): PublicRoom {
     throw new Error('서버 참가 인원이 올바르지 않습니다.');
   }
   if (
-    typeof value.gameMode !== 'boolean'
-    || typeof value.isPublic !== 'boolean'
+    typeof value.isPublic !== 'boolean'
     || typeof value.hasPassword !== 'boolean'
     || typeof value.isMine !== 'boolean'
     || typeof value.joined !== 'boolean'
   ) {
     throw new Error('서버 방 상태가 올바르지 않습니다.');
+  }
+  if (value.gameMode !== true) {
+    throw new Error('서버 방이 캐릭터 전용이 아닙니다.');
   }
   if (value.isPublic === value.hasPassword || (value.isMine && !value.joined)) {
     throw new Error('서버 방 공개 상태가 서로 맞지 않습니다.');
@@ -220,7 +224,7 @@ function parseRoom(value: unknown): PublicRoom {
     name: value.name,
     categoryId: categoryId as CategoryId | null,
     capacity,
-    gameMode: value.gameMode,
+    gameMode: true,
     players: players.map(parsePlayer),
     isPublic: value.isPublic,
     hasPassword: value.hasPassword,
@@ -243,10 +247,10 @@ function parseMatchSetup(value: unknown): MatchSetup {
   ) {
     throw new Error('서버 게임 형식이 올바르지 않습니다.');
   }
-  if (typeof value.gameMode !== 'boolean') {
-    throw new Error('서버 게임 모드가 올바르지 않습니다.');
+  if (value.gameMode !== true) {
+    throw new Error('서버 게임이 캐릭터 전용이 아닙니다.');
   }
-  return { categoryId: value.categoryId as CategoryId | null, gameMode: value.gameMode };
+  return { categoryId: value.categoryId as CategoryId | null, gameMode: true };
 }
 
 function parseCategoryId(value: unknown, label: string): CategoryId | null {
@@ -332,7 +336,7 @@ function parseScores(value: unknown): OnlineScore[] {
     if (typeof playerId !== 'string' || !UUID_PATTERN.test(playerId) || typeof row.nickname !== 'string' || !row.nickname.trim()) {
       throw new Error('서버 점수 참가자가 올바르지 않습니다.');
     }
-    if (row.characterId !== null && typeof row.characterId !== 'string') {
+    if (typeof row.characterId !== 'string' || !CHARACTER_ID_PATTERN.test(row.characterId)) {
       throw new Error('서버 점수 캐릭터가 올바르지 않습니다.');
     }
     return {
@@ -351,14 +355,14 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
   const matchId = value.matchId;
   if (typeof matchId !== 'string' || !UUID_PATTERN.test(matchId)) throw new Error('서버 매치 ID가 올바르지 않습니다.');
   const categoryId = parseCategoryId(value.categoryId, '매치 분야');
-  if (typeof value.gameMode !== 'boolean') throw new Error('서버 매치 모드가 올바르지 않습니다.');
+  if (value.gameMode !== true) throw new Error('서버 매치가 캐릭터 전용이 아닙니다.');
   const totalQuestions = parseInteger(value.totalQuestions, '매치 문제 수', 1);
   const currentPosition = parseInteger(value.currentPosition, '매치 문제 순서', 1);
   if (currentPosition > totalQuestions) throw new Error('서버 매치 진행 상태가 올바르지 않습니다.');
   const base = {
     matchId,
     categoryId,
-    gameMode: value.gameMode,
+    gameMode: true as const,
     currentPosition,
     totalQuestions,
   };
@@ -458,6 +462,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     ?? ((url: string, protocols: string[]) => new WebSocket(url, protocols));
   const identityFactory = options.newIdentity ?? randomIdentity;
   let identity = readIdentity(options.storage, identityFactory);
+  let playerProfile: PlayerInfo = {
+    nickname: '손님',
+    characterId: DEFAULT_CHARACTER_ID,
+  };
   let sessionFingerprint: string | null = null;
   let roomSnapshotRequestGeneration = 0;
   const activeRoomMutationStates = new Map<string, {
@@ -535,10 +543,13 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   }
 
   function profileBody(player?: PlayerInfo): Record<string, string> {
-    if (!player) return {};
+    const active = player ?? playerProfile;
+    if (!active || !CHARACTER_ID_PATTERN.test(active.characterId)) {
+      throw new Error('온라인 프로필에는 캐릭터가 필요합니다.');
+    }
     return {
-      nickname: player.nickname,
-      ...(player.characterId ? { characterId: player.characterId } : {}),
+      nickname: active.nickname,
+      characterId: active.characterId,
     };
   }
 
@@ -924,6 +935,12 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     isNetworked: true,
     isPersistent: true,
     me: () => identity.id,
+    setPlayer(player) {
+      if (!CHARACTER_ID_PATTERN.test(player.characterId)) {
+        throw new Error('온라인 프로필 캐릭터가 올바르지 않습니다.');
+      }
+      playerProfile = { ...player };
+    },
     listRooms,
     async myRooms() {
       return (await listRooms()).filter(({ joined }) => joined);

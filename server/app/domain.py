@@ -10,6 +10,7 @@ ROOM_PASSWORD_MIN_UNITS = 4
 ROOM_PASSWORD_MAX_UNITS = 12
 NICKNAME_MAX_UNITS = 10
 CHAT_MAX_UNITS = 60
+DEFAULT_CHARACTER_ID = "slime-blue"
 _CODE_LENGTH = 6
 _CHARACTER_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 
@@ -33,7 +34,7 @@ class ValidatedRoom:
 @dataclass(frozen=True)
 class ValidatedPlayer:
     nickname: str
-    character_id: str | None
+    character_id: str
 
 
 def _utf16_units(value: str) -> int:
@@ -60,7 +61,7 @@ def validate_room(
     capacity: int,
     is_public: bool,
     password: str | None,
-    game_mode: bool = False,
+    game_mode: bool = True,
 ) -> ValidatedRoom:
     normalized_name = str(name or "").strip()
     if not normalized_name or _utf16_units(normalized_name) > ROOM_NAME_MAX_UNITS:
@@ -71,6 +72,9 @@ def validate_room(
 
     if type(capacity) is not int or capacity not in ALLOWED_CAPACITIES:
         raise DomainError("invalid-capacity", "인원은 2, 4, 6, 8, 10, 12명 중에서 골라야 합니다.")
+
+    if game_mode is not True:
+        raise DomainError("invalid-game-mode", "모든 퀴즈는 캐릭터로 진행합니다.")
 
     public = bool(is_public)
     normalized_password: str | None = None
@@ -86,7 +90,7 @@ def validate_room(
         capacity=capacity,
         is_public=public,
         password=normalized_password,
-        game_mode=bool(game_mode),
+        game_mode=True,
     )
 
 
@@ -94,9 +98,11 @@ def validate_player(nickname: str | None, character_id: str | None) -> Validated
     normalized_nickname = str(nickname or "").strip() or "손님"
     normalized_nickname = _truncate_utf16(normalized_nickname, NICKNAME_MAX_UNITS)
 
-    normalized_character = str(character_id or "").strip() or None
-    if normalized_character is not None and not _CHARACTER_RE.fullmatch(normalized_character):
-        normalized_character = None
+    normalized_character = (
+        DEFAULT_CHARACTER_ID if character_id is None else str(character_id).strip()
+    )
+    if not _CHARACTER_RE.fullmatch(normalized_character):
+        raise DomainError("invalid-character", "지원하지 않는 캐릭터 식별자입니다.")
 
     return ValidatedPlayer(
         nickname=normalized_nickname,

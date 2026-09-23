@@ -78,8 +78,6 @@ export function createWaitingRoom(
     categoryValue: need('setting-category-value'),
     capacity: need<HTMLButtonElement>('setting-capacity'),
     capacityValue: need('setting-capacity-value'),
-    mode: need<HTMLButtonElement>('setting-mode'),
-    modeValue: need('setting-mode-value'),
     players: need('lounge-players'),
     character: need('waiting-character'),
     bubble: need('waiting-bubble'),
@@ -126,7 +124,6 @@ export function createWaitingRoom(
     const category = categories.find((item) => item.id === room!.categoryId) ?? ALL_CATEGORY;
     el.categoryValue.textContent = category.name;
     el.capacityValue.textContent = `${room.capacity}명`;
-    el.modeValue.textContent = room.gameMode ? '게임 모드' : '보통 모드';
 
     const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
     el.ready.disabled = !room.joined || me === null;
@@ -134,7 +131,7 @@ export function createWaitingRoom(
     el.ready.setAttribute('aria-pressed', String(Boolean(me?.isReady)));
 
     // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
-    for (const button of [el.category, el.capacity, el.mode]) {
+    for (const button of [el.category, el.capacity]) {
       button.disabled = !room.isMine;
     }
 
@@ -294,7 +291,6 @@ export function createWaitingRoom(
     patch({ capacity: usable[(index + 1) % usable.length] });
   });
 
-  el.mode.addEventListener('click', () => patch({ gameMode: !room?.gameMode }));
 
   el.ready.addEventListener('click', async () => {
     const action = captureAction();

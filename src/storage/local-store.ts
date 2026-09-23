@@ -23,7 +23,7 @@ const KEYS = {
 };
 
 /** 사용자 설정 기본값. 저장된 값이 없거나 깨졌을 때 이걸로 되돌린다 */
-const DEFAULT_SETTINGS: Settings = { soundEnabled: true, gameMode: false, characterId: null };
+const DEFAULT_SETTINGS: Settings = { soundEnabled: true, characterId: null };
 
 /** 저장 데이터 스키마 버전. 구조가 바뀌면 올린다 (v2 마이그레이션 판단 기준) */
 const SCHEMA_VERSION = 1;
@@ -301,7 +301,6 @@ export function createLocalPreferences(): Preferences {
         ...DEFAULT_SETTINGS,
         // 값 하나가 깨져도 나머지 설정은 살린다
         ...(typeof saved.soundEnabled === 'boolean' ? { soundEnabled: saved.soundEnabled } : {}),
-        ...(typeof saved.gameMode === 'boolean' ? { gameMode: saved.gameMode } : {}),
         // 없는 캐릭터 id 여도 그대로 둔다. characters.ts 가 못 찾으면 기본값으로 되돌린다
         ...(typeof saved.characterId === 'string' ? { characterId: saved.characterId } : {}),
       };
@@ -312,7 +311,10 @@ export function createLocalPreferences(): Preferences {
       const base = typeof current === 'object' && current !== null && !Array.isArray(current)
         ? current
         : {};
-      writeJson(KEYS.settings, { ...base, ...patch });
+      const next: Record<string, unknown> = { ...base, ...patch };
+      // v1에 있던 모드 토글은 폐기했다. 다른 설정을 저장할 때 낡은 키도 함께 치운다.
+      delete next.gameMode;
+      writeJson(KEYS.settings, next);
     },
 
     /** 직전 판에 출제된 문제 ID (FR-1.4) */
