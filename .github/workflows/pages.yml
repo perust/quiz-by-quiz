@@ -34,6 +34,20 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qbbv-ci-migrator-password
+          POSTGRES_DB: quiz_by_quiz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d quiz_by_quiz_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
 
@@ -71,8 +85,13 @@ jobs:
 
       - name: 서버 정적 검사와 회귀
         working-directory: server
+        env:
+          MIGRATOR_DATABASE_URL: postgresql://postgres:qbbv-ci-migrator-password@127.0.0.1:5432/quiz_by_quiz_test
+          QUIZ_DB_PASSWORD: qbbv-ci-runtime-password
+          TEST_DATABASE_URL: postgresql://quiz_by_quiz_app:qbbv-ci-runtime-password@127.0.0.1:5432/quiz_by_quiz_test
         run: |
           uv run --locked ruff check app tests
+          uv run --locked python -m app.migrate
           uv run --locked python -m pytest -q
 
       - name: 서버 Docker test stage

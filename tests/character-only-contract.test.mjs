@@ -47,4 +47,6 @@ test('로컬과 온라인 문제 화면은 같은 캐릭터 arena 경계를 사�
   assert.match(onlineQuiz, /createCharacterArena\(/);
   assert.match(onlineQuiz, /setCharacter\(id/);
   assert.match(onlineQuiz, /arena\.showOutcome\(/);
+  assert.match(onlineQuiz, /!arena\.isDialogOpen\(\)/);
+  assert.match(onlineQuiz, /setError\(message\)[\s\S]*submissionGate\.invalidate\(\)[\s\S]*setStatus/);
 });

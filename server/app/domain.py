@@ -73,9 +73,6 @@ def validate_room(
     if type(capacity) is not int or capacity not in ALLOWED_CAPACITIES:
         raise DomainError("invalid-capacity", "인원은 2, 4, 6, 8, 10, 12명 중에서 골라야 합니다.")
 
-    if game_mode is not True:
-        raise DomainError("invalid-game-mode", "모든 퀴즈는 캐릭터로 진행합니다.")
-
     public = bool(is_public)
     normalized_password: str | None = None
     if not public:

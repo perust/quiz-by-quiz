@@ -187,7 +187,7 @@ js/                 tsc 산출물. **고치지 말 것** — 다음 빌드에 �
 
 캐릭터를 더하려면 `CHARACTERS` 배열에 넣기만 하면 된다. 화면·저장·무대가 모두 따라온다. **`id`를 바꾸면 그 캐릭터를 쓰던 사람의 선택이 풀린다** — `findCharacter`가 못 찾으면 기본값으로 되돌리므로 앱이 죽지는 않는다.
 
-**캐릭터 퀴즈 (`ui/arena.ts`)는 유일한 플레이 규칙이다.** «보통 모드»나 모드 토글·방 설정은 없다. 로컬과 온라인 모두 십자로 나눈 2×2 바닥 위를 캐릭터가 자유롭게 돌아다니며 답을 고른다. 사용자 설정에는 `gameMode`를 저장하지 않는다. wire 호환용 응답 필드와 DB column은 오직 `true`만 허용하고, `010_enforce_character_only_play.sql`이 false와 캐릭터 없는 row를 표현할 수 없게 막는다. 캐릭터 필드를 보내지 않는 구버전 session client에는 서버가 `slime-blue`를 배정한다.
+**캐릭터 퀴즈 (`ui/arena.ts`)는 유일한 플레이 규칙이다.** «보통 모드»나 모드 토글·방 설정은 없다. 로컬과 온라인 모두 십자로 나눈 2×2 바닥 위를 캐릭터가 자유롭게 돌아다니며 답을 고른다. 사용자 설정에는 `gameMode`를 저장하지 않는다. wire 호환용 응답 필드와 DB column은 오직 `true`만 허용하고, 구버전 client가 보내는 `gameMode:false`도 `true`로 정규화한다. `010_enforce_character_only_play.sql`은 false와 캐릭터 없는 row를 표현할 수 없게 막는다. 캐릭터 필드를 보내지 않는 구버전 session client에는 서버가 `slime-blue`를 배정한다.
 
 **arena 수명주기는 화면 수명주기와 같다.** 로컬은 `quiz.start()`에서 켜고 모든 종료 경로에서 끈다. 온라인은 `online-*` element ID를 쓰는 별도 arena를 만들되 답은 반드시 기존 서버 권위 `onSubmit(position, choiceIndex)` 경로로만 보낸다. 제출 대기·채점 중에는 `arena.lock()`으로 캐릭터와 고정 조작부를 함께 잠근다.
 

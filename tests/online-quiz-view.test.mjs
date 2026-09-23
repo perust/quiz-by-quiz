@@ -88,3 +88,29 @@ test('finished online quiz view는 질문을 다시 만들지 않고 server fina
   assert.equal(view.question, null);
   assert.equal(view.showFinalResult, true);
 });
+
+test('stale online submission completion은 재진입한 새 match owner를 바꾸지 못한다', async () => {
+  const { createOnlineSubmissionGate } = await import('../js/ui/online-quiz.js');
+  const firstSnapshot = runningMatch();
+  const secondSnapshot = runningMatch({
+    matchId: '22345678-1234-5678-9234-567812345678',
+    question: { ...runningMatch().question, position: 2 },
+    currentPosition: 2,
+  });
+  const gate = createOnlineSubmissionGate();
+
+  const first = gate.begin(firstSnapshot);
+  assert.equal(gate.pendingFor(firstSnapshot), true);
+  gate.reconcile(secondSnapshot);
+  const second = gate.begin(secondSnapshot);
+
+  assert.equal(gate.finish(first, secondSnapshot), false);
+  assert.equal(gate.pendingFor(secondSnapshot), true);
+  assert.equal(gate.finish(second, secondSnapshot), true);
+  assert.equal(gate.pendingFor(secondSnapshot), false);
+
+  const interrupted = gate.begin(secondSnapshot);
+  gate.invalidate(interrupted);
+  assert.equal(gate.finish(interrupted, secondSnapshot), false);
+  assert.equal(gate.pendingFor(secondSnapshot), false);
+});

@@ -57,10 +57,12 @@ class FakeRepository:
         self.password_hash: str | None = None
         self.created_password_hash: str | None = None
         self.create_calls = 0
+        self.created_spec: Any | None = None
         self.session_token_hash: bytes | None = None
         self.session_player: Any | None = None
         self.join_calls = 0
         self.update_calls = 0
+        self.updated_patch: Any | None = None
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
@@ -97,6 +99,7 @@ class FakeRepository:
 
     async def create_room(self, actor_id: UUID, spec: Any, password_hash: str | None) -> RoomView:
         self.create_calls += 1
+        self.created_spec = spec
         self.created_password_hash = password_hash
         return self.room
 
@@ -117,6 +120,7 @@ class FakeRepository:
 
     async def update_room(self, actor_id: UUID, code: str, patch: Any) -> RoomView:
         self.update_calls += 1
+        self.updated_patch = patch
         return self.room
 
     async def send_chat(self, actor_id: UUID, code: str, text: str) -> PlayerView:
@@ -229,7 +233,7 @@ def test_session_assigns_a_default_character_to_a_legacy_client() -> None:
     assert repository.session_player.character_id == "slime-blue"
 
 
-def test_room_create_rejects_removed_normal_mode() -> None:
+def test_room_create_normalizes_legacy_false_to_character_only() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         register(client)
@@ -245,12 +249,14 @@ def test_room_create_rejects_removed_normal_mode() -> None:
             },
         )
 
-    assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "invalid-game-mode"
-    assert repository.create_calls == 0
+    assert response.status_code == 201
+    assert response.json()["gameMode"] is True
+    assert repository.create_calls == 1
+    assert repository.created_spec is not None
+    assert repository.created_spec.game_mode is True
 
 
-def test_room_update_rejects_removed_normal_mode_before_repository_mutation() -> None:
+def test_room_update_treats_legacy_false_as_a_character_only_noop() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         register(client)
@@ -260,9 +266,24 @@ def test_room_update_rejects_removed_normal_mode_before_repository_mutation() ->
             json={"gameMode": False},
         )
 
+    assert response.status_code == 200
+    assert response.json()["gameMode"] is True
+    assert repository.update_calls == 1
+    assert repository.updated_patch == {}
+
+
+def test_session_rejects_invalid_character_as_a_client_error() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        response = client.put(
+            "/v1/session",
+            headers=HEADERS,
+            json={"nickname": "퀴즈왕", "characterId": "UPPERCASE"},
+        )
+
     assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "invalid-game-mode"
-    assert repository.update_calls == 0
+    assert response.json()["detail"]["code"] == "invalid-character"
+    assert repository.session_token_hash is None
 
 
 def test_session_process_limit_survives_client_and_identity_rotation() -> None:

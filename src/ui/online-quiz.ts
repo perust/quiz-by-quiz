@@ -30,6 +30,60 @@ export interface OnlineQuizView {
   showFinalResult: boolean;
 }
 
+export interface OnlineSubmissionOwner {
+  readonly token: number;
+  readonly matchId: string;
+  readonly position: number;
+}
+
+export interface OnlineSubmissionGate {
+  begin(snapshot: Extract<OnlineMatchSnapshot, { state: 'running' }>): OnlineSubmissionOwner;
+  reconcile(snapshot: OnlineMatchSnapshot | null): void;
+  pendingFor(snapshot: OnlineMatchSnapshot | null): boolean;
+  finish(owner: OnlineSubmissionOwner, snapshot: OnlineMatchSnapshot | null): boolean;
+  invalidate(owner?: OnlineSubmissionOwner): void;
+}
+
+function ownsQuestion(
+  owner: OnlineSubmissionOwner,
+  snapshot: OnlineMatchSnapshot | null,
+): boolean {
+  return snapshot !== null
+    && snapshot.state !== 'finished'
+    && snapshot.matchId === owner.matchId
+    && snapshot.question.position === owner.position;
+}
+
+/** A stale submit promise must never unlock or redraw a newer match/question. */
+export function createOnlineSubmissionGate(): OnlineSubmissionGate {
+  let sequence = 0;
+  let pending: OnlineSubmissionOwner | null = null;
+  return {
+    begin(snapshot) {
+      pending = {
+        token: ++sequence,
+        matchId: snapshot.matchId,
+        position: snapshot.question.position,
+      };
+      return pending;
+    },
+    reconcile(snapshot) {
+      if (pending && !ownsQuestion(pending, snapshot)) pending = null;
+    },
+    pendingFor(snapshot) {
+      return pending !== null && ownsQuestion(pending, snapshot);
+    },
+    finish(owner, snapshot) {
+      if (pending !== owner || !ownsQuestion(owner, snapshot)) return false;
+      pending = null;
+      return true;
+    },
+    invalidate(owner) {
+      if (!owner || pending === owner) pending = null;
+    },
+  };
+}
+
 /**
  * A browser may render a server deadline, but never decides whether it has elapsed.
  * Only a server-recorded submission closes the client-side submit affordance.
@@ -126,7 +180,7 @@ export function createOnlineQuizScreen(
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
   let snapshot: OnlineMatchSnapshot | null = null;
-  let submissionPending = false;
+  const submissionGate = createOnlineSubmissionGate();
   let lastQuestionKey: string | null = null;
   let lastArenaQuestionKey: string | null = null;
   let finishedMatchId: string | null = null;
@@ -163,23 +217,34 @@ export function createOnlineQuizScreen(
       !current
       || current.state !== 'running'
       || current.ownSubmission !== null
-      || submissionPending
+      || submissionGate.pendingFor(current)
       || index < 0
       || index >= current.question.choices.length
     ) return;
 
-    submissionPending = true;
+    const owner = submissionGate.begin(current);
     arena.lock();
     render(current);
     try {
       await onSubmit({ position: current.question.position, choiceIndex: index });
-    } finally {
-      submissionPending = false;
-      // 전송이 실패해 authoritative snapshot이 그대로면 다시 움직일 수 있어야 한다.
-      if (snapshot?.state === 'running' && snapshot.ownSubmission === null) {
+    } catch (error) {
+      const latest = snapshot;
+      if (!submissionGate.finish(owner, latest)) return;
+      if (latest?.state === 'running' && latest.ownSubmission === null) {
         lastArenaQuestionKey = null;
+        render(latest);
       }
-      if (snapshot) render(snapshot);
+      const message = error instanceof Error ? error.message : '답안을 제출하지 못했습니다.';
+      setStatus(`온라인 매치 오류: ${message}`);
+      return;
+    }
+
+    const latest = snapshot;
+    if (!submissionGate.finish(owner, latest)) return;
+    // 전송이 성공했지만 authoritative snapshot에 제출이 없다면 다시 시도할 수 있다.
+    if (latest?.state === 'running' && latest.ownSubmission === null) {
+      lastArenaQuestionKey = null;
+      render(latest);
     }
   }
 
@@ -195,7 +260,7 @@ export function createOnlineQuizScreen(
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'choice';
-      button.disabled = !view.canSubmit || submissionPending;
+      button.disabled = !view.canSubmit || submissionGate.pendingFor(snapshot);
 
       const key = document.createElement('span');
       key.className = 'choice__key';
@@ -240,6 +305,7 @@ export function createOnlineQuizScreen(
   }
 
   function render(nextSnapshot: OnlineMatchSnapshot): void {
+    submissionGate.reconcile(nextSnapshot);
     snapshot = nextSnapshot;
     const view = onlineQuizView(nextSnapshot);
     if (nextSnapshot.state === 'finished') {
@@ -277,14 +343,14 @@ export function createOnlineQuizScreen(
         chosenIndex: view.reveal.chosenChoiceIndex,
         correct: view.reveal.correct,
       });
-    } else if (!view.canSubmit || submissionPending) {
+    } else if (!view.canSubmit || submissionGate.pendingFor(nextSnapshot)) {
       arena.lock();
     }
 
     const questionKey = `${nextSnapshot.matchId}:${nextSnapshot.state}:${question.position}`;
     if (questionKey !== lastQuestionKey) {
       lastQuestionKey = questionKey;
-      el.question.focus({ preventScroll: true });
+      if (!arena.isDialogOpen()) el.question.focus({ preventScroll: true });
     }
   }
 
@@ -313,13 +379,20 @@ export function createOnlineQuizScreen(
       setStatus(message);
     },
     setError(message) {
+      const current = snapshot;
+      const interrupted = submissionGate.pendingFor(current);
+      submissionGate.invalidate();
+      if (interrupted && current?.state === 'running' && current.ownSubmission === null) {
+        lastArenaQuestionKey = null;
+        render(current);
+      }
       setStatus(`온라인 매치 오류: ${message}`);
     },
     hide() {
       arena.setEnabled(false);
       arena.closeDialog();
+      submissionGate.invalidate();
       snapshot = null;
-      submissionPending = false;
       lastQuestionKey = null;
       lastArenaQuestionKey = null;
       el.reveal.hidden = true;

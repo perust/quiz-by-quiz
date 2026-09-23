@@ -78,18 +78,17 @@ def test_validate_room_rejects_unknown_category_and_bool_capacity() -> None:
     assert capacity.value.code == "invalid-capacity"
 
 
-def test_validate_room_rejects_removed_normal_mode() -> None:
-    with pytest.raises(DomainError) as caught:
-        validate_room(
-            name="캐릭터 전용 방",
-            category_id="art",
-            capacity=4,
-            is_public=True,
-            password=None,
-            game_mode=False,
-        )
+def test_validate_room_normalizes_legacy_false_to_character_only() -> None:
+    room = validate_room(
+        name="캐릭터 전용 방",
+        category_id="art",
+        capacity=4,
+        is_public=True,
+        password=None,
+        game_mode=False,
+    )
 
-    assert caught.value.code == "invalid-game-mode"
+    assert room.game_mode is True
 
 
 def test_validate_player_and_chat_bound_untrusted_text() -> None:

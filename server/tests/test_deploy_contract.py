@@ -141,6 +141,16 @@ def test_pages_workflow_verifies_client_server_and_container_before_deploy() -> 
     assert "needs: verify" in workflow
 
 
+def test_pages_workflow_executes_migrations_and_postgres_integration() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+
+    assert "services:" in workflow and "postgres:" in workflow
+    assert "MIGRATOR_DATABASE_URL:" in workflow
+    assert "QUIZ_DB_PASSWORD:" in workflow
+    assert "TEST_DATABASE_URL:" in workflow
+    assert "uv run --locked python -m app.migrate" in workflow
+
+
 def test_oracle_overlay_has_an_explicit_platform_base_contract() -> None:
     guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
 
