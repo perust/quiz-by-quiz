@@ -8,12 +8,13 @@
 // 모두 그냥 버튼이라 발밑에 두고 Enter만 누르면 된다.
 //
 // **방이 어디에 있는지 이 파일은 모른다.** `roomStore`만 부르고, 무슨 일이 있었는지는
-// `subscribe`로 듣는다 — 서버 구현이 되면 남의 말도 같은 길로 들어온다.
+// `subscribe`로 듣는다 — 서버에서 온 남의 말도 같은 길로 들어온다.
 
 import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
 import { createLatestRequestGuard } from './latest-request.js';
+import { createPlayerBubbleController } from './player-bubbles.js';
 import {
   isCurrentWaitingRoomAction,
   type WaitingRoomActionOwnership,
@@ -78,6 +79,7 @@ export function createWaitingRoom(
     categoryValue: need('setting-category-value'),
     capacity: need<HTMLButtonElement>('setting-capacity'),
     capacityValue: need('setting-capacity-value'),
+    lounge: need('lounge'),
     players: need('lounge-players'),
     character: need('waiting-character'),
     bubble: need('waiting-bubble'),
@@ -91,7 +93,7 @@ export function createWaitingRoom(
     character: el.character,
     // 라운지 바닥 한가운데에서 시작한다. 버튼 곁에 세우면 대기실 밖에 선 것처럼 보인다
     startPoint: () => {
-      const box = need('lounge').getBoundingClientRect();
+      const box = el.lounge.getBoundingClientRect();
       if (box.width === 0) return null;
       return { x: box.left + box.width / 2, y: box.bottom - 18 };
     },
@@ -109,6 +111,10 @@ export function createWaitingRoom(
   let visibleEntry: { code: string; entryGeneration: number } | null = null;
   /** 말풍선을 스스로 지우는 타이머. 없으면 undefined — clearTimeout이 그대로 받는다 */
   let bubbleTimer: number | undefined;
+  /** room snapshot이 참가자 DOM을 다시 만들어도 아직 살아 있는 남의 말은 유지한다. */
+  const remoteBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
+  /** 화면 가장자리 안으로 말풍선을 맞추기 위한 현재 player figure lookup. */
+  const remoteBubbleNodes = new Map<string, HTMLElement>();
 
   // ── 그리기 ─────────────────────────────────────────────────────
 
@@ -135,13 +141,25 @@ export function createWaitingRoom(
       button.disabled = !room.isMine;
     }
 
+    remoteBubbles.unbindAll();
+    remoteBubbleNodes.clear();
     el.players.replaceChildren();
     for (const player of room.players) {
       const item = document.createElement('li');
       item.className = 'lounge__player';
+      item.dataset.playerId = player.id;
 
       const figure = document.createElement('span');
       figure.className = 'lounge__figure';
+      if (player.id !== roomStore.me()) {
+        // 채팅 로그가 접근성용 live region이므로 시각 말풍선은 중복 낭독하지 않는다.
+        const bubble = document.createElement('span');
+        bubble.className = 'lounge__bubble';
+        bubble.setAttribute('aria-hidden', 'true');
+        bubble.hidden = true;
+        figure.append(bubble);
+        remoteBubbleNodes.set(player.id, bubble);
+      }
       figure.append(createBody(player.characterId));
 
       const name = document.createElement('span');
@@ -154,6 +172,11 @@ export function createWaitingRoom(
 
       item.append(figure, name, readiness);
       el.players.append(item);
+      const bubble = remoteBubbleNodes.get(player.id);
+      if (bubble) {
+        remoteBubbles.bind(player.id, bubble);
+        if (!bubble.hidden) fitRemoteBubble(bubble);
+      }
     }
   }
 
@@ -169,6 +192,23 @@ export function createWaitingRoom(
     clearTimeout(bubbleTimer);
     // 얼굴을 오래 가리지 않게 스스로 사라진다
     bubbleTimer = setTimeout(() => { el.bubble.hidden = true; }, BUBBLE_MS);
+  }
+
+  /** Center a remote bubble on its figure, then shift only enough to stay inside the lounge. */
+  function fitRemoteBubble(bubble: HTMLElement): void {
+    bubble.style.removeProperty('--bubble-shift');
+    if (bubble.hidden) return;
+    const loungeBox = el.lounge.getBoundingClientRect();
+    const bubbleBox = bubble.getBoundingClientRect();
+    if (loungeBox.width === 0 || bubbleBox.width === 0) return;
+    const inset = 6;
+    let shift = 0;
+    if (bubbleBox.left < loungeBox.left + inset) {
+      shift = loungeBox.left + inset - bubbleBox.left;
+    } else if (bubbleBox.right > loungeBox.right - inset) {
+      shift = loungeBox.right - inset - bubbleBox.right;
+    }
+    if (shift !== 0) bubble.style.setProperty('--bubble-shift', `${Math.round(shift)}px`);
   }
 
   /**
@@ -215,9 +255,13 @@ export function createWaitingRoom(
     if (event.type !== 'chat') return;
 
     logChat(event);
-    // 내 말만 내 캐릭터 위에 띄운다. 남의 말은 그 사람 캐릭터 위에 떠야 하는데,
-    // 지금은 남이 어디 서 있는지 알 길이 없다 — 서버가 붙을 때 함께 정한다
-    if (event.playerId === roomStore.me()) showBubble(event.text);
+    if (event.playerId === roomStore.me()) {
+      showBubble(event.text);
+    } else {
+      remoteBubbles.show(event.playerId, event.text);
+      const bubble = remoteBubbleNodes.get(event.playerId);
+      if (bubble) fitRemoteBubble(bubble);
+    }
   }
 
   /** 대화가 아닌 안내. 대화 줄과 결을 달리해 섞이지 않게 한다 */
@@ -415,6 +459,12 @@ export function createWaitingRoom(
       unsubscribe?.();
       unsubscribe = null;
       room = null;
+      clearTimeout(bubbleTimer);
+      bubbleTimer = undefined;
+      el.bubble.hidden = true;
+      el.bubble.textContent = '';
+      remoteBubbles.reset();
+      remoteBubbleNodes.clear();
 
       const loadedRoom = await roomStore.getRoom(code);
       if (!showGuard.isCurrent(request)) return;
@@ -432,7 +482,6 @@ export function createWaitingRoom(
         if (showGuard.isCurrent(request)) onEvent(event, { code, entryGeneration });
       });
 
-      el.bubble.hidden = true;
       el.chatInput.value = '';
       el.chatLog.replaceChildren();
       render();
@@ -447,7 +496,11 @@ export function createWaitingRoom(
       unsubscribe = null;
       room = null;
       clearTimeout(bubbleTimer);
+      bubbleTimer = undefined;
       el.bubble.hidden = true;
+      el.bubble.textContent = '';
+      remoteBubbles.reset();
+      remoteBubbleNodes.clear();
       walker.hide();
     },
   };

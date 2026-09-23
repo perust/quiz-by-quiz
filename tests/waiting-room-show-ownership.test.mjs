@@ -81,7 +81,15 @@ test('WaitingRoom.show clears prior ownership before fetch and checks it before 
   assert.match(waiting, /const showGuard = createLatestRequestGuard\(\);/);
   assert.match(
     uncommentedShow,
-    /const request = showGuard\.begin\(\);\s*visibleRequest = request;\s*visibleEntry = \{ code, entryGeneration \};\s*unsubscribe\?\.\(\);\s*unsubscribe = null;\s*room = null;\s*const loadedRoom = await roomStore\.getRoom\(code\);\s*if \(!showGuard\.isCurrent\(request\)\) return;\s*room = loadedRoom;/,
+    /const request = showGuard\.begin\(\);\s*visibleRequest = request;\s*visibleEntry = \{ code, entryGeneration \};\s*unsubscribe\?\.\(\);\s*unsubscribe = null;\s*room = null;/,
+  );
+  assert.ok(
+    show.indexOf('remoteBubbles.reset();') < show.indexOf('await roomStore.getRoom(code)'),
+    'previous-room bubbles must be reset before the new room fetch',
+  );
+  assert.match(
+    uncommentedShow,
+    /const loadedRoom = await roomStore\.getRoom\(code\);\s*if \(!showGuard\.isCurrent\(request\)\) return;\s*room = loadedRoom;/,
   );
   assert.match(
     show,

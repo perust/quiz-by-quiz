@@ -2429,7 +2429,8 @@ select.is-standing {
   align-items: flex-end;
   background:
     linear-gradient(#eef1f7 0 66%, #d9dfea 66% 67.5%, #e7ebf3 67.5% 100%);
-  overflow: hidden;
+  /* 말풍선은 60자까지라 참가자가 여러 줄로 서면 위쪽 경계를 넘을 수 있다. */
+  overflow: visible;
 }
 
 .lounge__players {
@@ -2474,13 +2475,14 @@ select.is-standing {
   font-weight: 700;
 }
 
-/* 캐릭터 위에 뜨는 말풍선. .walker 안에 있어 캐릭터를 따라다닌다.
-   몸통 애니메이션은 .walker__body 에 걸려 있어 말풍선은 흔들리지 않는다. */
-.walker__bubble {
+/* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 참가자 figure의 남의 말이 같은 모양이며,
+   몸통 애니메이션은 body에만 걸려 있어 말풍선 자체는 흔들리지 않는다. */
+.walker__bubble,
+.lounge__bubble {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
-  translate: -50% 0;
+  translate: calc(-50% + var(--bubble-shift, 0px)) 0;
   max-width: 190px;
   width: max-content;
   padding: 6px 10px;
@@ -2491,17 +2493,25 @@ select.is-standing {
   line-height: 1.4;
   text-align: center;
   word-break: keep-all;
+  overflow-wrap: anywhere;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
 }
 
-.walker__bubble::after {
+.walker__bubble::after,
+.lounge__bubble::after {
   content: '';
   position: absolute;
   top: 100%;
-  left: 50%;
+  left: calc(50% - var(--bubble-shift, 0px));
   translate: -50% 0;
   border: 6px solid transparent;
   border-top-color: var(--text);
+}
+
+.lounge__bubble {
+  z-index: 1;
+  max-width: min(280px, calc(100vw - 48px));
+  pointer-events: none;
 }
 
 .chat {
