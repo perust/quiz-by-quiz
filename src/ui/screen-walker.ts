@@ -17,6 +17,8 @@ export interface ScreenWalkerConfig {
   startAt?: () => HTMLElement | null;
   /** 자리를 직접 정할 때 (대기실 바닥 등) */
   startPoint?: () => Point | null;
+  /** 화면 좌표가 바뀌거나 걷기/정지가 전환될 때 */
+  onMove?: (point: Point, moving: boolean) => void;
 
   // 둘 다 없으면 화면 한가운데에서 시작한다.
 }
@@ -30,9 +32,12 @@ export interface ScreenWalker {
   hide(): void;
 }
 
-export function createScreenWalker({ screen, character, startAt, startPoint }: ScreenWalkerConfig): ScreenWalker {
+export function createScreenWalker({
+  screen, character, startAt, startPoint, onMove,
+}: ScreenWalkerConfig): ScreenWalker {
   const walker = createWalker({
     character,
+    onMove,
     startAt: () => {
       const point = startPoint?.();
       if (point) return point;

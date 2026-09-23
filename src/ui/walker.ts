@@ -49,6 +49,8 @@ export interface WalkerConfig {
   standClass?: string;
   /** 발밑이 바뀔 때 */
   onStep?: (element: HTMLElement | null) => void;
+  /** 화면 좌표가 바뀌거나 걷기/정지가 전환될 때 */
+  onMove?: (point: Point, moving: boolean) => void;
   /** 화면 안쪽 여백 */
   edge?: number;
   /** 처음 설 자리. 없으면 한가운데 */
@@ -338,7 +340,7 @@ export function createWalker(config: WalkerConfig): Walker {
     // 입력칸도 넣는다 — 걸어 다니는 사람만 «여기는 못 간다»가 되면 화면 절반이
     // 캐릭터에게 막힌 셈이다. 로비의 방 코드, 대기실의 채팅칸이 그렇다
     pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
-    onStep, standClass = 'is-standing', edge = 7, startAt,
+    onStep, onMove, standClass = 'is-standing', edge = 7, startAt,
   } = config;
 
   let enabled = false;
@@ -360,6 +362,7 @@ export function createWalker(config: WalkerConfig): Walker {
 
   let frameId: number | null = null;
   let lastTs = 0;
+  let wasMoving = false;
 
   function measure(): void {
     stageSize = { width: window.innerWidth, height: window.innerHeight };
@@ -459,6 +462,7 @@ export function createWalker(config: WalkerConfig): Walker {
     pos.y = start ? start.y : stageSize.height / 2;
     clampPosition();
     render();
+    onMove?.({ ...pos }, false);
     placed = true;
   }
 
@@ -483,6 +487,10 @@ export function createWalker(config: WalkerConfig): Walker {
     character.classList.toggle('walker--idle', !moving);
 
     if (!moving) {
+      if (wasMoving) {
+        wasMoving = false;
+        onMove?.({ ...pos }, false);
+      }
       // 움직이지 않으면 루프를 멈춘다. 매 프레임 깨어나 아무 일도 하지 않으면
       // 휴대폰 배터리만 쓴다. 제자리 뛰기는 CSS 애니메이션이라 프레임을
       // 돌리지 않아도 계속 뛰고, 입력이 오면 start()가 다시 깨운다
@@ -496,6 +504,8 @@ export function createWalker(config: WalkerConfig): Walker {
     pushScroll(vy, dt);
     clampPosition();
     render();
+    wasMoving = true;
+    onMove?.({ ...pos }, true);
 
     frameId = requestAnimationFrame(loop);
   }
@@ -511,6 +521,8 @@ export function createWalker(config: WalkerConfig): Walker {
       cancelAnimationFrame(frameId);
       frameId = null;
     }
+    if (wasMoving) onMove?.({ ...pos }, false);
+    wasMoving = false;
     character.classList.remove('walker--walking');
   }
 
@@ -653,6 +665,7 @@ export function createWalker(config: WalkerConfig): Walker {
       }
       clampPosition();
       render();
+      onMove?.({ ...pos }, wasMoving);
     },
 
     /** 스틱 입력이 들어왔을 때 루프를 깨운다 */

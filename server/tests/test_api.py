@@ -725,6 +725,125 @@ def test_websocket_ticket_is_single_use_and_chat_is_broadcast() -> None:
             assert error.code == 4403
 
 
+def test_authenticated_websocket_movement_is_broadcast_with_server_identity() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    with make_client(repository) as client:
+        register(client)
+        ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=HEADERS,
+        ).json()["ticket"]
+
+        with client.websocket_connect(
+            f"/v1/rooms/{repository.room.code}/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            websocket.send_json(
+                {"type": "movement", "x": 0.25, "y": 0.75, "moving": True}
+            )
+            chat = client.post(
+                f"/v1/rooms/{repository.room.code}/chat",
+                headers=HEADERS,
+                json={"text": "movement 뒤 이벤트"},
+            )
+            assert chat.status_code == 202
+            event = websocket.receive_json()
+
+    assert event["type"] == "movement"
+    assert event["playerId"] == str(PLAYER_ID)
+    assert event["x"] == 0.25
+    assert event["y"] == 0.75
+    assert event["moving"] is True
+    assert type(event["sequence"]) is int
+    assert event["sequence"] > 0
+
+
+def test_movement_relays_both_directions_between_two_authenticated_actors() -> None:
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    with make_client(repository) as client:
+        first_headers = register_rotating_identity(client, 20, "198.51.100.20")
+        second_headers = register_rotating_identity(client, 21, "198.51.100.21")
+        first_id = first_headers["X-Player-Id"]
+        second_id = second_headers["X-Player-Id"]
+        first_ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=first_headers,
+        ).json()["ticket"]
+        second_ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=second_headers,
+        ).json()["ticket"]
+
+        with (
+            client.websocket_connect(
+                f"/v1/rooms/{repository.room.code}/events",
+                subprotocols=ws_protocols(first_ticket),
+            ) as first_socket,
+            client.websocket_connect(
+                f"/v1/rooms/{repository.room.code}/events",
+                subprotocols=ws_protocols(second_ticket),
+            ) as second_socket,
+        ):
+            first_socket.send_json(
+                {"type": "movement", "x": 0.2, "y": 0.3, "moving": True}
+            )
+            first_echo = first_socket.receive_json()
+            first_seen_by_second = second_socket.receive_json()
+
+            second_socket.send_json(
+                {"type": "movement", "x": 0.8, "y": 0.7, "moving": False}
+            )
+            second_seen_by_first = first_socket.receive_json()
+            second_echo = second_socket.receive_json()
+
+    assert first_echo == first_seen_by_second
+    assert first_seen_by_second["playerId"] == first_id
+    assert first_seen_by_second["x"] == 0.2
+    assert second_seen_by_first == second_echo
+    assert second_seen_by_first["playerId"] == second_id
+    assert second_seen_by_first["x"] == 0.8
+    assert second_seen_by_first["sequence"] > first_seen_by_second["sequence"]
+
+
+def test_invalid_or_identity_spoofing_movement_is_not_broadcast() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    with make_client(repository) as client:
+        register(client)
+        ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=HEADERS,
+        ).json()["ticket"]
+
+        with client.websocket_connect(
+            f"/v1/rooms/{repository.room.code}/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            websocket.send_json(
+                {"type": "movement", "x": 2, "y": 0.5, "moving": True}
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "playerId": "22222222-2222-4222-8222-222222222222",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": True,
+                }
+            )
+            chat = client.post(
+                f"/v1/rooms/{repository.room.code}/chat",
+                headers=HEADERS,
+                json={"text": "유효 이벤트"},
+            )
+            assert chat.status_code == 202
+            event = websocket.receive_json()
+
+    assert event["type"] == "chat"
+
+
 def test_websocket_heartbeats_do_not_write_each_inbound_message() -> None:
     repository = FakeRepository()
     repository.member = True
@@ -820,7 +939,7 @@ def test_websocket_inbound_rate_limit_closes_a_flooding_connection() -> None:
             f"/v1/rooms/{repository.room.code}/events",
             subprotocols=ws_protocols(ticket),
         ) as websocket:
-            for _ in range(13):
+            for _ in range(31):
                 websocket.send_text("heartbeat")
             with pytest.raises(WebSocketDisconnect) as disconnected:
                 websocket.receive_json()

@@ -241,6 +241,17 @@ export interface OnlineMatchAnswerResult {
 export type RoomEvent =
   | { type: 'room'; room: PublicRoom }
   | { type: 'chat'; playerId: string; nickname: string; text: string; at: number }
+  | {
+    type: 'movement';
+    playerId: string;
+    x: number;
+    y: number;
+    moving: boolean;
+    /** server process 안에서 movement마다 증가한다. */
+    sequence: number;
+    /** 이 browser의 socket generation. reconnect 전의 늦은 event를 가둔다. */
+    connectionGeneration: number;
+  }
   | { type: 'match'; phase: 'started'; matchId: string | null; setup: MatchSetup }
   | { type: 'match'; phase: 'invalidated'; matchId: string | null };
 
@@ -252,8 +263,9 @@ export type Unsubscribe = () => void;
 /**
  * 방 저장소가 지켜야 할 계약.
  *
- * **로컬 구현이 동기여도 모든 메서드가 Promise를 반환한다** — 서버 구현체가
- * 이 타입을 달기만 하면 부르는 쪽을 고치지 않고 갈아끼울 수 있다.
+ * **로컬 action도 Promise를 반환한다** — 서버 구현체가 이 타입을 달기만 하면
+ * 부르는 쪽을 고치지 않고 갈아끼울 수 있다. 프레임에서 부르는 `sendMovement`만
+ * WebSocket best-effort라 즉시 전송 여부를 반환한다.
  */
 export interface RoomStore {
   /** 진짜 네트워크인가. 화면이 안내 문구를 정할 때 쓴다 */
@@ -277,6 +289,13 @@ export interface RoomStore {
   /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */
   setReady(spec: { code: string; isReady: boolean }): Promise<ReadyResult>;
   sendChat(spec: { code: string; text: string; player?: PlayerInfo }): Promise<{ ok: boolean }>;
+  /** 0~1 viewport 좌표. player identity는 client payload가 아니라 socket ticket에서 정한다. */
+  sendMovement(spec: {
+    code: string;
+    x: number;
+    y: number;
+    moving: boolean;
+  }): boolean;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
   /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */

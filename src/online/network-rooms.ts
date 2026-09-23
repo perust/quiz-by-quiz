@@ -62,6 +62,11 @@ interface WebSocketLike {
   close(): void;
 }
 
+interface MovementChannel {
+  socket: WebSocketLike | null;
+  latest: { type: 'movement'; x: number; y: number; moving: boolean } | null;
+}
+
 export interface NetworkRoomStoreOptions {
   baseUrl: string;
   storage: KeyValueStorage;
@@ -472,6 +477,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     committedGeneration: number;
     subscribers: number;
   }>();
+  const movementChannels = new Map<string, MovementChannel>();
 
   function beginRoomSnapshotRequest(): number {
     roomSnapshotRequestGeneration += 1;
@@ -795,6 +801,34 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     return { match: parseMatchSnapshot(value.match), accepted: true, advanced: value.advanced };
   }
 
+  function sendMovement({
+    code: rawCode, x, y, moving,
+  }: {
+    code: string;
+    x: number;
+    y: number;
+    moving: boolean;
+  }): boolean {
+    const code = normalizeCode(rawCode);
+    if (
+      !CODE_PATTERN.test(code)
+      || !Number.isFinite(x) || x < 0 || x > 1
+      || !Number.isFinite(y) || y < 0 || y > 1
+      || typeof moving !== 'boolean'
+    ) return false;
+    const channel = movementChannels.get(code);
+    if (!channel) return false;
+    channel.latest = { type: 'movement', x, y, moving };
+    if (channel.socket?.readyState !== 1) return false;
+    try {
+      channel.socket.send(JSON.stringify(channel.latest));
+      return true;
+    } catch {
+      channel.socket.close();
+      return false;
+    }
+  }
+
   function subscribe(rawCode: string, handler: RoomEventHandler): Unsubscribe {
     const code = normalizeCode(rawCode);
     if (!CODE_PATTERN.test(code)) return () => undefined;
@@ -806,6 +840,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let generation = 0;
     let latestDeliveredRoomGeneration = 0;
+    const movementChannel: MovementChannel = { socket: null, latest: null };
+    movementChannels.set(code, movementChannel);
 
     function clearTimers(): void {
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
@@ -850,6 +886,34 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }
       if (value.type === 'room-invalidated') {
         void refreshRoom(connectionGeneration).catch(() => undefined);
+        return;
+      }
+      if (
+        value.type === 'movement'
+        && typeof value.playerId === 'string'
+        && UUID_PATTERN.test(value.playerId)
+        && typeof value.x === 'number'
+        && Number.isFinite(value.x)
+        && value.x >= 0
+        && value.x <= 1
+        && typeof value.y === 'number'
+        && Number.isFinite(value.y)
+        && value.y >= 0
+        && value.y <= 1
+        && typeof value.moving === 'boolean'
+        && typeof value.sequence === 'number'
+        && Number.isSafeInteger(value.sequence)
+        && value.sequence > 0
+      ) {
+        handler({
+          type: 'movement',
+          playerId: value.playerId,
+          x: value.x,
+          y: value.y,
+          moving: value.moving,
+          sequence: value.sequence,
+          connectionGeneration,
+        });
         return;
       }
       if (
@@ -900,9 +964,13 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           `${WEBSOCKET_TICKET_PREFIX}${ticketBody.ticket}`,
         ]);
         socket = connected;
+        movementChannel.socket = connected;
         connected.addEventListener('open', () => {
           if (stopped || connected !== socket) return;
           clearTimers();
+          if (movementChannel.latest && connected.readyState === 1) {
+            connected.send(JSON.stringify(movementChannel.latest));
+          }
           // 연결이 끊긴 동안 room-invalidated를 놓쳤을 수 있으므로 room과 match를
           // 모두 권위 있는 REST snapshot으로 다시 맞춘다.
           void refreshRoom(connectionGeneration).catch(() => undefined);
@@ -916,6 +984,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         connected.addEventListener('message', (event) => receive(event.data, connectionGeneration));
         connected.addEventListener('close', () => {
           if (connected === socket) socket = null;
+          if (movementChannel.socket === connected) movementChannel.socket = null;
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = null;
           scheduleReconnect();
@@ -934,6 +1003,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       clearTimers();
       socket?.close();
       socket = null;
+      movementChannel.socket = null;
+      movementChannel.latest = null;
+      if (movementChannels.get(code) === movementChannel) movementChannels.delete(code);
       releaseRoomMutationState(code, mutationState);
     };
   }
@@ -989,6 +1061,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         throw error;
       }
     },
+    sendMovement,
     startGame,
     getMatch,
     submitMatchAnswer,

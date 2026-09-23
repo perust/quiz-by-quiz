@@ -25,7 +25,11 @@ def test_main_closes_left_members_and_revalidates_after_cleanup() -> None:
     assert websocket.index(membership) < websocket.index(accept)
     assert websocket.index(accept) < websocket.index(activate)
     assert 'key="websocket-inbound"' in websocket
-    assert "limit=12" in websocket
+    assert 'key=f"websocket-inbound:burst:{actor_id}:{code}"' in websocket
+    assert "limit=30" in websocket
+    assert 'key=f"websocket-inbound:sustained:{actor_id}:{code}"' in websocket
+    assert "limit=1_200" in websocket
+    assert "limit=15_000" in websocket
     assert "await websocket.close(code=4429)" in websocket
     assert "hub.disconnect(code, websocket)" in websocket
 

@@ -120,15 +120,16 @@ test('reset clears pending bubbles so a previous room cannot project into a new 
   assert.deepEqual(newRoomNode, { hidden: true, textContent: '' });
 });
 
-test('waiting room binds remote player figures to speech bubbles while keeping the chat log live region', async () => {
+test('waiting room binds moving remote players to speech bubbles while keeping the chat log live region', async () => {
   const [waiting, html] = await Promise.all([
     import('node:fs/promises').then(({ readFile }) => readFile(new URL('../src/ui/waiting-room.ts', import.meta.url), 'utf8')),
     import('node:fs/promises').then(({ readFile }) => readFile(new URL('../index.html', import.meta.url), 'utf8')),
   ]);
 
   assert.match(waiting, /createPlayerBubbleController/);
-  assert.match(waiting, /bubble\.className = 'lounge__bubble'/);
+  assert.match(waiting, /bubble\.className = 'walker__bubble'/);
   assert.match(waiting, /bubble\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(waiting, /remoteMovements\.bind\(player\.id, remoteCharacter\)/);
   assert.match(waiting, /remoteBubbles\.bind\(player\.id, bubble\)/);
   assert.match(waiting, /remoteBubbles\.show\(event\.playerId, event\.text\)/);
   assert.match(
