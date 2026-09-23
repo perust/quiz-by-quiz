@@ -40,8 +40,18 @@ export interface OnlineSubmissionGate {
   begin(snapshot: Extract<OnlineMatchSnapshot, { state: 'running' }>): OnlineSubmissionOwner;
   reconcile(snapshot: OnlineMatchSnapshot | null): void;
   pendingFor(snapshot: OnlineMatchSnapshot | null): boolean;
+  owns(owner: OnlineSubmissionOwner): boolean;
   finish(owner: OnlineSubmissionOwner, snapshot: OnlineMatchSnapshot | null): boolean;
   invalidate(owner?: OnlineSubmissionOwner): void;
+}
+
+function sameSubmissionOwner(
+  left: OnlineSubmissionOwner,
+  right: OnlineSubmissionOwner,
+): boolean {
+  return left.token === right.token
+    && left.matchId === right.matchId
+    && left.position === right.position;
 }
 
 function ownsQuestion(
@@ -73,13 +83,18 @@ export function createOnlineSubmissionGate(): OnlineSubmissionGate {
     pendingFor(snapshot) {
       return pending !== null && ownsQuestion(pending, snapshot);
     },
+    owns(owner) {
+      return pending !== null && sameSubmissionOwner(pending, owner);
+    },
     finish(owner, snapshot) {
-      if (pending !== owner || !ownsQuestion(owner, snapshot)) return false;
+      if (pending === null || !sameSubmissionOwner(pending, owner) || !ownsQuestion(owner, snapshot)) {
+        return false;
+      }
       pending = null;
       return true;
     },
     invalidate(owner) {
-      if (!owner || pending === owner) pending = null;
+      if (!owner || (pending !== null && sameSubmissionOwner(pending, owner))) pending = null;
     },
   };
 }
@@ -92,6 +107,50 @@ export function canAttemptOnlineSubmission(
   snapshot: Extract<OnlineMatchSnapshot, { state: 'running' }>,
 ): boolean {
   return snapshot.ownSubmission === null;
+}
+
+export function ownsOnlineSubmitError(
+  snapshot: OnlineMatchSnapshot | null,
+  owner: OnlineSubmissionOwner,
+): snapshot is Extract<OnlineMatchSnapshot, { state: 'running' }> {
+  return snapshot?.state === 'running'
+    && snapshot.matchId === owner.matchId
+    && snapshot.question.position === owner.position;
+}
+
+/** Phase/submission changes restyle existing choices; only a new question rebuilds their nodes. */
+export function onlineChoiceStructureKey(snapshot: OnlineMatchSnapshot): string | null {
+  if (snapshot.state === 'finished') return null;
+  return JSON.stringify([
+    snapshot.matchId,
+    snapshot.question.position,
+    snapshot.question.choices,
+  ]);
+}
+
+export function setTextIfChanged(
+  target: { textContent: string | null },
+  text: string,
+): boolean {
+  if (target.textContent === text) return false;
+  target.textContent = text;
+  return true;
+}
+
+export function reconcileOnlineChoiceNodes<T>(
+  existing: readonly T[],
+  previousKey: string | null,
+  nextKey: string,
+  count: number,
+  create: (index: number) => T,
+): { nodes: T[]; rebuilt: boolean } {
+  if (previousKey === nextKey && existing.length === count) {
+    return { nodes: Array.from(existing), rebuilt: false };
+  }
+  return {
+    nodes: Array.from({ length: count }, (_, index) => create(index)),
+    rebuilt: true,
+  };
 }
 
 /** Pure projection: hidden match data has no path into a running UI. */
@@ -140,7 +199,7 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
 }
 
 export interface OnlineQuizScreenDeps {
-  onSubmit: (spec: { position: number; choiceIndex: number }) => Promise<void>;
+  onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
   createCharacterArena: (deps: ArenaDeps) => Arena;
@@ -153,7 +212,10 @@ export interface OnlineQuizScreen {
   setCharacter(id: string): void;
   /** 오류가 아닌 안내용 transport/state 문구. */
   setNotice(message: string): void;
-  setError(message: string): void;
+  /** Background refresh failures are visible but never release an in-flight submit. */
+  setRefreshError(message: string): void;
+  /** A failed submit releases only the exact token/match/question owner. */
+  setSubmitError(message: string, owner: OnlineSubmissionOwner): void;
   hide(): void;
 }
 
@@ -183,6 +245,7 @@ export function createOnlineQuizScreen(
   const submissionGate = createOnlineSubmissionGate();
   let lastQuestionKey: string | null = null;
   let lastArenaQuestionKey: string | null = null;
+  let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
 
   const arena = createCharacterArena({
@@ -200,7 +263,7 @@ export function createOnlineQuizScreen(
   });
 
   function setStatus(text: string): void {
-    el.status.textContent = text;
+    setTextIfChanged(el.status, text);
   }
 
   /** The server owns expiry. This is an informational label, not a local countdown. */
@@ -226,7 +289,7 @@ export function createOnlineQuizScreen(
     arena.lock();
     render(current);
     try {
-      await onSubmit({ position: current.question.position, choiceIndex: index });
+      await onSubmit({ ...owner, choiceIndex: index });
     } catch (error) {
       const latest = snapshot;
       if (!submissionGate.finish(owner, latest)) return;
@@ -248,30 +311,60 @@ export function createOnlineQuizScreen(
     }
   }
 
-  function renderChoices(view: OnlineQuizView): void {
+  function renderChoices(view: OnlineQuizView, structureKey: string): void {
     const question = view.question;
     if (!question) {
-      el.choices.replaceChildren();
+      if (el.choices.childElementCount > 0) el.choices.replaceChildren();
+      lastChoiceStructureKey = null;
       return;
     }
-    el.choices.replaceChildren();
-    question.choices.forEach((text, index) => {
-      const item = document.createElement('li');
-      const button = document.createElement('button');
-      button.type = 'button';
+
+    const existing = Array.from(el.choices.querySelectorAll<HTMLButtonElement>('.choice'));
+    const reconciliation = reconcileOnlineChoiceNodes(
+      existing,
+      lastChoiceStructureKey,
+      structureKey,
+      question.choices.length,
+      (index) => {
+        const text = question.choices[index]!;
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'choice';
+
+        const key = document.createElement('span');
+        key.className = 'choice__key';
+        key.textContent = String(index + 1);
+        key.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'choice__text';
+        label.textContent = text;
+        const mark = document.createElement('span');
+        mark.className = 'choice__mark';
+
+        button.append(key, label, mark);
+        button.addEventListener('click', () => { void submitChoice(index); });
+        item.append(button);
+        return button;
+      },
+    );
+    if (reconciliation.rebuilt) {
+      const items = reconciliation.nodes.map((button) => {
+        const item = button.parentElement;
+        if (!(item instanceof HTMLLIElement)) throw new Error('online choice item is missing');
+        return item;
+      });
+      el.choices.replaceChildren(...items);
+    }
+    lastChoiceStructureKey = structureKey;
+    const buttons = reconciliation.nodes;
+
+    buttons.forEach((button, index) => {
       button.className = 'choice';
       button.disabled = !view.canSubmit || submissionGate.pendingFor(snapshot);
-
-      const key = document.createElement('span');
-      key.className = 'choice__key';
-      key.textContent = String(index + 1);
-      key.setAttribute('aria-hidden', 'true');
-      const label = document.createElement('span');
-      label.className = 'choice__text';
-      label.textContent = text;
-      const mark = document.createElement('span');
-      mark.className = 'choice__mark';
-
+      const mark = button.querySelector<HTMLElement>('.choice__mark');
+      if (!mark) throw new Error('online choice mark is missing');
+      mark.textContent = '';
       if (view.phase === 'running' && view.selectedChoiceIndex === index) {
         button.classList.add('choice--submitted');
         mark.textContent = '제출됨';
@@ -287,10 +380,6 @@ export function createOnlineQuizScreen(
           button.classList.add('choice--muted');
         }
       }
-      button.append(key, label, mark);
-      button.addEventListener('click', () => { void submitChoice(index); });
-      item.append(button);
-      el.choices.append(item);
     });
   }
 
@@ -298,10 +387,13 @@ export function createOnlineQuizScreen(
     const reveal = view.reveal;
     el.reveal.hidden = reveal === null;
     if (reveal === null) return;
-    if (reveal.correct) el.verdict.textContent = '정답입니다';
-    else if (reveal.timedOut) el.verdict.textContent = '시간 초과입니다';
-    else el.verdict.textContent = '아쉽네요, 오답입니다';
-    el.explanation.textContent = reveal.explanation;
+    const verdict = reveal.correct
+      ? '정답입니다'
+      : reveal.timedOut
+        ? '시간 초과입니다'
+        : '아쉽네요, 오답입니다';
+    setTextIfChanged(el.verdict, verdict);
+    setTextIfChanged(el.explanation, reveal.explanation);
   }
 
   function render(nextSnapshot: OnlineMatchSnapshot): void {
@@ -328,7 +420,9 @@ export function createOnlineQuizScreen(
     el.question.textContent = question.question;
     renderServerTimeNotice();
     setStatus(view.status);
-    renderChoices(view);
+    const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
+    if (choiceStructureKey === null) throw new Error('active match choice key is missing');
+    renderChoices(view, choiceStructureKey);
     renderReveal(view);
 
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
@@ -378,11 +472,15 @@ export function createOnlineQuizScreen(
     setNotice(message) {
       setStatus(message);
     },
-    setError(message) {
+    setRefreshError(message) {
+      setStatus(`온라인 매치 오류: ${message}`);
+    },
+    setSubmitError(message, owner) {
       const current = snapshot;
+      if (!ownsOnlineSubmitError(current, owner) || !submissionGate.owns(owner)) return;
       const interrupted = submissionGate.pendingFor(current);
-      submissionGate.invalidate();
-      if (interrupted && current?.state === 'running' && current.ownSubmission === null) {
+      submissionGate.invalidate(owner);
+      if (interrupted && current.ownSubmission === null) {
         lastArenaQuestionKey = null;
         render(current);
       }
@@ -395,6 +493,7 @@ export function createOnlineQuizScreen(
       snapshot = null;
       lastQuestionKey = null;
       lastArenaQuestionKey = null;
+      lastChoiceStructureKey = null;
       el.reveal.hidden = true;
       el.choices.replaceChildren();
     },

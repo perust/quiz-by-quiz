@@ -333,8 +333,10 @@ async function main(): Promise<void> {
       if (code && activeRoomCode === code) void openWaitingRoom(code);
       else void openOnline('진행 중인 온라인 매치를 찾지 못했습니다.');
     },
-    onError: (message) => {
-      if (ownsOnlineMatchNavigation()) onlineQuizScreen.setError(message);
+    onError: (message, context) => {
+      if (!ownsOnlineMatchNavigation()) return;
+      if (context.source === 'refresh') onlineQuizScreen.setRefreshError(message);
+      else onlineQuizScreen.setSubmitError(message, context);
     },
   });
 

@@ -198,7 +198,10 @@ test('online match callbacks retain navigation ownership and waiting-room transf
   assert.doesNotMatch(callbacks, /goTo\('online-quiz'\)/);
   assert.doesNotMatch(callbacks, /onlineMatchNavigationGeneration = waitingRoomEntryGeneration/);
   assert.match(callbacks, /onMissing: \(\) => \{\s*if \(!ownsOnlineMatchNavigation\(\)\) return;/);
-  assert.match(callbacks, /onError: \(message\) => \{\s*if \(ownsOnlineMatchNavigation\(\)\)/);
+  assert.match(
+    callbacks,
+    /onError: \(message, context\) => \{\s*if \(!ownsOnlineMatchNavigation\(\)\) return;\s*if \(context\.source === 'refresh'\) onlineQuizScreen\.setRefreshError\(message\);\s*else onlineQuizScreen\.setSubmitError\(message, context\);/,
+  );
   assert.match(lifecycle, /onlineMatchNavigationGeneration = null;/);
   assert.match(
     lifecycle,

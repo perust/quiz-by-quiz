@@ -241,7 +241,7 @@ export interface OnlineMatchAnswerResult {
 export type RoomEvent =
   | { type: 'room'; room: PublicRoom }
   | { type: 'chat'; playerId: string; nickname: string; text: string; at: number }
-  | { type: 'match'; phase: 'started'; setup: MatchSetup }
+  | { type: 'match'; phase: 'started'; matchId: string | null; setup: MatchSetup }
   | { type: 'match'; phase: 'invalidated'; matchId: string | null };
 
 export type RoomEventHandler = (event: RoomEvent) => void;

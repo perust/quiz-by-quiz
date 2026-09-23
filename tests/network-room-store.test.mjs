@@ -731,6 +731,86 @@ test('match invalidation은 snapshot을 socket에 싣지 않고 app에 authoriza
   }
 });
 
+test('unsubscribe 뒤 old socket의 delayed game-started event는 전달하지 않는다', async () => {
+  FakeWebSocket.instances.length = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'stale-socket-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+  const oldSocket = FakeWebSocket.instances[0];
+  unsubscribe();
+
+  oldSocket.emit('message', {
+    data: JSON.stringify({
+      type: 'game-started',
+      matchId: '22345678-1234-5678-9234-567812345678',
+      categoryId: 'history',
+      gameMode: true,
+      totalQuestions: 10,
+    }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(events, []);
+});
+
+test('game-started event는 replacement match identity를 검증해 보존한다', async () => {
+  FakeWebSocket.instances.length = 0;
+  const matchId = '22345678-1234-5678-9234-567812345678';
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'started-event-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    FakeWebSocket.instances[0].emit('message', {
+      data: JSON.stringify({
+        type: 'game-started',
+        matchId,
+        categoryId: 'history',
+        gameMode: true,
+        totalQuestions: 10,
+      }),
+    });
+    await waitFor(
+      () => events.some((event) => event.type === 'match' && event.phase === 'started'),
+      'game-started event was not translated',
+    );
+    assert.deepEqual(events.find((event) => event.type === 'match'), {
+      type: 'match',
+      phase: 'started',
+      matchId,
+      setup: { categoryId: 'history', gameMode: true },
+    });
+  } finally {
+    unsubscribe();
+  }
+});
+
 test('socket open은 room snapshot과 match invalidation을 함께 복구한다', async () => {
   FakeWebSocket.instances.length = 0;
   let roomReads = 0;

@@ -832,6 +832,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     }
 
     function receive(data: unknown, connectionGeneration: number): void {
+      if (stopped || connectionGeneration !== generation) return;
       if (typeof data !== 'string') return;
       let value: unknown;
       try {
@@ -867,8 +868,14 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         return;
       }
       if (value.type === 'game-started') {
+        if (typeof value.matchId !== 'string' || !UUID_PATTERN.test(value.matchId)) return;
         try {
-          handler({ type: 'match', phase: 'started', setup: parseMatchSetup(value) });
+          handler({
+            type: 'match',
+            phase: 'started',
+            matchId: value.matchId,
+            setup: parseMatchSetup(value),
+          });
         } catch {
           // 계약에 맞지 않는 서버 이벤트는 화면 상태를 바꾸지 않는다.
         }

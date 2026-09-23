@@ -425,7 +425,9 @@ export const localRooms = {
     // 실제 서버의 started 이벤트는 요청 응답과 같은 call stack에서 오지 않는다.
     // local adapter도 다음 task에 보내야 같은 turn의 «나가기»가 subscription을 먼저
     // 정리할 수 있고, 나간 방의 stale start가 퀴즈를 다시 열지 않는다.
-    setTimeout(() => emit(room.code, { type: 'match', phase: 'started', setup }), 0);
+    setTimeout(() => emit(room.code, {
+      type: 'match', phase: 'started', matchId: null, setup,
+    }), 0);
     return { ok: true, setup };
   },
 
