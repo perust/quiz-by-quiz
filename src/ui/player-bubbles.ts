@@ -22,6 +22,19 @@ export interface PlayerBubbleControllerDeps {
   clearTimer?: typeof clearTimeout;
 }
 
+/** Put a bubble below only when it does not fit above and the lower side has more room. */
+export function shouldPlacePlayerBubbleBelow(
+  bubbleHeight: number,
+  characterTop: number,
+  characterBottom: number,
+  viewportHeight: number,
+  inset = 6,
+): boolean {
+  const roomAbove = Math.max(0, characterTop - inset);
+  const roomBelow = Math.max(0, viewportHeight - characterBottom - inset);
+  return bubbleHeight > roomAbove && roomBelow > roomAbove;
+}
+
 interface ActiveBubble {
   text: string;
   expiresAt: number;

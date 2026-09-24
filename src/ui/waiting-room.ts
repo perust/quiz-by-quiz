@@ -14,7 +14,10 @@ import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
 import { createLatestRequestGuard } from './latest-request.js';
-import { createPlayerBubbleController } from './player-bubbles.js';
+import {
+  createPlayerBubbleController,
+  shouldPlacePlayerBubbleBelow,
+} from './player-bubbles.js';
 import {
   createMovementPublisher,
   createPlayerMovementController,
@@ -35,9 +38,6 @@ const BUBBLE_MS = 3200;
 
 /** 화면에 남겨 둘 대화 줄 수. 말풍선이 사라진 뒤에도 이만큼은 다시 볼 수 있다 */
 const CHAT_LINES = 4;
-
-/** 이만큼 위가 비어 있지 않으면 말풍선을 캐릭터 아래에 띄운다 */
-const BUBBLE_ROOM = 52;
 
 /** 설정 버튼이 도는 값. 카테고리 정의와 달리 아이콘·설명이 없다 */
 interface RoundCategory {
@@ -91,6 +91,7 @@ export function createWaitingRoom(
     bubble: need('waiting-bubble'),
     chatForm: need<HTMLFormElement>('chat-form'),
     chatInput: need<HTMLInputElement>('chat-input'),
+    chatSubmit: need<HTMLButtonElement>('chat-submit'),
     chatLog: need('chat-log'),
   };
 
@@ -122,6 +123,8 @@ export function createWaitingRoom(
   let visibleRequest: number | null = null;
   /** 이 show를 연 앱 navigation generation. 앱의 mutable 현재값을 다시 읽지 않는다. */
   let visibleEntry: { code: string; entryGeneration: number } | null = null;
+  /** 같은 composer에서 앞선 POST가 끝나기 전 중복 submit을 막는다. */
+  let chatSendPending = false;
   /** 말풍선을 스스로 지우는 타이머. 없으면 undefined — clearTimeout이 그대로 받는다 */
   let bubbleTimer: number | undefined;
   /** room snapshot이 참가자 DOM을 다시 만들어도 아직 살아 있는 남의 말은 유지한다. */
@@ -214,7 +217,7 @@ export function createWaitingRoom(
       remoteBubbleNodes.set(player.id, bubble);
       remoteMovements.bind(player.id, remoteCharacter);
       remoteBubbles.bind(player.id, bubble);
-      if (!bubble.hidden) fitRemoteBubble(bubble);
+      if (!bubble.hidden) fitChatBubble(bubble);
     }
     movementPublisher.resend();
   }
@@ -225,24 +228,32 @@ export function createWaitingRoom(
     el.bubble.textContent = text;
     // 캐릭터는 화면 맨 위까지 갈 수 있다(앱 바 버튼을 밟으려고 위쪽 한계를 풀었다).
     // 그대로 두면 말풍선이 화면 밖으로 나가 말을 해도 보이지 않는다
-    const top = el.character.getBoundingClientRect().top;
-    el.bubble.classList.toggle('walker__bubble--below', top < BUBBLE_ROOM);
     el.bubble.hidden = false;
+    fitChatBubble(el.bubble);
     clearTimeout(bubbleTimer);
     // 얼굴을 오래 가리지 않게 스스로 사라진다
     bubbleTimer = setTimeout(() => { el.bubble.hidden = true; }, BUBBLE_MS);
   }
 
   /** 움직이는 상대 위에 두되 viewport 밖으로 나간 만큼만 안쪽으로 민다. */
-  function fitRemoteBubble(bubble: HTMLElement): void {
+  function fitChatBubble(bubble: HTMLElement): void {
     bubble.style.removeProperty('--bubble-shift');
     if (bubble.hidden) return;
     const characterBox = bubble.parentElement?.getBoundingClientRect();
-    bubble.classList.toggle(
-      'walker__bubble--below',
-      Boolean(characterBox && characterBox.top < BUBBLE_ROOM),
-    );
-    const bubbleBox = bubble.getBoundingClientRect();
+    bubble.classList.remove('walker__bubble--below');
+    let bubbleBox = bubble.getBoundingClientRect();
+    if (characterBox) {
+      bubble.classList.toggle(
+        'walker__bubble--below',
+        shouldPlacePlayerBubbleBelow(
+          bubbleBox.height,
+          characterBox.top,
+          characterBox.bottom,
+          window.innerHeight,
+        ),
+      );
+      bubbleBox = bubble.getBoundingClientRect();
+    }
     if (bubbleBox.width === 0) return;
     const inset = 6;
     let shift = 0;
@@ -288,7 +299,7 @@ export function createWaitingRoom(
       if (event.playerId !== roomStore.me()) {
         remoteMovements.update(event);
         const bubble = remoteBubbleNodes.get(event.playerId);
-        if (bubble && !bubble.hidden) fitRemoteBubble(bubble);
+        if (bubble && !bubble.hidden) fitChatBubble(bubble);
       }
       return;
     }
@@ -311,7 +322,7 @@ export function createWaitingRoom(
     } else {
       remoteBubbles.show(event.playerId, event.text);
       const bubble = remoteBubbleNodes.get(event.playerId);
-      if (bubble) fitRemoteBubble(bubble);
+      if (bubble) fitChatBubble(bubble);
     }
   }
 
@@ -463,6 +474,9 @@ export function createWaitingRoom(
     const text = el.chatInput.value;
     const action = captureAction();
     if (!action) return;
+    if (chatSendPending || !text.trim()) return;
+    chatSendPending = true;
+    el.chatSubmit.disabled = true;
     try {
       const result = await roomStore.sendChat({ code: action.code, text, player: getPlayer() });
       if (!ownsAction(action, false)) return;
@@ -478,6 +492,11 @@ export function createWaitingRoom(
     } catch {
       if (!ownsAction(action, false)) return;
       notice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    } finally {
+      if (ownsAction(action, false)) {
+        chatSendPending = false;
+        el.chatSubmit.disabled = false;
+      }
     }
   });
 
@@ -515,6 +534,8 @@ export function createWaitingRoom(
       walker.hide();
       movementPublisher.reset();
       room = null;
+      chatSendPending = false;
+      el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
       el.bubble.hidden = true;
@@ -543,6 +564,7 @@ export function createWaitingRoom(
 
       el.chatInput.value = '';
       el.chatLog.replaceChildren();
+      el.chatSubmit.disabled = false;
       render();
       walker.show(characterId);
       movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
@@ -559,6 +581,8 @@ export function createWaitingRoom(
       walker.hide();
       movementPublisher.reset();
       room = null;
+      chatSendPending = false;
+      el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
       el.bubble.hidden = true;

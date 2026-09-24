@@ -438,7 +438,8 @@
         <label class="sr-only" for="chat-input">대기실에서 한마디</label>
         <input class="chat__input" id="chat-input" type="text" maxlength="60"
                autocomplete="off" placeholder="한마디 적고 Enter">
-        <button type="submit" class="button button--primary button--small">보내기</button>
+        <button type="submit" class="button button--primary button--small"
+                id="chat-submit" disabled>보내기</button>
       </form>
       <p class="chat__hint">걷는 중에 <kbd>/</kbd> 를 누르면 채팅칸으로, 채팅칸에서 <kbd>Esc</kbd> 를 누르면 다시 걷기로 갑니다.</p>
       <!-- 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다 -->
