@@ -1323,6 +1323,23 @@ body.is-booted .app-bar {
   pointer-events: none;
 }
 
+/* 문제·보기와 같은 문서 흐름에 둬 채팅이 답 버튼을 덮지 않는다. */
+.online-quiz-chat {
+  position: relative;
+  margin: 12px 0 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.online-quiz-chat__form {
+  margin-top: 0;
+}
+
+.online-quiz-chat__log {
+  max-height: 76px;
+  overflow-y: auto;
+}
+
 /* ── 바닥 ──
    칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
    선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */

@@ -217,6 +217,7 @@
           <div class="arena__grid" id="online-arena-tiles"></div>
           <div id="online-remote-characters" aria-hidden="true"></div>
           <div class="walker" id="online-arena-character">
+            <span class="walker__bubble" id="online-bubble" aria-hidden="true" hidden></span>
             <span class="walker__shadow"></span>
           </div>
         </div>
@@ -226,6 +227,19 @@
         </p>
       </div>
       <p class="online-match-status" id="online-match-status" role="status"></p>
+      <section class="online-quiz-chat" aria-labelledby="online-chat-title">
+        <h2 class="sr-only" id="online-chat-title">문제 풀이 중 대화</h2>
+        <form class="chat online-quiz-chat__form" id="online-chat-form" novalidate>
+          <label class="sr-only" for="online-chat-input">문제 풀이 중 한마디</label>
+          <input class="chat__input" id="online-chat-input" type="text" maxlength="60"
+                 autocomplete="off" placeholder="한마디 적고 Enter" disabled>
+          <button type="submit" class="button button--primary button--small"
+                  id="online-chat-submit" disabled>보내기</button>
+        </form>
+        <p class="chat__hint"><kbd>/</kbd> 채팅 · <kbd>Esc</kbd> 다시 걷기</p>
+        <ul class="chat-log online-quiz-chat__log" id="online-chat-log"
+            role="log" aria-live="polite"></ul>
+      </section>
       <section class="online-reveal" id="online-reveal" aria-live="polite" hidden>
         <h2 class="online-reveal__verdict" id="online-reveal-verdict"></h2>
         <p class="online-reveal__explanation" id="online-reveal-explanation"></p>

@@ -13,6 +13,7 @@ import type {
   RoomEvent,
 } from '../online/adapter.js';
 import type { Arena, ArenaDeps } from './arena.js';
+import { createPlayerBubbleController } from './player-bubbles.js';
 import {
   createMovementPublisher,
   createPlayerMovementController,
@@ -22,6 +23,12 @@ import {
 import { createBody } from './sprite.js';
 
 type OnlineMovementEvent = Extract<RoomEvent, { type: 'movement' }>;
+type OnlineChatEvent = Extract<RoomEvent, { type: 'chat' }>;
+
+/** 말풍선 수명과 최근 대화 줄 수는 대기실과 같은 계약을 쓴다. */
+const BUBBLE_MS = 3200;
+const CHAT_LINES = 4;
+const BUBBLE_ROOM = 52;
 
 export interface OnlineQuizRevealView {
   chosenChoiceIndex: number | null;
@@ -155,6 +162,11 @@ export function setTextIfChanged(
   return true;
 }
 
+/** Question changes announce themselves unless doing so would interrupt another focused surface. */
+export function shouldAutoFocusOnlineQuestion(dialogOpen: boolean, chatFocused: boolean): boolean {
+  return !dialogOpen && !chatFocused;
+}
+
 export function reconcileOnlineChoiceNodes<T>(
   existing: readonly T[],
   previousKey: string | null,
@@ -219,6 +231,7 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   onMovement: (sample: MovementSample) => void;
+  onSendChat: (text: string) => Promise<{ ok: boolean }>;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
   getPlayerId: () => string;
@@ -233,6 +246,8 @@ export interface OnlineQuizScreen {
   setRoom(room: PublicRoom): void;
   /** 인증된 socket actor의 최신 이동만 반영한다. */
   updateMovement(movement: OnlineMovementEvent): void;
+  /** 같은 match socket에서 온 인증된 채팅을 로그와 캐릭터 말풍선에 반영한다. */
+  updateChat(event: OnlineChatEvent): void;
   /** socket을 닫기 전에 마지막 정지 좌표를 보내고 presence를 정리한다. */
   stopPresence(): void;
   render(snapshot: OnlineMatchSnapshot): void;
@@ -251,6 +266,7 @@ export function createOnlineQuizScreen(
   {
     onSubmit,
     onMovement,
+    onSendChat,
     onExit,
     onFinished,
     getPlayerId,
@@ -276,6 +292,11 @@ export function createOnlineQuizScreen(
     verdict: need('online-reveal-verdict'),
     explanation: need('online-reveal-explanation'),
     remoteCharacters: need('online-remote-characters'),
+    bubble: need('online-bubble'),
+    chatForm: need<HTMLFormElement>('online-chat-form'),
+    chatInput: need<HTMLInputElement>('online-chat-input'),
+    chatSubmit: need<HTMLButtonElement>('online-chat-submit'),
+    chatLog: need('online-chat-log'),
     exit: need<HTMLButtonElement>('online-quiz-exit'),
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
@@ -286,8 +307,12 @@ export function createOnlineQuizScreen(
   let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
   let presenceActive = false;
+  /** Chat POST completion from an exited/replaced match must not mutate the next screen. */
+  let presenceGeneration = 0;
   let movementHeartbeat: number | undefined;
   const remoteMovements = createPlayerMovementController();
+  const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
+  const chatBubbleNodes = new Map<string, HTMLElement>();
   const movementPublisher = createMovementPublisher({
     send: (sample) => {
       if (presenceActive) onMovement(sample);
@@ -302,6 +327,7 @@ export function createOnlineQuizScreen(
         height: window.innerHeight,
       });
       if (sample) movementPublisher.update(sample);
+      if (!el.bubble.hidden) fitChatBubble(el.bubble);
     },
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
     trapFocus,
@@ -318,13 +344,21 @@ export function createOnlineQuizScreen(
   function stopPresence(): void {
     // walker가 걷는 중이면 socket을 닫기 전에 마지막 정지 좌표를 보낸다.
     arena.setEnabled(false);
+    presenceGeneration += 1;
     presenceActive = false;
     clearInterval(movementHeartbeat);
     movementHeartbeat = undefined;
     movementPublisher.reset();
     remoteMovements.reset();
+    chatBubbles.reset();
+    chatBubbleNodes.clear();
     el.remoteCharacters.replaceChildren();
     setTextIfChanged(el.presenceStatus, '');
+    el.chatInput.disabled = true;
+    el.chatSubmit.disabled = true;
+    el.chatInput.value = '';
+    el.chatInput.blur();
+    el.chatLog.replaceChildren();
     // 로비 fetch를 기다리는 동안 문제 화면이 잠시 남아도 새 제출이나 늦은 완료가
     // 이 lifecycle을 다시 그릴 수 없어야 한다.
     submissionGate.invalidate();
@@ -341,15 +375,22 @@ export function createOnlineQuizScreen(
   function startPresence(): void {
     stopPresence();
     presenceActive = true;
+    bindChatBubble(getPlayerId(), el.bubble);
     movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
   }
 
   function setRoom(room: PublicRoom): void {
     if (!presenceActive) return;
+    // 새 match socket이 authoritative room snapshot까지 받은 뒤에만 전송을 연다.
+    el.chatInput.disabled = false;
+    el.chatSubmit.disabled = false;
     setTextIfChanged(el.presenceStatus, onlinePresenceText(room.players));
     const remotePlayers = room.players.filter((player) => player.id !== getPlayerId());
     remoteMovements.unbindAll();
     remoteMovements.reconcile(remotePlayers.map((player) => player.id));
+    chatBubbles.unbindAll();
+    chatBubbleNodes.clear();
+    bindChatBubble(getPlayerId(), el.bubble);
     el.remoteCharacters.replaceChildren();
 
     for (const player of remotePlayers) {
@@ -360,12 +401,18 @@ export function createOnlineQuizScreen(
 
       const shadow = document.createElement('span');
       shadow.className = 'walker__shadow';
+      // 최근 로그가 live region이므로 시각 말풍선은 중복 낭독하지 않는다.
+      const bubble = document.createElement('span');
+      bubble.className = 'walker__bubble';
+      bubble.setAttribute('aria-hidden', 'true');
+      bubble.hidden = true;
       const name = document.createElement('span');
       name.className = 'walker__name';
       name.textContent = player.nickname;
-      character.append(shadow, createBody(player.characterId), name);
+      character.append(bubble, shadow, createBody(player.characterId), name);
       el.remoteCharacters.append(character);
       remoteMovements.bind(player.id, character);
+      bindChatBubble(player.id, bubble);
     }
     movementPublisher.resend();
   }
@@ -373,7 +420,85 @@ export function createOnlineQuizScreen(
   function updateMovement(movement: OnlineMovementEvent): void {
     if (!presenceActive || movement.playerId === getPlayerId()) return;
     remoteMovements.update(movement);
+    const bubble = chatBubbleNodes.get(movement.playerId);
+    if (bubble && !bubble.hidden) fitChatBubble(bubble);
   }
+
+  /** 움직이는 캐릭터에 붙이되 viewport 밖으로 나간 폭만 안쪽으로 민다. */
+  function fitChatBubble(bubble: HTMLElement): void {
+    bubble.style.removeProperty('--bubble-shift');
+    if (bubble.hidden) return;
+    const characterBox = bubble.parentElement?.getBoundingClientRect();
+    bubble.classList.toggle(
+      'walker__bubble--below',
+      Boolean(characterBox && characterBox.top < BUBBLE_ROOM),
+    );
+    const bubbleBox = bubble.getBoundingClientRect();
+    if (bubbleBox.width === 0) return;
+    const inset = 6;
+    let shift = 0;
+    if (bubbleBox.left < inset) {
+      shift = inset - bubbleBox.left;
+    } else if (bubbleBox.right > window.innerWidth - inset) {
+      shift = window.innerWidth - inset - bubbleBox.right;
+    }
+    if (shift !== 0) bubble.style.setProperty('--bubble-shift', `${Math.round(shift)}px`);
+  }
+
+  function bindChatBubble(playerId: string, bubble: HTMLElement): void {
+    chatBubbleNodes.set(playerId, bubble);
+    chatBubbles.bind(playerId, bubble);
+    if (!bubble.hidden) fitChatBubble(bubble);
+  }
+
+  function appendChatLine(nickname: string, text: string): void {
+    const line = document.createElement('li');
+    line.className = 'chat-log__line';
+    const who = document.createElement('span');
+    who.className = 'chat-log__who';
+    who.textContent = nickname;
+    line.append(who, ' ', text);
+    el.chatLog.append(line);
+    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+  }
+
+  function chatNotice(text: string): void {
+    const line = document.createElement('li');
+    line.className = 'chat-log__line chat-log__line--notice';
+    line.textContent = text;
+    el.chatLog.append(line);
+    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+  }
+
+  function updateChat(event: OnlineChatEvent): void {
+    if (!presenceActive) return;
+    appendChatLine(event.nickname, event.text);
+    chatBubbles.show(event.playerId, event.text);
+    const bubble = chatBubbleNodes.get(event.playerId);
+    if (bubble) fitChatBubble(bubble);
+  }
+
+  el.chatForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const text = el.chatInput.value;
+    if (!presenceActive || !text.trim()) return;
+    const sendGeneration = presenceGeneration;
+    try {
+      const result = await onSendChat(text);
+      if (!presenceActive || sendGeneration !== presenceGeneration) return;
+      if (!result.ok) {
+        chatNotice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      if (el.chatInput.value === text) {
+        el.chatInput.value = '';
+        el.chatInput.blur();
+      }
+    } catch {
+      if (!presenceActive || sendGeneration !== presenceGeneration) return;
+      chatNotice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    }
+  });
 
   function setStatus(text: string): void {
     setTextIfChanged(el.status, text);
@@ -557,14 +682,27 @@ export function createOnlineQuizScreen(
     const questionKey = `${nextSnapshot.matchId}:${nextSnapshot.state}:${question.position}`;
     if (questionKey !== lastQuestionKey) {
       lastQuestionKey = questionKey;
-      if (!arena.isDialogOpen()) el.question.focus({ preventScroll: true });
+      // 서버 phase가 바뀌어도 쓰던 메시지와 caret을 빼앗지 않는다.
+      if (shouldAutoFocusOnlineQuestion(
+        arena.isDialogOpen(),
+        document.activeElement === el.chatInput,
+      )) {
+        el.question.focus({ preventScroll: true });
+      }
     }
   }
 
   el.exit.addEventListener('click', onExit);
   document.addEventListener('keydown', (event) => {
     if (arena.handleDialogKey(event)) return;
-    if (el.screen.hidden || !snapshot || snapshot.state !== 'running') return;
+    if (el.screen.hidden || arena.isDialogOpen()) return;
+    if (event.key === '/' && document.activeElement !== el.chatInput && presenceActive) {
+      event.preventDefault();
+      el.chatInput.focus();
+      return;
+    }
+    if (document.activeElement === el.chatInput) return;
+    if (!snapshot || snapshot.state !== 'running') return;
     const choiceIndex = ['1', '2', '3', '4'].indexOf(event.key);
     if (choiceIndex !== -1 && !document.activeElement?.closest('button')) {
       const button = el.choices.querySelectorAll<HTMLButtonElement>('.choice')[choiceIndex];
@@ -581,6 +719,7 @@ export function createOnlineQuizScreen(
     startPresence,
     setRoom,
     updateMovement,
+    updateChat,
     stopPresence,
     render,
     setCharacter(id) {
