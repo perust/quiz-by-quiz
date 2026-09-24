@@ -18,6 +18,7 @@ import { createPlayerBubbleController } from './player-bubbles.js';
 import {
   createMovementPublisher,
   createPlayerMovementController,
+  normalizeViewportMovement,
 } from './player-movement.js';
 import {
   isCurrentWaitingRoomAction,
@@ -103,12 +104,11 @@ export function createWaitingRoom(
       return { x: box.left + box.width / 2, y: box.bottom - 18 };
     },
     onMove: (point, moving) => {
-      if (window.innerWidth <= 0 || window.innerHeight <= 0) return;
-      movementPublisher.update({
-        x: Number(Math.min(1, Math.max(0, point.x / window.innerWidth)).toFixed(4)),
-        y: Number(Math.min(1, Math.max(0, point.y / window.innerHeight)).toFixed(4)),
-        moving,
+      const sample = normalizeViewportMovement(point, moving, {
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
+      if (sample) movementPublisher.update(sample);
     },
   });
 

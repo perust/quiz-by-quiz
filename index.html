@@ -211,9 +211,11 @@
 
       <h1 class="question" id="online-question-text" tabindex="-1"></h1>
       <ul class="choices" id="online-choices" aria-label="온라인 보기"></ul>
+      <p class="sr-only" id="online-presence-status" aria-live="polite"></p>
       <div class="arena" id="online-arena" hidden>
         <div class="arena__stage" aria-hidden="true">
           <div class="arena__grid" id="online-arena-tiles"></div>
+          <div id="online-remote-characters" aria-hidden="true"></div>
           <div class="walker" id="online-arena-character">
             <span class="walker__shadow"></span>
           </div>

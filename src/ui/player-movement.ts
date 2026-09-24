@@ -10,6 +10,28 @@ export interface MovementSample {
   moving: boolean;
 }
 
+/** 화면별 워커 좌표를 공통 0~1 viewport 좌표로 바꾼다. */
+export function normalizeViewportMovement(
+  point: Readonly<{ x: number; y: number }>,
+  moving: boolean,
+  viewport: Readonly<{ width: number; height: number }>,
+): MovementSample | null {
+  if (
+    !Number.isFinite(point.x)
+    || !Number.isFinite(point.y)
+    || !Number.isFinite(viewport.width)
+    || !Number.isFinite(viewport.height)
+    || viewport.width <= 0
+    || viewport.height <= 0
+    || typeof moving !== 'boolean'
+  ) return null;
+  return {
+    x: Number(Math.min(1, Math.max(0, point.x / viewport.width)).toFixed(4)),
+    y: Number(Math.min(1, Math.max(0, point.y / viewport.height)).toFixed(4)),
+    moving,
+  };
+}
+
 export interface RemoteMovement extends MovementSample {
   playerId: string;
   sequence: number;
@@ -20,6 +42,9 @@ interface MovementState extends MovementSample {
   sequence: number;
   connectionGeneration: number;
 }
+
+const NAME_ABOVE_THRESHOLD = 0.9;
+const NAME_SIDE_THRESHOLD = 0.2;
 
 export interface PlayerMovementController {
   /** 현재 room snapshot에 실제로 남아 있는 상대만 표시한다. */
@@ -42,6 +67,9 @@ function project(node: HTMLElement, state: MovementState): void {
   node.style.transform = `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
   node.classList.toggle('walker--walking', state.moving);
   node.classList.toggle('walker--idle', !state.moving);
+  node.classList.toggle('walker--name-above', state.y >= NAME_ABOVE_THRESHOLD);
+  node.classList.toggle('walker--name-left', state.x <= NAME_SIDE_THRESHOLD);
+  node.classList.toggle('walker--name-right', state.x >= 1 - NAME_SIDE_THRESHOLD);
   node.hidden = false;
 }
 

@@ -9,8 +9,19 @@ import { need, needOne } from '../dom.js';
 import type {
   OnlineMatchQuestion,
   OnlineMatchSnapshot,
+  PublicRoom,
+  RoomEvent,
 } from '../online/adapter.js';
 import type { Arena, ArenaDeps } from './arena.js';
+import {
+  createMovementPublisher,
+  createPlayerMovementController,
+  normalizeViewportMovement,
+  type MovementSample,
+} from './player-movement.js';
+import { createBody } from './sprite.js';
+
+type OnlineMovementEvent = Extract<RoomEvent, { type: 'movement' }>;
 
 export interface OnlineQuizRevealView {
   chosenChoiceIndex: number | null;
@@ -128,6 +139,13 @@ export function onlineChoiceStructureKey(snapshot: OnlineMatchSnapshot): string 
   ]);
 }
 
+export function onlinePresenceText(
+  players: readonly PublicRoom['players'][number][],
+): string {
+  if (players.length === 0) return '';
+  return `함께 푸는 참가자 ${players.length}명: ${players.map((player) => player.nickname).join(', ')}`;
+}
+
 export function setTextIfChanged(
   target: { textContent: string | null },
   text: string,
@@ -200,13 +218,23 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
 
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
+  onMovement: (sample: MovementSample) => void;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
+  getPlayerId: () => string;
   createCharacterArena: (deps: ArenaDeps) => Arena;
   trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
 }
 
 export interface OnlineQuizScreen {
+  /** 한 매치의 presence lifecycle을 열고 이전 방 좌표를 비운다. */
+  startPresence(): void;
+  /** WebSocket이 재조회한 authoritative room roster를 반영한다. */
+  setRoom(room: PublicRoom): void;
+  /** 인증된 socket actor의 최신 이동만 반영한다. */
+  updateMovement(movement: OnlineMovementEvent): void;
+  /** socket을 닫기 전에 마지막 정지 좌표를 보내고 presence를 정리한다. */
+  stopPresence(): void;
   render(snapshot: OnlineMatchSnapshot): void;
   /** 홈에서 고른 캐릭터를 온라인 문제 무대에도 적용한다. */
   setCharacter(id: string): void;
@@ -220,7 +248,15 @@ export interface OnlineQuizScreen {
 }
 
 export function createOnlineQuizScreen(
-  { onSubmit, onExit, onFinished, createCharacterArena, trapFocus }: OnlineQuizScreenDeps,
+  {
+    onSubmit,
+    onMovement,
+    onExit,
+    onFinished,
+    getPlayerId,
+    createCharacterArena,
+    trapFocus,
+  }: OnlineQuizScreenDeps,
 ): OnlineQuizScreen {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online-quiz"]'),
@@ -234,10 +270,12 @@ export function createOnlineQuizScreen(
     timerText: need('online-timer-text'),
     question: need<HTMLHeadingElement>('online-question-text'),
     choices: need('online-choices'),
+    presenceStatus: need('online-presence-status'),
     status: need('online-match-status'),
     reveal: need('online-reveal'),
     verdict: need('online-reveal-verdict'),
     explanation: need('online-reveal-explanation'),
+    remoteCharacters: need('online-remote-characters'),
     exit: need<HTMLButtonElement>('online-quiz-exit'),
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
@@ -247,9 +285,24 @@ export function createOnlineQuizScreen(
   let lastArenaQuestionKey: string | null = null;
   let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
+  let presenceActive = false;
+  let movementHeartbeat: number | undefined;
+  const remoteMovements = createPlayerMovementController();
+  const movementPublisher = createMovementPublisher({
+    send: (sample) => {
+      if (presenceActive) onMovement(sample);
+    },
+  });
 
   const arena = createCharacterArena({
     onChoose: (index) => { void submitChoice(index); },
+    onMove: (point, moving) => {
+      const sample = normalizeViewportMovement(point, moving, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      if (sample) movementPublisher.update(sample);
+    },
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
     trapFocus,
     ids: {
@@ -261,6 +314,55 @@ export function createOnlineQuizScreen(
       helpClose: 'online-help-close',
     },
   });
+
+  function stopPresence(): void {
+    // walker가 걷는 중이면 socket을 닫기 전에 마지막 정지 좌표를 보낸다.
+    arena.setEnabled(false);
+    presenceActive = false;
+    clearInterval(movementHeartbeat);
+    movementHeartbeat = undefined;
+    movementPublisher.reset();
+    remoteMovements.reset();
+    el.remoteCharacters.replaceChildren();
+    setTextIfChanged(el.presenceStatus, '');
+  }
+
+  function startPresence(): void {
+    stopPresence();
+    presenceActive = true;
+    movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
+  }
+
+  function setRoom(room: PublicRoom): void {
+    if (!presenceActive) return;
+    setTextIfChanged(el.presenceStatus, onlinePresenceText(room.players));
+    const remotePlayers = room.players.filter((player) => player.id !== getPlayerId());
+    remoteMovements.unbindAll();
+    remoteMovements.reconcile(remotePlayers.map((player) => player.id));
+    el.remoteCharacters.replaceChildren();
+
+    for (const player of remotePlayers) {
+      const character = document.createElement('div');
+      character.className = 'walker walker--remote';
+      character.dataset.movingPlayerId = player.id;
+      character.hidden = true;
+
+      const shadow = document.createElement('span');
+      shadow.className = 'walker__shadow';
+      const name = document.createElement('span');
+      name.className = 'walker__name';
+      name.textContent = player.nickname;
+      character.append(shadow, createBody(player.characterId), name);
+      el.remoteCharacters.append(character);
+      remoteMovements.bind(player.id, character);
+    }
+    movementPublisher.resend();
+  }
+
+  function updateMovement(movement: OnlineMovementEvent): void {
+    if (!presenceActive || movement.playerId === getPlayerId()) return;
+    remoteMovements.update(movement);
+  }
 
   function setStatus(text: string): void {
     setTextIfChanged(el.status, text);
@@ -465,6 +567,10 @@ export function createOnlineQuizScreen(
   });
 
   return {
+    startPresence,
+    setRoom,
+    updateMovement,
+    stopPresence,
     render,
     setCharacter(id) {
       arena.setCharacter(id);
@@ -487,7 +593,7 @@ export function createOnlineQuizScreen(
       setStatus(`온라인 매치 오류: ${message}`);
     },
     hide() {
-      arena.setEnabled(false);
+      stopPresence();
       arena.closeDialog();
       submissionGate.invalidate();
       snapshot = null;
