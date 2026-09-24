@@ -287,10 +287,14 @@
             <h2 class="online-block__title" id="rooms-title">방 목록</h2>
             <p class="online-block__caption">빈자리가 있는 방, 공개방, 비공개방 순으로 보여줘요.</p>
           </div>
-          <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
+          <div class="online-block__tools">
+            <button type="button" class="button button--ghost button--small" id="room-filter-toggle"
+                    aria-controls="room-filters" aria-expanded="false">필터</button>
+            <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
+          </div>
         </div>
 
-        <form class="room-filters" id="room-filters">
+        <form class="room-filters" id="room-filters" hidden>
           <label class="room-filter room-filter--search" for="room-search">
             <span>방 찾기</span>
             <input class="room-form__input" id="room-search" type="search"
