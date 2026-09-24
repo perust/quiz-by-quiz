@@ -1340,6 +1340,13 @@ body.is-booted .app-bar {
   overflow-y: auto;
 }
 
+/* 고정된 손가락 조작부 아래까지 스크롤해 채팅칸을 완전히 드러낼 수 있게 한다. */
+@media (pointer: coarse) {
+  [data-screen='online-quiz'] .online-quiz-chat {
+    margin-bottom: calc(176px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* ── 바닥 ──
    칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
    선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */

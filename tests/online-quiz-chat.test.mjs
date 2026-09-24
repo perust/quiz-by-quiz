@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { shouldAutoFocusOnlineQuestion } from '../js/ui/online-quiz.js';
+import {
+  canSendOnlineChat,
+  shouldAutoFocusOnlineQuestion,
+} from '../js/ui/online-quiz.js';
+import { shouldPlacePlayerBubbleBelow } from '../js/ui/player-bubbles.js';
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -9,6 +13,17 @@ test('question transitions do not steal focus from chat or an open help dialog',
   assert.equal(shouldAutoFocusOnlineQuestion(false, false), true);
   assert.equal(shouldAutoFocusOnlineQuestion(false, true), false);
   assert.equal(shouldAutoFocusOnlineQuestion(true, false), false);
+});
+
+test('chat sends once while pending and tall bubbles choose the side with enough room', () => {
+  assert.equal(canSendOnlineChat(true, false, '같이 풀자'), true);
+  assert.equal(canSendOnlineChat(true, true, '같이 풀자'), false);
+  assert.equal(canSendOnlineChat(false, false, '같이 풀자'), false);
+  assert.equal(canSendOnlineChat(true, false, '   '), false);
+
+  assert.equal(shouldPlacePlayerBubbleBelow(85, 60, 102, 844), true);
+  assert.equal(shouldPlacePlayerBubbleBelow(85, 700, 742, 844), false);
+  assert.equal(shouldPlacePlayerBubbleBelow(40, 60, 102, 844), false);
 });
 
 test('online quiz chat is a normal-flow control with an accessible recent-message log', async () => {
@@ -24,6 +39,10 @@ test('online quiz chat is a normal-flow control with an accessible recent-messag
   assert.match(quizMarkup, /id="online-chat-log"[^>]*role="log"[^>]*aria-live="polite"/);
   assert.match(css, /\.online-quiz-chat\s*{[^}]*position:\s*relative/s);
   assert.doesNotMatch(css, /\.online-quiz-chat\s*{[^}]*position:\s*(?:fixed|absolute)/s);
+  assert.match(
+    css,
+    /@media \(pointer: coarse\)[\s\S]*\[data-screen='online-quiz'\] \.online-quiz-chat\s*{[^}]*margin-bottom:\s*calc\(176px \+ env\(safe-area-inset-bottom, 0px\)\)/,
+  );
 });
 
 test('online quiz chat reuses the active match subscription and binds bubbles to moving players', async () => {
@@ -56,6 +75,9 @@ test('chat focus owns typing keys and stale sends cannot mutate a stopped match 
     quiz,
     /const sendGeneration = presenceGeneration;[\s\S]*await onSendChat\(text\);[\s\S]*if \(!presenceActive \|\| sendGeneration !== presenceGeneration\) return;/,
   );
+  assert.match(quiz, /if \(!canSendOnlineChat\(presenceActive, chatSendPending, text\)\) return;/);
+  assert.match(quiz, /chatSendPending = true;[\s\S]*el\.chatSubmit\.disabled = true;/);
+  assert.match(quiz, /finally \{[\s\S]*chatSendPending = false;[\s\S]*el\.chatSubmit\.disabled = false;/);
   assert.match(
     quiz,
     /function stopPresence\(\)[\s\S]*presenceGeneration \+= 1;[\s\S]*chatBubbles\.reset\(\);[\s\S]*el\.chatLog\.replaceChildren\(\);/,

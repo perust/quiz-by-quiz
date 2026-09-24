@@ -136,5 +136,9 @@ test('waiting room binds moving remote players to speech bubbles while keeping t
     waiting,
     /if \(event\.playerId === roomStore\.me\(\)\) \{\s*showBubble\(event\.text\);\s*\} else \{\s*remoteBubbles\.show\(event\.playerId, event\.text\);/,
   );
+  assert.match(waiting, /if \(chatSendPending \|\| !text\.trim\(\)\) return;/);
+  assert.match(waiting, /chatSendPending = true;\s*el\.chatSubmit\.disabled = true;/);
+  assert.match(waiting, /finally \{\s*if \(ownsAction\(action, false\)\) \{\s*chatSendPending = false;\s*el\.chatSubmit\.disabled = false;/);
+  assert.match(html, /id="chat-submit" disabled/);
   assert.match(html, /id="chat-log" role="log" aria-live="polite"/);
 });

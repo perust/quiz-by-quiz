@@ -13,7 +13,10 @@ import type {
   RoomEvent,
 } from '../online/adapter.js';
 import type { Arena, ArenaDeps } from './arena.js';
-import { createPlayerBubbleController } from './player-bubbles.js';
+import {
+  createPlayerBubbleController,
+  shouldPlacePlayerBubbleBelow,
+} from './player-bubbles.js';
 import {
   createMovementPublisher,
   createPlayerMovementController,
@@ -28,7 +31,6 @@ type OnlineChatEvent = Extract<RoomEvent, { type: 'chat' }>;
 /** 말풍선 수명과 최근 대화 줄 수는 대기실과 같은 계약을 쓴다. */
 const BUBBLE_MS = 3200;
 const CHAT_LINES = 4;
-const BUBBLE_ROOM = 52;
 
 export interface OnlineQuizRevealView {
   chosenChoiceIndex: number | null;
@@ -165,6 +167,11 @@ export function setTextIfChanged(
 /** Question changes announce themselves unless doing so would interrupt another focused surface. */
 export function shouldAutoFocusOnlineQuestion(dialogOpen: boolean, chatFocused: boolean): boolean {
   return !dialogOpen && !chatFocused;
+}
+
+/** A room-bound chat accepts one non-empty request at a time. */
+export function canSendOnlineChat(active: boolean, pending: boolean, text: string): boolean {
+  return active && !pending && Boolean(text.trim());
 }
 
 export function reconcileOnlineChoiceNodes<T>(
@@ -309,6 +316,7 @@ export function createOnlineQuizScreen(
   let presenceActive = false;
   /** Chat POST completion from an exited/replaced match must not mutate the next screen. */
   let presenceGeneration = 0;
+  let chatSendPending = false;
   let movementHeartbeat: number | undefined;
   const remoteMovements = createPlayerMovementController();
   const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
@@ -354,6 +362,7 @@ export function createOnlineQuizScreen(
     chatBubbleNodes.clear();
     el.remoteCharacters.replaceChildren();
     setTextIfChanged(el.presenceStatus, '');
+    chatSendPending = false;
     el.chatInput.disabled = true;
     el.chatSubmit.disabled = true;
     el.chatInput.value = '';
@@ -383,7 +392,7 @@ export function createOnlineQuizScreen(
     if (!presenceActive) return;
     // 새 match socket이 authoritative room snapshot까지 받은 뒤에만 전송을 연다.
     el.chatInput.disabled = false;
-    el.chatSubmit.disabled = false;
+    el.chatSubmit.disabled = chatSendPending;
     setTextIfChanged(el.presenceStatus, onlinePresenceText(room.players));
     const remotePlayers = room.players.filter((player) => player.id !== getPlayerId());
     remoteMovements.unbindAll();
@@ -429,11 +438,20 @@ export function createOnlineQuizScreen(
     bubble.style.removeProperty('--bubble-shift');
     if (bubble.hidden) return;
     const characterBox = bubble.parentElement?.getBoundingClientRect();
-    bubble.classList.toggle(
-      'walker__bubble--below',
-      Boolean(characterBox && characterBox.top < BUBBLE_ROOM),
-    );
-    const bubbleBox = bubble.getBoundingClientRect();
+    bubble.classList.remove('walker__bubble--below');
+    let bubbleBox = bubble.getBoundingClientRect();
+    if (characterBox) {
+      bubble.classList.toggle(
+        'walker__bubble--below',
+        shouldPlacePlayerBubbleBelow(
+          bubbleBox.height,
+          characterBox.top,
+          characterBox.bottom,
+          window.innerHeight,
+        ),
+      );
+      bubbleBox = bubble.getBoundingClientRect();
+    }
     if (bubbleBox.width === 0) return;
     const inset = 6;
     let shift = 0;
@@ -481,8 +499,10 @@ export function createOnlineQuizScreen(
   el.chatForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = el.chatInput.value;
-    if (!presenceActive || !text.trim()) return;
+    if (!canSendOnlineChat(presenceActive, chatSendPending, text)) return;
     const sendGeneration = presenceGeneration;
+    chatSendPending = true;
+    el.chatSubmit.disabled = true;
     try {
       const result = await onSendChat(text);
       if (!presenceActive || sendGeneration !== presenceGeneration) return;
@@ -497,6 +517,11 @@ export function createOnlineQuizScreen(
     } catch {
       if (!presenceActive || sendGeneration !== presenceGeneration) return;
       chatNotice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    } finally {
+      if (presenceActive && sendGeneration === presenceGeneration) {
+        chatSendPending = false;
+        el.chatSubmit.disabled = false;
+      }
     }
   });
 
