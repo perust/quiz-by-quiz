@@ -2163,6 +2163,12 @@ select.is-standing {
   margin-bottom: 10px;
 }
 
+.online-block__tools {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 .room-filters {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
@@ -2172,6 +2178,10 @@ select.is-standing {
   padding: 10px;
   border-radius: 10px;
   background: var(--bg);
+}
+
+.room-filters[hidden] {
+  display: none;
 }
 
 .room-filter {

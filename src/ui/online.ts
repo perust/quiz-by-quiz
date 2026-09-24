@@ -65,6 +65,7 @@ export function createOnlineScreen(
     empty: need('room-empty'),
     summary: need('room-list-summary'),
     refresh: need<HTMLButtonElement>('room-refresh'),
+    filterToggle: need<HTMLButtonElement>('room-filter-toggle'),
     filters: need<HTMLFormElement>('room-filters'),
     search: need<HTMLInputElement>('room-search'),
     visibility: need<HTMLSelectElement>('room-visibility'),
@@ -324,11 +325,41 @@ export function createOnlineScreen(
     };
   }
 
+  function activeFilterCount(filters: RoomListFilters): number {
+    return Number(Boolean(filters.query.trim()))
+      + Number(filters.visibility !== DEFAULT_ROOM_FILTERS.visibility)
+      + Number(filters.availability !== DEFAULT_ROOM_FILTERS.availability)
+      + Number(filters.categoryId !== DEFAULT_ROOM_FILTERS.categoryId);
+  }
+
+  function syncFilterToggle(filters: RoomListFilters = currentFilters()): void {
+    const expanded = !el.filters.hidden;
+    const activeCount = activeFilterCount(filters);
+    el.filterToggle.textContent = expanded
+      ? '필터 접기'
+      : activeCount > 0
+        ? `필터 (${activeCount}개 적용)`
+        : '필터';
+    const action = expanded ? '접기' : '펼치기';
+    el.filterToggle.setAttribute(
+      'aria-label',
+      activeCount > 0 ? `방 필터 ${action}, ${activeCount}개 적용 중` : `방 필터 ${action}`,
+    );
+  }
+
+  function setFiltersExpanded(expanded: boolean): void {
+    el.filters.hidden = !expanded;
+    el.filterToggle.setAttribute('aria-expanded', String(expanded));
+    syncFilterToggle();
+  }
+
   function renderList(): void {
-    const visible = filterAndSortRooms(rooms, currentFilters());
+    const filters = currentFilters();
+    const visible = filterAndSortRooms(rooms, filters);
     el.list.replaceChildren();
     visible.forEach((room) => el.list.append(createItem(room)));
 
+    syncFilterToggle(filters);
     el.summary.textContent = `전체 ${rooms.length}개 중 ${visible.length}개 방`;
     if (visible.length === 0) {
       el.empty.textContent = rooms.length === 0
@@ -459,6 +490,7 @@ export function createOnlineScreen(
 
   // ── 목록 필터와 주요 동작 ───────────────────────────────────────
 
+  el.filterToggle.addEventListener('click', () => setFiltersExpanded(Boolean(el.filters.hidden)));
   el.search.addEventListener('input', renderList);
   for (const select of [el.visibility, el.availability, el.categoryFilter]) {
     select.addEventListener('change', renderList);
@@ -470,8 +502,7 @@ export function createOnlineScreen(
     el.visibility.value = 'public';
     el.availability.value = 'joinable';
     renderList();
-    el.filters.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.search.focus({ preventScroll: true });
+    el.summary.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   el.openPrivate.addEventListener('click', () => {
@@ -506,6 +537,7 @@ export function createOnlineScreen(
   el.visibility.value = DEFAULT_ROOM_FILTERS.visibility;
   el.availability.value = DEFAULT_ROOM_FILTERS.availability;
   el.categoryFilter.value = DEFAULT_ROOM_FILTERS.categoryId;
+  setFiltersExpanded(false);
 
   return {
     async show(characterId, notice) {
@@ -516,6 +548,7 @@ export function createOnlineScreen(
       say(el.joinMessage, '');
       say(el.createMessage, '');
       say(el.message, notice ?? '', notice ? 'bad' : undefined);
+      setFiltersExpanded(false);
       await loadRooms(request);
       if (!ownsScreen(request)) return;
       walker.show(characterId);
