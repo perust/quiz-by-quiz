@@ -311,6 +311,7 @@ async function main(): Promise<void> {
     getPlayerId: () => roomStore.me(),
     onExit: () => {
       stopOnlineMatch();
+      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
       void openOnline('매치는 서버에서 계속 진행됩니다. 방에 다시 들어가 이어서 풀 수 있어요.');
     },
     onFinished: showOnlineFinal,

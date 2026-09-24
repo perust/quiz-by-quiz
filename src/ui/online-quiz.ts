@@ -325,6 +325,17 @@ export function createOnlineQuizScreen(
     remoteMovements.reset();
     el.remoteCharacters.replaceChildren();
     setTextIfChanged(el.presenceStatus, '');
+    // 로비 fetch를 기다리는 동안 문제 화면이 잠시 남아도 새 제출이나 늦은 완료가
+    // 이 lifecycle을 다시 그릴 수 없어야 한다.
+    submissionGate.invalidate();
+    snapshot = null;
+    lastQuestionKey = null;
+    lastArenaQuestionKey = null;
+    lastChoiceStructureKey = null;
+    el.reveal.hidden = true;
+    for (const button of el.choices.querySelectorAll<HTMLButtonElement>('.choice')) {
+      button.disabled = true;
+    }
   }
 
   function startPresence(): void {
@@ -595,12 +606,6 @@ export function createOnlineQuizScreen(
     hide() {
       stopPresence();
       arena.closeDialog();
-      submissionGate.invalidate();
-      snapshot = null;
-      lastQuestionKey = null;
-      lastArenaQuestionKey = null;
-      lastChoiceStructureKey = null;
-      el.reveal.hidden = true;
       el.choices.replaceChildren();
     },
   };

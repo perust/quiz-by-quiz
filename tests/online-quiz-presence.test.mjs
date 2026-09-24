@@ -47,6 +47,10 @@ test('online quiz reuses authenticated room movement without opening a second su
   assert.match(quiz, /setTextIfChanged\(el\.presenceStatus, onlinePresenceText\(room\.players\)\)/);
   assert.match(quiz, /function updateMovement\(movement: OnlineMovementEvent\)/);
   assert.match(quiz, /stopPresence\(\)/);
+  assert.match(
+    quiz,
+    /function stopPresence\(\)[\s\S]*submissionGate\.invalidate\(\);[\s\S]*snapshot = null;[\s\S]*lastArenaQuestionKey = null;[\s\S]*button\.disabled = true;/,
+  );
 
   assert.match(arena, /onMove/);
   assert.match(arena, /createWalker\(\{[\s\S]*onMove/);
@@ -58,6 +62,10 @@ test('online quiz reuses authenticated room movement without opening a second su
   assert.match(
     app,
     /function stopOnlineMatch\(\)[\s\S]*onlineQuizScreen\.stopPresence\(\);[\s\S]*onlineMatchController\?\.close\(\)/,
+  );
+  assert.match(
+    app,
+    /onExit: \(\) => \{\s*stopOnlineMatch\(\);\s*onlineQuizScreen\.setNotice\('온라인 로비를 불러오는 중입니다\.'\);/,
   );
   assert.doesNotMatch(app, /onlineQuizScreen[\s\S]{0,200}roomStore\.subscribe/);
 });
