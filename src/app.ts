@@ -177,9 +177,8 @@ async function main(): Promise<void> {
 
   // 쓰고 있는 캐릭터. 없는 id가 저장돼 있어도 findCharacter가 기본값으로 되돌린다
   let characterId = findCharacter(settings.characterId ?? DEFAULT_CHARACTER_ID).id;
-  const syncRoomPlayer = (): void => {
-    roomStore.setPlayer({ nickname: savedNickname, characterId });
-  };
+  const currentPlayer = () => ({ nickname: savedNickname, characterId });
+  const syncRoomPlayer = (): void => { roomStore.setPlayer(currentPlayer()); };
   syncRoomPlayer();
 
   const homeScreen = createHomeScreen({
@@ -308,6 +307,13 @@ async function main(): Promise<void> {
       if (!code || !ownsOnlineMatchNavigation()) return;
       roomStore.sendMovement({ code, ...sample });
     },
+    onSendChat: async (text) => {
+      const code = onlineMatchRoomCode;
+      if (!code || !ownsOnlineMatchNavigation()) return { ok: false };
+      const result = await roomStore.sendChat({ code, text, player: currentPlayer() });
+      if (code !== onlineMatchRoomCode || !ownsOnlineMatchNavigation()) return { ok: false };
+      return result;
+    },
     getPlayerId: () => roomStore.me(),
     onExit: () => {
       stopOnlineMatch();
@@ -348,7 +354,8 @@ async function main(): Promise<void> {
     onPresenceEvent: (event) => {
       if (!ownsOnlineMatchNavigation()) return;
       if (event.type === 'room') onlineQuizScreen.setRoom(event.room);
-      else onlineQuizScreen.updateMovement(event);
+      else if (event.type === 'movement') onlineQuizScreen.updateMovement(event);
+      else onlineQuizScreen.updateChat(event);
     },
   });
 

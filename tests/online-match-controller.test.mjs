@@ -91,7 +91,7 @@ test('online match controller는 구독을 먼저 열고 authorization-bound sna
   assert.equal(calls.at(-1), 'unsubscribe');
 });
 
-test('active match socket forwards room and movement presence but rejects a stale subscription', async () => {
+test('active match socket forwards room, movement, and chat but rejects a stale subscription', async () => {
   const handlers = [];
   const presence = [];
   const gateway = {
@@ -122,15 +122,17 @@ test('active match socket forwards room and movement presence but rejects a stal
     sequence: 1, connectionGeneration: 1,
   };
   handlers[0](roomEvent);
-  handlers[0]({ type: 'chat', playerId: 'remote-1', nickname: '상대', text: '안녕', at: 1 });
+  const chatEvent = { type: 'chat', playerId: 'remote-1', nickname: '상대', text: '안녕', at: 1 };
+  handlers[0](chatEvent);
   handlers[0](movementEvent);
-  assert.deepEqual(presence, [roomEvent, movementEvent]);
+  assert.deepEqual(presence, [roomEvent, chatEvent, movementEvent]);
 
   await controller.open('XYZ234');
   handlers[0]({ ...movementEvent, sequence: 2 });
   handlers[1]({ ...movementEvent, sequence: 3, connectionGeneration: 2 });
   assert.deepEqual(presence, [
     roomEvent,
+    chatEvent,
     movementEvent,
     { ...movementEvent, sequence: 3, connectionGeneration: 2 },
   ]);

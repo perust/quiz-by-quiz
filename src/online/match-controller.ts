@@ -39,9 +39,9 @@ export interface OnlineMatchControllerDeps {
   onMissing: () => void;
   /** Network/schema failures must be visible and retain their lifecycle owner. */
   onError: (message: string, context: OnlineMatchErrorContext) => void;
-  /** The active match socket also carries authenticated room presence updates. */
+  /** The active match socket also carries authenticated room presence and chat updates. */
   onPresenceEvent?: (
-    event: Extract<Parameters<RoomEventHandler>[0], { type: 'room' | 'movement' }>,
+    event: Extract<Parameters<RoomEventHandler>[0], { type: 'room' | 'movement' | 'chat' }>,
   ) => void;
 }
 
@@ -206,7 +206,7 @@ export function createOnlineMatchController(
       code = nextCode;
       unsubscribe = gateway.subscribe(nextCode, (event) => {
         if (openedGeneration !== generation || code !== nextCode) return;
-        if (event.type === 'room' || event.type === 'movement') {
+        if (event.type === 'room' || event.type === 'movement' || event.type === 'chat') {
           onPresenceEvent(event);
           return;
         }
