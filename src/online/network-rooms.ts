@@ -30,6 +30,7 @@ import type {
   Unsubscribe,
 } from './adapter.js';
 import {
+  MOVEMENT_VIEWPORT_CAPABILITY,
   type MovementViewport,
   validMovementViewportDimension,
 } from './movement-contract.js';
@@ -68,6 +69,7 @@ interface WebSocketLike {
 
 interface MovementChannel {
   socket: WebSocketLike | null;
+  supportsViewport: boolean;
   latest: ({
     type: 'movement';
     x: number;
@@ -488,6 +490,18 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   }>();
   const movementChannels = new Map<string, MovementChannel>();
 
+  function movementPayload(channel: MovementChannel): object | null {
+    const latest = channel.latest;
+    if (!latest) return null;
+    if (channel.supportsViewport) return latest;
+    return {
+      type: latest.type,
+      x: latest.x,
+      y: latest.y,
+      moving: latest.moving,
+    };
+  }
+
   function beginRoomSnapshotRequest(): number {
     roomSnapshotRequestGeneration += 1;
     return roomSnapshotRequestGeneration;
@@ -834,7 +848,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     };
     if (channel.socket?.readyState !== 1) return false;
     try {
-      channel.socket.send(JSON.stringify(channel.latest));
+      const payload = movementPayload(channel);
+      if (!payload) return false;
+      channel.socket.send(JSON.stringify(payload));
       return true;
     } catch {
       channel.socket.close();
@@ -853,7 +869,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let generation = 0;
     let latestDeliveredRoomGeneration = 0;
-    const movementChannel: MovementChannel = { socket: null, latest: null };
+    const movementChannel: MovementChannel = {
+      socket: null,
+      supportsViewport: false,
+      latest: null,
+    };
     movementChannels.set(code, movementChannel);
 
     function clearTimers(): void {
@@ -972,6 +992,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
     async function connect(): Promise<void> {
       const connectionGeneration = ++generation;
+      // Every reconnect renegotiates the capability. A backend rollback must not leave a
+      // cached new client sending payload fields that the legacy strict parser discards.
+      movementChannel.supportsViewport = false;
       try {
         const ticketBody = await request(`/v1/rooms/${encodeURIComponent(code)}/ws-ticket`, {
           method: 'POST',
@@ -980,6 +1003,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           throw new Error('온라인 서버가 WebSocket 티켓을 보내지 않았습니다.');
         }
         if (stopped || connectionGeneration !== generation) return;
+        movementChannel.supportsViewport = (
+          ticketBody.movementViewport === MOVEMENT_VIEWPORT_CAPABILITY
+        );
 
         const url = new URL(endpoint(`/v1/rooms/${encodeURIComponent(code)}/events`));
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -992,8 +1018,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         connected.addEventListener('open', () => {
           if (stopped || connected !== socket) return;
           clearTimers();
-          if (movementChannel.latest && connected.readyState === 1) {
-            connected.send(JSON.stringify(movementChannel.latest));
+          const latest = movementPayload(movementChannel);
+          if (latest && connected.readyState === 1) {
+            connected.send(JSON.stringify(latest));
           }
           // 연결이 끊긴 동안 room-invalidated를 놓쳤을 수 있으므로 room과 match를
           // 모두 권위 있는 REST snapshot으로 다시 맞춘다.
@@ -1008,7 +1035,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         connected.addEventListener('message', (event) => receive(event.data, connectionGeneration));
         connected.addEventListener('close', () => {
           if (connected === socket) socket = null;
-          if (movementChannel.socket === connected) movementChannel.socket = null;
+          if (movementChannel.socket === connected) {
+            movementChannel.socket = null;
+            movementChannel.supportsViewport = false;
+          }
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = null;
           scheduleReconnect();
@@ -1028,6 +1058,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       socket?.close();
       socket = null;
       movementChannel.socket = null;
+      movementChannel.supportsViewport = false;
       movementChannel.latest = null;
       if (movementChannels.get(code) === movementChannel) movementChannels.delete(code);
       releaseRoomMutationState(code, mutationState);

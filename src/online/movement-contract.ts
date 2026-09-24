@@ -5,6 +5,7 @@
 // 그대로 들어가지 않도록 browser와 server 양쪽에서 같은 범위로 제한한다.
 
 export const MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192;
+export const MOVEMENT_VIEWPORT_CAPABILITY = 'sender-css-pixels-v1';
 
 export interface MovementViewport {
   viewportWidth: number;

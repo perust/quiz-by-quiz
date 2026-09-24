@@ -695,7 +695,9 @@ def test_websocket_ticket_is_single_use_and_chat_is_broadcast() -> None:
             headers=HEADERS,
         )
         assert ticket_response.status_code == 201
-        ticket = ticket_response.json()["ticket"]
+        ticket_body = ticket_response.json()
+        assert ticket_body["movementViewport"] == "sender-css-pixels-v1"
+        ticket = ticket_body["ticket"]
 
         with client.websocket_connect(
             f"/v1/rooms/{repository.room.code}/events",

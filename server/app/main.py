@@ -68,6 +68,7 @@ logger = logging.getLogger(__name__)
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
+MOVEMENT_VIEWPORT_CAPABILITY = "sender-css-pixels-v1"
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -1278,7 +1279,10 @@ def create_app(
             )
         if not await repo.is_member(actor_id, code):
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.")
-        return {"ticket": ticket_store.issue(actor_id, code)}
+        return {
+            "ticket": ticket_store.issue(actor_id, code),
+            "movementViewport": MOVEMENT_VIEWPORT_CAPABILITY,
+        }
 
     @app.websocket("/v1/rooms/{raw_code}/events")
     async def room_events(
