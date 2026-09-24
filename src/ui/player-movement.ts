@@ -1,14 +1,23 @@
 // 다른 참가자의 화면 좌표와 내 이동 전송 빈도를 관리한다.
 //
-// 좌표는 viewport 비율(0~1)이라 화면 크기가 달라도 같은 상대 위치에 보인다.
+// 좌표는 viewport 비율(0~1)과 송신 viewport 크기를 함께 보낸다. 수신 화면은
+// 중심 기준 CSS-pixel offset을 복원하므로 작은 화면에서 보낸 이동이 큰 화면에서
+// 과장되지 않는다. 크기가 없는 구형 event만 기존 viewport 비율로 그린다.
 // 서버 sequence는 한 연결에서 뒤늦게 온 event를 버리고, connection generation이
 // 바뀌면 서버 재시작·재연결 뒤 낮아진 sequence도 새 흐름으로 받아들인다.
 
-export interface MovementSample {
+import {
+  type MovementViewport,
+  validMovementViewportDimension,
+} from '../online/movement-contract.js';
+
+interface MovementPosition {
   x: number;
   y: number;
   moving: boolean;
 }
+
+export interface MovementSample extends MovementPosition, MovementViewport {}
 
 /** 화면별 워커 좌표를 공통 0~1 viewport 좌표로 바꾼다. */
 export function normalizeViewportMovement(
@@ -16,29 +25,31 @@ export function normalizeViewportMovement(
   moving: boolean,
   viewport: Readonly<{ width: number; height: number }>,
 ): MovementSample | null {
+  const viewportWidth = Math.round(viewport.width);
+  const viewportHeight = Math.round(viewport.height);
   if (
     !Number.isFinite(point.x)
     || !Number.isFinite(point.y)
-    || !Number.isFinite(viewport.width)
-    || !Number.isFinite(viewport.height)
-    || viewport.width <= 0
-    || viewport.height <= 0
+    || !validMovementViewportDimension(viewportWidth)
+    || !validMovementViewportDimension(viewportHeight)
     || typeof moving !== 'boolean'
   ) return null;
   return {
-    x: Number(Math.min(1, Math.max(0, point.x / viewport.width)).toFixed(4)),
-    y: Number(Math.min(1, Math.max(0, point.y / viewport.height)).toFixed(4)),
+    x: Number(Math.min(1, Math.max(0, point.x / viewportWidth)).toFixed(4)),
+    y: Number(Math.min(1, Math.max(0, point.y / viewportHeight)).toFixed(4)),
     moving,
+    viewportWidth,
+    viewportHeight,
   };
 }
 
-export interface RemoteMovement extends MovementSample {
+export interface RemoteMovement extends MovementPosition, Partial<MovementViewport> {
   playerId: string;
   sequence: number;
   connectionGeneration: number;
 }
 
-interface MovementState extends MovementSample {
+interface MovementState extends MovementPosition, Partial<MovementViewport> {
   sequence: number;
   connectionGeneration: number;
 }
@@ -63,13 +74,68 @@ function validUnit(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
+/**
+ * 송신 화면 중심에서 실제로 움직인 CSS-pixel offset을 복원한다.
+ *
+ * 390px 화면에서 80px 움직이면 1440px 수신 화면에서도 80px만 움직인다. 화면
+ * 중심은 서로 맞추므로 반응형 UI의 가운데 무대도 대체로 같은 자리에 겹친다.
+ */
+export function remoteMovementOffset(
+  movement: Readonly<MovementPosition & Partial<MovementViewport>>,
+): Readonly<{ x: number; y: number }> | null {
+  if (
+    !validUnit(movement.x)
+    || !validUnit(movement.y)
+    || !validMovementViewportDimension(movement.viewportWidth)
+    || !validMovementViewportDimension(movement.viewportHeight)
+  ) return null;
+  return {
+    x: (movement.x - 0.5) * movement.viewportWidth,
+    y: (movement.y - 0.5) * movement.viewportHeight,
+  };
+}
+
+function cssNumber(value: number): string {
+  return String(Number(Math.abs(value).toFixed(4)));
+}
+
+function centeredAxis(center: '50vw' | '50vh', limit: '100vw' | '100vh', offset: number): string {
+  if (Math.abs(offset) < 0.00005) return `clamp(0px, ${center}, ${limit})`;
+  const operator = offset < 0 ? '-' : '+';
+  return `clamp(0px, calc(${center} ${operator} ${cssNumber(offset)}px), ${limit})`;
+}
+
+function projectedUnitPosition(
+  node: HTMLElement,
+  state: MovementState,
+  offset: Readonly<{ x: number; y: number }> | null,
+): Readonly<{ x: number; y: number }> {
+  const view = node.ownerDocument?.defaultView;
+  if (
+    !offset
+    || !view
+    || !Number.isFinite(view.innerWidth)
+    || !Number.isFinite(view.innerHeight)
+    || view.innerWidth <= 0
+    || view.innerHeight <= 0
+  ) return state;
+  return {
+    x: Math.min(1, Math.max(0, (view.innerWidth / 2 + offset.x) / view.innerWidth)),
+    y: Math.min(1, Math.max(0, (view.innerHeight / 2 + offset.y) / view.innerHeight)),
+  };
+}
+
 function project(node: HTMLElement, state: MovementState): void {
-  node.style.transform = `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
+  const offset = remoteMovementOffset(state);
+  const projected = projectedUnitPosition(node, state, offset);
+  node.style.transform = offset
+    ? `translate(${centeredAxis('50vw', '100vw', offset.x)}, ${centeredAxis('50vh', '100vh', offset.y)}) translate(-50%, -100%)`
+    : `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
   node.classList.toggle('walker--walking', state.moving);
   node.classList.toggle('walker--idle', !state.moving);
-  node.classList.toggle('walker--name-above', state.y >= NAME_ABOVE_THRESHOLD);
-  node.classList.toggle('walker--name-left', state.x <= NAME_SIDE_THRESHOLD);
-  node.classList.toggle('walker--name-right', state.x >= 1 - NAME_SIDE_THRESHOLD);
+  node.classList.toggle('walker--name-above', projected.y >= NAME_ABOVE_THRESHOLD);
+  node.classList.toggle('walker--name-left', projected.x <= NAME_SIDE_THRESHOLD);
+  node.classList.toggle('walker--name-right', projected.x >= 1 - NAME_SIDE_THRESHOLD);
   node.hidden = false;
 }
 
@@ -116,11 +182,18 @@ export function createPlayerMovementController(): PlayerMovementController {
     },
 
     update(movement) {
+      const hasViewportWidth = movement.viewportWidth !== undefined;
+      const hasViewportHeight = movement.viewportHeight !== undefined;
       if (
         !movement.playerId
         || !validUnit(movement.x)
         || !validUnit(movement.y)
         || typeof movement.moving !== 'boolean'
+        || hasViewportWidth !== hasViewportHeight
+        || (hasViewportWidth && (
+          !validMovementViewportDimension(movement.viewportWidth)
+          || !validMovementViewportDimension(movement.viewportHeight)
+        ))
         || !Number.isSafeInteger(movement.sequence)
         || movement.sequence <= 0
         || !Number.isSafeInteger(movement.connectionGeneration)
@@ -140,6 +213,10 @@ export function createPlayerMovementController(): PlayerMovementController {
         x: movement.x,
         y: movement.y,
         moving: movement.moving,
+        ...(hasViewportWidth ? {
+          viewportWidth: movement.viewportWidth,
+          viewportHeight: movement.viewportHeight,
+        } : {}),
         sequence: movement.sequence,
         connectionGeneration: movement.connectionGeneration,
       };

@@ -29,6 +29,10 @@ import type {
   StartGameResult,
   Unsubscribe,
 } from './adapter.js';
+import {
+  type MovementViewport,
+  validMovementViewportDimension,
+} from './movement-contract.js';
 import { normalizeCode, type JoinFailReason } from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
@@ -64,7 +68,12 @@ interface WebSocketLike {
 
 interface MovementChannel {
   socket: WebSocketLike | null;
-  latest: { type: 'movement'; x: number; y: number; moving: boolean } | null;
+  latest: ({
+    type: 'movement';
+    x: number;
+    y: number;
+    moving: boolean;
+  } & MovementViewport) | null;
 }
 
 export interface NetworkRoomStoreOptions {
@@ -802,23 +811,27 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   }
 
   function sendMovement({
-    code: rawCode, x, y, moving,
+    code: rawCode, x, y, moving, viewportWidth, viewportHeight,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
-  }): boolean {
+  } & MovementViewport): boolean {
     const code = normalizeCode(rawCode);
     if (
       !CODE_PATTERN.test(code)
       || !Number.isFinite(x) || x < 0 || x > 1
       || !Number.isFinite(y) || y < 0 || y > 1
       || typeof moving !== 'boolean'
+      || !validMovementViewportDimension(viewportWidth)
+      || !validMovementViewportDimension(viewportHeight)
     ) return false;
     const channel = movementChannels.get(code);
     if (!channel) return false;
-    channel.latest = { type: 'movement', x, y, moving };
+    channel.latest = {
+      type: 'movement', x, y, moving, viewportWidth, viewportHeight,
+    };
     if (channel.socket?.readyState !== 1) return false;
     try {
       channel.socket.send(JSON.stringify(channel.latest));
@@ -888,6 +901,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         void refreshRoom(connectionGeneration).catch(() => undefined);
         return;
       }
+      const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
+      const hasViewportHeight = Object.hasOwn(value, 'viewportHeight');
       if (
         value.type === 'movement'
         && typeof value.playerId === 'string'
@@ -901,6 +916,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         && value.y >= 0
         && value.y <= 1
         && typeof value.moving === 'boolean'
+        && hasViewportWidth === hasViewportHeight
+        && (!hasViewportWidth || (
+          validMovementViewportDimension(value.viewportWidth)
+          && validMovementViewportDimension(value.viewportHeight)
+        ))
         && typeof value.sequence === 'number'
         && Number.isSafeInteger(value.sequence)
         && value.sequence > 0
@@ -911,6 +931,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           x: value.x,
           y: value.y,
           moving: value.moving,
+          ...(hasViewportWidth ? {
+            viewportWidth: value.viewportWidth as number,
+            viewportHeight: value.viewportHeight as number,
+          } : {}),
           sequence: value.sequence,
           connectionGeneration,
         });

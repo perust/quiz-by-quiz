@@ -43,6 +43,7 @@
 import { safeStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
 import { localRooms } from './local-rooms.js';
+import type { MovementViewport } from './movement-contract.js';
 import { createNetworkRoomStore } from './network-rooms.js';
 import type { JoinFailReason } from './rules.js';
 
@@ -247,6 +248,9 @@ export type RoomEvent =
     x: number;
     y: number;
     moving: boolean;
+    /** 구형 event에는 없다. 있으면 송신자의 CSS-pixel 이동량을 복원한다. */
+    viewportWidth?: number;
+    viewportHeight?: number;
     /** server process 안에서 movement마다 증가한다. */
     sequence: number;
     /** 이 browser의 socket generation. reconnect 전의 늦은 event를 가둔다. */
@@ -289,13 +293,13 @@ export interface RoomStore {
   /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */
   setReady(spec: { code: string; isReady: boolean }): Promise<ReadyResult>;
   sendChat(spec: { code: string; text: string; player?: PlayerInfo }): Promise<{ ok: boolean }>;
-  /** 0~1 viewport 좌표. player identity는 client payload가 아니라 socket ticket에서 정한다. */
+  /** 0~1 좌표와 송신 viewport. player identity는 socket ticket에서 정한다. */
   sendMovement(spec: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
-  }): boolean;
+  } & MovementViewport): boolean;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
   /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */

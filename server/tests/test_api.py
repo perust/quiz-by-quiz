@@ -740,7 +740,14 @@ def test_authenticated_websocket_movement_is_broadcast_with_server_identity() ->
             subprotocols=ws_protocols(ticket),
         ) as websocket:
             websocket.send_json(
-                {"type": "movement", "x": 0.25, "y": 0.75, "moving": True}
+                {
+                    "type": "movement",
+                    "x": 0.25,
+                    "y": 0.75,
+                    "moving": True,
+                    "viewportWidth": 390,
+                    "viewportHeight": 844,
+                }
             )
             chat = client.post(
                 f"/v1/rooms/{repository.room.code}/chat",
@@ -755,6 +762,8 @@ def test_authenticated_websocket_movement_is_broadcast_with_server_identity() ->
     assert event["x"] == 0.25
     assert event["y"] == 0.75
     assert event["moving"] is True
+    assert event["viewportWidth"] == 390
+    assert event["viewportHeight"] == 844
     assert type(event["sequence"]) is int
     assert event["sequence"] > 0
 
@@ -801,6 +810,8 @@ def test_movement_relays_both_directions_between_two_authenticated_actors() -> N
     assert first_echo == first_seen_by_second
     assert first_seen_by_second["playerId"] == first_id
     assert first_seen_by_second["x"] == 0.2
+    assert "viewportWidth" not in first_seen_by_second
+    assert "viewportHeight" not in first_seen_by_second
     assert second_seen_by_first == second_echo
     assert second_seen_by_first["playerId"] == second_id
     assert second_seen_by_first["x"] == 0.8
@@ -823,6 +834,25 @@ def test_invalid_or_identity_spoofing_movement_is_not_broadcast() -> None:
         ) as websocket:
             websocket.send_json(
                 {"type": "movement", "x": 2, "y": 0.5, "moving": True}
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": True,
+                    "viewportWidth": 390,
+                }
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": True,
+                    "viewportWidth": 0,
+                    "viewportHeight": 844,
+                }
             )
             websocket.send_json(
                 {
