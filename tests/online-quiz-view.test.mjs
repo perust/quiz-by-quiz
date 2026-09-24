@@ -214,3 +214,12 @@ test('choice node reconciliation은 same-question objects를 그대로 재사용
   assert.notEqual(changed.nodes[1], second);
   assert.equal(creates, 2);
 });
+
+test('online presence text exposes a stable non-moving participant roster', async () => {
+  const { onlinePresenceText } = await import('../js/ui/online-quiz.js');
+  assert.equal(onlinePresenceText([]), '');
+  assert.equal(
+    onlinePresenceText([{ nickname: '나' }, { nickname: '친구' }]),
+    '함께 푸는 참가자 2명: 나, 친구',
+  );
+});

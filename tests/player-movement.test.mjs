@@ -51,6 +51,23 @@ function createClock() {
   };
 }
 
+test('viewport movement uses the same bounded normalized coordinates on every screen', async () => {
+  const { normalizeViewportMovement } = await import('../js/ui/player-movement.js');
+
+  assert.deepEqual(
+    normalizeViewportMovement({ x: 390, y: 422 }, false, { width: 390, height: 844 }),
+    { x: 1, y: 0.5, moving: false },
+  );
+  assert.deepEqual(
+    normalizeViewportMovement({ x: -5, y: 1000 }, true, { width: 390, height: 844 }),
+    { x: 0, y: 1, moving: true },
+  );
+  assert.equal(
+    normalizeViewportMovement({ x: 10, y: 10 }, true, { width: 0, height: 844 }),
+    null,
+  );
+});
+
 test('remote movement projects only current players and survives room rerenders', async () => {
   const { createPlayerMovementController } = await import('../js/ui/player-movement.js');
   const movement = createPlayerMovementController();
@@ -106,6 +123,20 @@ test('remote movement rejects stale sequence but accepts a new socket generation
   assert.equal(node.style.transform, 'translate(20vw, 30vh) translate(-50%, -100%)');
   assert.equal(node.classList.contains('walker--walking'), false);
   assert.equal(node.classList.contains('walker--idle'), true);
+
+  movement.update({
+    playerId: 'remote-1', x: 0.2, y: 0.98, moving: false,
+    sequence: 2, connectionGeneration: 4,
+  });
+  assert.equal(node.classList.contains('walker--name-above'), true);
+  assert.equal(node.classList.contains('walker--name-left'), true);
+  movement.update({
+    playerId: 'remote-1', x: 0.9, y: 0.5, moving: false,
+    sequence: 3, connectionGeneration: 4,
+  });
+  assert.equal(node.classList.contains('walker--name-above'), false);
+  assert.equal(node.classList.contains('walker--name-left'), false);
+  assert.equal(node.classList.contains('walker--name-right'), true);
 });
 
 test('movement reset prevents a previous room position from projecting into a new room', async () => {

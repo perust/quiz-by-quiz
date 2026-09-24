@@ -303,8 +303,15 @@ async function main(): Promise<void> {
       if (!onlineMatchController) return;
       await onlineMatchController.submit(spec);
     },
+    onMovement: (sample) => {
+      const code = onlineMatchRoomCode;
+      if (!code || !ownsOnlineMatchNavigation()) return;
+      roomStore.sendMovement({ code, ...sample });
+    },
+    getPlayerId: () => roomStore.me(),
     onExit: () => {
       stopOnlineMatch();
+      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
       void openOnline('매치는 서버에서 계속 진행됩니다. 방에 다시 들어가 이어서 풀 수 있어요.');
     },
     onFinished: showOnlineFinal,
@@ -338,6 +345,11 @@ async function main(): Promise<void> {
       if (context.source === 'refresh') onlineQuizScreen.setRefreshError(message);
       else onlineQuizScreen.setSubmitError(message, context);
     },
+    onPresenceEvent: (event) => {
+      if (!ownsOnlineMatchNavigation()) return;
+      if (event.type === 'room') onlineQuizScreen.setRoom(event.room);
+      else onlineQuizScreen.updateMovement(event);
+    },
   });
 
   /** finished ranking 역시 server snapshot만 받는다. local ranking store에 쓰지 않는다. */
@@ -348,6 +360,8 @@ async function main(): Promise<void> {
   }
 
   function stopOnlineMatch(): void {
+    // 마지막 정지 좌표는 controller가 socket을 닫기 전에 보낸다.
+    onlineQuizScreen.stopPresence();
     onlineMatchNavigationGeneration = null;
     onlineMatchController?.close();
     onlineMatchRoomCode = null;
@@ -374,6 +388,7 @@ async function main(): Promise<void> {
     if (onlineMatchRoomCode === code && ownsOnlineMatchNavigation()) return;
     stopOnlineMatch();
     onlineMatchRoomCode = code;
+    onlineQuizScreen.startPresence();
     onlineQuizScreen.setNotice('서버 매치 상태를 불러오는 중입니다.');
     goTo('online-quiz');
     onlineMatchNavigationGeneration = waitingRoomEntryGeneration;

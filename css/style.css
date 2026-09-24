@@ -1317,6 +1317,12 @@ body.is-booted .app-bar {
   min-width: 0;
 }
 
+#online-remote-characters {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* ── 바닥 ──
    칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
    선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */
@@ -1465,6 +1471,23 @@ body.is-booted .app-bar {
   text-overflow: ellipsis;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
+}
+
+/* 화면 아래쪽에서는 닉네임을 몸 위로 올려 viewport 밖으로 잘리지 않게 한다. */
+.walker--name-above .walker__name {
+  top: auto;
+  bottom: calc(100% + 9px);
+}
+
+.walker--name-left .walker__name {
+  left: 0;
+  translate: 0 0;
+}
+
+.walker--name-right .walker__name {
+  right: 0;
+  left: auto;
+  translate: 0 0;
 }
 
 .walker__body {

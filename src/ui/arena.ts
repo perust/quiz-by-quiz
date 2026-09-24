@@ -21,11 +21,13 @@
 // 두 번 낭독하지 않는다. 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
 import { need } from '../dom.js';
-import { createWalker } from './walker.js';
+import { createWalker, type Point } from './walker.js';
 import { paintCharacter } from './sprite.js';
 
 export interface ArenaDeps {
   onChoose: (index: number) => void;
+  /** 온라인 무대가 같은 방 참가자에게 현재 화면 좌표를 보낼 때 쓴다. */
+  onMove?: (point: Point, moving: boolean) => void;
   /**
    * 위 패널의 보기 버튼들. 캐릭터가 그 위에 서도 같은 번호로 본다.
    *
@@ -91,6 +93,7 @@ export interface Arena {
 
 export function createArena({
   onChoose,
+  onMove,
   getChoiceNodes,
   trapFocus,
   ids = DEFAULT_IDS,
@@ -111,6 +114,7 @@ export function createArena({
 
   const walker = createWalker({
     character: el.character,
+    onMove,
     // 무대 밖으로도 걸어 나가 화면의 아무 버튼이나 밟고 누를 수 있다.
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —

@@ -91,6 +91,52 @@ test('online match controller는 구독을 먼저 열고 authorization-bound sna
   assert.equal(calls.at(-1), 'unsubscribe');
 });
 
+test('active match socket forwards room and movement presence but rejects a stale subscription', async () => {
+  const handlers = [];
+  const presence = [];
+  const gateway = {
+    subscribe(_code, handler) {
+      handlers.push(handler);
+      return () => undefined;
+    },
+    async getMatch() {
+      return runningMatch();
+    },
+    async submitMatchAnswer() {
+      throw new Error('not used');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: () => undefined,
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => assert.fail(message),
+    onPresenceEvent: (event) => presence.push(event),
+  });
+
+  await controller.open('ABC234');
+  const roomEvent = { type: 'room', room: { code: 'ABC234' } };
+  const movementEvent = {
+    type: 'movement', playerId: 'remote-1', x: 0.2, y: 0.3, moving: true,
+    sequence: 1, connectionGeneration: 1,
+  };
+  handlers[0](roomEvent);
+  handlers[0]({ type: 'chat', playerId: 'remote-1', nickname: '상대', text: '안녕', at: 1 });
+  handlers[0](movementEvent);
+  assert.deepEqual(presence, [roomEvent, movementEvent]);
+
+  await controller.open('XYZ234');
+  handlers[0]({ ...movementEvent, sequence: 2 });
+  handlers[1]({ ...movementEvent, sequence: 3, connectionGeneration: 2 });
+  assert.deepEqual(presence, [
+    roomEvent,
+    movementEvent,
+    { ...movementEvent, sequence: 3, connectionGeneration: 2 },
+  ]);
+  controller.close();
+});
+
 test('match invalidation은 기존 payload를 믿지 않고 새 snapshot을 다시 읽는다', async () => {
   const snapshots = [];
   let eventHandler;
