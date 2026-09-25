@@ -10,6 +10,10 @@
 // 키와 스틱은 모듈 하나에 모아두고 지금 켜진 워커에게만 전달한다.
 
 import { maybe } from '../dom.js';
+import {
+  walkerHitPoint,
+  type WalkerHitAnchor,
+} from './walker-geometry.js';
 
 /** 초당 이동 거리(px). 한 화면을 가로지르는 데 1초 남짓 걸린다 */
 const SPEED = 320;
@@ -45,10 +49,12 @@ export interface WalkerConfig {
   character: HTMLElement;
   /** «누를 수 있는 것»으로 볼 선택자 */
   pickable?: string;
-  /** 발밑에 붙일 클래스. 기본 is-standing */
+  /** 현재 선택 대상에 붙일 클래스. 기본 is-standing */
   standClass?: string;
-  /** 발밑이 바뀔 때 */
+  /** 현재 선택 대상이 바뀔 때 */
   onStep?: (element: HTMLElement | null) => void;
+  /** 선택을 판정할 위치. 퀴즈 칸은 발밑, 일반 버튼 화면은 시각 중심을 쓴다 */
+  hitAnchor?: WalkerHitAnchor;
   /** 화면 좌표가 바뀌거나 걷기/정지가 전환될 때 */
   onMove?: (point: Point, moving: boolean) => void;
   /** 화면 안쪽 여백 */
@@ -71,9 +77,9 @@ export interface Walker {
   setLocked(value: boolean): void;
   /** 손가락 확정 버튼이 부른다. 키보드의 Enter와 같은 일을 한다 */
   confirm(): void;
-  /** 지금 발밑에 있는 요소. 아무것도 없으면 null */
+  /** 지금 선택점과 겹친 요소. 아무것도 없으면 null */
   standingElement(): HTMLElement | null;
-  /** 스크롤 등으로 발밑이 바뀌었을 때 표시를 맞춘다 */
+  /** 스크롤 등으로 선택점 아래 요소가 바뀌었을 때 표시를 맞춘다 */
   refresh(): void;
   /** 크기가 바뀌면 비율을 지켜 옮긴다 */
   relayout(): void;
@@ -284,7 +290,7 @@ document.addEventListener('keyup', (event) => held.delete(event.key));
 window.addEventListener('blur', () => held.clear());
 window.addEventListener('resize', () => active?.relayout());
 // 화면 전체를 걸어 다닐 때는 캐릭터가 화면에 붙어 있어, 사용자가 스스로 스크롤하면
-// 캐릭터는 그대로인데 발밑만 바뀐다. 루프가 멈춰 있어도 표시를 맞춰 준다
+// 캐릭터는 그대로인데 선택점 아래 요소만 바뀐다. 루프가 멈춰 있어도 표시를 맞춰 준다
 window.addEventListener('scroll', () => active?.refresh(), { passive: true });
 
 /** 눌려 있는 키와 스틱을 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
@@ -323,7 +329,7 @@ function showControls(value: boolean): void {
 /**
  * 캐릭터는 **화면 전체를 걸어 다닌다.**
  *
- * 밟을 칸 목록을 받지 않고 **발밑에 실제로 무엇이 있는지**를
+ * 밟을 칸 목록을 받지 않고 **설정된 선택점에 실제로 무엇이 있는지**를
  * `document.elementFromPoint`로 그때그때 본다. 고르면 그 자리를 진짜로
  * 누른다(`element.click()`) — 버튼에 달린 리스너가 마우스로 눌렀을 때와 똑같이
  * 움직이므로, 화면 쪽에 «무엇을 골랐는지»를 잇는 코드를 둘 필요가 없다.
@@ -340,7 +346,7 @@ export function createWalker(config: WalkerConfig): Walker {
     // 입력칸도 넣는다 — 걸어 다니는 사람만 «여기는 못 간다»가 되면 화면 절반이
     // 캐릭터에게 막힌 셈이다. 로비의 방 코드, 대기실의 채팅칸이 그렇다
     pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
-    onStep, onMove, standClass = 'is-standing', edge = 7, startAt,
+    onStep, onMove, standClass = 'is-standing', hitAnchor = 'foot', edge = 7, startAt,
   } = config;
 
   let enabled = false;
@@ -349,8 +355,8 @@ export function createWalker(config: WalkerConfig): Walker {
 
   /** 화면 기준 «발» 좌표 */
   const pos: Point = { x: 0, y: 0 };
-  /** 발밑에 있는 «누를 수 있는 것» */
-  let underFoot: HTMLElement | null = null;
+  /** 선택점에 있는 «누를 수 있는 것» */
+  let standingTarget: HTMLElement | null = null;
   /** 걸어 다닐 수 있는 범위. 화면이 곧 무대다 */
   let stageSize = { width: 0, height: 0 };
 
@@ -381,14 +387,15 @@ export function createWalker(config: WalkerConfig): Walker {
   }
 
   /**
-   * 발밑에 있는 «누를 수 있는 것».
+   * 설정된 선택점에 있는 «누를 수 있는 것».
    *
    * 캐릭터 자신은 `.walker`가 `pointer-events: none`이라 잡히지 않는다.
    * 화면에 띄운 조작부(스틱·확정 버튼)는 어느 화면의 자손도 아니고 늘 같은 자리에
    * 있어서, 그 위에 올라섰다고 «고를 수 있다»고 보면 안 된다.
    */
-  function pickableUnderFoot(): HTMLElement | null {
-    const hit = document.elementFromPoint(pos.x, pos.y - 1);
+  function pickableAtWalker(): HTMLElement | null {
+    const point = walkerHitPoint(pos, { height: character.offsetHeight }, hitAnchor);
+    const hit = document.elementFromPoint(point.x, point.y);
     if (!hit || hit.closest('.walk-stick, .walk-confirm')) return null;
 
     const target = hit.closest<HTMLElement>(pickable);
@@ -402,12 +409,12 @@ export function createWalker(config: WalkerConfig): Walker {
     character.style.transform =
       `translate(${pos.x}px, ${pos.y}px) translate(-50%, -100%)`;
 
-    const next = pickableUnderFoot();
-    if (next === underFoot) return;
-    underFoot?.classList.remove(standClass);
-    underFoot = next;
-    underFoot?.classList.add(standClass);
-    onStep?.(underFoot);
+    const next = pickableAtWalker();
+    if (next === standingTarget) return;
+    standingTarget?.classList.remove(standClass);
+    standingTarget = next;
+    standingTarget?.classList.add(standClass);
+    onStep?.(standingTarget);
   }
 
   /**
@@ -549,7 +556,7 @@ export function createWalker(config: WalkerConfig): Walker {
   });
 
   /**
-   * 발밑을 «그 자리에서» 고른다. 버튼이 제 리스너로 알아서 움직이므로
+   * 선택점과 겹친 대상을 «그 자리에서» 고른다. 버튼이 제 리스너로 알아서 움직이므로
    * 워커는 무엇을 골랐는지 알 필요가 없다.
    *
    * 글자를 적는 칸만 다르다. `click()`은 커서를 넣어 준다는 보장이 없고,
@@ -557,14 +564,14 @@ export function createWalker(config: WalkerConfig): Walker {
    * 밟았을 때처럼 무언가 일어나는 게 아니라 이제부터 적겠다는 것이다.
    */
   function pick(): void {
-    if (!enabled || locked || !underFoot) return;
+    if (!enabled || locked || !standingTarget) return;
     // 두 갈래가 같은 요소를 쓴다. isTypingTarget 은 «글자 칸이면 HTMLElement»라고
-    // 좁혀 주는 함수라 아닌 쪽에서는 타입이 비어 버리므로, 밟고 있는 것을 한 번 붙잡아 둔다
-    const foot: HTMLElement = underFoot;
+    // 좁혀 주는 함수라 아닌 쪽에서는 타입이 비어 버리므로, 선택 대상을 한 번 붙잡아 둔다
+    const target: HTMLElement = standingTarget;
     character.classList.remove('walker--idle');
     character.classList.add('walker--hop');
-    if (isTypingTarget(underFoot)) foot.focus();
-    else foot.click();
+    if (isTypingTarget(standingTarget)) target.focus();
+    else target.click();
     paintConfirm();
   }
 
@@ -586,10 +593,10 @@ export function createWalker(config: WalkerConfig): Walker {
         }
         stop();
         character.classList.remove('walker--walking', 'walker--idle', 'walker--hop');
-        // 화면을 떠나면서 밟고 있던 표시도 거둔다. 남겨 두면 돌아왔을 때
+        // 화면을 떠나면서 선택 대상 표시도 거둔다. 남겨 두면 돌아왔을 때
         // 캐릭터가 없는 자리에 불이 켜져 있다
-        underFoot?.classList.remove(standClass);
-        underFoot = null;
+        standingTarget?.classList.remove(standClass);
+        standingTarget = null;
         return;
       }
 
@@ -636,13 +643,13 @@ export function createWalker(config: WalkerConfig): Walker {
       pick();
     },
 
-    /** 지금 발밑에 있는 요소. 아무것도 없으면 null */
+    /** 지금 선택점과 겹친 요소. 아무것도 없으면 null */
     standingElement() {
-      return enabled ? underFoot : null;
+      return enabled ? standingTarget : null;
     },
 
     /**
-     * 화면이 스크롤되면 캐릭터는 그대로인데 발밑이 바뀐다.
+     * 화면이 스크롤되면 캐릭터는 그대로인데 선택점 아래 요소가 바뀐다.
      * 루프는 서 있는 동안 멈춰 있으므로 여기서 한 번 다시 본다.
      */
     refresh() {
@@ -697,7 +704,7 @@ export function createWalker(config: WalkerConfig): Walker {
         // 버튼만 비켜 주면 모자란다 — 체크박스는 Space가 곧 조작인데, 여기서
         // 가로채면 `preventDefault`가 그 기본 동작까지 죽인다. 실제로 그래서
         // 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없었고(Enter는 폼 제출이라
-        // 우회로도 없다), 그 Space가 대신 발밑의 「만들기」를 눌러 버렸다.
+        // 우회로도 없다), 그 Space가 대신 선택점의 「만들기」를 눌러 버렸다.
         //
         // 무엇이 «제 키를 쓰는 것»인지는 `pickable`이 이미 알고 있다. 화면이 포커스를
         // 얹어 두는 `<section data-screen>`이나 문제 제목은 여기 걸리지 않아 걷기는 그대로다.
