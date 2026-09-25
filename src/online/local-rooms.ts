@@ -17,6 +17,10 @@ import { isPersistent, safeStorage } from '../storage/safe-storage.js';
 import {
   checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
 } from './rules.js';
+import {
+  type MovementViewport,
+  validMovementViewportDimension,
+} from './movement-contract.js';
 import type {
   CreateRoomResult, CreateRoomSpec, JoinRoomResult, JoinRoomSpec, PublicRoom,
   RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
@@ -408,17 +412,19 @@ export const localRooms = {
 
   /** local adapter도 network와 같은 bounded movement event를 되돌려 준다. */
   sendMovement({
-    code, x, y, moving,
+    code, x, y, moving, viewportWidth, viewportHeight,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
-  }): boolean {
+  } & MovementViewport): boolean {
     if (
       !Number.isFinite(x) || x < 0 || x > 1
       || !Number.isFinite(y) || y < 0 || y > 1
       || typeof moving !== 'boolean'
+      || !validMovementViewportDimension(viewportWidth)
+      || !validMovementViewportDimension(viewportHeight)
     ) return false;
     const key = normalizeCode(code);
     const room = readAll().find((candidate) => candidate.code === key);
@@ -430,6 +436,8 @@ export const localRooms = {
       x,
       y,
       moving,
+      viewportWidth,
+      viewportHeight,
       sequence: movementSequence,
       connectionGeneration: 0,
     });

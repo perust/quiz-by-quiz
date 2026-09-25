@@ -468,7 +468,12 @@ test('movement is cached until the room socket opens and never falls back to an 
     const url = String(input);
     calls.push(url);
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
-    if (url.endsWith('/ws-ticket')) return json({ ticket: 'movement-ticket' }, 201);
+    if (url.endsWith('/ws-ticket')) {
+      return json({
+        ticket: 'movement-ticket',
+        movementViewport: 'sender-css-pixels-v1',
+      }, 201);
+    }
     if (url.endsWith('/v1/rooms/ABC234')) return json(room());
     throw new Error(`unexpected request: ${url}`);
   };
@@ -484,22 +489,91 @@ test('movement is cached until the room socket opens and never falls back to an 
   try {
     await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
     const socket = FakeWebSocket.instances[0];
-    assert.equal(store.sendMovement({ code: 'ABC234', x: 0.25, y: 0.75, moving: true }), false);
+    assert.equal(store.sendMovement({
+      code: 'ABC234', x: 0.25, y: 0.75, moving: true,
+      viewportWidth: 390, viewportHeight: 844,
+    }), false);
     assert.deepEqual(socket.sent, []);
 
     socket.emit('open');
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'movement', x: 0.25, y: 0.75, moving: true,
+      viewportWidth: 390, viewportHeight: 844,
     });
-    assert.equal(store.sendMovement({ code: 'ABC234', x: 0.4, y: 0.6, moving: false }), true);
+    assert.equal(store.sendMovement({
+      code: 'ABC234', x: 0.4, y: 0.6, moving: false,
+      viewportWidth: 1440, viewportHeight: 900,
+    }), true);
     assert.deepEqual(JSON.parse(socket.sent[1]), {
       type: 'movement', x: 0.4, y: 0.6, moving: false,
+      viewportWidth: 1440, viewportHeight: 900,
     });
+    assert.equal(store.sendMovement({
+      code: 'ABC234', x: 0.4, y: 0.6, moving: false,
+      viewportWidth: 0, viewportHeight: 900,
+    }), false);
+    assert.equal(socket.sent.length, 2);
     assert.equal(calls.some((url) => url.endsWith('/movement')), false);
   } finally {
     unsubscribe();
   }
-  assert.equal(store.sendMovement({ code: 'ABC234', x: 0.5, y: 0.5, moving: false }), false);
+  assert.equal(store.sendMovement({
+    code: 'ABC234', x: 0.5, y: 0.5, moving: false,
+    viewportWidth: 390, viewportHeight: 844,
+  }), false);
+});
+
+test('movement renegotiates viewport capability and falls back after a backend rollback', async () => {
+  FakeWebSocket.instances.length = 0;
+  let ticketRequests = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) {
+      ticketRequests += 1;
+      return json(ticketRequests === 1 ? {
+        ticket: 'new-backend-ticket',
+        movementViewport: 'sender-css-pixels-v1',
+      } : {
+        ticket: 'legacy-backend-ticket',
+      }, 201);
+    }
+    if (url.endsWith('/v1/rooms/ABC234')) return json(room());
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const unsubscribe = store.subscribe('ABC234', () => undefined);
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'first websocket was not created');
+    const first = FakeWebSocket.instances[0];
+    first.emit('open');
+    assert.equal(store.sendMovement({
+      code: 'ABC234', x: 0.25, y: 0.75, moving: true,
+      viewportWidth: 390, viewportHeight: 844,
+    }), true);
+    assert.deepEqual(JSON.parse(first.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: true,
+      viewportWidth: 390, viewportHeight: 844,
+    });
+
+    first.emit('close');
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    await waitFor(() => FakeWebSocket.instances.length === 2, 'reconnected websocket was not created');
+    const second = FakeWebSocket.instances[1];
+    second.emit('open');
+    assert.deepEqual(JSON.parse(second.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: true,
+    });
+  } finally {
+    unsubscribe();
+  }
 });
 
 test('movement events are validated and carry the local socket generation for stale-event rejection', async () => {
@@ -529,6 +603,8 @@ test('movement events are validated and carry the local socket generation for st
       x: 0.2,
       y: 0.8,
       moving: true,
+      viewportWidth: 390,
+      viewportHeight: 844,
       sequence: 9,
     }) });
     socket.emit('message', { data: JSON.stringify({
@@ -539,6 +615,15 @@ test('movement events are validated and carry the local socket generation for st
       moving: true,
       sequence: 10,
     }) });
+    socket.emit('message', { data: JSON.stringify({
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 0.3,
+      y: 0.8,
+      moving: true,
+      viewportWidth: 390,
+      sequence: 11,
+    }) });
 
     assert.deepEqual(events, [{
       type: 'movement',
@@ -546,6 +631,8 @@ test('movement events are validated and carry the local socket generation for st
       x: 0.2,
       y: 0.8,
       moving: true,
+      viewportWidth: 390,
+      viewportHeight: 844,
       sequence: 9,
       connectionGeneration: 1,
     }]);

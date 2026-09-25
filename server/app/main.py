@@ -67,6 +67,8 @@ from .tickets import WebSocketTickets
 logger = logging.getLogger(__name__)
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
+MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
+MOVEMENT_VIEWPORT_CAPABILITY = "sender-css-pixels-v1"
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -95,7 +97,9 @@ def _websocket_ticket(websocket: WebSocket) -> str | None:
     return ticket
 
 
-def _movement_message(message: str) -> tuple[float, float, bool] | None:
+def _movement_message(
+    message: str,
+) -> tuple[float, float, bool, int | None, int | None] | None:
     """Return one strict, bounded movement payload without trusting client identity."""
     if len(message) > 256:
         return None
@@ -103,7 +107,12 @@ def _movement_message(message: str) -> tuple[float, float, bool] | None:
         value = json.loads(message)
     except (json.JSONDecodeError, TypeError):
         return None
-    if not isinstance(value, dict) or set(value) != {"type", "x", "y", "moving"}:
+    if not isinstance(value, dict):
+        return None
+    keys = set(value)
+    legacy_keys = {"type", "x", "y", "moving"}
+    viewport_keys = legacy_keys | {"viewportWidth", "viewportHeight"}
+    if keys not in (legacy_keys, viewport_keys):
         return None
     if value["type"] != "movement" or type(value["moving"]) is not bool:
         return None
@@ -120,7 +129,18 @@ def _movement_message(message: str) -> tuple[float, float, bool] | None:
     y = float(y)
     if not math.isfinite(x) or not math.isfinite(y) or not 0 <= x <= 1 or not 0 <= y <= 1:
         return None
-    return x, y, value["moving"]
+    if keys == legacy_keys:
+        return x, y, value["moving"], None, None
+    viewport_width = value["viewportWidth"]
+    viewport_height = value["viewportHeight"]
+    if (
+        type(viewport_width) is not int
+        or type(viewport_height) is not int
+        or not 1 <= viewport_width <= MAX_MOVEMENT_VIEWPORT_DIMENSION
+        or not 1 <= viewport_height <= MAX_MOVEMENT_VIEWPORT_DIMENSION
+    ):
+        return None
+    return x, y, value["moving"], viewport_width, viewport_height
 
 
 class StrictBody(BaseModel):
@@ -1259,7 +1279,10 @@ def create_app(
             )
         if not await repo.is_member(actor_id, code):
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.")
-        return {"ticket": ticket_store.issue(actor_id, code)}
+        return {
+            "ticket": ticket_store.issue(actor_id, code),
+            "movementViewport": MOVEMENT_VIEWPORT_CAPABILITY,
+        }
 
     @app.websocket("/v1/rooms/{raw_code}/events")
     async def room_events(
@@ -1320,17 +1343,21 @@ def create_app(
                 movement = _movement_message(message)
                 if movement is None:
                     continue
-                x, y, moving = movement
+                x, y, moving, viewport_width, viewport_height = movement
+                event: dict[str, object] = {
+                    "type": "movement",
+                    "playerId": str(actor_id),
+                    "x": x,
+                    "y": y,
+                    "moving": moving,
+                    "sequence": next(movement_sequences),
+                }
+                if viewport_width is not None and viewport_height is not None:
+                    event["viewportWidth"] = viewport_width
+                    event["viewportHeight"] = viewport_height
                 await hub.broadcast(
                     code,
-                    {
-                        "type": "movement",
-                        "playerId": str(actor_id),
-                        "x": x,
-                        "y": y,
-                        "moving": moving,
-                        "sequence": next(movement_sequences),
-                    },
+                    event,
                 )
         except (RuntimeError, WebSocketDisconnect):
             pass
