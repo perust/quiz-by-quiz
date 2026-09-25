@@ -26,6 +26,7 @@ import {
 import {
   isCurrentWaitingRoomAction,
   type WaitingRoomActionOwnership,
+  waitingRoomControls,
 } from './waiting-room-action.js';
 import { createBody } from './sprite.js';
 import type {
@@ -159,9 +160,12 @@ export function createWaitingRoom(
     el.capacityValue.textContent = `${room.capacity}명`;
 
     const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
-    el.ready.disabled = !room.joined || me === null;
+    const controls = waitingRoomControls(room, roomStore.me());
+    el.ready.disabled = controls.readyDisabled;
     el.ready.textContent = me?.isReady ? '준비 취소' : '준비 완료';
     el.ready.setAttribute('aria-pressed', String(Boolean(me?.isReady)));
+    el.start.hidden = controls.startHidden;
+    el.start.disabled = controls.startDisabled;
 
     // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
     for (const button of [el.category, el.capacity]) {
