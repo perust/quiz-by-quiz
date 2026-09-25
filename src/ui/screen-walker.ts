@@ -2,7 +2,7 @@
 //
 // 홈과 내 캐릭터 화면은 «밟으면 미리보기», «처음 설 자리» 같은 저마다의 사정이 있어
 // 직접 워커를 만든다. 결과·랭킹처럼 **걸어가서 버튼을 누르는 것이 전부**인 화면은
-// 이걸 쓴다 — 워커의 자유 방식이 발밑을 알아서 찾고 그 자리를 진짜로 누르므로,
+// 이걸 쓴다 — 워커의 자유 방식이 캐릭터와 겹친 버튼을 찾아 진짜로 누르므로,
 // 화면 쪽에서 «어떤 버튼이 어디 있는지» 적어 둘 것이 없다.
 
 import { createWalker, type Point } from './walker.js';
@@ -38,6 +38,9 @@ export function createScreenWalker({
   const walker = createWalker({
     character,
     onMove,
+    // `.walker`의 논리 좌표는 발끝이지만 일반 화면에서는 눈에 보이는 몸통과 겹친
+    // 버튼이 선택되어야 한다. arena의 발밑 칸 선택은 createWalker 기본값으로 남긴다.
+    hitAnchor: 'center',
     startAt: () => {
       const point = startPoint?.();
       if (point) return point;
