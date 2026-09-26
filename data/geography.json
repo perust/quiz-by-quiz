@@ -998,5 +998,105 @@
     "explanation": "동쪽 끝 크리스마스섬이 세계시보다 열네 시간 빠릅니다. 나라가 날짜변경선에 걸쳐 있어 1995년에 선을 동쪽으로 옮겼습니다.",
     "difficulty": "hard",
     "tags": ["세계지리", "시간"]
+  },
+  {
+    "id": "geography-101",
+    "category": "geography",
+    "question": "국토 전체가 남아프리카공화국에 둘러싸인 나라는?",
+    "choices": ["보츠와나", "짐바브웨", "에스와티니", "레소토"],
+    "answerIndex": 3,
+    "explanation": "레소토는 남아프리카공화국 영토에 사방이 둘러싸인 산악 내륙국입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "내륙국"]
+  },
+  {
+    "id": "geography-102",
+    "category": "geography",
+    "question": "미국의 그랜드 캐니언을 깎아 만든 강은?",
+    "choices": ["컬럼비아강", "미주리강", "리오그란데강", "콜로라도강"],
+    "answerIndex": 3,
+    "explanation": "콜로라도강은 콜로라도고원을 깎아 그랜드 캐니언을 만들었습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "하천지형"]
+  },
+  {
+    "id": "geography-103",
+    "category": "geography",
+    "question": "용암이 식으며 수축할 때 규칙적인 기둥 모양의 틈이 생겨 만들어지는 지형은?",
+    "choices": ["사구", "삼각주", "주상절리", "석회동굴"],
+    "answerIndex": 2,
+    "explanation": "용암이 식고 수축하면서 균열이 생기며, 일부 지역에서는 이 절리가 기둥 모양으로 발달해 주상절리를 이룹니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리", "화산지형"]
+  },
+  {
+    "id": "geography-104",
+    "category": "geography",
+    "question": "제주 성산일출봉의 응회구를 만든 주된 형성 과정은?",
+    "choices": ["강물이 퇴적물을 쌓는 과정", "빙하가 골짜기를 깎는 과정", "바람이 모래를 쌓는 과정", "마그마가 물과 만나 폭발하는 과정"],
+    "answerIndex": 3,
+    "explanation": "성산일출봉은 상승하던 마그마가 해수 또는 지하수와 폭발적으로 반응해 만들어진 응회구입니다.",
+    "difficulty": "normal",
+    "tags": ["한국지리", "화산지형"]
+  },
+  {
+    "id": "geography-105",
+    "category": "geography",
+    "question": "서로 다른 하천의 배수 유역을 가르는 경계를 무엇이라 하는가?",
+    "choices": ["하구", "범람원", "삼각주", "분수계"],
+    "answerIndex": 3,
+    "explanation": "분수계는 서로 다른 두 배수 유역을 가르는 산등성이·구릉 같은 경계입니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리", "하천지형"]
+  },
+  {
+    "id": "geography-106",
+    "category": "geography",
+    "question": "급한 산지 골짜기를 흐르던 물이 완만한 골짜기 바닥으로 나오며 운반한 흙과 자갈을 부채꼴로 쌓아 만든 지형은?",
+    "choices": ["삼각주", "자연 제방", "하안단구", "선상지"],
+    "answerIndex": 3,
+    "explanation": "선상지는 산에서 내려온 물이 운반한 자갈·모래·실트를 골짜기에 부채꼴로 퇴적해 만든 지형입니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리", "하천지형"]
+  },
+  {
+    "id": "geography-107",
+    "category": "geography",
+    "question": "구불구불 흐르던 강의 굽이가 본류에서 끊겨 말발굽 모양으로 남은 호수는?",
+    "choices": ["석호", "빙하호", "칼데라호", "우각호"],
+    "answerIndex": 3,
+    "explanation": "우각호는 두 곡류의 굽이가 맞닿아 강물이 굽은 구간을 우회하면서, 옛 물길이 본류에서 떨어져 나가 형성된 호수입니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리", "하천지형"]
+  },
+  {
+    "id": "geography-108",
+    "category": "geography",
+    "question": "강이나 하천 옆에 펼쳐진 비교적 평평한 땅으로, 물이 둑을 넘을 때 퇴적물이 쌓이는 지형은?",
+    "choices": ["삼각주", "하안단구", "범람원", "자연 제방"],
+    "answerIndex": 2,
+    "explanation": "범람원은 강이나 하천에 이웃한 비교적 평평한 지표입니다. 홍수 때 물이 둑을 넘어 이곳으로 흐르며 퇴적물을 쌓습니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리", "하천지형"]
+  },
+  {
+    "id": "geography-109",
+    "category": "geography",
+    "question": "계절이 바뀌면서 넓은 지역의 우세한 바람 방향이 반대로 바뀌는 대규모 대기 순환은?",
+    "choices": ["편서풍", "무역풍", "해륙풍", "계절풍"],
+    "answerIndex": 3,
+    "explanation": "계절풍, 즉 몬순은 계절에 따라 지표 부근 대기 순환과 우세한 바람 방향이 뒤바뀌며 강수의 계절 분포에도 영향을 주는 현상입니다.",
+    "difficulty": "normal",
+    "tags": ["자연지리", "기후"]
+  },
+  {
+    "id": "geography-110",
+    "category": "geography",
+    "question": "두 해양판이 서로 멀어지는 발산형 경계에서 새로운 해저가 만들어지는 곳은?",
+    "choices": ["해구", "대륙붕", "해산", "해령"],
+    "answerIndex": 3,
+    "explanation": "해령은 판이 서로 벌어지는 발산형 경계에 나타나며, 그곳에서 새로운 해저가 만들어집니다.",
+    "difficulty": "normal",
+    "tags": ["자연지리", "판구조론"]
   }
 ]

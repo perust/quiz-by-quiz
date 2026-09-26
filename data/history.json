@@ -998,5 +998,105 @@
     "explanation": "2년 5개월 만에 428킬로미터를 뚫었으며, 사람과 물자가 오가는 시간을 크게 줄였습니다.",
     "difficulty": "hard",
     "tags": ["현대사", "경제"]
+  },
+  {
+    "id": "history-101",
+    "category": "history",
+    "question": "미국 함대가 조선을 침략하자 조선군이 맞서 싸운 사건은?",
+    "choices": ["병인양요", "운요호 사건", "제너럴 셔먼호 사건", "신미양요"],
+    "answerIndex": 3,
+    "explanation": "신미양요는 미국 함대가 조선을 침략하자 조선군이 맞서 싸운 사건입니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "대외 관계"]
+  },
+  {
+    "id": "history-102",
+    "category": "history",
+    "question": "조선 국왕이 일본의 막부 장군에게 파견한 외교 사절단은?",
+    "choices": ["연행사", "수신사", "보빙사", "조선통신사"],
+    "answerIndex": 3,
+    "explanation": "조선통신사는 조선 국왕이 일본의 막부 장군에게 파견한 국가 간 외교 사절단이었습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "외교"]
+  },
+  {
+    "id": "history-103",
+    "category": "history",
+    "question": "조선에서 공물을 쌀로 거두도록 한 제도는?",
+    "choices": ["대동법", "영정법", "균역법", "호패법"],
+    "answerIndex": 0,
+    "explanation": "대동법은 공물 대신 쌀을 거두도록 한 제도입니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "경제"]
+  },
+  {
+    "id": "history-104",
+    "category": "history",
+    "question": "무령왕릉에서 무덤 주인의 정체를 알려 준 유물은?",
+    "choices": ["금제 관식", "청동 거울", "목관", "지석"],
+    "answerIndex": 3,
+    "explanation": "무령왕릉에서 발견된 묘지석은 묘주의 정체를 알 수 있게 해 주었습니다.",
+    "difficulty": "normal",
+    "tags": ["백제", "고고학"]
+  },
+  {
+    "id": "history-105",
+    "category": "history",
+    "question": "조선 중기 이후 학문 연구와 선현 제향을 위해 사림이 세운 사설 교육 기관은?",
+    "choices": ["향교", "성균관", "규장각", "서원"],
+    "answerIndex": 3,
+    "explanation": "서원은 사림이 학문 연구와 선현 제향을 위해 세운 사설 교육 기관이자 향촌 자치 운영 기구였습니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "교육"]
+  },
+  {
+    "id": "history-106",
+    "category": "history",
+    "question": "조선 세종 때 목조에서 태종에 이르는 선조들의 행적을 노래한 서사시는?",
+    "choices": ["용비어천가", "월인천강지곡", "정과정곡", "훈민가"],
+    "answerIndex": 0,
+    "explanation": "용비어천가는 목조에서 태종에 이르는 조선 왕실 선조들의 행적을 노래한 서사시입니다.",
+    "difficulty": "easy",
+    "tags": ["조선 전기", "문학"]
+  },
+  {
+    "id": "history-107",
+    "category": "history",
+    "question": "우리나라 풍토에 맞는 농법을 정리해 지역에 따라 적절한 농법을 수록한 조선의 농업서는?",
+    "choices": ["산림경제", "임원경제지", "금양잡록", "농사직설"],
+    "answerIndex": 3,
+    "explanation": "농사직설은 우리나라 풍토에 맞는 농법을 정리하고 지역에 따라 적절한 농법을 수록한 농업서입니다.",
+    "difficulty": "easy",
+    "tags": ["조선 전기", "농업"]
+  },
+  {
+    "id": "history-108",
+    "category": "history",
+    "question": "시전 상인의 독점적 상업 특권을 줄이고 비시전 상인의 활동을 허용한 조선 후기 정책은?",
+    "choices": ["균역법", "영정법", "대동법", "신해통공"],
+    "answerIndex": 3,
+    "explanation": "신해통공은 시전 상인의 독점적 상업 특권을 줄이고 비시전 상인의 활동을 허용한 정책입니다.",
+    "difficulty": "normal",
+    "tags": ["조선 후기", "경제"]
+  },
+  {
+    "id": "history-109",
+    "category": "history",
+    "question": "지방의 향인들이 서로 도우며 살아가자는 향촌 규약을 무엇이라 하는가?",
+    "choices": ["향약", "두레", "계", "품앗이"],
+    "answerIndex": 0,
+    "explanation": "향약은 지방의 향인들이 서로 도우며 살아가자는 향촌 규약입니다.",
+    "difficulty": "easy",
+    "tags": ["조선", "향촌 사회"]
+  },
+  {
+    "id": "history-110",
+    "category": "history",
+    "question": "국방 관련 임시 기구로 출발해 정책 결정 기구로 성격이 바뀐 조선의 관청은?",
+    "choices": ["의정부", "승정원", "병조", "비변사"],
+    "answerIndex": 3,
+    "explanation": "비변사는 국방 일을 처리하는 임시 기구로 출발해 정책 결정 기구로 성격이 바뀌었습니다.",
+    "difficulty": "normal",
+    "tags": ["조선", "정치 제도"]
   }
 ]
