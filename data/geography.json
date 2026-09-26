@@ -1008,5 +1008,15 @@
     "explanation": "황해는 한반도 서쪽에 있어 우리나라에서는 서해라고도 부르며, 서쪽으로 중국 대륙과 맞닿습니다.",
     "difficulty": "easy",
     "tags": ["세계지리", "바다"]
+  },
+  {
+    "id": "geography-102",
+    "category": "geography",
+    "question": "대륙으로 분류되는 오스트레일리아를 제외할 때, 세계에서 면적이 가장 큰 섬은?",
+    "choices": ["마다가스카르", "보르네오", "뉴기니", "그린란드"],
+    "answerIndex": 3,
+    "explanation": "그린란드는 대륙이 아닌 섬 가운데 세계에서 면적이 가장 큽니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "섬"]
   }
 ]

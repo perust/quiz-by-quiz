@@ -1008,5 +1008,15 @@
     "explanation": "URL은 'Uniform Resource Locator'의 약자로, 인터넷에 공개된 웹페이지·이미지 같은 자원의 위치를 나타냅니다.",
     "difficulty": "easy",
     "tags": ["정보기술", "생활"]
+  },
+  {
+    "id": "general-102",
+    "category": "general",
+    "question": "Portable Document Format의 약자로, 문서 파일 형식에 쓰이는 것은?",
+    "choices": ["TXT", "RTF", "DOCX", "PDF"],
+    "answerIndex": 3,
+    "explanation": "PDF는 Portable Document Format의 약자이며, 여러 컴퓨터 환경에서 같은 모양으로 문서를 표시·교환하는 데 쓰이는 파일 형식입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "생활"]
   }
 ]

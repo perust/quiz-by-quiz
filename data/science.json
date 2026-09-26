@@ -1008,5 +1008,15 @@
     "explanation": "물고기는 아가미를 통해 물에 녹아 있는 산소를 혈액으로 흡수해 호흡합니다.",
     "difficulty": "easy",
     "tags": ["생명과학", "동물"]
+  },
+  {
+    "id": "science-102",
+    "category": "science",
+    "question": "대기의 압력인 기압을 측정하는 기구는?",
+    "choices": ["온도계", "습도계", "풍속계", "기압계"],
+    "answerIndex": 3,
+    "explanation": "기압계는 대기가 누르는 압력인 기압을 측정하는 기구입니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "대기"]
   }
 ]
