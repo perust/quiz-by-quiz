@@ -998,5 +998,15 @@
     "explanation": "그래서 운전석이 왼쪽에 있습니다. 일본과 영국은 반대로 좌측통행이라 운전석이 오른쪽입니다.",
     "difficulty": "hard",
     "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-101",
+    "category": "general",
+    "question": "인터넷에서 웹페이지 같은 자원의 위치를 나타내는 주소를 가리키는 영문 약자는?",
+    "choices": ["HTTP", "HTML", "IP", "URL"],
+    "answerIndex": 3,
+    "explanation": "URL은 'Uniform Resource Locator'의 약자로, 인터넷에 공개된 웹페이지·이미지 같은 자원의 위치를 나타냅니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "생활"]
   }
 ]

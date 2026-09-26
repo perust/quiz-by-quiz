@@ -998,5 +998,15 @@
     "explanation": "저마다 맡은 반응이 정해져 있고, 온도와 산도가 맞아야 제대로 일합니다. 침 속 아밀레이스가 그 예입니다.",
     "difficulty": "hard",
     "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-101",
+    "category": "science",
+    "question": "물고기가 물속에서 산소를 얻어 호흡할 때 주로 사용하는 기관은?",
+    "choices": ["폐", "피부", "기공", "아가미"],
+    "answerIndex": 3,
+    "explanation": "물고기는 아가미를 통해 물에 녹아 있는 산소를 혈액으로 흡수해 호흡합니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "동물"]
   }
 ]

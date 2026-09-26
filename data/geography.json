@@ -998,5 +998,15 @@
     "explanation": "동쪽 끝 크리스마스섬이 세계시보다 열네 시간 빠릅니다. 나라가 날짜변경선에 걸쳐 있어 1995년에 선을 동쪽으로 옮겼습니다.",
     "difficulty": "hard",
     "tags": ["세계지리", "시간"]
+  },
+  {
+    "id": "geography-101",
+    "category": "geography",
+    "question": "한반도와 중국 대륙 사이에 있는 바다는?",
+    "choices": ["동해", "남해", "동중국해", "황해"],
+    "answerIndex": 3,
+    "explanation": "황해는 한반도 서쪽에 있어 우리나라에서는 서해라고도 부르며, 서쪽으로 중국 대륙과 맞닿습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "바다"]
   }
 ]
