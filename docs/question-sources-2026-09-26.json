@@ -1,0 +1,616 @@
+{
+  "batch": "2026-09-26-balanced-50",
+  "policy": "Stable nonnumeric claims use at least one authoritative direct source; claims involving years, quantities, rankings, law, or scientific measurements that may change or be easily misread require two independent sources.",
+  "categories": {
+    "history": [
+      {
+        "id": "history-101",
+        "core_claim": "신미양요는 미국 함대의 조선 침략에 조선군이 맞서 싸운 사건이다.",
+        "sources": [
+          {
+            "institution": "국사편찬위원회",
+            "title": "신미양요",
+            "url": "https://contents.history.go.kr/mobile/kc/view.do?levelId=kc_i303800",
+            "quote": "신미양요 미국 함대의 침략을 물리치다"
+          }
+        ]
+      },
+      {
+        "id": "history-102",
+        "core_claim": "조선통신사는 조선 국왕이 일본 막부 장군에게 파견한 외교 사절단이다.",
+        "sources": [
+          {
+            "institution": "국사편찬위원회",
+            "title": "통신사",
+            "url": "https://contents.history.go.kr/mobile/kc/view.do?levelId=kc_i305900",
+            "quote": "조선 시대 국왕이 일본의 실권자인 막부장군에게 파견한 양국간 정상외교 사절단이다."
+          }
+        ]
+      },
+      {
+        "id": "history-103",
+        "core_claim": "대동법은 조선에서 공물을 쌀로 거두도록 한 제도이다.",
+        "sources": [
+          {
+            "institution": "국사편찬위원회",
+            "title": "대동법",
+            "url": "https://contents.history.go.kr/mobile/kc/view.do?levelId=kc_i302100",
+            "quote": "대동법 공물(貢物)을 쌀로 거두어라"
+          }
+        ]
+      },
+      {
+        "id": "history-104",
+        "core_claim": "무령왕릉에서 발견된 지석은 무덤 주인의 정체를 알려 주었다.",
+        "sources": [
+          {
+            "institution": "국사편찬위원회",
+            "title": "무령왕릉 [武寧王陵]",
+            "url": "https://contents.history.go.kr/mobile/kc/view.do?levelId=kc_r100380",
+            "quote": "특히 무덤 내부에서 묘주의 정체를 알 수 있게 해주는 묘지석(墓誌石)이 발견되었는데"
+          }
+        ]
+      },
+      {
+        "id": "history-105",
+        "core_claim": "서원은 사림이 학문 연구와 선현 제향을 위해 세운 사설 교육 기관이다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "서원",
+            "url": "https://encykorea.aks.ac.kr/Article/E0028091",
+            "quote": "조선 중기 이후 학문연구와 선현제향(先賢祭享)을 위하여 사림에 의해 설립된 사설 교육기관인 동시에 향촌 자치운영기구."
+          }
+        ]
+      },
+      {
+        "id": "history-106",
+        "core_claim": "용비어천가는 조선 세종 때 목조에서 태종에 이르는 선조들의 행적을 노래한 서사시이다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "용비어천가",
+            "url": "https://encykorea.aks.ac.kr/Article/E0039509",
+            "quote": "조선 세종 때 선조인 목조(穆祖)에서 태종(太宗)에 이르는 여섯 대의 행적을 노래한 서사시."
+          }
+        ]
+      },
+      {
+        "id": "history-107",
+        "core_claim": "농사직설은 지역에 따라 적절한 농법을 수록한 농업서이다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "농사직설",
+            "url": "https://encykorea.aks.ac.kr/Article/E0013114",
+            "quote": "이와 같이 ≪농사직설≫은 지역에 따라 적절한 농법을 수록하였으며, 우리 실정과 거리가 있는 중국 농사법에서 탈피하는 좋은 계기를 만들었다고 볼 수 있다."
+          }
+        ]
+      },
+      {
+        "id": "history-108",
+        "core_claim": "신해통공은 금난전권을 폐지하여 비시전계 상인의 활동을 허용한 상업 정책이다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "신해통공",
+            "url": "https://encykorea.aks.ac.kr/Article/E0033551",
+            "quote": "조선 후기에 육의전을 제외한 일반시전이 소유하고 있던 금난전권을 폐지하여 비시전계 상인들의 활동을 용인한 상업정책이다."
+          }
+        ]
+      },
+      {
+        "id": "history-109",
+        "core_claim": "향약은 지방의 향인들이 서로 도우며 살아가자는 향촌 규약이다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "향약",
+            "url": "https://encykorea.aks.ac.kr/Article/E0062948",
+            "quote": "향촌규약(鄕村規約)의 준말로, 지방의 향인들이 서로 도우며 살아가자는 약속."
+          }
+        ]
+      },
+      {
+        "id": "history-110",
+        "core_claim": "비변사는 국방 관련 임시 기구로 출발해 정책 결정 기구로 성격이 바뀌었다.",
+        "sources": [
+          {
+            "institution": "한국학중앙연구원",
+            "title": "비변사",
+            "url": "https://encykorea.aks.ac.kr/Article/E0025147",
+            "quote": "처음에는 빈번한 왜구·여진의 침입에 대처하기 위해 국방 관련 일을 처리하는 임시기구로 출발했다. 하지만 의정부와 병조를 거치지 않고 왕에게 직접 보고하는 등 그 기능이 강화되면서 독립된 상설 협의기관으로 발전했다. 특히 임진왜란을 거치면서 권한이 더욱 확대되어 임시 군사대책기관에서 정책결정기구로까지 그 성격이 변모했다."
+          }
+        ]
+      }
+    ],
+    "science": [
+      {
+        "id": "science-101",
+        "core_claim": "소리의 음높이는 진동수와 직접 관련된다.",
+        "sources": [
+          {
+            "institution": "OpenStax",
+            "title": "14.2 Sound Intensity and Sound Level - Physics | OpenStax",
+            "url": "https://openstax.org/books/physics/pages/14-2-sound-intensity-and-sound-level",
+            "quote": "The perception of frequency is called pitch"
+          }
+        ]
+      },
+      {
+        "id": "science-102",
+        "core_claim": "산소의 원소 기호는 O이다.",
+        "sources": [
+          {
+            "institution": "PubChem, U.S. National Library of Medicine",
+            "title": "Oxygen | O (Element) - PubChem",
+            "url": "https://pubchem.ncbi.nlm.nih.gov/element/Oxygen",
+            "quote": "Oxygen | O (Element) - PubChem"
+          }
+        ]
+      },
+      {
+        "id": "science-103",
+        "core_claim": "심장은 혈액을 몸 전체로 펌프질하는 기관이다.",
+        "sources": [
+          {
+            "institution": "National Heart, Lung, and Blood Institute",
+            "title": "How the Heart Works - The Heart | NHLBI, NIH",
+            "url": "https://www.nhlbi.nih.gov/health/heart",
+            "quote": "The heart is an organ about the size of your fist that pumps blood through your body. It is made up of multiple layers of tissue."
+          }
+        ]
+      },
+      {
+        "id": "science-104",
+        "core_claim": "기압계는 대기압을 측정하는 기구이다.",
+        "sources": [
+          {
+            "institution": "National Geographic Society",
+            "title": "Barometer",
+            "url": "https://education.nationalgeographic.org/resource/barometer/",
+            "quote": "A barometer is a tool used to measure atmospheric pressure, also called barometric pressure."
+          }
+        ]
+      },
+      {
+        "id": "science-105",
+        "core_claim": "달이 공전할 때 지구에서 보이는 햇빛 받은 면이 달라져 달의 위상이 나타난다.",
+        "sources": [
+          {
+            "institution": "NASA Space Place",
+            "title": "What Are the Moon’s Phases? | NASA Space Place – NASA Science for Kids",
+            "url": "https://spaceplace.nasa.gov/moon-phases/en/",
+            "quote": "The shape of the Moon isn’t changing throughout the month. However, our view of the Moon does change.\n\nThe Moon does not produce its own light. There is only one source of light in our solar system, and that is the Sun. Without the Sun, our Moon would be completely dark. What you may have heard referred to as “moonlight” is actually just sunlight reflecting off of the Moon’s surface.\n\nThe Sun’s light comes from one direction, and it always illuminates, or lights up, one half of the Moon – the side of the Moon that is facing the Sun. The other side of the Moon is dark.\n\nThe position of the Moon and the Sun during Each of the Moon’s phases and the Moon as it appears from Earth during each phase. Credit: NASA/JPL-Caltech\n\nOn Earth, our view of the illuminated part of the Moon changes each night, depending on where the Moon is in its orbit, or path, around Earth."
+          }
+        ]
+      },
+      {
+        "id": "science-106",
+        "core_claim": "지진계는 지진으로 생긴 지면의 움직임을 감지하고 기록한다.",
+        "sources": [
+          {
+            "institution": "U.S. Geological Survey",
+            "title": "Measuring Earthquakes - Earthquakes, General Interest Publication",
+            "url": "https://pubs.usgs.gov/gip/earthq1/measure.html",
+            "quote": "The vibrations produced by earthquakes are detected, recorded, and measured by instruments call seismographs. The zig-zag line made by a seismograph, called a \"seismogram,\" reflects the changing intensity of the vibrations by responding to the motion of the ground surface beneath the instrument."
+          }
+        ]
+      },
+      {
+        "id": "science-107",
+        "core_claim": "풍속계는 바람의 속력을 측정한다.",
+        "sources": [
+          {
+            "institution": "NOAA National Weather Service",
+            "title": "NOAA's National Weather Service - Glossary: Anemometer",
+            "url": "https://forecast.weather.gov/glossary.php?word=anemometer",
+            "quote": "An instrument used for measuring the speed of the wind."
+          }
+        ]
+      },
+      {
+        "id": "science-108",
+        "core_claim": "공유 결합에서는 원자들이 전자쌍을 공유한다.",
+        "sources": [
+          {
+            "institution": "OpenStax",
+            "title": "7.2 Covalent Bonding - Chemistry 2e | OpenStax",
+            "url": "https://openstax.org/books/chemistry-2e/pages/7-2-covalent-bonding",
+            "quote": "A different type of bonding results from the mutual attraction of atoms for a “shared” pair of electrons. Such bonds are called covalent bonds."
+          }
+        ]
+      },
+      {
+        "id": "science-109",
+        "core_claim": "이온 결합은 서로 반대 전하를 띤 이온 사이의 정전기적 인력이다.",
+        "sources": [
+          {
+            "institution": "OpenStax",
+            "title": "7.1 Ionic Bonding - Chemistry 2e | OpenStax",
+            "url": "https://openstax.org/books/chemistry-2e/pages/7-1-ionic-bonding",
+            "quote": "Compounds composed of ions are called ionic compounds (or salts), and their constituent ions are held together by ionic bonds: electrostatic forces of attraction between oppositely charged cations and anions."
+          }
+        ]
+      },
+      {
+        "id": "science-110",
+        "core_claim": "변성암은 암석이 녹지 않을 정도의 큰 압력과 열을 받은 결과이다.",
+        "sources": [
+          {
+            "institution": "National Park Service",
+            "title": "K-3, Unit Five, Activity 2: Rock Stories - Glacier National Park",
+            "url": "https://www.nps.gov/glac/learn/education/k-3-unit-five-activity-2-rock-stories.htm",
+            "quote": "Depending on the age of your students, you may want to introduce the three types of rocks: sedimentary – other rocks ground up and squashed together; metamorphic – squashed really hard and cooked, but not melted: igneous – melted and then cooled to harden"
+          }
+        ]
+      }
+    ],
+    "geography": [
+      {
+        "id": "geography-101",
+        "core_claim": "레소토의 국토는 남아프리카공화국에 둘러싸여 있다.",
+        "sources": [
+          {
+            "institution": "World Bank Group",
+            "title": "Lesotho | World Bank Group",
+            "url": "https://www.worldbank.org/ext/en/country/lesotho",
+            "quote": "Lesotho is a small mountainous nation surrounded by South Africa."
+          }
+        ]
+      },
+      {
+        "id": "geography-102",
+        "core_claim": "콜로라도강은 그랜드 캐니언을 깎아 만들었다.",
+        "sources": [
+          {
+            "institution": "U.S. National Park Service",
+            "title": "Geologic Formations - Grand Canyon National Park (U.S. National Park Service)",
+            "url": "https://www.nps.gov/grca/learn/nature/geologicformations.htm",
+            "quote": "The Colorado River has carved the Grand Canyon into four plateaus of the Colorado Plateau Province."
+          }
+        ]
+      },
+      {
+        "id": "geography-103",
+        "core_claim": "용암이 식어 수축하며 생긴 절리가 기둥 모양으로 발달하면 주상절리가 된다.",
+        "sources": [
+          {
+            "institution": "U.S. National Park Service",
+            "title": "Geology - Devils Postpile National Monument (U.S. National Park Service)",
+            "url": "https://www.nps.gov/depo/learn/nature/geology.htm",
+            "quote": "As the lava lake cooled and solidified from a molten soup to solid rock it began to contract. Contraction stresses developed because the cool solid form of basalt has a lesser volume than the hot liquid form. Cracks, also called joints by geologists, began to form. Jointing releases internal stress created by the cooling and associated contraction. In some locations, such as at the Devils Postpile, the jointing formed columns."
+          }
+        ]
+      },
+      {
+        "id": "geography-104",
+        "core_claim": "성산일출봉은 마그마와 물의 폭발적 반응으로 형성된 응회구이다.",
+        "sources": [
+          {
+            "institution": "제주특별자치도 세계지질공원",
+            "title": "성산일출봉 학술적가치 - 제주도세계지질공원",
+            "url": "https://www.jeju.go.kr/geopark/intro/worldnatural/seongsan.htm",
+            "quote": "반면, 성산일출봉과 제주의 몇몇 오름들은 지하에서 상승하는 뜨거운 마그마가 해수 또는 지하수를 만나 폭발적 반응을 일으켜 만들어진 수성화산들이다(Sohn, 1996). 수성화산은 분화구의 크기, 높이, 그리고 사면의 경사를 기준으로 하여 응회환과 응회구로 구분된다(Vespermann and Schmincke, 2000; Wohletz and Sheridan, 1983). 성산일출봉은 높이 179 m, 분화구 직경 600 m, 분화구 바닥의 고도 90 m, 그리고 최대 45°의 가파른 경사를 지닌 전형적인 응회구이다."
+          }
+        ]
+      },
+      {
+        "id": "geography-105",
+        "core_claim": "분수계는 서로 다른 배수 유역을 가르는 경계이다.",
+        "sources": [
+          {
+            "institution": "U.S. Geological Survey",
+            "title": "Watersheds and Drainage Basins | U.S. Geological Survey",
+            "url": "https://www.usgs.gov/water-science-school/science/watersheds-and-drainage-basins",
+            "quote": "The word \"watershed\" is sometimes used interchangeably with drainage basin or catchment. Ridges and hills that separate two watersheds are called the drainage divide."
+          }
+        ]
+      },
+      {
+        "id": "geography-106",
+        "core_claim": "선상지는 산지에서 내려온 물이 골짜기에 쌓은 부채꼴 모양의 충적물 퇴적 지형이다.",
+        "sources": [
+          {
+            "institution": "U.S. National Park Service",
+            "title": "Cerro La Jara Stop 3",
+            "url": "https://www.nps.gov/places/cerro-la-jara-stop-3.htm",
+            "quote": "Alluvial fans get their name from their shape and what they are made of. Rocks, sand, and silt moved and deposited by running water is called alluvium. Alluvial fans are fan-shaped deposits of alluvium. Water flowing downhill out of the mountains moves the sediment downhill and deposits it in the valley."
+          }
+        ]
+      },
+      {
+        "id": "geography-107",
+        "core_claim": "우각호는 서로 맞닿은 곡류의 굽이를 강물이 우회하면서 옛 굽이가 본류에서 끊겨 형성된다.",
+        "sources": [
+          {
+            "institution": "U.S. National Park Service",
+            "title": "Fluvial Features—Meandering Stream",
+            "url": "https://www.nps.gov/articles/meandering-stream.htm",
+            "quote": "Where the bends of two meanders meet, they bypass the curve of river, creating an oxbow lake which may then be infilled with overwash sediment."
+          }
+        ]
+      },
+      {
+        "id": "geography-108",
+        "core_claim": "범람원은 강이나 하천에 이웃한 비교적 평평한 지표로, 홍수 때 물과 퇴적물이 퍼지는 곳이다.",
+        "sources": [
+          {
+            "institution": "U.S. National Park Service",
+            "title": "River Systems and Fluvial Landforms",
+            "url": "https://www.nps.gov/subjects/geology/fluvial-landforms.htm",
+            "quote": "A floodplain is the relatively flat surface adjacent to the river or stream. During floods, when the stream overflows its banks, water flows over the floodplain and deposits sediment."
+          }
+        ]
+      },
+      {
+        "id": "geography-109",
+        "core_claim": "몬순은 지표 바람을 비롯한 저층 대기 순환이 계절에 따라 반전되는 현상이다.",
+        "sources": [
+          {
+            "institution": "NOAA National Weather Service",
+            "title": "North American Monsoon Highlights",
+            "url": "https://www.weather.gov/abq/northamericanmonsoon-intro",
+            "quote": "The term monsoon generally refers to the seasonal reversal in atmospheric low-level circulations, particularly the surface winds and associated precipitation, resulting in a pattern of wet summers and dry winters."
+          }
+        ]
+      },
+      {
+        "id": "geography-110",
+        "core_claim": "해령은 판이 벌어지는 발산형 경계에 놓이며 그곳에서 새로운 해양 지각이 만들어진다.",
+        "sources": [
+          {
+            "institution": "NOAA Ocean Exploration",
+            "title": "What is a mid-ocean ridge?",
+            "url": "https://oceanexplorer.noaa.gov/ocean-fact/mid-ocean-ridge/",
+            "quote": "Mid-ocean ridges occur along divergent plate boundaries, where new ocean floor is created as the Earth’s tectonic plates spread apart."
+          }
+        ]
+      }
+    ],
+    "general": [
+      {
+        "id": "general-101",
+        "core_claim": "QR은 ‘Quick Response’의 약자다.",
+        "sources": [
+          {
+            "institution": "DENSO WAVE",
+            "title": "History of QR Code",
+            "url": "https://www.qrcode.com/en/history/",
+            "quote": "The QR in the name stands for quick response, expressing the development concept for the code, whose focus was placed on high-speed reading."
+          }
+        ]
+      },
+      {
+        "id": "general-102",
+        "core_claim": "피싱은 해로운 링크·이메일·첨부 파일 등을 열게 해 개인정보를 요구하거나 기기를 감염시키려는 수법이다.",
+        "sources": [
+          {
+            "institution": "Cybersecurity and Infrastructure Security Agency (CISA)",
+            "title": "Recognize and Report Phishing",
+            "url": "https://www.cisa.gov/secure-our-world/recognize-and-report-phishing",
+            "quote": "Phishing occurs when criminals try to get us to open harmful links, emails or attachments that could request our personal information or infect our devices."
+          }
+        ]
+      },
+      {
+        "id": "general-103",
+        "core_claim": "기회비용은 선택할 때 포기한 기회 중 다음으로 좋은 대안의 가치이다.",
+        "sources": [
+          {
+            "institution": "Federal Reserve Education",
+            "title": "Opportunity Cost",
+            "url": "https://www.federalreserveeducation.org/teaching-resources/economics/scarcity/opportunity-cost",
+            "quote": "Economists define an opportunity cost as the most highly valued opportunity given up when you make a choice."
+          }
+        ]
+      },
+      {
+        "id": "general-104",
+        "core_claim": "AED는 심정지 환자의 심장 리듬을 자동으로 분석하고 적절할 때 전기 충격을 전달한다.",
+        "sources": [
+          {
+            "institution": "U.S. Food and Drug Administration (FDA)",
+            "title": "How AEDs in Public Places Can Restart Hearts",
+            "url": "https://www.fda.gov/consumers/consumer-updates/how-aeds-public-places-can-restart-hearts",
+            "quote": "An AED is a type of computerized defibrillator that automatically analyzes the heart rhythm in people who are experiencing cardiac arrest. When appropriate, it delivers an electrical shock to the heart to restore its normal rhythm."
+          }
+        ]
+      },
+      {
+        "id": "general-105",
+        "core_claim": "브라우저 쿠키는 서버가 브라우저에 보내며, 브라우저가 저장하고 이후 같은 서버에 다시 보낼 수 있는 작은 데이터다.",
+        "sources": [
+          {
+            "institution": "MDN Web Docs",
+            "title": "Using HTTP cookies",
+            "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies",
+            "quote": "A cookie (also known as a web cookie or browser cookie) is a small piece of data a server sends to a user's web browser. The browser may store cookies, create new cookies, modify existing ones, and send them back to the same server with later requests."
+          }
+        ]
+      },
+      {
+        "id": "general-106",
+        "core_claim": "URL은 Uniform Resource Locator의 약자이며 인터넷에 있는 자원의 주소이다.",
+        "sources": [
+          {
+            "institution": "MDN Web Docs",
+            "title": "What is a URL? - Learn web development | MDN",
+            "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL",
+            "quote": "A URL (Uniform Resource Locator) is the address of a unique resource on the internet."
+          }
+        ]
+      },
+      {
+        "id": "general-107",
+        "core_claim": "다중 인증은 비밀번호와 문자 코드나 지문 같은 추가 인증 수단을 함께 사용하는 방식이다.",
+        "sources": [
+          {
+            "institution": "Cybersecurity and Infrastructure Security Agency",
+            "title": "Use Strong Passwords | CISA",
+            "url": "https://www.cisa.gov/secure-our-world/use-strong-passwords",
+            "quote": "Multifactor authentication means using more than a password to access an app or account. With MFA, we might be asked to enter a text code or use a fingerprint."
+          }
+        ]
+      },
+      {
+        "id": "general-108",
+        "core_claim": "복리는 원금과 누적된 이자 모두에 붙는 이자이다.",
+        "sources": [
+          {
+            "institution": "Investor.gov",
+            "title": "Compound Interest | Investor.gov",
+            "url": "https://www.investor.gov/introduction-investing/investing-basics/glossary/compound-interest",
+            "quote": "Interest paid on principal and on accumulated interest."
+          }
+        ]
+      },
+      {
+        "id": "general-109",
+        "core_claim": "분산 투자는 한 투자의 손실을 다른 투자가 보완하기를 바라며 돈을 여러 투자에 나누는 전략이다.",
+        "sources": [
+          {
+            "institution": "Investor.gov",
+            "title": "Diversification | Investor.gov",
+            "url": "https://www.investor.gov/introduction-investing/investing-basics/glossary/diversification",
+            "quote": "The strategy involves spreading your money among various investments in the hope that if one loses money, the others will make up for those losses."
+          }
+        ]
+      },
+      {
+        "id": "general-110",
+        "core_claim": "공개 키 암호 방식은 서로 관련된 공개 키와 개인 키라는 두 키를 사용한다.",
+        "sources": [
+          {
+            "institution": "National Institute of Standards and Technology",
+            "title": "public key cryptography (PKC) - Glossary | CSRC",
+            "url": "https://csrc.nist.gov/glossary/term/public_key_cryptography",
+            "quote": "A form of cryptography that uses two related keys, a public key and a private key; the two keys have the property that, given the public key, it is computationally infeasible to derive the private key."
+          }
+        ]
+      }
+    ],
+    "art": [
+      {
+        "id": "art-101",
+        "core_claim": "프레스코는 물에 갠 안료를 젖은 회벽에 직접 칠해 안료가 회벽의 일부가 되게 하는 벽화 기법이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Fresco | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/f/fresco",
+            "quote": "Fresco is a mural painting technique that involves painting with water-based paint directly onto wet plaster so that the paint becomes an integral part of the plaster"
+          }
+        ]
+      },
+      {
+        "id": "art-102",
+        "core_claim": "콜라주는 종이, 사진, 천 등의 조각을 지지체에 배치해 붙이는 기법과 그 결과물을 함께 가리킨다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Collage | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/c/collage",
+            "quote": "Collage describes both the technique and the resulting work of art in which pieces of paper, photographs, fabric and other ephemera are arranged and stuck down onto a supporting surface"
+          }
+        ]
+      },
+      {
+        "id": "art-103",
+        "core_claim": "목판화는 나뭇결 방향으로 자른 목판을 이용하는 볼록판 인쇄 방식이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Woodcut | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/w/woodcut",
+            "quote": "A method of relief printing from a block of wood cut along the grain"
+          }
+        ]
+      },
+      {
+        "id": "art-104",
+        "core_claim": "원근법은 선들이 만나는 듯 보이게 해 거리감을 나타내며, 그 지점을 소실점이라 한다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Perspective | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/p/perspective",
+            "quote": "This creates the illusion of distance, and the point at which the lines meet is called the vanishing point."
+          }
+        ]
+      },
+      {
+        "id": "art-105",
+        "core_claim": "삼면화는 세 패널로 이루어진 미술 작품이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Triptych | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/t/triptych",
+            "quote": "An artwork in three panels"
+          }
+        ]
+      },
+      {
+        "id": "art-106",
+        "core_claim": "임파스토는 회화에서 물감을 두껍게 올린 부분이나 질감을 가리킨다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Impasto | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/i/impasto",
+            "quote": "Impasto refers to an area of thick paint or texture, in a painting"
+          }
+        ]
+      },
+      {
+        "id": "art-107",
+        "core_claim": "키아로스쿠로는 회화나 드로잉에서 빛과 그늘의 균형과 배치를 가리키는 이탈리아어 용어이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Chiaroscuro | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/c/chiaroscuro",
+            "quote": "Chiaroscuro is an Italian term which translates as light-dark, and refers to the balance and pattern of light and shade in a painting or drawing"
+          }
+        ]
+      },
+      {
+        "id": "art-108",
+        "core_claim": "레디메이드는 마르셀 뒤샹이 공산품으로 만든 자신의 미술 작품을 설명할 때 사용한 용어이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Readymade | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/r/readymade",
+            "quote": "The term readymade was first used by French artist Marcel Duchamp to describe the works of art he made from manufactured objects. It has since often been applied more generally to artworks by other artists made in this way"
+          }
+        ]
+      },
+      {
+        "id": "art-109",
+        "core_claim": "키네틱 아트는 움직임에 의존해 작품의 효과가 나타나는 예술이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Kinetic art | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/k/kinetic-art",
+            "quote": "Kinetic art is art that depends on motion for its effects"
+          }
+        ]
+      },
+      {
+        "id": "art-110",
+        "core_claim": "설치 미술은 흔히 특정 장소나 일정한 기간을 위해 설계되는 대규모 혼합 매체 구성이다.",
+        "sources": [
+          {
+            "institution": "Tate",
+            "title": "Installation art | Tate",
+            "url": "https://www.tate.org.uk/art/art-terms/i/installation-art",
+            "quote": "The term installation art is used to describe large-scale, mixed-media constructions, often designed for a specific place or for a temporary period of time"
+          }
+        ]
+      }
+    ]
+  }
+}

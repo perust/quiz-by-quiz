@@ -998,5 +998,105 @@
     "explanation": "저마다 맡은 반응이 정해져 있고, 온도와 산도가 맞아야 제대로 일합니다. 침 속 아밀레이스가 그 예입니다.",
     "difficulty": "hard",
     "tags": ["생명과학", "인체"]
+  },
+  {
+    "id": "science-101",
+    "category": "science",
+    "question": "소리의 높낮이인 음높이와 직접 관련된 파동의 성질은?",
+    "choices": ["진폭", "파동의 진행 방향", "소리의 세기", "진동수"],
+    "answerIndex": 3,
+    "explanation": "음높이는 소리의 진동수를 지각한 것이므로, 진동수가 달라지면 음높이도 달라집니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "소리"]
+  },
+  {
+    "id": "science-102",
+    "category": "science",
+    "question": "산소를 나타내는 원소 기호는?",
+    "choices": ["N", "C", "H", "O"],
+    "answerIndex": 3,
+    "explanation": "산소라는 원소를 나타내는 기호는 O입니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "원소"]
+  },
+  {
+    "id": "science-103",
+    "category": "science",
+    "question": "혈액을 온몸으로 펌프질하는 기관은?",
+    "choices": ["폐", "위", "콩팥", "심장"],
+    "answerIndex": 3,
+    "explanation": "심장은 혈액을 몸 전체로 보내는 펌프 역할을 하는 기관입니다.",
+    "difficulty": "easy",
+    "tags": ["생물", "인체"]
+  },
+  {
+    "id": "science-104",
+    "category": "science",
+    "question": "대기압을 측정하는 기구는?",
+    "choices": ["온도계", "풍향계", "습도계", "기압계"],
+    "answerIndex": 3,
+    "explanation": "기압계는 공기가 누르는 압력인 대기압을 측정하는 기구입니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "기상"]
+  },
+  {
+    "id": "science-105",
+    "category": "science",
+    "question": "달의 위상이 달라져 보이는 주된 까닭은?",
+    "choices": ["달의 실제 모양이 계속 변해서", "지구의 그림자가 매일 달을 가려서", "달이 스스로 내는 빛의 세기가 변해서", "달이 공전하며 지구에서 보이는 밝은 부분이 달라져서"],
+    "answerIndex": 3,
+    "explanation": "달은 햇빛을 반사하며, 달이 지구를 도는 동안 햇빛을 받은 면 가운데 보이는 부분이 달라져 여러 위상으로 나타납니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "달"]
+  },
+  {
+    "id": "science-106",
+    "category": "science",
+    "question": "지진이 일으킨 지면의 움직임을 감지하고 기록하는 기구는?",
+    "choices": ["기압계", "풍속계", "우량계", "지진계"],
+    "answerIndex": 3,
+    "explanation": "지진계는 지진으로 생긴 지면의 움직임을 감지하고 기록하는 기구입니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "지진"]
+  },
+  {
+    "id": "science-107",
+    "category": "science",
+    "question": "바람의 속력을 측정하는 기구는?",
+    "choices": ["풍향계", "기압계", "습도계", "풍속계"],
+    "answerIndex": 3,
+    "explanation": "풍속계는 바람이 얼마나 빠르게 부는지를 측정하는 기구입니다.",
+    "difficulty": "easy",
+    "tags": ["지구과학", "기상"]
+  },
+  {
+    "id": "science-108",
+    "category": "science",
+    "question": "두 원자가 전자쌍을 서로 공유하여 형성하는 화학 결합은?",
+    "choices": ["금속 결합", "수소 결합", "이온 결합", "공유 결합"],
+    "answerIndex": 3,
+    "explanation": "공유 결합은 두 원자가 하나 이상의 전자쌍을 공유하여 이루어지는 결합입니다.",
+    "difficulty": "easy",
+    "tags": ["화학", "화학 결합"]
+  },
+  {
+    "id": "science-109",
+    "category": "science",
+    "question": "서로 반대 전하를 띤 이온 사이의 정전기적 인력으로 형성되는 결합은?",
+    "choices": ["공유 결합", "금속 결합", "수소 결합", "이온 결합"],
+    "answerIndex": 3,
+    "explanation": "이온 결합은 양이온과 음이온처럼 서로 반대 전하를 띤 이온 사이의 정전기적 인력입니다.",
+    "difficulty": "normal",
+    "tags": ["화학", "화학 결합"]
+  },
+  {
+    "id": "science-110",
+    "category": "science",
+    "question": "변성암을 만드는 과정은?",
+    "choices": ["용암이 지표에서 식고 굳어지는 과정", "퇴적물이 쌓여 눌리고 굳어지는 과정", "마그마가 지하에서 식고 굳어지는 과정", "암석이 녹지 않은 채 큰 압력과 열을 받는 과정"],
+    "answerIndex": 3,
+    "explanation": "변성암은 암석이 녹지 않을 정도의 큰 압력과 열을 받은 결과입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "암석"]
   }
 ]

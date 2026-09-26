@@ -998,5 +998,105 @@
     "explanation": "그래서 운전석이 왼쪽에 있습니다. 일본과 영국은 반대로 좌측통행이라 운전석이 오른쪽입니다.",
     "difficulty": "hard",
     "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-101",
+    "category": "general",
+    "question": "QR 코드의 이름에서 ‘QR’은 무엇의 약자인가?",
+    "choices": ["Quick Response", "Quality Reading", "Query Routing", "Queue Reader"],
+    "answerIndex": 0,
+    "explanation": "QR은 ‘Quick Response’의 약자로, 빠르게 읽는다는 개발 개념을 이름에 담았습니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "QR 코드"]
+  },
+  {
+    "id": "general-102",
+    "category": "general",
+    "question": "범죄자가 해로운 이메일·링크·첨부 파일을 열게 해 개인정보를 요구하거나 기기를 감염시키는 수법은?",
+    "choices": ["랜섬웨어", "분산 서비스 거부 공격", "무차별 대입 공격", "피싱"],
+    "answerIndex": 3,
+    "explanation": "피싱은 해로운 이메일·링크·첨부 파일을 열게 해 개인정보를 요구하거나 기기를 감염시키는 수법입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "보안"]
+  },
+  {
+    "id": "general-103",
+    "category": "general",
+    "question": "경제학에서 ‘기회비용’은 무엇을 뜻하는가?",
+    "choices": ["이미 지출하여 되돌릴 수 없는 비용", "선택한 대안에 실제로 지불한 금액", "앞으로 얻을 수 있는 모든 이익의 합", "선택하지 않은 대안 중 다음으로 좋은 대안의 가치"],
+    "answerIndex": 3,
+    "explanation": "여러 대안 가운데 하나를 선택하면 다른 대안을 포기합니다. 그중 다음으로 좋은 대안에서 얻을 수 있었던 가치가 기회비용입니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "기회비용"]
+  },
+  {
+    "id": "general-104",
+    "category": "general",
+    "question": "심정지 환자의 심장 리듬을 스스로 판별해 필요한 경우 전기 에너지를 전달하는 응급 장비는?",
+    "choices": ["인공호흡기", "혈압계", "산소포화도 측정기", "자동심장충격기"],
+    "answerIndex": 3,
+    "explanation": "자동심장충격기(AED)는 심정지 환자의 심장 리듬을 자동으로 분석한 뒤, 필요한 경우 정상 리듬 회복을 돕는 전기 충격을 전달합니다.",
+    "difficulty": "easy",
+    "tags": ["건강", "응급처치"]
+  },
+  {
+    "id": "general-105",
+    "category": "general",
+    "question": "웹 브라우저의 ‘쿠키(cookie)’에 대한 옳은 설명은?",
+    "choices": ["브라우저가 화면 모양을 유지하려고 내려받는 이미지 묶음", "인터넷 주소를 숫자 주소로 바꾸어 보관하는 변환 목록", "운영체제에 설치되어 브라우저 자체를 실행하는 프로그램 파일", "서버가 보내고 브라우저가 저장해 이후 요청에 다시 보낼 수 있는 작은 데이터"],
+    "answerIndex": 3,
+    "explanation": "쿠키는 서버가 브라우저에 보내는 작은 데이터입니다. 브라우저는 이를 저장했다가 이후 같은 서버에 요청할 때 다시 보낼 수 있습니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "인터넷"]
+  },
+  {
+    "id": "general-106",
+    "category": "general",
+    "question": "인터넷에서 자원의 주소를 나타내는 ‘URL’의 영문 전체 이름은?",
+    "choices": ["Universal Reference Location", "Unified Resource Link", "Uniform Routing Locator", "Uniform Resource Locator"],
+    "answerIndex": 3,
+    "explanation": "URL은 Uniform Resource Locator의 약자입니다. 인터넷에서 특정 자원을 찾아갈 수 있도록 위치를 나타내는 주소입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "인터넷"]
+  },
+  {
+    "id": "general-107",
+    "category": "general",
+    "question": "비밀번호에 문자 코드나 지문 같은 추가 인증 수단을 함께 요구하는 방식은?",
+    "choices": ["단일 인증", "싱글 사인온", "비밀번호 재설정", "다중 인증"],
+    "answerIndex": 3,
+    "explanation": "다중 인증은 비밀번호만 쓰지 않고 문자 코드나 지문 같은 추가 수단으로 한 번 더 본인을 확인하는 방식입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "보안"]
+  },
+  {
+    "id": "general-108",
+    "category": "general",
+    "question": "금융에서 ‘복리’의 뜻으로 알맞은 것은?",
+    "choices": ["처음 맡긴 원금에만 이자가 붙는 방식", "이자를 미리 한꺼번에 내는 방식", "원금을 같은 금액으로 나누어 갚는 방식", "원금과 지금까지 쌓인 이자에 이자가 붙는 방식"],
+    "answerIndex": 3,
+    "explanation": "복리에서는 앞서 붙은 이자가 다음 이자 계산의 바탕에 포함되므로, 원금뿐 아니라 누적 이자에도 다시 이자가 붙습니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "금융"]
+  },
+  {
+    "id": "general-109",
+    "category": "general",
+    "question": "투자에서 ‘분산 투자’를 하는 주된 까닭은?",
+    "choices": ["한 상품의 수익을 최대화하려고", "모든 투자 수익률을 같게 만들려고", "시장 가격 변동을 완전히 없애려고", "한 투자의 손실을 다른 투자의 성과로 보완하려고"],
+    "answerIndex": 3,
+    "explanation": "분산 투자는 돈을 여러 곳에 나누어 한 투자의 손실을 다른 투자의 성과가 메울 가능성을 높이려는 전략으로, 한 상품에 모두 집중하는 것과 반대입니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "투자"]
+  },
+  {
+    "id": "general-110",
+    "category": "general",
+    "question": "서로 연결된 두 키 가운데 하나는 널리 배포하고 다른 하나는 소유자만 비밀로 보관하는 방식은?",
+    "choices": ["대칭 키 암호", "해시 함수", "메시지 인증 코드", "공개 키 암호"],
+    "answerIndex": 3,
+    "explanation": "공개 키 암호는 서로 관련된 공개 키와 개인 키를 한 쌍으로 쓰며, 공개 키만으로 개인 키를 알아내기는 계산상 매우 어렵게 설계됩니다.",
+    "difficulty": "normal",
+    "tags": ["정보기술", "보안"]
   }
 ]
