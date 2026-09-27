@@ -21,6 +21,7 @@
 // 두 번 낭독하지 않는다. 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
 import { need } from '../dom.js';
+import { setArenaTileSelectable } from './arena-state.js';
 import { createWalker, type Point } from './walker.js';
 import { paintCharacter } from './sprite.js';
 
@@ -67,6 +68,11 @@ export interface ArenaOutcome {
   correct: boolean;
 }
 
+export interface ArenaOutcomeOptions {
+  /** 로컬 피드백처럼 결과 뒤 이동까지 막을지. 기본값은 기존 동작인 true다. */
+  lockMovement?: boolean;
+}
+
 export interface Arena {
   /** 화면 진입·이탈에 맞춰 캐릭터 무대를 켜고 끈다. */
   setEnabled(value: boolean): void;
@@ -75,12 +81,12 @@ export interface Arena {
   setCharacter(id?: string | null): void;
   /** 새 문항을 위해 바닥을 다시 깐다 */
   reset(choiceCount: number): void;
-  /** 더 움직이지도 고르지도 못하게 잠근다 */
-  lock(): void;
+  /** 이동은 유지한 채 답 칸을 고를 수 있는지만 바꾼다. */
+  setSelectionEnabled(value: boolean): void;
   /** 지금 밟고 있는 칸. 아무 칸도 아니면 null */
   standingIndex(): number | null;
-  /** 채점 결과를 바닥에 칠한다 */
-  showOutcome(outcome: ArenaOutcome): void;
+  /** 채점 결과를 바닥에 칠한다. 필요하면 결과를 보는 동안에도 이동은 유지한다. */
+  showOutcome(outcome: ArenaOutcome, options?: ArenaOutcomeOptions): void;
   /** 도움말이 열려 있는가 */
   isDialogOpen(): boolean;
   /** 도움말을 닫는다. 퀴즈 화면을 떠날 때 부른다 */
@@ -119,7 +125,7 @@ export function createArena({
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —
     // 시간 초과의 뜻이 그대로 유지된다
-    pickable: '.arena-tile, button, a[href], [role="button"]',
+    pickable: '.arena-tile[data-selectable="true"], button, a[href], [role="button"]',
     startAt: () => {
       const box = el.tiles.getBoundingClientRect();
       if (box.width === 0) return null;
@@ -169,6 +175,7 @@ export function createArena({
     for (let index = 0; index < count; index += 1) {
       const tile = document.createElement('div');
       tile.className = 'arena-tile';
+      setArenaTileSelectable(tile, true);
 
       const number = document.createElement('span');
       number.className = 'arena-tile__number';
@@ -179,12 +186,26 @@ export function createArena({
 
       tile.append(number, mark);
       // 걸어가서 Enter로 고르든 손가락으로 바로 누르든 이 한 곳으로 모인다 —
-      // 워커의 «고르기»도 결국 발밑 요소의 click 을 부른다
-      tile.addEventListener('click', () => onChoose(index));
+      // 워커의 «고르기»도 결국 발밑 요소의 click 을 부른다.
+      // 제출 뒤에는 캐릭터가 계속 움직여도 답 칸 click은 닫혀 있어야 한다.
+      tile.addEventListener('click', () => {
+        if (tile.dataset.selectable === 'true') onChoose(index);
+      });
 
       el.tiles.append(tile);
       tileNodes.push(tile);
     }
+  }
+
+  /**
+   * 캐릭터는 계속 걷되 답 칸만 선택 대상에서 열고 닫는다.
+   * 닫는 순간 walker를 새로 그려 현재 칸의 is-standing도 함께 거둔다.
+   */
+  function setTileSelectionEnabled(value: boolean): void {
+    tileNodes.forEach((tile) => {
+      setArenaTileSelectable(tile, value);
+    });
+    walker.refresh();
   }
 
   return {
@@ -225,12 +246,9 @@ export function createArena({
       walker.setEnabled(true);
     },
 
-    /**
-     * 더 움직이지도 고르지도 못하게 잠근다. 조작부도 함께 사라진다.
-     * 채점과 온라인 제출 대기 중에 사용한다.
-     */
-    lock() {
-      walker.setLocked(true);
+    /** 이동은 유지한 채 답 칸을 고를 수 있는지만 바꾼다. */
+    setSelectionEnabled(value) {
+      setTileSelectionEnabled(value);
     },
 
     /**
@@ -242,8 +260,14 @@ export function createArena({
     },
 
     /** 채점 결과를 바닥에 칠한다. 무엇이 정답인지는 quiz.js가 알려준다 */
-    showOutcome({ answerIndex, chosenIndex, correct }) {
-      walker.setLocked(true);
+    showOutcome(
+      { answerIndex, chosenIndex, correct },
+      { lockMovement = true } = {},
+    ) {
+      // 결과를 보는 동안에는 움직일 수 있어도 다른 답 칸을 고를 수는 없다.
+      // 선택 대상에서 빼야 is-standing이 결과 색을 다시 덮지 않는다.
+      setTileSelectionEnabled(false);
+      if (lockMovement) walker.setLocked(true);
 
       tileNodes.forEach((tile, index) => {
         // 채점 뒤에는 «밟고 있는 칸» 불을 끈다. 정답·오답 표시와 섞이면

@@ -189,7 +189,7 @@ js/                 tsc 산출물. **고치지 말 것** — 다음 빌드에 �
 
 **캐릭터 퀴즈 (`ui/arena.ts`)는 유일한 플레이 규칙이다.** «보통 모드»나 모드 토글·방 설정은 없다. 로컬과 온라인 모두 십자로 나눈 2×2 바닥 위를 캐릭터가 자유롭게 돌아다니며 답을 고른다. 사용자 설정에는 `gameMode`를 저장하지 않는다. wire 호환용 응답 필드와 DB column은 오직 `true`만 허용하고, 구버전 client가 보내는 `gameMode:false`도 `true`로 정규화한다. `010_enforce_character_only_play.sql`은 false와 캐릭터 없는 row를 표현할 수 없게 막는다. 캐릭터 필드를 보내지 않는 구버전 session client에는 서버가 `slime-blue`를 배정한다.
 
-**arena 수명주기는 화면 수명주기와 같다.** 로컬은 `quiz.start()`에서 켜고 모든 종료 경로에서 끈다. 온라인은 `online-*` element ID를 쓰는 별도 arena를 만들되 답은 반드시 기존 서버 권위 `onSubmit(position, choiceIndex)` 경로로만 보낸다. 제출 대기·채점 중에는 `arena.lock()`으로 캐릭터와 고정 조작부를 함께 잠근다.
+**arena 수명주기는 화면 수명주기와 같다.** 로컬은 `quiz.start()`에서 켜고 모든 종료 경로에서 끈다. 온라인은 `online-*` element ID를 쓰는 별도 arena를 만들되 답은 반드시 기존 서버 권위 `onSubmit(position, choiceIndex)` 경로로만 보낸다. 로컬 피드백은 `showOutcome`의 기본 동작으로 캐릭터와 고정 조작부를 함께 잠그지만, **온라인은 답안 제출 대기·제출 완료·정답 공개 중에도 이동과 고정 조작부를 유지한다.** 대신 `setSelectionEnabled(false)`로 답 칸만 선택 대상에서 빼 `is-standing`이 결과 색을 덮거나 중복 답처럼 보이지 않게 한다. 실제 중복 답안은 제출 게이트와 비활성 보기 버튼이 함께 막는다.
 
 로컬에서 시간이 끝나면 `quiz.ts`의 `handleTimeout`이 `arena.standingIndex()`를 `session.submit`에 넘긴다. `choiceIndex`가 `null`이면 시간 초과 오답이라는 core 계약은 그대로다. 온라인 deadline 판정은 서버만 소유하며 client clock으로 제출 가능 여부를 닫지 않는다.
 
@@ -215,7 +215,7 @@ js/                 tsc 산출물. **고치지 말 것** — 다음 빌드에 �
 
 **스틱에 `z-index`를 주지 말 것.** 이 프로젝트에는 `z-index`가 하나도 없어서 다이얼로그(`<main>` 뒤에 온다)가 DOM 순서로 위에 온다. 스틱에 `z-index`를 주면 그 순서가 깨져 다이얼로그 위로 올라온다.
 
-**조작부를 CSS 선택자로 숨기지 말 것.** 스틱과 확정 버튼은 `position: fixed`라 **어느 화면의 자손도 아니다.** 한때 `.arena--locked .walk-stick`으로 치웠는데 스틱을 `.arena` 밖으로 옮긴 뒤로 매칭되지 않는 죽은 규칙이 됐고, 모바일에서 답을 낸 뒤 스틱이 «다음 문제»를 가렸다. 지금은 잠금 상태를 아는 `walker.setLocked`가 `--on` 클래스를 떼어 치운다.
+**조작부를 CSS 선택자로 숨기지 말 것.** 스틱과 확정 버튼은 `position: fixed`라 **어느 화면의 자손도 아니다.** 한때 `.arena--locked .walk-stick`으로 치웠는데 스틱을 `.arena` 밖으로 옮긴 뒤로 매칭되지 않는 죽은 규칙이 됐다. 실제로 이동을 잠그는 로컬 피드백에서는 `showOutcome`이 `walker.setLocked`를 호출해 `--on` 클래스를 떼어 치운다. 온라인 답안 제출·정답 공개는 이동을 잠그지 않고 답 칸 선택만 닫으므로 조작부가 계속 남아야 한다.
 
 이동은 `requestAnimationFrame` 루프에서 초당 `SPEED`px씩 적분한다. 밟을 칸 목록을 들고 있지 않고 **발밑에 실제로 무엇이 있는지**를 `elementFromPoint`로 그때그때 본다. 그래서 바닥을 다른 모양으로 깔아도, 화면에 무엇을 새로 놓아도 이동 코드는 그대로 맞는다. 대각선은 두 방향키를 함께 누른 것이고 길이를 1로 맞춰 더 빠르지 않게 한다. 눌린 키는 `held`에 모으며, 창을 벗어나면 `keyup`을 놓칠 수 있어 `blur`에서 비운다.
 
