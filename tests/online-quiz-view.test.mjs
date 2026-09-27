@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 const MATCH_ID = '12345678-1234-5678-9234-567812345678';
 
@@ -68,6 +69,94 @@ test('revealing online quiz view는 server reveal만으로 정오답과 해설�
     timedOut: false,
     explanation: '서버 해설',
   });
+});
+
+test('온라인 답안 제출·정답 공개 중에도 이동 인터페이스를 잠그지 않는다', async () => {
+  const {
+    handleOnlineMovementKey,
+    onlineArenaMovementEnabled,
+    onlineArenaSelectionEnabled,
+    onlineQuizView,
+  } = await import('../js/ui/online-quiz.js');
+  const freshSnapshot = runningMatch();
+  const submittedSnapshot = runningMatch({
+    ownSubmission: { position: 1, choiceIndex: 2, timedOut: false },
+  });
+  const revealingSnapshot = {
+    ...runningMatch(),
+    state: 'revealing',
+    reveal: {
+      position: 1,
+      choiceIndex: 2,
+      timedOut: false,
+      correct: true,
+      answerIndex: 2,
+      explanation: '서버 해설',
+    },
+  };
+  const finishedSnapshot = {
+    ...runningMatch(),
+    state: 'finished',
+    deadlineAt: null,
+    currentPosition: 2,
+    question: null,
+    ownSubmission: null,
+    reveal: null,
+    scores: [],
+  };
+  const fresh = onlineQuizView(freshSnapshot);
+  const submitted = onlineQuizView(submittedSnapshot);
+  const revealing = onlineQuizView(revealingSnapshot);
+  const finished = onlineQuizView(finishedSnapshot);
+  const source = await readFile(
+    new URL('../src/ui/online-quiz.ts', import.meta.url),
+    'utf8',
+  );
+  const forwarded = [];
+  const arena = {
+    handleKey(event) {
+      forwarded.push(event.key);
+      return true;
+    },
+  };
+
+  assert.equal(onlineArenaMovementEnabled(submitted), true);
+  assert.equal(onlineArenaMovementEnabled(revealing), true);
+  assert.equal(onlineArenaMovementEnabled(finished), false);
+  assert.equal(onlineArenaSelectionEnabled(fresh, false), true);
+  assert.equal(onlineArenaSelectionEnabled(fresh, true), false);
+  assert.equal(onlineArenaSelectionEnabled(submitted, false), false);
+  assert.equal(onlineArenaSelectionEnabled(revealing, false), false);
+  assert.equal(handleOnlineMovementKey(submittedSnapshot, { key: 'ArrowRight' }, arena), true);
+  assert.equal(handleOnlineMovementKey(revealingSnapshot, { key: 'ArrowLeft' }, arena), true);
+  assert.equal(handleOnlineMovementKey(finishedSnapshot, { key: 'ArrowUp' }, arena), false);
+  assert.equal(handleOnlineMovementKey(null, { key: 'ArrowDown' }, arena), false);
+  assert.deepEqual(forwarded, ['ArrowRight', 'ArrowLeft']);
+  assert.doesNotMatch(source, /arena\.lock\(\)/);
+  assert.match(source, /lockMovement:\s*false/);
+  assert.match(
+    source,
+    /arena\.setSelectionEnabled\(onlineArenaSelectionEnabled\(view, isSubmitPending\)\)/,
+  );
+});
+
+test('답 칸 선택을 닫으면 발밑 강조만 지우고 채점 결과 색은 보존한다', async () => {
+  const { setArenaTileSelectable } = await import('../js/ui/arena-state.js');
+  const classes = new Set(['arena-tile', 'is-standing', 'arena-tile--correct']);
+  const tile = {
+    dataset: { selectable: 'true' },
+    classList: {
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+    },
+  };
+
+  setArenaTileSelectable(tile, false);
+
+  assert.equal(tile.dataset.selectable, 'false');
+  assert.equal(classes.has('is-standing'), false);
+  assert.equal(classes.has('arena-tile--correct'), true);
 });
 
 test('finished online quiz view는 질문을 다시 만들지 않고 server final ranking 화면으로 넘긴다', async () => {

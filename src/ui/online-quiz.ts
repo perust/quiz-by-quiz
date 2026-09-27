@@ -235,6 +235,31 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
   };
 }
 
+/** 답은 한 번만 제출하지만 매치가 끝나기 전까지 캐릭터 이동은 계속 허용한다. */
+export function onlineArenaMovementEnabled(view: OnlineQuizView): boolean {
+  return view.phase !== 'finished';
+}
+
+/** 이동과 답 선택을 분리한다. 제출 중·제출 뒤·정답 공개 중에는 걷기만 허용한다. */
+export function onlineArenaSelectionEnabled(
+  view: OnlineQuizView,
+  isSubmitPending: boolean,
+): boolean {
+  return view.phase === 'running' && view.canSubmit && !isSubmitPending;
+}
+
+/**
+ * 답 제출 여부와 공개 phase는 이동 입력을 막지 않는다. 끝난 매치만 arena로 넘기지 않는다.
+ */
+export function handleOnlineMovementKey(
+  snapshot: OnlineMatchSnapshot | null,
+  event: KeyboardEvent,
+  arena: Pick<Arena, 'handleKey'>,
+): boolean {
+  if (snapshot === null || !onlineArenaMovementEnabled(onlineQuizView(snapshot))) return false;
+  return arena.handleKey(event);
+}
+
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   onMovement: (sample: MovementSample) => void;
@@ -549,7 +574,6 @@ export function createOnlineQuizScreen(
     ) return;
 
     const owner = submissionGate.begin(current);
-    arena.lock();
     render(current);
     try {
       await onSubmit({ ...owner, choiceIndex: index });
@@ -557,7 +581,6 @@ export function createOnlineQuizScreen(
       const latest = snapshot;
       if (!submissionGate.finish(owner, latest)) return;
       if (latest?.state === 'running' && latest.ownSubmission === null) {
-        lastArenaQuestionKey = null;
         render(latest);
       }
       const message = error instanceof Error ? error.message : '답안을 제출하지 못했습니다.';
@@ -569,7 +592,6 @@ export function createOnlineQuizScreen(
     if (!submissionGate.finish(owner, latest)) return;
     // 전송이 성공했지만 authoritative snapshot에 제출이 없다면 다시 시도할 수 있다.
     if (latest?.state === 'running' && latest.ownSubmission === null) {
-      lastArenaQuestionKey = null;
       render(latest);
     }
   }
@@ -683,6 +705,7 @@ export function createOnlineQuizScreen(
     el.question.textContent = question.question;
     renderServerTimeNotice();
     setStatus(view.status);
+    const isSubmitPending = submissionGate.pendingFor(nextSnapshot);
     const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
     if (choiceStructureKey === null) throw new Error('active match choice key is missing');
     renderChoices(view, choiceStructureKey);
@@ -694,14 +717,13 @@ export function createOnlineQuizScreen(
       arena.setEnabled(true);
       arena.reset(question.choices.length);
     }
+    arena.setSelectionEnabled(onlineArenaSelectionEnabled(view, isSubmitPending));
     if (view.reveal !== null) {
       arena.showOutcome({
         answerIndex: view.reveal.answerIndex,
         chosenIndex: view.reveal.chosenChoiceIndex,
         correct: view.reveal.correct,
-      });
-    } else if (!view.canSubmit || submissionGate.pendingFor(nextSnapshot)) {
-      arena.lock();
+      }, { lockMovement: false });
     }
 
     const questionKey = `${nextSnapshot.matchId}:${nextSnapshot.state}:${question.position}`;
@@ -727,17 +749,18 @@ export function createOnlineQuizScreen(
       return;
     }
     if (document.activeElement === el.chatInput) return;
-    if (!snapshot || snapshot.state !== 'running') return;
-    const choiceIndex = ['1', '2', '3', '4'].indexOf(event.key);
-    if (choiceIndex !== -1 && !document.activeElement?.closest('button')) {
-      const button = el.choices.querySelectorAll<HTMLButtonElement>('.choice')[choiceIndex];
-      if (button && !button.disabled) {
-        event.preventDefault();
-        button.click();
-        return;
+    if (snapshot?.state === 'running') {
+      const choiceIndex = ['1', '2', '3', '4'].indexOf(event.key);
+      if (choiceIndex !== -1 && !document.activeElement?.closest('button')) {
+        const button = el.choices.querySelectorAll<HTMLButtonElement>('.choice')[choiceIndex];
+        if (button && !button.disabled) {
+          event.preventDefault();
+          button.click();
+          return;
+        }
       }
     }
-    if (arena.handleKey(event)) event.preventDefault();
+    if (handleOnlineMovementKey(snapshot, event, arena)) event.preventDefault();
   });
 
   return {
@@ -762,7 +785,6 @@ export function createOnlineQuizScreen(
       const interrupted = submissionGate.pendingFor(current);
       submissionGate.invalidate(owner);
       if (interrupted && current.ownSubmission === null) {
-        lastArenaQuestionKey = null;
         render(current);
       }
       setStatus(`온라인 매치 오류: ${message}`);
