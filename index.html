@@ -280,33 +280,64 @@
          방을 나눠 가지려면 서버가 있어야 한다. 지금은 브라우저 안에서만 도는
          구현이 끼워져 있고(js/online/adapter.js), 화면은 그 사실을 모른다. -->
     <section class="screen" data-screen="online" aria-labelledby="online-title" tabindex="-1" hidden>
-      <header class="quiz-header">
-        <h1 class="screen-title" id="online-title">온라인</h1>
-        <button type="button" class="button button--ghost" id="online-home">홈으로</button>
-      </header>
+      <div class="online-hero">
+        <header class="quiz-header online-hero__header">
+          <div>
+            <p class="online-hero__eyebrow"><span aria-hidden="true">●</span> 친구와 함께</p>
+            <h1 class="screen-title online-hero__title" id="online-title">온라인 퀴즈</h1>
+            <p class="online-hero__lead">열린 방에 바로 들어가거나, 우리만의 방을 만들어 보세요.</p>
+          </div>
+          <button type="button" class="button button--ghost online-home" id="online-home">
+            <span aria-hidden="true">←</span> 홈
+          </button>
+        </header>
 
-      <p class="online-note" id="online-note"></p>
+        <p class="online-note" id="online-note"></p>
+      </div>
 
       <!-- 로비 전체에 걸리는 알림. 어느 블록의 일이 아니라 «방금 한 일»의 결과라
            맨 위에 둔다. 지금은 대기실에 들어가려다 방이 이미 사라진 경우가 쓴다. -->
-      <p class="room-message" id="online-message" role="status" hidden></p>
+      <p class="room-message online-message" id="online-message" role="status" hidden></p>
 
       <nav class="online-actions" aria-label="온라인 주요 동작">
-        <button type="button" class="button button--primary" id="open-public-rooms">공개방 참가</button>
-        <button type="button" class="button button--ghost" id="open-private-join">비공개방 참가</button>
-        <button type="button" class="button button--ghost" id="open-create-room">방 만들기</button>
+        <button type="button" class="online-action-card" id="open-public-rooms"
+                aria-controls="room-browser" aria-pressed="true">
+          <span class="online-action-card__icon" aria-hidden="true">🌐</span>
+          <span class="online-action-card__body">
+            <strong>방 찾기</strong>
+            <span class="online-action-card__copy">열린 방을 둘러봐요</span>
+          </span>
+        </button>
+        <button type="button" class="online-action-card" id="open-private-join"
+                aria-controls="private-join-block" aria-pressed="false">
+          <span class="online-action-card__icon" aria-hidden="true">🔑</span>
+          <span class="online-action-card__body">
+            <strong>코드 참가</strong>
+            <span class="online-action-card__copy">받은 코드로 들어가요</span>
+          </span>
+        </button>
+        <button type="button" class="online-action-card" id="open-create-room"
+                aria-controls="create-room-block" aria-pressed="false">
+          <span class="online-action-card__icon" aria-hidden="true">✨</span>
+          <span class="online-action-card__body">
+            <strong>방 만들기</strong>
+            <span class="online-action-card__copy">새 퀴즈방을 열어요</span>
+          </span>
+        </button>
       </nav>
 
-      <div class="online-block">
+      <div class="online-block online-block--rooms" id="room-browser">
         <div class="online-block__head">
           <div>
-            <h2 class="online-block__title" id="rooms-title">방 목록</h2>
-            <p class="online-block__caption">빈자리가 있는 방, 공개방, 비공개방 순으로 보여줘요.</p>
+            <p class="online-block__eyebrow">지금 열린 방</p>
+            <h2 class="online-block__title" id="rooms-title">함께 풀 방을 골라요</h2>
+            <p class="online-block__caption">참가할 수 있는 방을 먼저 보여드려요.</p>
           </div>
           <div class="online-block__tools">
             <button type="button" class="button button--ghost button--small" id="room-filter-toggle"
-                    aria-controls="room-filters" aria-expanded="false">필터</button>
-            <button type="button" class="button button--ghost button--small" id="room-refresh">새로고침</button>
+                    aria-controls="room-filters" aria-expanded="false"><span aria-hidden="true">⚙</span> 필터</button>
+            <button type="button" class="button button--ghost button--small" id="room-refresh"
+                    aria-label="방 목록 새로고침"><span aria-hidden="true">↻</span> 새로고침</button>
           </div>
         </div>
 
@@ -341,12 +372,24 @@
 
         <p class="room-list-summary" id="room-list-summary" role="status"></p>
         <ul class="room-list" id="room-list" aria-labelledby="rooms-title"></ul>
-        <p class="room-empty" id="room-empty" hidden></p>
+        <div class="room-empty" id="room-empty" hidden>
+          <span class="room-empty__icon" aria-hidden="true">🎈</span>
+          <h3 class="room-empty__title" id="room-empty-title"></h3>
+          <p class="room-empty__copy" id="room-empty-copy"></p>
+          <button type="button" class="button button--primary button--small" id="room-empty-action"></button>
+        </div>
       </div>
 
-      <div class="online-block" id="private-join-block">
-        <h2 class="online-block__title">방 코드로 참가</h2>
-        <p class="online-block__caption">비공개방은 방 코드와 비밀번호를 모두 입력해 주세요.</p>
+      <div class="online-block online-block--panel" id="private-join-block" role="region"
+           aria-labelledby="private-join-title" hidden>
+        <div class="online-panel-heading">
+          <span class="online-panel-heading__icon" aria-hidden="true">🔑</span>
+          <div>
+            <p class="online-block__eyebrow">초대받았나요?</p>
+            <h2 class="online-block__title" id="private-join-title">방 코드로 참가</h2>
+            <p class="online-block__caption">비공개방은 코드와 비밀번호를 함께 입력해 주세요.</p>
+          </div>
+        </div>
         <form class="room-form" id="join-form" novalidate>
           <div class="room-form__row">
             <label class="room-form__label" for="join-code">방 코드</label>
@@ -358,13 +401,21 @@
             <input class="room-form__input" id="join-password" type="password"
                    maxlength="12" autocomplete="off" placeholder="공개방은 비워 두세요">
           </div>
-          <button type="submit" class="button button--primary">참가</button>
+          <button type="submit" class="button button--primary room-form__submit">방에 참가하기</button>
         </form>
         <p class="room-message" id="join-message" role="status" hidden></p>
       </div>
 
-      <div class="online-block" id="create-room-block">
-        <h2 class="online-block__title">방 만들기</h2>
+      <div class="online-block online-block--panel" id="create-room-block" role="region"
+           aria-labelledby="create-room-title" hidden>
+        <div class="online-panel-heading">
+          <span class="online-panel-heading__icon" aria-hidden="true">✨</span>
+          <div>
+            <p class="online-block__eyebrow">새로운 퀴즈 파티</p>
+            <h2 class="online-block__title" id="create-room-title">방 만들기</h2>
+            <p class="online-block__caption">분야와 인원을 정하고 친구를 기다려요.</p>
+          </div>
+        </div>
         <form class="room-form" id="create-form" novalidate>
           <div class="room-form__row">
             <label class="room-form__label" for="create-name">방 이름</label>
@@ -388,7 +439,7 @@
             <input class="room-form__input" id="create-password" type="password"
                    maxlength="12" autocomplete="off" placeholder="4~12자">
           </div>
-          <button type="submit" class="button button--primary">만들기</button>
+          <button type="submit" class="button button--primary room-form__submit">새 방 만들기</button>
         </form>
         <p class="room-message" id="create-message" role="status" hidden></p>
       </div>

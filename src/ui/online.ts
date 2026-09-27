@@ -32,6 +32,7 @@ import {
 import { createScreenWalker } from './screen-walker.js';
 
 const ALL_CATEGORY = '전체 도전';
+type OnlinePanel = 'rooms' | 'join' | 'create';
 
 export interface OnlineScreenDeps {
   /** 방 저장소 어댑터 */
@@ -63,6 +64,9 @@ export function createOnlineScreen(
     openCreate: need<HTMLButtonElement>('open-create-room'),
     list: need('room-list'),
     empty: need('room-empty'),
+    emptyTitle: need('room-empty-title'),
+    emptyCopy: need('room-empty-copy'),
+    emptyAction: need<HTMLButtonElement>('room-empty-action'),
     summary: need('room-list-summary'),
     refresh: need<HTMLButtonElement>('room-refresh'),
     filterToggle: need<HTMLButtonElement>('room-filter-toggle'),
@@ -91,7 +95,16 @@ export function createOnlineScreen(
   const walker = createScreenWalker({
     screen: el.screen,
     character: el.character,
-    startAt: () => el.home,
+    // 일반 screen walker의 기본 간격(30px)은 이 캐릭터 높이보다 짧아 몸통이
+    // 홈 버튼을 가린다. 로비에서는 버튼 아래에 캐릭터 전체가 들어갈 자리를 둔다.
+    startPoint: () => {
+      const box = el.home.getBoundingClientRect();
+      if (box.width === 0) return null;
+      return {
+        x: box.left + box.width / 2,
+        y: box.bottom + el.character.offsetHeight + 6,
+      };
+    },
   });
 
   /** 저장소에서 마지막으로 읽은 원본. 필터를 바꿀 때 네트워크를 다시 부르지 않는다 */
@@ -202,10 +215,24 @@ export function createOnlineScreen(
   }
   el.createPrivate.addEventListener('change', syncPrivatePassword);
 
+  // 방 목록은 로비의 기본 표면으로 늘 남긴다. 코드 참가와 방 만들기처럼 긴 폼은
+  // 사용자가 고른 순간에만 하나씩 열어 첫 화면에서 실제 방을 먼저 볼 수 있게 한다.
+  function showPanel(panel: OnlinePanel): void {
+    el.joinBlock.hidden = panel !== 'join';
+    el.createBlock.hidden = panel !== 'create';
+    el.openPublic.setAttribute('aria-pressed', String(panel === 'rooms'));
+    el.openPrivate.setAttribute('aria-pressed', String(panel === 'join'));
+    el.openCreate.setAttribute('aria-pressed', String(panel === 'create'));
+  }
+
   // ── 목록 ───────────────────────────────────────────────────────
 
   function categoryName(id: CategoryId | null): string {
     return CATEGORIES.find((category) => category.id === id)?.name ?? ALL_CATEGORY;
+  }
+
+  function categoryIcon(id: CategoryId | null): string {
+    return CATEGORIES.find((category) => category.id === id)?.icon ?? '🏆';
   }
 
   function gameFormat(room: PublicRoom): string {
@@ -237,6 +264,7 @@ export function createOnlineScreen(
     el.joinCode.value = room.code;
     el.joinPassword.value = '';
     say(el.joinMessage, `${room.name}의 비밀번호를 입력해 주세요.`);
+    showPanel('join');
     el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
     el.joinPassword.focus({ preventScroll: true });
   }
@@ -246,6 +274,11 @@ export function createOnlineScreen(
     item.className = 'room-item';
     if (!room.isPublic) item.classList.add('room-item--private');
     if (room.players.length >= room.capacity) item.classList.add('room-item--full');
+
+    const icon = document.createElement('span');
+    icon.className = 'room-item__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = categoryIcon(room.categoryId);
 
     const body = document.createElement('div');
     body.className = 'room-item__body';
@@ -298,7 +331,7 @@ export function createOnlineScreen(
       actions.append(full);
     }
 
-    item.append(body, actions);
+    item.append(icon, body, actions);
     return item;
   }
 
@@ -362,9 +395,13 @@ export function createOnlineScreen(
     syncFilterToggle(filters);
     el.summary.textContent = `전체 ${rooms.length}개 중 ${visible.length}개 방`;
     if (visible.length === 0) {
-      el.empty.textContent = rooms.length === 0
-        ? '아직 열린 방이 없어요. 아래에서 하나 만들어 보세요.'
-        : '현재 필터에 맞는 방이 없어요. 필터를 바꿔 보세요.';
+      const hasRooms = rooms.length > 0;
+      el.emptyTitle.textContent = hasRooms ? '조건에 맞는 방이 없어요' : '아직 열린 방이 없어요';
+      el.emptyCopy.textContent = hasRooms
+        ? '필터를 초기화하면 다른 방을 다시 볼 수 있어요.'
+        : '첫 방을 만들고 친구들을 초대해 보세요.';
+      el.emptyAction.textContent = hasRooms ? '필터 초기화' : '첫 방 만들기';
+      el.emptyAction.dataset.action = hasRooms ? 'reset' : 'create';
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -495,10 +532,31 @@ export function createOnlineScreen(
   for (const select of [el.visibility, el.availability, el.categoryFilter]) {
     select.addEventListener('change', renderList);
   }
+
+  function resetRoomFilters(): void {
+    el.search.value = DEFAULT_ROOM_FILTERS.query;
+    el.visibility.value = DEFAULT_ROOM_FILTERS.visibility;
+    el.availability.value = DEFAULT_ROOM_FILTERS.availability;
+    el.categoryFilter.value = DEFAULT_ROOM_FILTERS.categoryId;
+    setFiltersExpanded(false);
+    renderList();
+  }
+
   // reset 이벤트 시점에는 입력값이 아직 이전 값이다. 한 작업 뒤에 다시 그린다.
-  el.filters.addEventListener('reset', () => setTimeout(renderList, 0));
+  el.filters.addEventListener('reset', () => setTimeout(resetRoomFilters, 0));
+
+  el.emptyAction.addEventListener('click', () => {
+    if (el.emptyAction.dataset.action === 'create') {
+      showPanel('create');
+      el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.createName.focus({ preventScroll: true });
+      return;
+    }
+    resetRoomFilters();
+  });
 
   el.openPublic.addEventListener('click', () => {
+    showPanel('rooms');
     el.visibility.value = 'public';
     el.availability.value = 'joinable';
     renderList();
@@ -506,6 +564,7 @@ export function createOnlineScreen(
   });
 
   el.openPrivate.addEventListener('click', () => {
+    showPanel('join');
     el.visibility.value = 'private';
     renderList();
     el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -513,6 +572,7 @@ export function createOnlineScreen(
   });
 
   el.openCreate.addEventListener('click', () => {
+    showPanel('create');
     el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
     el.createName.focus({ preventScroll: true });
   });
@@ -538,6 +598,7 @@ export function createOnlineScreen(
   el.availability.value = DEFAULT_ROOM_FILTERS.availability;
   el.categoryFilter.value = DEFAULT_ROOM_FILTERS.categoryId;
   setFiltersExpanded(false);
+  showPanel('rooms');
 
   return {
     async show(characterId, notice) {
@@ -548,7 +609,10 @@ export function createOnlineScreen(
       say(el.joinMessage, '');
       say(el.createMessage, '');
       say(el.message, notice ?? '', notice ? 'bad' : undefined);
-      setFiltersExpanded(false);
+      // 이전 방문에서 코드 참가/공개방 찾기가 바꾼 필터를 새 진입까지 끌고 오면
+      // '방 찾기'가 선택됐는데 비공개방만 보이는 모순이 생긴다. 로비는 매번 기본 목록으로 연다.
+      resetRoomFilters();
+      showPanel('rooms');
       await loadRooms(request);
       if (!ownsScreen(request)) return;
       walker.show(characterId);
