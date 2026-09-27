@@ -31,7 +31,11 @@ test('방 목록 필터는 첫 진입에 접혀 있고 헤더 토글로 명시�
   );
   assert.match(
     online,
-    /async show\(characterId, notice\) \{[\s\S]*?setFiltersExpanded\(false\);[\s\S]*?await loadRooms\(request\);/,
+    /function resetRoomFilters\(\): void \{[\s\S]*?setFiltersExpanded\(false\);/,
+  );
+  assert.match(
+    online,
+    /async show\(characterId, notice\) \{[\s\S]*?resetRoomFilters\(\);[\s\S]*?await loadRooms\(request\);/,
   );
   assert.match(style, /\.room-filters\[hidden\]\s*\{\s*display: none;/);
 });
