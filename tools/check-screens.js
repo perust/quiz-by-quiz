@@ -40,6 +40,10 @@
   const 잠깐 = (ms) => new Promise((r) => setTimeout(r, ms));
   const 지금화면 = () =>
     [...document.querySelectorAll('.screen')].find((s) => !s.hidden)?.dataset.screen ?? '(없음)';
+  const 화면기다리기 = async (화면, 제한 = 5000) => {
+    const 끝 = performance.now() + 제한;
+    while (지금화면() !== 화면 && performance.now() < 끝) await 잠깐(100);
+  };
   const 눌러 = async (id, ms = 600) => {
     const el = document.getElementById(id);
     if (!el) throw new Error(`버튼이 없다: #${id}`);
@@ -245,7 +249,8 @@
     살펴본곳.push('결과 → 다시 하기');
 
     // 로비와 대기실. 방을 하나 만들어 오간다
-    await 눌러('open-online', 700);
+    await 눌러('open-online', 0);
+    await 화면기다리기('online');
     살펴본다('로비', 'online', true);
     잠든퀴즈를깨워본다('로비');
 
@@ -259,6 +264,8 @@
 
     // 체크박스에서 Space 는 체크박스 것이다. 워커가 가로채면 preventDefault 가
     // 기본 동작까지 죽여 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없다
+    // 주요 동작은 탭처럼 본문 하나만 열므로, 검사할 입력이 있는 본문부터 연다.
+    await 눌러('open-create-room', 250);
     const 체크박스 = document.getElementById('create-private');
     체크박스.focus();
     const 스페이스를가로챘나 = 키를보낸다(' ');
@@ -276,6 +283,7 @@
     });
 
     // 글자를 적는 중이면 방향키는 커서 것이다. 캐릭터가 같이 걸어가면 안 된다
+    await 눌러('open-private-join', 250);
     const 코드칸 = document.getElementById('join-code');
     코드칸.focus();
     코드칸.value = 'ABCD';
@@ -296,17 +304,18 @@
     });
     코드칸.value = '';
 
+    await 눌러('open-create-room', 250);
     const 이름칸 = document.getElementById('create-name');
     이름칸.value = '점검용 방';
     document.getElementById('create-form').requestSubmit();
-    await 잠깐(800);
+    await 화면기다리기('waiting');
     살펴본다('대기실', 'waiting', true);
 
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
     document.getElementById('waiting-start').click();
     document.getElementById('waiting-leave').click();
-    await 잠깐(1000);
+    await 화면기다리기('online');
     살펴본다('시작하자마자 나간 뒤', 'online', true);
     잠든퀴즈를깨워본다('시작하자마자 나간 뒤');
     // 한 번 더. 세션이 살아 있으면 다음 문항으로 넘어가 또 뜬다
