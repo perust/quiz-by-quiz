@@ -174,6 +174,12 @@
       통과: !document.getElementById('setting-mode'),
       무엇: document.getElementById('setting-mode') ? '!! 남아 있음' : '없음',
     });
+    const 소리크기 = document.getElementById('sound-toggle').getBoundingClientRect();
+    결과.push({
+      자리: '공통', 이름: '상단 소리 버튼의 터치 목표가 44px 이상이다',
+      통과: 소리크기.width >= 44 && 소리크기.height >= 44,
+      무엇: `${소리크기.width}px × ${소리크기.height}px`,
+    });
 
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
@@ -203,6 +209,15 @@
     // 홈 → 랭킹 → 홈
     await 눌러('open-ranking', 700);
     살펴본다('랭킹', 'ranking', true);
+    const 활성랭킹 = document.querySelector('[data-screen="ranking"]:not([hidden])');
+    const 랭킹탭크기 = [...(활성랭킹?.querySelectorAll('.ranking-tab') ?? [])]
+      .filter((탭) => 탭.getClientRects().length > 0)
+      .map((탭) => 탭.getBoundingClientRect().height);
+    결과.push({
+      자리: '랭킹', 이름: '랭킹 탭의 터치 목표가 44px 이상이다',
+      통과: 랭킹탭크기.length === 6 && 랭킹탭크기.every((높이) => 높이 >= 44),
+      무엇: 랭킹탭크기.map((높이) => `${높이}px`).join(', '),
+    });
     잠든퀴즈를깨워본다('랭킹');
     await 눌러('ranking-home');
     살펴본곳.push('랭킹');
@@ -255,6 +270,16 @@
       await 잠깐(150);
     }
     살펴본다('결과', 'result', true);
+    const 결과행동 = document.getElementById('result-retry').closest('.result-actions');
+    const 오답풀이 = document.getElementById('result-review-block');
+    결과.push({
+      자리: '결과', 이름: '핵심 행동이 긴 오답 풀이보다 먼저 온다',
+      통과: Boolean(결과행동 && 오답풀이
+        && (결과행동.compareDocumentPosition(오답풀이) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      무엇: 결과행동 && 오답풀이
+        ? `행동 ${결과행동.getBoundingClientRect().top}px · 오답 풀이 ${오답풀이.getBoundingClientRect().top}px`
+        : '요소 없음',
+    });
     await 눌러('result-retry', 800);
     살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', true);
     await 눌러('quiz-exit', 300);
@@ -265,6 +290,13 @@
     await 눌러('open-online', 0);
     await 화면기다리기('online');
     살펴본다('로비', 'online', true);
+    const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
+      .map((id) => [id, document.getElementById(id).getBoundingClientRect()]);
+    결과.push({
+      자리: '로비', 이름: '반복 조작의 터치 목표가 44px 이상이다',
+      통과: 로비터치크기.every(([, 크기]) => 크기.width >= 44 && 크기.height >= 44),
+      무엇: 로비터치크기.map(([id, 크기]) => `${id} ${크기.width}px × ${크기.height}px`).join(' · '),
+    });
     잠든퀴즈를깨워본다('로비');
 
     // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다
