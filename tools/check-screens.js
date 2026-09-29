@@ -217,6 +217,19 @@
     document.querySelector('.category-card').click();
     await 잠깐(800);
     살펴본다('처음 연 퀴즈', 'quiz', true);
+    const 보기크기 = [...document.querySelectorAll('#choices .choice')]
+      .map((보기) => 보기.getBoundingClientRect().height);
+    결과.push({
+      자리: '퀴즈', 이름: '직접 보기의 터치 목표가 44px 이상이다',
+      통과: 보기크기.length === 4 && 보기크기.every((높이) => 높이 >= 44),
+      무엇: 보기크기.map((높이) => `${높이}px`).join(', '),
+    });
+    const 도움크기 = document.getElementById('arena-help').getBoundingClientRect();
+    결과.push({
+      자리: '퀴즈', 이름: '조작법 버튼의 터치 목표가 44px 이상이다',
+      통과: 도움크기.width >= 44 && 도움크기.height >= 44,
+      무엇: `${도움크기.width}px × ${도움크기.height}px`,
+    });
     document.querySelector('.choice').click();
     await 잠깐(400);
     결과.push({

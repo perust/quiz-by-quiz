@@ -1293,7 +1293,8 @@ body.is-booted .app-bar {
 }
 
 .quiz--character .choice {
-  min-height: 40px;
+  /* 무대와 함께 보여도 직접 누르는 보기는 공통 터치 목표(44px)를 줄이지 않는다 */
+  min-height: 44px;
   padding: 7px 12px;
   font-size: 14px;
   box-shadow: none;
@@ -2027,8 +2028,9 @@ select.is-standing {
   flex: none;
   /* 「나가기」 옆에 붙는다. 헤더가 space-between이라 이게 없으면 가운데로 뜬다 */
   margin-left: auto;
-  width: 32px;
-  height: 32px;
+  /* 물음표가 작아 보여도 실제 터치 목표는 나가기 버튼과 같은 44px다 */
+  width: 44px;
+  height: 44px;
   place-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
