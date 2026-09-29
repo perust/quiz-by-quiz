@@ -1825,18 +1825,12 @@ body.is-booted .app-bar {
   position: relative;
 }
 
-/* 카테고리보다 위에 둔다. 첫 화면에 보여야 캐릭터가 서 있는 것이 눈에 들어온다 */
+/* 카테고리보다 위에 두되 한 줄로 묶는다. 보조 동작이 퀴즈 선택을 아래로 밀지 않게 한다. */
 .home-menu {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
-}
-
-/* 메뉴가 홀수 개면 마지막 카드가 한 칸만 채워 오른쪽이 빈다.
-   카테고리 카드와 같은 규칙이라 메뉴를 더하거나 빼도 그대로 맞는다. */
-.menu-card:nth-child(odd):last-child {
-  grid-column: 1 / -1;
 }
 
 .menu-card {
@@ -1891,6 +1885,9 @@ body.is-booted .app-bar {
 .menu-card__name {
   font-size: 15px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-card__desc {
@@ -1899,6 +1896,34 @@ body.is-booted .app-bar {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 좁은 화면에서는 아이콘과 짧은 이름만 세로로 쌓는다.
+   세 보조 동작을 한 줄에 유지해 첫 퀴즈 카드가 첫 화면 안으로 올라오게 한다. */
+@media (max-width: 576px) {
+  .home-header {
+    margin-bottom: 22px;
+  }
+
+  .home-menu {
+    gap: 8px;
+  }
+
+  .home-menu .menu-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 76px;
+    padding: 8px 38px 8px 9px;
+  }
+
+  .home-menu .menu-card__name {
+    font-size: 13px;
+  }
+
+  .home-menu .menu-card__desc {
+    display: none;
+  }
 }
 
 /* 캐릭터가 보기 버튼 위에 섰을 때. 바닥 칸과 같은 뜻이라 같은 결로 칠한다 */

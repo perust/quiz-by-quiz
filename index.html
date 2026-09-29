@@ -67,30 +67,33 @@
           </span>
         </button>
 
-        <div class="home-menu">
-          <button type="button" class="menu-card" id="open-characters">
-            <span class="menu-card__figure" id="my-character-figure" aria-hidden="true"></span>
+        <!-- 자주 쓰는 보조 동작은 한 줄에 모아 퀴즈 선택을 아래로 밀지 않는다 -->
+        <nav class="home-menu" aria-label="홈 바로가기">
+          <button type="button" class="menu-card" id="open-characters"
+                  aria-label="캐릭터 모습 바꾸기">
+            <span class="menu-card__figure" aria-hidden="true">🎨</span>
             <span class="menu-card__body">
-              <span class="menu-card__name">내 캐릭터</span>
+              <span class="menu-card__name">캐릭터</span>
               <span class="menu-card__desc">모습 바꾸기</span>
             </span>
           </button>
-          <button type="button" class="menu-card" id="open-ranking" disabled>
+          <button type="button" class="menu-card" id="open-ranking"
+                  aria-label="랭킹에서 최고 기록 보기" disabled>
             <span class="menu-card__figure" aria-hidden="true">🏅</span>
             <span class="menu-card__body">
-              <span class="menu-card__name">랭킹 보기</span>
-              <span class="menu-card__desc">내 최고 기록</span>
+              <span class="menu-card__name">랭킹</span>
+              <span class="menu-card__desc">최고 기록</span>
             </span>
           </button>
-          <!-- 메뉴가 홀수 개면 마지막 카드가 두 칸을 쓴다 (.menu-card:nth-child(odd):last-child) -->
-          <button type="button" class="menu-card" id="open-online" disabled>
+          <button type="button" class="menu-card" id="open-online"
+                  aria-label="온라인에서 친구와 풀기" disabled>
             <span class="menu-card__figure" aria-hidden="true">🌐</span>
             <span class="menu-card__body">
               <span class="menu-card__name">온라인</span>
-              <span class="menu-card__desc">친구와 같이 풀기</span>
+              <span class="menu-card__desc">친구와 풀기</span>
             </span>
           </button>
-        </div>
+        </nav>
 
         <div class="category-grid" id="category-grid"></div>
 
