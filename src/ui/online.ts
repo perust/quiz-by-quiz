@@ -62,6 +62,7 @@ export function createOnlineScreen(
     openPublic: need<HTMLButtonElement>('open-public-rooms'),
     openPrivate: need<HTMLButtonElement>('open-private-join'),
     openCreate: need<HTMLButtonElement>('open-create-room'),
+    roomBrowser: need('room-browser'),
     list: need('room-list'),
     empty: need('room-empty'),
     emptyTitle: need('room-empty-title'),
@@ -215,9 +216,10 @@ export function createOnlineScreen(
   }
   el.createPrivate.addEventListener('change', syncPrivatePassword);
 
-  // 방 목록은 로비의 기본 표면으로 늘 남긴다. 코드 참가와 방 만들기처럼 긴 폼은
-  // 사용자가 고른 순간에만 하나씩 열어 첫 화면에서 실제 방을 먼저 볼 수 있게 한다.
+  // 방 목록은 로비의 기본 표면이다. 동작 카드는 탭처럼 한 본문만 열어, 코드 참가를
+  // 골랐는데 그 앞에 필터 결과 없음이 끼거나 만들기 폼이 목록 아래로 밀리지 않게 한다.
   function showPanel(panel: OnlinePanel): void {
+    el.roomBrowser.hidden = panel !== 'rooms';
     el.joinBlock.hidden = panel !== 'join';
     el.createBlock.hidden = panel !== 'create';
     el.openPublic.setAttribute('aria-pressed', String(panel === 'rooms'));
@@ -265,7 +267,7 @@ export function createOnlineScreen(
     el.joinPassword.value = '';
     say(el.joinMessage, `${room.name}의 비밀번호를 입력해 주세요.`);
     showPanel('join');
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     el.joinPassword.focus({ preventScroll: true });
   }
 
@@ -548,7 +550,7 @@ export function createOnlineScreen(
   el.emptyAction.addEventListener('click', () => {
     if (el.emptyAction.dataset.action === 'create') {
       showPanel('create');
-      el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       el.createName.focus({ preventScroll: true });
       return;
     }
@@ -557,23 +559,18 @@ export function createOnlineScreen(
 
   el.openPublic.addEventListener('click', () => {
     showPanel('rooms');
-    el.visibility.value = 'public';
-    el.availability.value = 'joinable';
-    renderList();
-    el.summary.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   el.openPrivate.addEventListener('click', () => {
     showPanel('join');
-    el.visibility.value = 'private';
-    renderList();
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     el.joinCode.focus({ preventScroll: true });
   });
 
   el.openCreate.addEventListener('click', () => {
     showPanel('create');
-    el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     el.createName.focus({ preventScroll: true });
   });
 

@@ -52,6 +52,26 @@ test('온라인 로비는 방 목록을 먼저 보여 주고 참가·생성 폼�
   );
 });
 
+test('온라인 주요 동작은 선택한 본문만 보여 주고 기존 방 필터를 임의로 바꾸지 않는다', async () => {
+  const online = await source('../src/ui/online.ts');
+  const showPanel = between(online, 'function showPanel', '// ── 목록');
+  const browseHandler = between(
+    online,
+    "el.openPublic.addEventListener('click'",
+    "el.openPrivate.addEventListener('click'",
+  );
+  const joinHandler = between(
+    online,
+    "el.openPrivate.addEventListener('click'",
+    "el.openCreate.addEventListener('click'",
+  );
+
+  assert.match(showPanel, /roomBrowser\.hidden = panel !== 'rooms'/);
+  assert.doesNotMatch(browseHandler, /visibility\.value|availability\.value/);
+  assert.doesNotMatch(joinHandler, /visibility\.value|renderList\(\)/);
+  assert.match(joinHandler, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest' \}\)/);
+});
+
 test('빈 방 목록은 첫 방 만들기 또는 필터 초기화로 바로 이어진다', async () => {
   const [html, online] = await Promise.all([
     source('../index.html'),
