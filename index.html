@@ -529,16 +529,18 @@
         </div>
       </dl>
 
+      <div class="result-actions">
+        <button type="button" class="button button--primary" id="result-retry">다시 하기</button>
+        <!-- 방에서 시작한 판일 때만 보인다. result.js 가 여닫는다 -->
+        <button type="button" class="button button--ghost" id="result-room" hidden>대기실로</button>
+        <button type="button" class="button button--ghost" id="result-ranking">랭킹 보기</button>
+        <button type="button" class="button button--ghost" id="result-home">홈으로</button>
+      </div>
+
       <!-- 전체 모드에서만 (FR-5.6) -->
       <div class="result-block" id="result-category-block" hidden>
         <h2 class="result-block__title">카테고리별 정답</h2>
         <ul class="category-score" id="result-category-list"></ul>
-      </div>
-
-      <!-- 틀린 문제 다시 보기 (FR-5.4) -->
-      <div class="result-block" id="result-review-block" hidden>
-        <h2 class="result-block__title">틀린 문제 다시 보기</h2>
-        <ol class="review" id="result-review"></ol>
       </div>
 
       <!-- 랭킹 등록 (FR-6.1) -->
@@ -556,12 +558,10 @@
         </form>
       </div>
 
-      <div class="result-actions">
-        <button type="button" class="button button--primary" id="result-retry">다시 하기</button>
-        <!-- 방에서 시작한 판일 때만 보인다. result.js 가 여닫는다 -->
-        <button type="button" class="button button--ghost" id="result-room" hidden>대기실로</button>
-        <button type="button" class="button button--ghost" id="result-ranking">랭킹 보기</button>
-        <button type="button" class="button button--ghost" id="result-home">홈으로</button>
+      <!-- 틀린 문제 다시 보기 (FR-5.4) -->
+      <div class="result-block" id="result-review-block" hidden>
+        <h2 class="result-block__title">틀린 문제 다시 보기</h2>
+        <ol class="review" id="result-review"></ol>
       </div>
 
       <!-- 이 화면도 걸어 다닐 수 있다. 화면에 붙어(fixed) 있어 자리를 차지하지 않는다 -->
