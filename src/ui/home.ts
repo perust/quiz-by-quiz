@@ -8,7 +8,7 @@ import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need } from '../dom.js';
 import { createWalker } from './walker.js';
 import { trapFocus } from './quiz.js';
-import { paintCharacter, createBody } from './sprite.js';
+import { paintCharacter } from './sprite.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -66,7 +66,6 @@ export function createHomeScreen({
     dialogInput: need<HTMLInputElement>('nickname-edit'),
     dialogMessage: need('nickname-message'),
     dialogCancel: need<HTMLButtonElement>('nickname-cancel'),
-    characterFigure: need('my-character-figure'),
     walker: need('home-character'),
     note: need('home-note'),
   };
@@ -83,7 +82,7 @@ export function createHomeScreen({
       if (box.width === 0) return null;
       return {
         // 카드 오른쪽 끝에 세운다. 가운데면 이름을 가린다
-        x: box.right - 26,
+        x: box.right - 20,
         y: box.bottom - 10,
       };
     },
@@ -233,9 +232,8 @@ export function createHomeScreen({
       if (best !== null && best !== undefined) parts.push(`최고 ${best}점`);
       el.startAllMeta.textContent = parts.join(' · ');
 
-      // 내 캐릭터 칸의 미리보기와 걸어 다닐 캐릭터.
-      // 이름은 쓰지 않는다 — 무엇으로 보이는지는 보는 사람이 정한다
-      el.characterFigure.replaceChildren(createBody(characterId));
+      // 선택한 모습은 홈을 직접 걷는 캐릭터 하나로 보여 준다.
+      // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.
       paintCharacter(el.walker, characterId);
 
       walker.setEnabled(true);
