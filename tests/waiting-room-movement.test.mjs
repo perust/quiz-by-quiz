@@ -32,3 +32,12 @@ test('walker reports placement, walking frames, and the final stopped position',
   assert.match(walker, /onMove\?\.\(\{ \.\.\.pos \}, true\)/);
   assert.match(walker, /wasMoving/);
 });
+
+test('대기실은 숨은 화면의 0px 라운지를 좌상단 시작점으로 확정하지 않는다', async () => {
+  const waiting = await source('../src/ui/waiting-room.ts');
+
+  assert.match(
+    waiting,
+    /if \(el\.screen\.hidden \|\| box\.width === 0 \|\| box\.height === 0\) return null;/,
+  );
+});

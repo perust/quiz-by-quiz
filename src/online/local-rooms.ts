@@ -115,6 +115,19 @@ function emit(code: string, event: RoomEvent): void {
   listeners.get(code)?.forEach((handler) => handler(event));
 }
 
+/** 방장이 첫 자리에 있도록 고치고, 방장이 사라졌으면 첫 생존 참가자에게 승계한다. */
+function withHostFirst(room: Room, players: RoomPlayer[]): Room {
+  if (players.length === 0) return { ...room, players };
+  const host = players.find((player) => player.id === room.hostId) ?? players[0];
+  return {
+    ...room,
+    hostId: host.id,
+    players: players[0] === host
+      ? players
+      : [host, ...players.filter((player) => player !== host)],
+  };
+}
+
 /**
  * 오래 안 보인 참가자를 떨군다. 아무도 남지 않은 방은 사라진다.
  *
@@ -125,11 +138,11 @@ function emit(code: string, event: RoomEvent): void {
 function prune(rooms: Room[]): Room[] {
   const now = Date.now();
   return rooms
-    .map((room) => ({
-      ...room,
+    .map((room) => withHostFirst(
+      room,
       // 저장된 방에 players 가 아예 없을 수도 있다. readAll 이 code 만 보고 들여보내기 때문이다
-      players: (room.players ?? []).filter((player) => player.seenAt && now - player.seenAt < GHOST_MS),
-    }))
+      (room.players ?? []).filter((player) => player.seenAt && now - player.seenAt < GHOST_MS),
+    ))
     .filter((room) => room.players.length > 0);
 }
 
@@ -483,17 +496,18 @@ export const localRooms = {
     throw new Error('로컬 방은 서버 권위 온라인 답안 제출을 지원하지 않습니다.');
   },
 
-  /** 방을 나간다. 아무도 남지 않으면 방을 지운다 */
+  /** 방을 나간다. 아무도 남지 않으면 방을 지우고, 방장이 나가면 첫 생존자에게 승계한다. */
   async leaveRoom({ code }: { code: string }): Promise<{ ok: true }> {
     const wanted = normalizeCode(code);
     const rooms = readAll();
     const room = rooms.find((item) => item.code === wanted);
     if (!room) return { ok: true };
 
-    room.players = room.players.filter((player) => player.id !== meId);
-    writeAll(room.players.length === 0
+    const remaining = room.players.filter((player) => player.id !== meId);
+    const transferred = withHostFirst(room, remaining);
+    writeAll(remaining.length === 0
       ? rooms.filter((item) => item !== room)
-      : rooms);
+      : rooms.map((item) => (item === room ? transferred : item)));
     return { ok: true };
   },
 } satisfies RoomStore;

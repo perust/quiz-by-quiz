@@ -2899,26 +2899,31 @@ select.is-standing {
   margin-bottom: 12px;
 }
 
-/* 간단한 배경. 위는 벽, 아래는 바닥이다 — 이미지 파일을 쓰지 않는다 */
+/* 참가자 명단은 벽의 액자, 움직이는 캐릭터는 아래 바닥에 둔다.
+   액자는 인원이 늘면 벽을 아래로 늘리고 바닥 72px은 항상 남긴다. */
 .lounge {
   position: relative;
-  min-height: 190px;
-  padding: 16px 14px 26px;
-  border: 1px solid var(--border);
+  min-height: 250px;
+  padding: 28px 14px 78px;
+  border: 1px solid #d8d0c2;
   border-radius: var(--radius);
-  display: flex;
-  align-items: flex-end;
-  background:
-    linear-gradient(#eef1f7 0 66%, #d9dfea 66% 67.5%, #e7ebf3 67.5% 100%);
-  /* 말풍선은 60자까지라 참가자가 여러 줄로 서면 위쪽 경계를 넘을 수 있다. */
+  background: linear-gradient(
+    to bottom,
+    #f4f0e8 0 calc(100% - 72px),
+    #b9ab91 calc(100% - 72px) calc(100% - 69px),
+    #dfd4c0 calc(100% - 69px) 100%
+  );
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.72);
+  /* 움직이는 캐릭터의 말풍선은 벽과 바닥 경계를 넘어도 보여야 한다. */
   overflow: visible;
 }
 
 .lounge__players {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 72px);
+  justify-content: center;
+  align-items: start;
+  gap: 18px 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2929,34 +2934,147 @@ select.is-standing {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 56px;
+  width: 72px;
+  min-width: 0;
 }
 
-.lounge__figure {
+/* 못과 끈까지 액자 한 덩어리다. 안쪽 crop이 전신의 아랫부분을 잘라 초상처럼 보이게 한다. */
+.lounge__portrait {
   position: relative;
-  width: 34px;
-  height: 42px;
+  display: block;
+  width: 58px;
+  height: 66px;
+  padding: 5px;
+  border: 3px solid #916334;
+  border-radius: 3px;
+  background: #d6a25c;
+  box-shadow:
+    inset 0 0 0 2px #f0c77d,
+    0 3px 0 rgba(75, 50, 28, 0.2),
+    0 5px 10px rgba(75, 50, 28, 0.12);
+}
+
+.lounge__portrait::before {
+  content: '';
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  border-top: 1px solid #8d7b62;
+  border-left: 1px solid #8d7b62;
+  transform: translateX(-50%) rotate(45deg);
+  transform-origin: center;
+}
+
+.lounge__portrait::after {
+  content: '';
+  position: absolute;
+  top: -17px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #78684f;
+  transform: translateX(-50%);
+}
+
+.lounge__portrait-crop {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(86, 57, 29, 0.34);
+  background: linear-gradient(155deg, #fff8df, #dce7ef);
+}
+
+.lounge__portrait-crop .walker__body {
+  inset: auto auto -7px 50%;
+  width: 40px;
+  height: 49px;
+  translate: -50% 0;
+  animation: none;
+}
+
+/* 내 액자는 파란 테두리로 찾아볼 수 있게 하되, `나` 글자도 함께 둬 색에만 기대지 않는다. */
+.lounge__player--me .lounge__portrait {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 2px #b9c5ff,
+    0 0 0 2px rgba(59, 91, 219, 0.18),
+    0 5px 10px rgba(59, 91, 219, 0.16);
+}
+
+.lounge__identity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.3;
 }
 
 .lounge__name {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
-.lounge__ready {
-  padding: 2px 5px;
+.lounge__host {
+  flex: none;
+  color: #825900;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.lounge__me {
+  flex: none;
+  padding: 1px 4px;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
+  background: var(--accent-soft);
+  color: #2949bd;
+  font-size: 9px;
+  font-weight: 800;
 }
 
-/* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 참가자 figure의 남의 말이 같은 모양이며,
+/* 상태판은 액자 바로 아래에 붙는다. 기호와 글자를 함께 써 색이 없어도 상태가 남는다. */
+.lounge__ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 46px;
+  padding: 2px 6px;
+  border: 1px solid #cfd5df;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #5d6573;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.lounge__ready::before {
+  content: '○';
+  line-height: 1;
+}
+
+.lounge__ready--on {
+  border-color: rgba(38, 128, 55, 0.38);
+  background: var(--correct-soft);
+  color: var(--correct);
+}
+
+.lounge__ready--on::before {
+  content: '✓';
+}
+
+/* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 원격 캐릭터의 남의 말이 같은 모양이며,
    몸통 애니메이션은 body에만 걸려 있어 말풍선 자체는 흔들리지 않는다. */
 .walker__bubble,
 .lounge__bubble {

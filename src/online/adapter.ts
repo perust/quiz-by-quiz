@@ -69,6 +69,7 @@ export interface PublicRoom {
   capacity: number;
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
+  /** 현재 방장이 첫 자리다. 나가면 가장 먼저 들어온 남은 참가자가 첫 자리로 승계한다. */
   players: PublicPlayer[];
   isPublic: boolean;
   hasPassword: boolean;

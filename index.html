@@ -478,9 +478,9 @@
       <button type="button" class="button button--ghost waiting-ready" id="waiting-ready" aria-pressed="false">준비 완료</button>
       <button type="button" class="button button--primary waiting-start" id="waiting-start" hidden>게임 시작</button>
 
-      <!-- 대기실 바닥. 참가자가 서 있고 내 캐릭터가 걸어 다닌다 -->
-      <div class="lounge" id="lounge">
-        <ul class="lounge__players" id="lounge-players"></ul>
+      <!-- 참가자는 벽걸이 액자로, 움직이는 캐릭터는 아래 바닥에서 서로 다른 역할로 보인다 -->
+      <div class="lounge" id="lounge" aria-label="참가자 액자가 걸린 대기실">
+        <ul class="lounge__players" id="lounge-players" aria-label="참가자 상태"></ul>
         <div id="waiting-remote-characters" aria-hidden="true"></div>
         <div class="walker walker--home" id="waiting-character" aria-hidden="true">
           <span class="walker__bubble" id="waiting-bubble" hidden></span>
