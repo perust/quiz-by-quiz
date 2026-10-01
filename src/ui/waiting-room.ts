@@ -1,7 +1,7 @@
 // 대기실 화면
 //
-// 방에 들어오면 여기로 온다. 참가자가 바닥에 서 있고, 내 캐릭터가 그 사이를
-// 걸어 다닌다. 한마디 적으면 캐릭터 위에 말풍선이 뜬다.
+// 방에 들어오면 여기로 온다. 참가자 명단은 벽걸이 액자로 보여 주고, 내 캐릭터와
+// 원격 캐릭터는 그 아래 공간을 걸어 다닌다. 한마디 적으면 캐릭터 위에 말풍선이 뜬다.
 //
 // **설정은 «누르면 다음 값으로 도는» 버튼이다.** `select`로 두면 캐릭터가 밟아도
 // 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. 분야·인원·시작·나가기가
@@ -28,6 +28,7 @@ import {
   type WaitingRoomActionOwnership,
   waitingRoomControls,
 } from './waiting-room-action.js';
+import { waitingRoomPortraits } from './waiting-room-portrait.js';
 import { createBody } from './sprite.js';
 import type {
   MatchSetup, PlayerInfo, PublicRoom, RoomEvent, RoomPatch, RoomStore,
@@ -102,7 +103,9 @@ export function createWaitingRoom(
     // 라운지 바닥 한가운데에서 시작한다. 버튼 곁에 세우면 대기실 밖에 선 것처럼 보인다
     startPoint: () => {
       const box = el.lounge.getBoundingClientRect();
-      if (box.width === 0) return null;
+      // show()는 방을 먼저 읽고 앱이 그 뒤에 화면을 연다. 숨은 동안 좌표를 확정하면
+      // 0,0이 화면 가장자리로 clamp되어 캐릭터가 좌상단에 잘린 채 남는다.
+      if (el.screen.hidden || box.width === 0 || box.height === 0) return null;
       return { x: box.left + box.width / 2, y: box.bottom - 18 };
     },
     onMove: (point, moving) => {
@@ -179,27 +182,61 @@ export function createWaitingRoom(
     remoteBubbleNodes.clear();
     el.players.replaceChildren();
     el.remoteCharacters.replaceChildren();
-    for (const player of room.players) {
+    for (const player of waitingRoomPortraits(room.players, roomStore.me())) {
       const item = document.createElement('li');
       item.className = 'lounge__player';
+      item.classList.toggle('lounge__player--me', player.isMe);
+      item.classList.toggle('lounge__player--ready', player.isReady);
       item.dataset.playerId = player.id;
+      item.setAttribute('aria-label', [
+        player.nickname,
+        player.isHost ? '방장' : '',
+        player.isMe ? '나' : '',
+        player.statusLabel,
+      ].filter(Boolean).join(', '));
 
-      const figure = document.createElement('span');
-      figure.className = 'lounge__figure';
-      figure.append(createBody(player.characterId));
+      const portrait = document.createElement('span');
+      portrait.className = 'lounge__portrait';
+      portrait.setAttribute('aria-hidden', 'true');
+      const portraitCrop = document.createElement('span');
+      portraitCrop.className = 'lounge__portrait-crop';
+      portraitCrop.append(createBody(player.characterId));
+      portrait.append(portraitCrop);
+
+      const identity = document.createElement('span');
+      identity.className = 'lounge__identity';
 
       const name = document.createElement('span');
       name.className = 'lounge__name';
       name.textContent = player.nickname;
+      identity.append(name);
+
+      if (player.isHost) {
+        const host = document.createElement('span');
+        host.className = 'lounge__host';
+        host.textContent = '♛';
+        host.title = '방장';
+        host.setAttribute('aria-hidden', 'true');
+        identity.append(host);
+      }
+
+      if (player.isMe) {
+        const meBadge = document.createElement('span');
+        meBadge.className = 'lounge__me';
+        meBadge.textContent = '나';
+        meBadge.setAttribute('aria-hidden', 'true');
+        identity.append(meBadge);
+      }
 
       const readiness = document.createElement('span');
       readiness.className = 'lounge__ready';
-      readiness.textContent = player.isReady ? '준비' : '대기';
+      readiness.classList.toggle('lounge__ready--on', player.isReady);
+      readiness.textContent = player.statusLabel;
 
-      item.append(figure, name, readiness);
+      item.append(portrait, identity, readiness);
       el.players.append(item);
 
-      if (player.id === roomStore.me()) continue;
+      if (player.isMe) continue;
       const remoteCharacter = document.createElement('div');
       remoteCharacter.className = 'walker walker--home walker--remote';
       remoteCharacter.dataset.movingPlayerId = player.id;
