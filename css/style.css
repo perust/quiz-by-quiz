@@ -3006,6 +3006,15 @@ select.is-standing {
     0 5px 10px rgba(59, 91, 219, 0.16);
 }
 
+/* 준비 상태는 본인 파란 강조보다 우선해 액자 자체가 초록색으로 바뀐다. */
+.lounge__player--ready .lounge__portrait {
+  border-color: var(--correct);
+  box-shadow:
+    inset 0 0 0 2px #b7e2bd,
+    0 0 0 2px rgba(38, 128, 55, 0.22),
+    0 5px 10px rgba(38, 128, 55, 0.18);
+}
+
 .lounge__identity {
   display: flex;
   align-items: center;

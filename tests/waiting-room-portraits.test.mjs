@@ -59,3 +59,19 @@ test('대기실 참가자 명단은 멈춘 전신 캐릭터 대신 벽걸이 액
   assert.match(css, /\.lounge__ready--on\s*\{/);
   assert.match(html, /참가자 액자가 걸린 대기실/);
 });
+
+test('준비한 참가자의 액자는 본인 강조보다 우선해 초록 테두리가 된다', async () => {
+  const css = await source('../css/style.css');
+  const meRuleStart = css.indexOf('.lounge__player--me .lounge__portrait');
+  const readyRule = css.match(
+    /\.lounge__player--ready\s+\.lounge__portrait\s*\{([^}]*)\}/,
+  );
+
+  assert.notEqual(meRuleStart, -1, '본인 액자 강조 규칙이 있어야 한다');
+  assert.ok(readyRule, '준비된 참가자의 액자 테두리 규칙이 있어야 한다');
+  assert.match(readyRule[1], /border-color:\s*var\(--correct\)/);
+  assert.ok(
+    css.indexOf(readyRule[0]) > meRuleStart,
+    '준비 테두리 규칙이 본인 테두리 규칙보다 뒤에 와서 같은 액자에서도 우선해야 한다',
+  );
+});
