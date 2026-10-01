@@ -41,6 +41,35 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* 게임 조작 중 텍스트 선택과 길게 누르기 메뉴가 끼어들지 않게 한다.
+   페이지 스크롤과 핀치 줌은 막지 않는다 (3-B 모바일 입력). */
+.app,
+.app-bar,
+.feedback,
+.dialog-backdrop {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 닉네임·채팅·방 코드 등 편집하는 곳에는 커서·선택·기본 메뉴를 돌려준다.
+   편집 가능한 요소 안의 글자 조각도 같은 정책을 쓴다. */
+input,
+textarea,
+select,
+[contenteditable]:not([contenteditable='false' i]),
+[contenteditable]:not([contenteditable='false' i]) * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* 반복해서 누르는 조작은 더블 탭 확대만 막는다. 스틱의 드래그는 별도로 잠근다. */
+button,
+.arena-tile {
+  touch-action: manipulation;
+}
+
 /* 스크린리더 전용. 화면에서는 보이지 않지만 낭독은 된다 */
 .sr-only {
   position: absolute;
