@@ -29,6 +29,10 @@ export interface ScreenWalker {
    * id 가 없으면 기본 캐릭터로 그린다 (`findCharacter`)
    */
   show(characterId?: string | null): void;
+  /** 직접 누른 가구 등 화면 안 목표의 좌표로 자리를 맞춘다. */
+  placeAt(point: Point, report?: boolean): void;
+  /** 대상의 disabled/배치가 바뀌었을 때 발밑 선택 표시를 다시 잰다. */
+  refresh(): void;
   hide(): void;
 }
 
@@ -63,6 +67,14 @@ export function createScreenWalker({
     show(characterId) {
       paintCharacter(character, characterId);
       walker.setEnabled(true);
+    },
+
+    placeAt(point, report = true) {
+      walker.placeAt(point, report);
+    },
+
+    refresh() {
+      walker.refresh();
     },
 
     hide() {

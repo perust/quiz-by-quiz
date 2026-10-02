@@ -18,7 +18,9 @@ import {
   checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
 } from './rules.js';
 import {
+  isWaitingRoomSeatId,
   type MovementViewport,
+  type WaitingRoomSeatId,
   validMovementViewportDimension,
 } from './movement-contract.js';
 import type {
@@ -425,17 +427,19 @@ export const localRooms = {
 
   /** local adapter도 network와 같은 bounded movement event를 되돌려 준다. */
   sendMovement({
-    code, x, y, moving, viewportWidth, viewportHeight,
+    code, x, y, moving, viewportWidth, viewportHeight, seatId,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
+    seatId?: WaitingRoomSeatId;
   } & MovementViewport): boolean {
     if (
       !Number.isFinite(x) || x < 0 || x > 1
       || !Number.isFinite(y) || y < 0 || y > 1
       || typeof moving !== 'boolean'
+      || (seatId !== undefined && (!isWaitingRoomSeatId(seatId) || moving))
       || !validMovementViewportDimension(viewportWidth)
       || !validMovementViewportDimension(viewportHeight)
     ) return false;
@@ -451,6 +455,7 @@ export const localRooms = {
       moving,
       viewportWidth,
       viewportHeight,
+      ...(seatId !== undefined ? { seatId } : {}),
       sequence: movementSequence,
       connectionGeneration: 0,
     });

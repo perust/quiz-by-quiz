@@ -69,6 +69,10 @@ WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
 MOVEMENT_VIEWPORT_CAPABILITY = "sender-css-pixels-v1"
+WAITING_ROOM_SEAT_CAPABILITY = "waiting-room-seat-v1"
+WAITING_ROOM_SEAT_IDS = frozenset(
+    {"chair-left", "sofa-left", "sofa-right", "chair-right"}
+)
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -99,7 +103,7 @@ def _websocket_ticket(websocket: WebSocket) -> str | None:
 
 def _movement_message(
     message: str,
-) -> tuple[float, float, bool, int | None, int | None] | None:
+) -> tuple[float, float, bool, int | None, int | None, str | None] | None:
     """Return one strict, bounded movement payload without trusting client identity."""
     if len(message) > 256:
         return None
@@ -112,7 +116,8 @@ def _movement_message(
     keys = set(value)
     legacy_keys = {"type", "x", "y", "moving"}
     viewport_keys = legacy_keys | {"viewportWidth", "viewportHeight"}
-    if keys not in (legacy_keys, viewport_keys):
+    viewport_seat_keys = viewport_keys | {"seatId"}
+    if keys not in (legacy_keys, viewport_keys, viewport_seat_keys):
         return None
     if value["type"] != "movement" or type(value["moving"]) is not bool:
         return None
@@ -130,7 +135,7 @@ def _movement_message(
     if not math.isfinite(x) or not math.isfinite(y) or not 0 <= x <= 1 or not 0 <= y <= 1:
         return None
     if keys == legacy_keys:
-        return x, y, value["moving"], None, None
+        return x, y, value["moving"], None, None, None
     viewport_width = value["viewportWidth"]
     viewport_height = value["viewportHeight"]
     if (
@@ -140,7 +145,17 @@ def _movement_message(
         or not 1 <= viewport_height <= MAX_MOVEMENT_VIEWPORT_DIMENSION
     ):
         return None
-    return x, y, value["moving"], viewport_width, viewport_height
+    seat_id: str | None = None
+    if keys == viewport_seat_keys:
+        candidate = value["seatId"]
+        if (
+            not isinstance(candidate, str)
+            or candidate not in WAITING_ROOM_SEAT_IDS
+            or value["moving"]
+        ):
+            return None
+        seat_id = candidate
+    return x, y, value["moving"], viewport_width, viewport_height, seat_id
 
 
 class StrictBody(BaseModel):
@@ -1282,6 +1297,7 @@ def create_app(
         return {
             "ticket": ticket_store.issue(actor_id, code),
             "movementViewport": MOVEMENT_VIEWPORT_CAPABILITY,
+            "movementSeat": WAITING_ROOM_SEAT_CAPABILITY,
         }
 
     @app.websocket("/v1/rooms/{raw_code}/events")
@@ -1343,7 +1359,7 @@ def create_app(
                 movement = _movement_message(message)
                 if movement is None:
                     continue
-                x, y, moving, viewport_width, viewport_height = movement
+                x, y, moving, viewport_width, viewport_height, seat_id = movement
                 event: dict[str, object] = {
                     "type": "movement",
                     "playerId": str(actor_id),
@@ -1355,6 +1371,8 @@ def create_app(
                 if viewport_width is not None and viewport_height is not None:
                     event["viewportWidth"] = viewport_width
                     event["viewportHeight"] = viewport_height
+                if seat_id is not None:
+                    event["seatId"] = seat_id
                 await hub.broadcast(
                     code,
                     event,

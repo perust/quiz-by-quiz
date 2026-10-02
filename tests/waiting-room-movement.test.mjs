@@ -41,3 +41,12 @@ test('대기실은 숨은 화면의 0px 라운지를 좌상단 시작점으로 �
     /if \(el\.screen\.hidden \|\| box\.width === 0 \|\| box\.height === 0\) return null;/,
   );
 });
+
+test('대기실 워커는 중앙 가구가 아니라 왼쪽 빈 바닥에서 시작한다', async () => {
+  const waiting = await source('../src/ui/waiting-room.ts');
+
+  assert.match(
+    waiting,
+    /return \{ x: box\.left \+ 40, y: box\.bottom - 90 \};/,
+  );
+});

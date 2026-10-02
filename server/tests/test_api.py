@@ -697,6 +697,7 @@ def test_websocket_ticket_is_single_use_and_chat_is_broadcast() -> None:
         assert ticket_response.status_code == 201
         ticket_body = ticket_response.json()
         assert ticket_body["movementViewport"] == "sender-css-pixels-v1"
+        assert ticket_body["movementSeat"] == "waiting-room-seat-v1"
         ticket = ticket_body["ticket"]
 
         with client.websocket_connect(
@@ -746,9 +747,10 @@ def test_authenticated_websocket_movement_is_broadcast_with_server_identity() ->
                     "type": "movement",
                     "x": 0.25,
                     "y": 0.75,
-                    "moving": True,
+                    "moving": False,
                     "viewportWidth": 390,
                     "viewportHeight": 844,
+                    "seatId": "sofa-left",
                 }
             )
             chat = client.post(
@@ -763,9 +765,10 @@ def test_authenticated_websocket_movement_is_broadcast_with_server_identity() ->
     assert event["playerId"] == str(PLAYER_ID)
     assert event["x"] == 0.25
     assert event["y"] == 0.75
-    assert event["moving"] is True
+    assert event["moving"] is False
     assert event["viewportWidth"] == 390
     assert event["viewportHeight"] == 844
+    assert event["seatId"] == "sofa-left"
     assert type(event["sequence"]) is int
     assert event["sequence"] > 0
 
@@ -854,6 +857,37 @@ def test_invalid_or_identity_spoofing_movement_is_not_broadcast() -> None:
                     "moving": True,
                     "viewportWidth": 0,
                     "viewportHeight": 844,
+                }
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": False,
+                    "viewportWidth": 390,
+                    "viewportHeight": 844,
+                    "seatId": "table",
+                }
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": True,
+                    "viewportWidth": 390,
+                    "viewportHeight": 844,
+                    "seatId": "chair-left",
+                }
+            )
+            websocket.send_json(
+                {
+                    "type": "movement",
+                    "x": 0.2,
+                    "y": 0.5,
+                    "moving": False,
+                    "seatId": "chair-left",
                 }
             )
             websocket.send_json(

@@ -481,6 +481,39 @@
       <!-- 참가자는 벽걸이 액자로, 움직이는 캐릭터는 아래 바닥에서 서로 다른 역할로 보인다 -->
       <div class="lounge" id="lounge" aria-label="참가자 액자가 걸린 대기실">
         <ul class="lounge__players" id="lounge-players" aria-label="참가자 상태"></ul>
+        <p class="lounge__furniture-hint" id="lounge-furniture-hint">의자·소파에 올라가 선택하면 앉아요 · 움직이면 일어나요</p>
+        <div class="lounge__furniture" id="waiting-furniture" role="group"
+             aria-label="앉을 수 있는 대기실 가구" aria-describedby="lounge-furniture-hint">
+          <button type="button" class="lounge__seat lounge__seat--chair lounge__seat--chair-left"
+                  data-waiting-seat="chair-left" aria-pressed="false" aria-label="왼쪽 의자에 앉기">
+            <span class="lounge__chair-back" aria-hidden="true"></span>
+            <span class="lounge__chair-cushion" aria-hidden="true"></span>
+            <span class="lounge__chair-legs" aria-hidden="true"></span>
+          </button>
+
+          <div class="lounge__sofa">
+            <span class="lounge__sofa-back" aria-hidden="true"></span>
+            <span class="lounge__sofa-arm lounge__sofa-arm--left" aria-hidden="true"></span>
+            <button type="button" class="lounge__seat lounge__seat--sofa lounge__seat--sofa-left"
+                    data-waiting-seat="sofa-left" aria-pressed="false" aria-label="소파 왼쪽에 앉기"></button>
+            <button type="button" class="lounge__seat lounge__seat--sofa lounge__seat--sofa-right"
+                    data-waiting-seat="sofa-right" aria-pressed="false" aria-label="소파 오른쪽에 앉기"></button>
+            <span class="lounge__sofa-arm lounge__sofa-arm--right" aria-hidden="true"></span>
+            <span class="lounge__sofa-base" aria-hidden="true"></span>
+          </div>
+
+          <div class="lounge__table" aria-hidden="true">
+            <span class="lounge__table-top"></span>
+            <span class="lounge__table-leg"></span>
+          </div>
+
+          <button type="button" class="lounge__seat lounge__seat--chair lounge__seat--chair-right"
+                  data-waiting-seat="chair-right" aria-pressed="false" aria-label="오른쪽 의자에 앉기">
+            <span class="lounge__chair-back" aria-hidden="true"></span>
+            <span class="lounge__chair-cushion" aria-hidden="true"></span>
+            <span class="lounge__chair-legs" aria-hidden="true"></span>
+          </button>
+        </div>
         <div id="waiting-remote-characters" aria-hidden="true"></div>
         <div class="walker walker--home" id="waiting-character" aria-hidden="true">
           <span class="walker__bubble" id="waiting-bubble" hidden></span>

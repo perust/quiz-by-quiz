@@ -98,5 +98,8 @@ test('WaitingRoom.show clears prior ownership before fetch and checks it before 
     show,
     /if \(!room\) \{[\s\S]*?onLeave\(code, entryGeneration, '그 방은 이미 사라졌어요\. 마지막 사람이 나가면 방이 지워집니다\.'\);[\s\S]*?return;\s*\}[\s\S]*?visibleEntry = nextEntry;[\s\S]*?unsubscribe = roomStore\.subscribe\(code, \(event\) => \{\s*if \(showGuard\.isCurrent\(request\)\) onEvent\(event, \{ code, entryGeneration \}\);\s*\}\);/,
   );
-  assert.match(hide, /hide\(\) \{\s*showGuard\.invalidate\(\);\s*visibleRequest = null;\s*visibleEntry = null;\s*unsubscribe\?\.\(\);/);
+  assert.match(
+    hide,
+    /hide\(\) \{\s*showGuard\.invalidate\(\);\s*visibleRequest = null;\s*movementPublisher\.clearSeat\(\);\s*visibleEntry = null;\s*unsubscribe\?\.\(\);/,
+  );
 });

@@ -29,6 +29,14 @@ import {
   waitingRoomControls,
 } from './waiting-room-action.js';
 import { waitingRoomPortraits } from './waiting-room-portrait.js';
+import {
+  createWaitingRoomSeatLeaseController,
+  isWaitingRoomSeatId,
+  nextWaitingRoomSeat,
+  waitingRoomSeatPoint,
+  waitingRoomSeatWinner,
+  type WaitingRoomSeatId,
+} from './waiting-room-seating.js';
 import { createBody } from './sprite.js';
 import type {
   MatchSetup, PlayerInfo, PublicRoom, RoomEvent, RoomPatch, RoomStore,
@@ -40,6 +48,9 @@ const BUBBLE_MS = 3200;
 
 /** 화면에 남겨 둘 대화 줄 수. 말풍선이 사라진 뒤에도 이만큼은 다시 볼 수 있다 */
 const CHAT_LINES = 4;
+
+/** 2초 heartbeat가 tab 종료로 끊겨도 background timer throttling을 오인하지 않는 여유. */
+const REMOTE_SEAT_STALE_MS = 70_000;
 
 /** 설정 버튼이 도는 값. 카테고리 정의와 달리 아이콘·설명이 없다 */
 interface RoundCategory {
@@ -88,6 +99,7 @@ export function createWaitingRoom(
     capacityValue: need('setting-capacity-value'),
     lounge: need('lounge'),
     players: need('lounge-players'),
+    furniture: need('waiting-furniture'),
     remoteCharacters: need('waiting-remote-characters'),
     character: need('waiting-character'),
     bubble: need('waiting-bubble'),
@@ -97,22 +109,28 @@ export function createWaitingRoom(
     chatLog: need('chat-log'),
   };
 
+  /** 착석은 대기실 화면 수명에만 속한다. 방 snapshot이나 저장소에는 넣지 않는다. */
+  let seatedSeatId: WaitingRoomSeatId | null = null;
+
   const walker = createScreenWalker({
     screen: el.screen,
     character: el.character,
-    // 라운지 바닥 한가운데에서 시작한다. 버튼 곁에 세우면 대기실 밖에 선 것처럼 보인다
+    // 중앙의 소파·테이블과 겹치지 않는 왼쪽 바닥에서 시작한다.
     startPoint: () => {
       const box = el.lounge.getBoundingClientRect();
       // show()는 방을 먼저 읽고 앱이 그 뒤에 화면을 연다. 숨은 동안 좌표를 확정하면
       // 0,0이 화면 가장자리로 clamp되어 캐릭터가 좌상단에 잘린 채 남는다.
       if (el.screen.hidden || box.width === 0 || box.height === 0) return null;
-      return { x: box.left + box.width / 2, y: box.bottom - 18 };
+      return { x: box.left + 40, y: box.bottom - 90 };
     },
     onMove: (point, moving) => {
+      // 앉아 있다가 방향 입력을 시작하면 먼저 일어난다. 이 frame에는 seatId가
+      // 빠지므로 다른 browser도 즉시 standing pose로 돌아간다.
+      if (moving && seatedSeatId) standUp();
       const sample = normalizeViewportMovement(point, moving, {
         width: window.innerWidth,
         height: window.innerHeight,
-      });
+      }, seatedSeatId ?? undefined);
       if (sample) movementPublisher.update(sample);
     },
   });
@@ -133,8 +151,10 @@ export function createWaitingRoom(
   let bubbleTimer: number | undefined;
   /** room snapshot이 참가자 DOM을 다시 만들어도 아직 살아 있는 남의 말은 유지한다. */
   const remoteBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
-  /** room snapshot rerender와 socket reconnect를 건너서 상대 좌표를 보존한다. */
-  const remoteMovements = createPlayerMovementController();
+  /** room snapshot rerender와 socket reconnect를 건너서 상대 좌표·좌석을 보존한다. */
+  const remoteMovements = createPlayerMovementController({
+    seatPoint: pointForRemoteSeat,
+  });
   /** 걷는 frame은 125ms(초당 8회)로 합치고, stop은 즉시 보낸다. */
   const movementPublisher = createMovementPublisher({
     send: (sample) => {
@@ -146,6 +166,150 @@ export function createWaitingRoom(
   let movementHeartbeat: number | undefined;
   /** 화면 가장자리 안으로 말풍선을 맞추기 위한 현재 player figure lookup. */
   const remoteBubbleNodes = new Map<string, HTMLElement>();
+  /** 정적 HTML의 좌석 버튼. 테이블은 장식이라 이 목록에 들어오지 않는다. */
+  const seatButtons = new Map<WaitingRoomSeatId, HTMLButtonElement>();
+  const seatNames = new Map<WaitingRoomSeatId, string>();
+  /** 최신 remote movement가 주장한 좌석. room snapshot에서 사라지면 즉시 지운다. */
+  const remoteSeats = new Map<string, WaitingRoomSeatId>();
+  /** 종료 frame 없는 tab crash도 유령 착석으로 좌석을 계속 막지 못하게 한다. */
+  const remoteSeatLeases = createWaitingRoomSeatLeaseController({
+    staleMs: REMOTE_SEAT_STALE_MS,
+    onExpire: (playerId) => {
+      if (!remoteSeats.delete(playerId)) return;
+      remoteMovements.clearSeat(playerId);
+      paintSeating();
+    },
+  });
+  for (const button of el.furniture.querySelectorAll<HTMLButtonElement>('[data-waiting-seat]')) {
+    const seatId = button.dataset.waitingSeat;
+    if (!isWaitingRoomSeatId(seatId)) continue;
+    seatButtons.set(seatId, button);
+    seatNames.set(
+      seatId,
+      (button.getAttribute('aria-label') ?? '좌석에 앉기').replace(/에 앉기$/, ''),
+    );
+  }
+
+  function paintSeating(): void {
+    const me = roomStore.me();
+    el.character.classList.toggle('walker--seated', seatedSeatId !== null);
+    for (const [seatId, button] of seatButtons) {
+      const owner = seatOwner(seatId);
+      const selected = seatId === seatedSeatId && owner === me;
+      const occupiedByOther = owner !== null && owner !== me;
+      const name = seatNames.get(seatId) ?? '좌석';
+      button.disabled = occupiedByOther;
+      button.setAttribute('aria-pressed', String(selected));
+      button.setAttribute(
+        'aria-label',
+        selected
+          ? `${name}에서 일어나기`
+          : occupiedByOther ? `${name} 사용 중` : `${name}에 앉기`,
+      );
+    }
+  }
+
+  function pointForSeat(seatId: WaitingRoomSeatId): { x: number; y: number } | null {
+    const button = seatButtons.get(seatId);
+    if (!button) return null;
+    return waitingRoomSeatPoint(button.getBoundingClientRect(), el.character.offsetHeight);
+  }
+
+  function pointForRemoteSeat(
+    seatId: WaitingRoomSeatId,
+    node: HTMLElement,
+  ): { x: number; y: number } | null {
+    const button = seatButtons.get(seatId);
+    if (!button) return null;
+    return waitingRoomSeatPoint(button.getBoundingClientRect(), node.offsetHeight);
+  }
+
+  function seatClaims(): Array<{ playerId: string; seatId: WaitingRoomSeatId }> {
+    const claims = [...remoteSeats].map(([playerId, seatId]) => ({ playerId, seatId }));
+    if (seatedSeatId) claims.push({ playerId: roomStore.me(), seatId: seatedSeatId });
+    return claims;
+  }
+
+  function seatOwner(seatId: WaitingRoomSeatId): string | null {
+    return waitingRoomSeatWinner(seatId, seatClaims());
+  }
+
+  /** 움직여 일어날 때. 현재 좌표는 walker가 바로 이어서 보고한다. */
+  function standUp(): void {
+    if (!seatedSeatId) return;
+    seatedSeatId = null;
+    paintSeating();
+  }
+
+  /** 방을 바꾸거나 화면을 떠날 때 좌석 표시가 다음 입장에 새지 않게 비운다. */
+  function resetSeating(): void {
+    seatedSeatId = null;
+    remoteSeatLeases.reset();
+    remoteSeats.clear();
+    paintSeating();
+  }
+
+  function chooseSeat(requested: WaitingRoomSeatId): void {
+    const owner = seatOwner(requested);
+    if (owner !== null && owner !== roomStore.me()) return;
+    const point = pointForSeat(requested);
+    if (!point) return;
+    const next = nextWaitingRoomSeat(seatedSeatId, requested);
+    if (next === null) {
+      standUp();
+      el.character.classList.add('walker--idle');
+      // 같은 자리를 다시 골라 일어선 사실도 정지 좌표로 즉시 공유한다.
+      walker.placeAt(point);
+      return;
+    }
+    seatedSeatId = next;
+    el.character.classList.remove('walker--hop', 'walker--idle');
+    paintSeating();
+    walker.placeAt(point);
+  }
+
+  /** fixed walker와 문서 안 가구가 스크롤·resize 뒤에도 같은 자리에 보이게 맞춘다. */
+  function alignSeatedWalkers(): void {
+    if (el.screen.hidden) return;
+    if (seatedSeatId) {
+      const point = pointForSeat(seatedSeatId);
+      if (point) walker.placeAt(point, false);
+    }
+    remoteMovements.refresh();
+  }
+
+  for (const [seatId, button] of seatButtons) {
+    button.addEventListener('click', () => chooseSeat(seatId));
+  }
+  window.addEventListener('scroll', alignSeatedWalkers, { passive: true });
+  window.addEventListener('resize', alignSeatedWalkers);
+
+  function applyRemoteSeat(playerId: string, seatId: WaitingRoomSeatId | undefined): void {
+    if (seatId) {
+      remoteSeats.set(playerId, seatId);
+      remoteSeatLeases.refresh(playerId);
+    } else {
+      remoteSeats.delete(playerId);
+      remoteSeatLeases.clear(playerId);
+    }
+
+    if (seatedSeatId && seatId === seatedSeatId) {
+      const winner = seatOwner(seatedSeatId);
+      if (winner !== roomStore.me()) {
+        const point = pointForSeat(seatedSeatId);
+        standUp();
+        el.character.classList.add('walker--idle');
+        // 모든 client가 같은 player-id tie-break를 써서 진 쪽이 standing frame을 알린다.
+        // 좌석 DOM을 잠깐 잴 수 없어도 publisher의 마지막 좌표에서 seatId를 제거해야
+        // heartbeat가 패배한 좌석을 다시 주장하지 않는다.
+        movementPublisher.clearSeat();
+        if (point) walker.placeAt(point, false);
+        return;
+      }
+    }
+    paintSeating();
+    walker.refresh();
+  }
 
   // ── 그리기 ─────────────────────────────────────────────────────
 
@@ -176,8 +340,14 @@ export function createWaitingRoom(
     }
 
     const remotePlayers = room.players.filter((player) => player.id !== roomStore.me());
+    const remotePlayerIds = new Set(remotePlayers.map((player) => player.id));
+    remoteSeatLeases.retain(remotePlayerIds);
+    for (const playerId of remoteSeats.keys()) {
+      if (!remotePlayerIds.has(playerId)) remoteSeats.delete(playerId);
+    }
+    paintSeating();
     remoteMovements.unbindAll();
-    remoteMovements.reconcile(remotePlayers.map((player) => player.id));
+    remoteMovements.reconcile([...remotePlayerIds]);
     remoteBubbles.unbindAll();
     remoteBubbleNodes.clear();
     el.players.replaceChildren();
@@ -338,7 +508,9 @@ export function createWaitingRoom(
     }
     if (event.type === 'movement') {
       if (event.playerId !== roomStore.me()) {
-        remoteMovements.update(event);
+        if (remoteMovements.update(event)) {
+          applyRemoteSeat(event.playerId, event.seatId);
+        }
         const bubble = remoteBubbleNodes.get(event.playerId);
         if (bubble && !bubble.hidden) fitChatBubble(bubble);
       }
@@ -567,12 +739,14 @@ export function createWaitingRoom(
       const nextEntry = { code, entryGeneration };
       // 새 방을 읽는 동안 이전 방을 계속 조작할 수 있으면 activeRoomCode와 화면이
       // 갈라진다. 먼저 끊고 비워 둔다; 새 응답만 아래에서 다시 붙인다.
+      movementPublisher.clearSeat();
       visibleEntry = null;
       unsubscribe?.();
       unsubscribe = null;
       clearInterval(movementHeartbeat);
       movementHeartbeat = undefined;
       walker.hide();
+      resetSeating();
       movementPublisher.reset();
       room = null;
       chatSendPending = false;
@@ -608,18 +782,22 @@ export function createWaitingRoom(
       el.chatSubmit.disabled = false;
       render();
       walker.show(characterId);
+      // app이 show()가 끝난 뒤 hidden을 해제하므로 다음 frame에서 remote 좌석도 다시 잰다.
+      window.requestAnimationFrame(() => alignSeatedWalkers());
       movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
     },
 
     hide() {
       showGuard.invalidate();
       visibleRequest = null;
+      movementPublisher.clearSeat();
       visibleEntry = null;
       unsubscribe?.();
       unsubscribe = null;
       clearInterval(movementHeartbeat);
       movementHeartbeat = undefined;
       walker.hide();
+      resetSeating();
       movementPublisher.reset();
       room = null;
       chatSendPending = false;

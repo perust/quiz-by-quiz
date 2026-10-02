@@ -30,9 +30,12 @@ import type {
   Unsubscribe,
 } from './adapter.js';
 import {
+  isWaitingRoomSeatId,
   MOVEMENT_VIEWPORT_CAPABILITY,
   type MovementViewport,
+  type WaitingRoomSeatId,
   validMovementViewportDimension,
+  WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
 import { normalizeCode, type JoinFailReason } from './rules.js';
 
@@ -70,11 +73,13 @@ interface WebSocketLike {
 interface MovementChannel {
   socket: WebSocketLike | null;
   supportsViewport: boolean;
+  supportsSeat: boolean;
   latest: ({
     type: 'movement';
     x: number;
     y: number;
     moving: boolean;
+    seatId?: WaitingRoomSeatId;
   } & MovementViewport) | null;
 }
 
@@ -493,13 +498,20 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   function movementPayload(channel: MovementChannel): object | null {
     const latest = channel.latest;
     if (!latest) return null;
-    if (channel.supportsViewport) return latest;
-    return {
+    const payload: Record<string, string | number | boolean> = {
       type: latest.type,
       x: latest.x,
       y: latest.y,
       moving: latest.moving,
     };
+    if (channel.supportsViewport) {
+      payload.viewportWidth = latest.viewportWidth;
+      payload.viewportHeight = latest.viewportHeight;
+    }
+    if (channel.supportsViewport && channel.supportsSeat && latest.seatId) {
+      payload.seatId = latest.seatId;
+    }
+    return payload;
   }
 
   function beginRoomSnapshotRequest(): number {
@@ -825,12 +837,13 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   }
 
   function sendMovement({
-    code: rawCode, x, y, moving, viewportWidth, viewportHeight,
+    code: rawCode, x, y, moving, viewportWidth, viewportHeight, seatId,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
+    seatId?: WaitingRoomSeatId;
   } & MovementViewport): boolean {
     const code = normalizeCode(rawCode);
     if (
@@ -838,6 +851,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       || !Number.isFinite(x) || x < 0 || x > 1
       || !Number.isFinite(y) || y < 0 || y > 1
       || typeof moving !== 'boolean'
+      || (seatId !== undefined && (!isWaitingRoomSeatId(seatId) || moving))
       || !validMovementViewportDimension(viewportWidth)
       || !validMovementViewportDimension(viewportHeight)
     ) return false;
@@ -845,6 +859,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     if (!channel) return false;
     channel.latest = {
       type: 'movement', x, y, moving, viewportWidth, viewportHeight,
+      ...(seatId !== undefined ? { seatId } : {}),
     };
     if (channel.socket?.readyState !== 1) return false;
     try {
@@ -872,6 +887,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     const movementChannel: MovementChannel = {
       socket: null,
       supportsViewport: false,
+      supportsSeat: false,
       latest: null,
     };
     movementChannels.set(code, movementChannel);
@@ -923,6 +939,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
       const hasViewportHeight = Object.hasOwn(value, 'viewportHeight');
+      const hasSeat = Object.hasOwn(value, 'seatId');
       if (
         value.type === 'movement'
         && typeof value.playerId === 'string'
@@ -936,6 +953,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         && value.y >= 0
         && value.y <= 1
         && typeof value.moving === 'boolean'
+        && (!hasSeat || (isWaitingRoomSeatId(value.seatId) && !value.moving))
         && hasViewportWidth === hasViewportHeight
         && (!hasViewportWidth || (
           validMovementViewportDimension(value.viewportWidth)
@@ -951,6 +969,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           x: value.x,
           y: value.y,
           moving: value.moving,
+          ...(hasSeat ? { seatId: value.seatId as WaitingRoomSeatId } : {}),
           ...(hasViewportWidth ? {
             viewportWidth: value.viewportWidth as number,
             viewportHeight: value.viewportHeight as number,
@@ -995,6 +1014,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       // Every reconnect renegotiates the capability. A backend rollback must not leave a
       // cached new client sending payload fields that the legacy strict parser discards.
       movementChannel.supportsViewport = false;
+      movementChannel.supportsSeat = false;
       try {
         const ticketBody = await request(`/v1/rooms/${encodeURIComponent(code)}/ws-ticket`, {
           method: 'POST',
@@ -1006,6 +1026,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         movementChannel.supportsViewport = (
           ticketBody.movementViewport === MOVEMENT_VIEWPORT_CAPABILITY
         );
+        movementChannel.supportsSeat = movementChannel.supportsViewport
+          && ticketBody.movementSeat === WAITING_ROOM_SEAT_CAPABILITY;
 
         const url = new URL(endpoint(`/v1/rooms/${encodeURIComponent(code)}/events`));
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1038,6 +1060,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           if (movementChannel.socket === connected) {
             movementChannel.socket = null;
             movementChannel.supportsViewport = false;
+            movementChannel.supportsSeat = false;
           }
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = null;
@@ -1059,6 +1082,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       socket = null;
       movementChannel.socket = null;
       movementChannel.supportsViewport = false;
+      movementChannel.supportsSeat = false;
       movementChannel.latest = null;
       if (movementChannels.get(code) === movementChannel) movementChannels.delete(code);
       releaseRoomMutationState(code, mutationState);
