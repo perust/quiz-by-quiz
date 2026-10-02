@@ -500,7 +500,6 @@ async function main(): Promise<void> {
       banks,
       bestScores,
       allCount: allModeCount(),
-      questionsPerRound: QUESTIONS_PER_ROUND,
       characterId,
       nickname: savedNickname,
     });

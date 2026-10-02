@@ -45,3 +45,22 @@ test('홈 바로가기는 닉네임 아래 한 줄에 모이고 좁은 화면에
   assert.match(narrow, /\.home-menu \.menu-card \{[\s\S]*?flex-direction: column[\s\S]*?min-height: 76px/);
   assert.match(narrow, /\.home-menu \.menu-card__desc \{[\s\S]*?display: none/);
 });
+
+test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는다', async () => {
+  const [html, css, homeSource] = await Promise.all([
+    source('../index.html'),
+    source('../css/style.css'),
+    source('../src/ui/home.ts'),
+  ]);
+
+  assert.doesNotMatch(homeSource, /\$\{count\}문제|\$\{allCount\}문제/);
+  assert.doesNotMatch(homeSource, /category-card__count/);
+  assert.doesNotMatch(css, /category-card__count/);
+  assert.match(html, /id="start-all-meta" hidden/);
+
+  // 문제 유무에 따른 선택 가능 여부와 최고 점수 표시는 그대로 유지한다.
+  assert.match(homeSource, /card\.disabled = count === 0/);
+  assert.match(homeSource, /el\.startAll\.disabled = allCount === 0/);
+  assert.match(homeSource, /최고 \$\{bestScore\}점/);
+  assert.match(homeSource, /최고 \$\{best\}점/);
+});

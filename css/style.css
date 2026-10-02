@@ -338,17 +338,6 @@ body.is-booted .app-bar {
   color: var(--text-muted);
 }
 
-.category-card__count {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.category-card:disabled .category-card__count {
-  color: var(--wrong);
-}
-
 /* 최고 점수 (FR-2.3). 기록이 없으면 아예 그리지 않는다 */
 .category-card__best {
   font-size: 12px;
@@ -1279,11 +1268,6 @@ body.is-booted .app-bar {
   display: flex;
   justify-content: center;
   margin-top: 20px;
-}
-
-/* ── 출제 수보다 문제가 적을 때 ── */
-.category-card__count--short {
-  color: var(--warning);
 }
 
 /* ── 애니메이션 ──
