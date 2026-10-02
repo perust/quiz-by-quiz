@@ -693,6 +693,9 @@ async function main(): Promise<void> {
       currentGeneration: waitingRoomEntryGeneration,
     })) return;
     goTo('waiting');
+    // show() 동안에는 active-match 복구 요청 때문에 화면이 계속 hidden일 수 있다.
+    // 실제 표시 뒤에 미뤄 둔 local/remote walker 좌표를 DOM 기준으로 확정한다.
+    waitingRoom.activate();
   }
 
   // ── 내 캐릭터 ──────────────────────────────────────────────────

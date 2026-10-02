@@ -80,6 +80,8 @@ export interface WaitingRoomDeps {
 export interface WaitingRoom {
   /** @param code 들어온 방 */
   show(code: string, characterId: string, entryGeneration: number): Promise<void>;
+  /** app이 실제로 waiting 화면을 연 직후, 숨은 DOM에서 미룬 좌표를 확정한다. */
+  activate(): void;
   hide(): void;
 }
 
@@ -112,17 +114,19 @@ export function createWaitingRoom(
   /** 착석은 대기실 화면 수명에만 속한다. 방 snapshot이나 저장소에는 넣지 않는다. */
   let seatedSeatId: WaitingRoomSeatId | null = null;
 
+  function waitingRoomStartPoint(): { x: number; y: number } | null {
+    const box = el.lounge.getBoundingClientRect();
+    // show()는 방을 먼저 읽고 앱이 그 뒤에 화면을 연다. 숨은 동안 좌표를 확정하면
+    // 0,0이 화면 가장자리로 clamp되어 캐릭터가 좌상단에 잘린 채 남는다.
+    if (el.screen.hidden || box.width === 0 || box.height === 0) return null;
+    return { x: box.left + 40, y: box.bottom - 90 };
+  }
+
   const walker = createScreenWalker({
     screen: el.screen,
     character: el.character,
     // 중앙의 소파·테이블과 겹치지 않는 왼쪽 바닥에서 시작한다.
-    startPoint: () => {
-      const box = el.lounge.getBoundingClientRect();
-      // show()는 방을 먼저 읽고 앱이 그 뒤에 화면을 연다. 숨은 동안 좌표를 확정하면
-      // 0,0이 화면 가장자리로 clamp되어 캐릭터가 좌상단에 잘린 채 남는다.
-      if (el.screen.hidden || box.width === 0 || box.height === 0) return null;
-      return { x: box.left + 40, y: box.bottom - 90 };
-    },
+    startPoint: waitingRoomStartPoint,
     onMove: (point, moving) => {
       // 앉아 있다가 방향 입력을 시작하면 먼저 일어난다. 이 frame에는 seatId가
       // 빠지므로 다른 browser도 즉시 standing pose로 돌아간다.
@@ -782,9 +786,17 @@ export function createWaitingRoom(
       el.chatSubmit.disabled = false;
       render();
       walker.show(characterId);
-      // app이 show()가 끝난 뒤 hidden을 해제하므로 다음 frame에서 remote 좌석도 다시 잰다.
+      // 곧바로 화면이 열리는 경로를 먼저 맞춘다. match 복구로 늦게 열리면 activate()가
+      // 보이는 DOM을 기준으로 local/remote 좌표를 다시 확정한다.
       window.requestAnimationFrame(() => alignSeatedWalkers());
       movementHeartbeat = window.setInterval(() => movementPublisher.resend(), 2000);
+    },
+
+    activate() {
+      if (el.screen.hidden) return;
+      const point = waitingRoomStartPoint();
+      if (point) walker.placeAt(point);
+      alignSeatedWalkers();
     },
 
     hide() {
