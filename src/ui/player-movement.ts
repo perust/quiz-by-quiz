@@ -7,7 +7,9 @@
 // 바뀌면 서버 재시작·재연결 뒤 낮아진 sequence도 새 흐름으로 받아들인다.
 
 import {
+  isWaitingRoomSeatId,
   type MovementViewport,
+  type WaitingRoomSeatId,
   validMovementViewportDimension,
 } from '../online/movement-contract.js';
 
@@ -15,6 +17,8 @@ interface MovementPosition {
   x: number;
   y: number;
   moving: boolean;
+  /** 없으면 서 있거나 걷는 중, 있으면 수신 화면의 같은 논리 좌석에 앉는다. */
+  seatId?: WaitingRoomSeatId;
 }
 
 export interface MovementSample extends MovementPosition, MovementViewport {}
@@ -24,6 +28,7 @@ export function normalizeViewportMovement(
   point: Readonly<{ x: number; y: number }>,
   moving: boolean,
   viewport: Readonly<{ width: number; height: number }>,
+  seatId?: unknown,
 ): MovementSample | null {
   const viewportWidth = Math.round(viewport.width);
   const viewportHeight = Math.round(viewport.height);
@@ -33,6 +38,8 @@ export function normalizeViewportMovement(
     || !validMovementViewportDimension(viewportWidth)
     || !validMovementViewportDimension(viewportHeight)
     || typeof moving !== 'boolean'
+    || (seatId !== undefined && !isWaitingRoomSeatId(seatId))
+    || (moving && seatId !== undefined)
   ) return null;
   return {
     x: Number(Math.min(1, Math.max(0, point.x / viewportWidth)).toFixed(4)),
@@ -40,6 +47,7 @@ export function normalizeViewportMovement(
     moving,
     viewportWidth,
     viewportHeight,
+    ...(seatId !== undefined ? { seatId } : {}),
   };
 }
 
@@ -64,8 +72,12 @@ export interface PlayerMovementController {
   bind(playerId: string, node: HTMLElement): void;
   /** DOM만 떼고 좌표는 보존한다. */
   unbindAll(): void;
-  /** 인증된 server event를 적용한다. 아직 snapshot에 없으면 좌표만 잠시 보존한다. */
-  update(movement: RemoteMovement): void;
+  /** 스크롤·resize 뒤 논리 좌석의 현재 client 좌표로 다시 맞춘다. */
+  refresh(): void;
+  /** 인증된 server event를 적용한다. invalid/stale이면 false다. */
+  update(movement: RemoteMovement): boolean;
+  /** heartbeat lease가 끝난 좌석만 지우고 좌표·sequence는 보존한다. */
+  clearSeat(playerId: string): void;
   /** 방을 떠날 때 이전 방의 node·좌표·sequence를 모두 지운다. */
   reset(): void;
 }
@@ -96,13 +108,13 @@ export function remoteMovementOffset(
 }
 
 function cssNumber(value: number): string {
-  return String(Number(Math.abs(value).toFixed(4)));
+  return String(Number(value.toFixed(4)));
 }
 
 function centeredAxis(center: '50vw' | '50vh', limit: '100vw' | '100vh', offset: number): string {
   if (Math.abs(offset) < 0.00005) return `clamp(0px, ${center}, ${limit})`;
   const operator = offset < 0 ? '-' : '+';
-  return `clamp(0px, calc(${center} ${operator} ${cssNumber(offset)}px), ${limit})`;
+  return `clamp(0px, calc(${center} ${operator} ${cssNumber(Math.abs(offset))}px), ${limit})`;
 }
 
 function projectedUnitPosition(
@@ -125,21 +137,64 @@ function projectedUnitPosition(
   };
 }
 
-function project(node: HTMLElement, state: MovementState): void {
+interface PlayerMovementControllerOptions {
+  /** 논리 좌석을 이 client DOM의 정확한 발끝 좌표로 바꾼다. */
+  seatPoint?: (
+    seatId: WaitingRoomSeatId,
+    node: HTMLElement,
+  ) => Readonly<{ x: number; y: number }> | null;
+}
+
+function validSeatPoint(
+  point: Readonly<{ x: number; y: number }> | null | undefined,
+): point is Readonly<{ x: number; y: number }> {
+  return Boolean(point && Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function clampSeatPoint(
+  node: HTMLElement,
+  point: Readonly<{ x: number; y: number }>,
+): Readonly<{ x: number; y: number }> {
+  const view = node.ownerDocument?.defaultView;
+  if (!view || view.innerWidth <= 0 || view.innerHeight <= 0) return point;
+  return {
+    x: Math.min(view.innerWidth, Math.max(0, point.x)),
+    y: Math.min(view.innerHeight, Math.max(0, point.y)),
+  };
+}
+
+function project(
+  node: HTMLElement,
+  state: MovementState,
+  seatPoint: PlayerMovementControllerOptions['seatPoint'],
+): void {
+  // 새로 bind된 remote walker는 hidden 상태다. 먼저 표시해야 offsetHeight를 쓰는
+  // 좌석 좌표 계산이 0이 아닌 실제 캐릭터 높이를 읽는다. 같은 task 안에서
+  // transform까지 설정되므로 기본 위치가 중간 frame에 노출되지는 않는다.
+  node.hidden = false;
+  const rawSeatAnchor = state.seatId ? seatPoint?.(state.seatId, node) : null;
+  const seatAnchor = validSeatPoint(rawSeatAnchor)
+    ? clampSeatPoint(node, rawSeatAnchor)
+    : null;
   const offset = remoteMovementOffset(state);
   const projected = projectedUnitPosition(node, state, offset);
-  node.style.transform = offset
-    ? `translate(${centeredAxis('50vw', '100vw', offset.x)}, ${centeredAxis('50vh', '100vh', offset.y)}) translate(-50%, -100%)`
-    : `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
-  node.classList.toggle('walker--walking', state.moving);
-  node.classList.toggle('walker--idle', !state.moving);
+  node.style.transform = validSeatPoint(seatAnchor)
+    ? `translate(${cssNumber(seatAnchor.x)}px, ${cssNumber(seatAnchor.y)}px) translate(-50%, -100%)`
+    : offset
+      ? `translate(${centeredAxis('50vw', '100vw', offset.x)}, ${centeredAxis('50vh', '100vh', offset.y)}) translate(-50%, -100%)`
+      : `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
+  const seated = state.seatId !== undefined && seatAnchor !== null;
+  node.classList.toggle('walker--seated', seated);
+  node.classList.toggle('walker--walking', state.moving && !seated);
+  node.classList.toggle('walker--idle', !state.moving && !seated);
   node.classList.toggle('walker--name-above', projected.y >= NAME_ABOVE_THRESHOLD);
   node.classList.toggle('walker--name-left', projected.x <= NAME_SIDE_THRESHOLD);
   node.classList.toggle('walker--name-right', projected.x >= 1 - NAME_SIDE_THRESHOLD);
-  node.hidden = false;
 }
 
-export function createPlayerMovementController(): PlayerMovementController {
+export function createPlayerMovementController(
+  { seatPoint }: PlayerMovementControllerOptions = {},
+): PlayerMovementController {
   let allowed = new Set<string>();
   const states = new Map<string, MovementState>();
   const nodes = new Map<string, HTMLElement>();
@@ -155,7 +210,7 @@ export function createPlayerMovementController(): PlayerMovementController {
         if (!allowed.has(playerId)) states.delete(playerId);
         else {
           const node = nodes.get(playerId);
-          if (node) project(node, state);
+          if (node) project(node, state, seatPoint);
         }
       }
       for (const [playerId, node] of nodes) {
@@ -172,7 +227,7 @@ export function createPlayerMovementController(): PlayerMovementController {
       }
       nodes.set(playerId, node);
       const state = states.get(playerId);
-      if (state) project(node, state);
+      if (state) project(node, state, seatPoint);
       else node.hidden = true;
     },
 
@@ -181,14 +236,23 @@ export function createPlayerMovementController(): PlayerMovementController {
       nodes.clear();
     },
 
+    refresh() {
+      for (const [playerId, node] of nodes) {
+        const state = states.get(playerId);
+        if (state && allowed.has(playerId)) project(node, state, seatPoint);
+      }
+    },
+
     update(movement) {
       const hasViewportWidth = movement.viewportWidth !== undefined;
       const hasViewportHeight = movement.viewportHeight !== undefined;
+      const hasSeat = movement.seatId !== undefined;
       if (
         !movement.playerId
         || !validUnit(movement.x)
         || !validUnit(movement.y)
         || typeof movement.moving !== 'boolean'
+        || (hasSeat && (!isWaitingRoomSeatId(movement.seatId) || movement.moving))
         || hasViewportWidth !== hasViewportHeight
         || (hasViewportWidth && (
           !validMovementViewportDimension(movement.viewportWidth)
@@ -198,15 +262,15 @@ export function createPlayerMovementController(): PlayerMovementController {
         || movement.sequence <= 0
         || !Number.isSafeInteger(movement.connectionGeneration)
         || movement.connectionGeneration < 0
-      ) return;
+      ) return false;
 
       const previous = states.get(movement.playerId);
       if (previous) {
-        if (movement.connectionGeneration < previous.connectionGeneration) return;
+        if (movement.connectionGeneration < previous.connectionGeneration) return false;
         if (
           movement.connectionGeneration === previous.connectionGeneration
           && movement.sequence <= previous.sequence
-        ) return;
+        ) return false;
       }
 
       const state: MovementState = {
@@ -217,13 +281,26 @@ export function createPlayerMovementController(): PlayerMovementController {
           viewportWidth: movement.viewportWidth,
           viewportHeight: movement.viewportHeight,
         } : {}),
+        ...(hasSeat ? { seatId: movement.seatId } : {}),
         sequence: movement.sequence,
         connectionGeneration: movement.connectionGeneration,
       };
       states.set(movement.playerId, state);
-      if (!allowed.has(movement.playerId)) return;
+      if (!allowed.has(movement.playerId)) return true;
       const node = nodes.get(movement.playerId);
-      if (node) project(node, state);
+      if (node) project(node, state, seatPoint);
+      return true;
+    },
+
+    clearSeat(playerId) {
+      const current = states.get(playerId);
+      if (!current?.seatId) return;
+      const standing: MovementState = { ...current };
+      delete standing.seatId;
+      states.set(playerId, standing);
+      if (!allowed.has(playerId)) return;
+      const node = nodes.get(playerId);
+      if (node) project(node, standing, seatPoint);
     },
 
     reset() {
@@ -237,6 +314,8 @@ export function createPlayerMovementController(): PlayerMovementController {
 
 export interface MovementPublisher {
   update(sample: MovementSample): void;
+  /** 마지막 착석 frame을 같은 좌표의 standing frame으로 즉시 바꿔 보낸다. */
+  clearSeat(): void;
   /** reconnect·room snapshot·heartbeat에서 마지막 좌표를 즉시 다시 보낸다. */
   resend(): void;
   reset(): void;
@@ -289,6 +368,14 @@ export function createMovementPublisher({
       const elapsed = now() - lastSentAt;
       if (elapsed >= intervalMs) sendLatest();
       else schedule(intervalMs - elapsed);
+    },
+
+    clearSeat() {
+      if (!latest?.seatId) return;
+      const standing = { ...latest };
+      delete standing.seatId;
+      latest = standing;
+      sendLatest();
     },
 
     resend() {

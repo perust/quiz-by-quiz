@@ -472,6 +472,7 @@ test('movement is cached until the room socket opens and never falls back to an 
       return json({
         ticket: 'movement-ticket',
         movementViewport: 'sender-css-pixels-v1',
+        movementSeat: 'waiting-room-seat-v1',
       }, 201);
     }
     if (url.endsWith('/v1/rooms/ABC234')) return json(room());
@@ -490,15 +491,17 @@ test('movement is cached until the room socket opens and never falls back to an 
     await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
     const socket = FakeWebSocket.instances[0];
     assert.equal(store.sendMovement({
-      code: 'ABC234', x: 0.25, y: 0.75, moving: true,
+      code: 'ABC234', x: 0.25, y: 0.75, moving: false,
       viewportWidth: 390, viewportHeight: 844,
+      seatId: 'sofa-left',
     }), false);
     assert.deepEqual(socket.sent, []);
 
     socket.emit('open');
     assert.deepEqual(JSON.parse(socket.sent[0]), {
-      type: 'movement', x: 0.25, y: 0.75, moving: true,
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
       viewportWidth: 390, viewportHeight: 844,
+      seatId: 'sofa-left',
     });
     assert.equal(store.sendMovement({
       code: 'ABC234', x: 0.4, y: 0.6, moving: false,
@@ -512,6 +515,11 @@ test('movement is cached until the room socket opens and never falls back to an 
       code: 'ABC234', x: 0.4, y: 0.6, moving: false,
       viewportWidth: 0, viewportHeight: 900,
     }), false);
+    assert.equal(store.sendMovement({
+      code: 'ABC234', x: 0.4, y: 0.6, moving: false,
+      viewportWidth: 390, viewportHeight: 844,
+      seatId: 'table',
+    }), false);
     assert.equal(socket.sent.length, 2);
     assert.equal(calls.some((url) => url.endsWith('/movement')), false);
   } finally {
@@ -523,7 +531,7 @@ test('movement is cached until the room socket opens and never falls back to an 
   }), false);
 });
 
-test('movement renegotiates viewport capability and falls back after a backend rollback', async () => {
+test('movement renegotiates seat and viewport capabilities across backend rollbacks', async () => {
   FakeWebSocket.instances.length = 0;
   let ticketRequests = 0;
   const fetchImpl = async (input) => {
@@ -531,12 +539,20 @@ test('movement renegotiates viewport capability and falls back after a backend r
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
     if (url.endsWith('/ws-ticket')) {
       ticketRequests += 1;
-      return json(ticketRequests === 1 ? {
-        ticket: 'new-backend-ticket',
-        movementViewport: 'sender-css-pixels-v1',
-      } : {
-        ticket: 'legacy-backend-ticket',
-      }, 201);
+      if (ticketRequests === 1) {
+        return json({
+          ticket: 'seat-backend-ticket',
+          movementViewport: 'sender-css-pixels-v1',
+          movementSeat: 'waiting-room-seat-v1',
+        }, 201);
+      }
+      if (ticketRequests === 2) {
+        return json({
+          ticket: 'viewport-backend-ticket',
+          movementViewport: 'sender-css-pixels-v1',
+        }, 201);
+      }
+      return json({ ticket: 'legacy-backend-ticket' }, 201);
     }
     if (url.endsWith('/v1/rooms/ABC234')) return json(room());
     throw new Error(`unexpected request: ${url}`);
@@ -555,12 +571,14 @@ test('movement renegotiates viewport capability and falls back after a backend r
     const first = FakeWebSocket.instances[0];
     first.emit('open');
     assert.equal(store.sendMovement({
-      code: 'ABC234', x: 0.25, y: 0.75, moving: true,
+      code: 'ABC234', x: 0.25, y: 0.75, moving: false,
       viewportWidth: 390, viewportHeight: 844,
+      seatId: 'chair-right',
     }), true);
     assert.deepEqual(JSON.parse(first.sent[0]), {
-      type: 'movement', x: 0.25, y: 0.75, moving: true,
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
       viewportWidth: 390, viewportHeight: 844,
+      seatId: 'chair-right',
     });
 
     first.emit('close');
@@ -569,7 +587,17 @@ test('movement renegotiates viewport capability and falls back after a backend r
     const second = FakeWebSocket.instances[1];
     second.emit('open');
     assert.deepEqual(JSON.parse(second.sent[0]), {
-      type: 'movement', x: 0.25, y: 0.75, moving: true,
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
+      viewportWidth: 390, viewportHeight: 844,
+    });
+
+    second.emit('close');
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    await waitFor(() => FakeWebSocket.instances.length === 3, 'legacy websocket was not created');
+    const third = FakeWebSocket.instances[2];
+    third.emit('open');
+    assert.deepEqual(JSON.parse(third.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
     });
   } finally {
     unsubscribe();
@@ -602,9 +630,10 @@ test('movement events are validated and carry the local socket generation for st
       playerId: '22345678-1234-4678-9234-567812345678',
       x: 0.2,
       y: 0.8,
-      moving: true,
+      moving: false,
       viewportWidth: 390,
       viewportHeight: 844,
+      seatId: 'sofa-right',
       sequence: 9,
     }) });
     socket.emit('message', { data: JSON.stringify({
@@ -624,15 +653,38 @@ test('movement events are validated and carry the local socket generation for st
       viewportWidth: 390,
       sequence: 11,
     }) });
+    socket.emit('message', { data: JSON.stringify({
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 0.3,
+      y: 0.8,
+      moving: false,
+      viewportWidth: 390,
+      viewportHeight: 844,
+      seatId: 'table',
+      sequence: 12,
+    }) });
+    socket.emit('message', { data: JSON.stringify({
+      type: 'movement',
+      playerId: '22345678-1234-4678-9234-567812345678',
+      x: 0.3,
+      y: 0.8,
+      moving: true,
+      viewportWidth: 390,
+      viewportHeight: 844,
+      seatId: 'chair-left',
+      sequence: 13,
+    }) });
 
     assert.deepEqual(events, [{
       type: 'movement',
       playerId: '22345678-1234-4678-9234-567812345678',
       x: 0.2,
       y: 0.8,
-      moving: true,
+      moving: false,
       viewportWidth: 390,
       viewportHeight: 844,
+      seatId: 'sofa-right',
       sequence: 9,
       connectionGeneration: 1,
     }]);

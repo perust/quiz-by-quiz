@@ -83,6 +83,8 @@ export interface Walker {
   refresh(): void;
   /** 크기가 바뀌면 비율을 지켜 옮긴다 */
   relayout(): void;
+  /** 가구처럼 화면에 있는 목표의 좌표로 즉시 맞춘다. */
+  placeAt(point: Point, report?: boolean): void;
   /** 스틱 입력이 들어왔을 때 루프를 깨운다 */
   onStickInput(): void;
   /** 화면이 받은 키를 넘겨준다. 처리했으면 true */
@@ -473,6 +475,27 @@ export function createWalker(config: WalkerConfig): Walker {
     placed = true;
   }
 
+  /**
+   * 이미 보이는 화면의 목표에 워커를 맞춘다.
+   *
+   * 대기실 좌석은 문서와 함께 스크롤되지만 워커는 viewport에 고정돼 있다. 그래서
+   * 좌석을 고를 때와 스크롤·resize 뒤에 그 좌표를 다시 넣을 수 있어야 한다.
+   * `report=false`는 같은 좌석을 재정렬할 뿐인 경우 불필요한 network frame을 막는다.
+   */
+  function placeAt(point: Point, report = true): void {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    measure();
+    if (stageSize.width === 0 || stageSize.height === 0) return;
+    pos.x = point.x;
+    pos.y = point.y;
+    clampPosition();
+    placed = true;
+    wasMoving = false;
+    character.classList.remove('walker--walking');
+    render();
+    if (report) onMove?.({ ...pos }, false);
+  }
+
   function loop(ts: number): void {
     frameId = null;
     if (!enabled || locked) return;
@@ -673,6 +696,10 @@ export function createWalker(config: WalkerConfig): Walker {
       clampPosition();
       render();
       onMove?.({ ...pos }, wasMoving);
+    },
+
+    placeAt(point, report = true) {
+      placeAt(point, report);
     },
 
     /** 스틱 입력이 들어왔을 때 루프를 깨운다 */

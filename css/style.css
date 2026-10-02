@@ -1529,6 +1529,11 @@ body.is-booted .app-bar {
   transition: transform 145ms linear;
 }
 
+/* 좌석 anchor는 scroll·resize 때 DOM에서 다시 재므로 보간하면 가구 뒤를 미끄러진다. */
+.walker--remote.walker--seated {
+  transition: none;
+}
+
 .walker__name {
   position: absolute;
   top: calc(100% + 9px);
@@ -1664,6 +1669,20 @@ body.is-booted .app-bar {
 
 .walker--hop .walker__shadow {
   animation: walker-land-shadow 0.42s;
+}
+
+/* 대기실 좌석을 고르면 몸통을 낮고 넓게 눌러 서 있는 모습과 구분한다.
+   --walking·--idle·--hop 뒤에 두어 착석 중에는 튀는 animation이 다시 켜지지 않는다. */
+.walker--seated .walker__body {
+  animation: none;
+  transform: translateY(9px) scaleY(0.74);
+}
+
+.walker--seated .walker__shadow {
+  width: 23px;
+  animation: none;
+  filter: none;
+  opacity: 0.5;
 }
 
 /* 틀렸을 때. 색을 뺀다 */
@@ -2899,23 +2918,233 @@ select.is-standing {
   margin-bottom: 12px;
 }
 
-/* 참가자 명단은 벽의 액자, 움직이는 캐릭터는 아래 바닥에 둔다.
-   액자는 인원이 늘면 벽을 아래로 늘리고 바닥 72px은 항상 남긴다. */
+/* 참가자 명단은 벽의 액자, 움직이는 캐릭터와 가구는 아래 바닥에 둔다.
+   액자는 인원이 늘면 벽을 아래로 늘리고 가구가 있는 바닥 176px은 항상 남긴다. */
 .lounge {
   position: relative;
-  min-height: 250px;
-  padding: 28px 14px 78px;
+  min-height: 360px;
+  padding: 28px 14px 186px;
   border: 1px solid #d8d0c2;
   border-radius: var(--radius);
   background: linear-gradient(
     to bottom,
-    #f4f0e8 0 calc(100% - 72px),
-    #b9ab91 calc(100% - 72px) calc(100% - 69px),
-    #dfd4c0 calc(100% - 69px) 100%
+    #f4f0e8 0 calc(100% - 176px),
+    #b9ab91 calc(100% - 176px) calc(100% - 172px),
+    #dfd4c0 calc(100% - 172px) 100%
   );
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.72);
   /* 움직이는 캐릭터의 말풍선은 벽과 바닥 경계를 넘어도 보여야 한다. */
   overflow: visible;
+}
+
+/* ── 픽셀 라운지 가구 ──
+   부드러운 곡선이나 blur 대신 3~4px 단색 면과 딱 끊기는 그림자로 만든다.
+   버튼 전체가 44px 이상이라 가구를 직접 눌러도, 워커로 올라가 선택해도 같은 길이다. */
+.lounge__furniture-hint {
+  position: absolute;
+  right: 8px;
+  bottom: 154px;
+  left: 8px;
+  margin: 0;
+  color: #655b4d;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.lounge__furniture {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 150px;
+  pointer-events: none;
+}
+
+.lounge__seat {
+  position: absolute;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0 solid transparent;
+  outline-offset: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.lounge__seat:focus-visible,
+.lounge__seat.is-standing {
+  outline-width: 3px;
+  outline-color: var(--accent);
+}
+
+.lounge__seat[aria-pressed='true'] {
+  outline-width: 3px;
+  outline-color: var(--correct);
+  box-shadow: 0 0 0 2px #f4f0e8;
+}
+
+.lounge__seat:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.lounge__seat--chair {
+  bottom: 15px;
+  width: 48px;
+  height: 66px;
+}
+
+.lounge__seat--chair-left {
+  left: 6px;
+}
+
+.lounge__seat--chair-right {
+  right: 6px;
+}
+
+.lounge__chair-back,
+.lounge__chair-cushion,
+.lounge__chair-legs {
+  position: absolute;
+  display: block;
+}
+
+.lounge__chair-back {
+  top: 0;
+  left: 7px;
+  width: 34px;
+  height: 34px;
+  border: 4px solid #4b2f22;
+  background: #a96d3f;
+  box-shadow: inset 0 0 0 4px #d79a5b, 4px 4px 0 rgba(75, 47, 34, 0.18);
+}
+
+.lounge__chair-cushion {
+  top: 30px;
+  left: 3px;
+  width: 42px;
+  height: 18px;
+  border: 4px solid #4b2f22;
+  background: #4c78c2;
+  box-shadow: inset 0 -4px 0 #365895;
+}
+
+.lounge__chair-legs {
+  top: 48px;
+  left: 8px;
+  width: 6px;
+  height: 17px;
+  background: #4b2f22;
+  box-shadow: 26px 0 0 #4b2f22;
+}
+
+.lounge__sofa {
+  position: absolute;
+  bottom: 51px;
+  left: 50%;
+  width: 132px;
+  height: 76px;
+  translate: -50% 0;
+  pointer-events: none;
+}
+
+.lounge__sofa-back,
+.lounge__sofa-arm,
+.lounge__sofa-base {
+  position: absolute;
+  display: block;
+}
+
+.lounge__sofa-back {
+  top: 1px;
+  left: 7px;
+  width: 118px;
+  height: 49px;
+  border: 4px solid #53342c;
+  background: #c85f62;
+  box-shadow: inset 0 0 0 4px #e58a82, 4px 4px 0 rgba(83, 52, 44, 0.18);
+}
+
+.lounge__sofa-arm {
+  top: 31px;
+  width: 18px;
+  height: 34px;
+  border: 4px solid #53342c;
+  background: #a94750;
+}
+
+.lounge__sofa-arm--left {
+  left: 0;
+}
+
+.lounge__sofa-arm--right {
+  right: 0;
+}
+
+.lounge__seat--sofa {
+  top: 30px;
+  width: 49px;
+  height: 39px;
+  border: 4px solid #53342c;
+  background: #d97070;
+  box-shadow: inset 0 -5px 0 #ac4650;
+}
+
+.lounge__seat--sofa-left {
+  left: 17px;
+}
+
+.lounge__seat--sofa-right {
+  right: 17px;
+}
+
+.lounge__sofa-base {
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  height: 8px;
+  background: #53342c;
+}
+
+.lounge__table {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 70px;
+  height: 43px;
+  translate: -50% 0;
+}
+
+.lounge__table-top,
+.lounge__table-leg {
+  position: absolute;
+  display: block;
+}
+
+.lounge__table-top {
+  top: 0;
+  left: 0;
+  width: 70px;
+  height: 20px;
+  border: 4px solid #493228;
+  background: #d69b50;
+  box-shadow: inset 0 4px 0 #efc276, 4px 4px 0 rgba(73, 50, 40, 0.16);
+}
+
+.lounge__table-leg {
+  top: 20px;
+  left: 12px;
+  width: 7px;
+  height: 23px;
+  background: #6f4930;
+  box-shadow: 39px 0 0 #6f4930;
 }
 
 .lounge__players {

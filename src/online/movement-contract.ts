@@ -6,6 +6,22 @@
 
 export const MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192;
 export const MOVEMENT_VIEWPORT_CAPABILITY = 'sender-css-pixels-v1';
+export const WAITING_ROOM_SEAT_CAPABILITY = 'waiting-room-seat-v1';
+
+/** 서버가 relay할 수 있는 논리 좌석. 테이블처럼 앉지 않는 가구는 포함하지 않는다. */
+export const WAITING_ROOM_SEAT_IDS = [
+  'chair-left',
+  'sofa-left',
+  'sofa-right',
+  'chair-right',
+] as const;
+
+export type WaitingRoomSeatId = typeof WAITING_ROOM_SEAT_IDS[number];
+
+export function isWaitingRoomSeatId(value: unknown): value is WaitingRoomSeatId {
+  return typeof value === 'string'
+    && (WAITING_ROOM_SEAT_IDS as readonly string[]).includes(value);
+}
 
 export interface MovementViewport {
   viewportWidth: number;

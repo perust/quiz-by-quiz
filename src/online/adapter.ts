@@ -43,7 +43,10 @@
 import { safeStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
 import { localRooms } from './local-rooms.js';
-import type { MovementViewport } from './movement-contract.js';
+import type {
+  MovementViewport,
+  WaitingRoomSeatId,
+} from './movement-contract.js';
 import { createNetworkRoomStore } from './network-rooms.js';
 import type { JoinFailReason } from './rules.js';
 
@@ -249,6 +252,8 @@ export type RoomEvent =
     x: number;
     y: number;
     moving: boolean;
+    /** 있으면 수신 browser의 같은 논리 좌석에 정렬한다. */
+    seatId?: WaitingRoomSeatId;
     /** 구형 event에는 없다. 있으면 송신자의 CSS-pixel 이동량을 복원한다. */
     viewportWidth?: number;
     viewportHeight?: number;
@@ -300,6 +305,7 @@ export interface RoomStore {
     x: number;
     y: number;
     moving: boolean;
+    seatId?: WaitingRoomSeatId;
   } & MovementViewport): boolean;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
