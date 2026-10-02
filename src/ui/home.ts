@@ -33,7 +33,6 @@ export interface HomeView {
   banks: Partial<Record<CategoryId, Question[]>>;
   bestScores: Partial<Record<CategoryId | 'all', number | null>>;
   allCount: number;
-  questionsPerRound: number;
   characterId: string;
   nickname: string;
 }
@@ -151,22 +150,11 @@ export function createHomeScreen({
     if (walker.handleKey(event)) event.preventDefault();
   });
 
-  /** 카드 아래에 붙는 "10문제 · 최고 30점" 줄 */
-  function appendMeta(
+  /** 기록이 있는 카드에만 최고 점수를 붙인다. */
+  function appendBestScore(
     card: HTMLElement,
-    count: number,
     bestScore: number | null | undefined,
-    questionsPerRound: number,
   ): void {
-    const countLabel = document.createElement('span');
-    countLabel.className = 'category-card__count';
-    countLabel.textContent = count === 0 ? '문제 없음' : `${count}문제`;
-    // 은행이 출제 수보다 적으면 그 판은 짧아진다. 눈에 띄게 표시한다
-    if (count > 0 && count < questionsPerRound) {
-      countLabel.classList.add('category-card__count--short');
-    }
-    card.append(countLabel);
-
     // 기록이 없으면 아무것도 붙이지 않는다. 0점으로 보이면 오해를 부른다
     if (bestScore === null || bestScore === undefined) return;
 
@@ -177,8 +165,8 @@ export function createHomeScreen({
   }
 
   function renderCategories(
-    { categories, banks, bestScores, questionsPerRound, onSelect }:
-    Pick<HomeView, 'categories' | 'banks' | 'bestScores' | 'questionsPerRound'>
+    { categories, banks, bestScores, onSelect }:
+    Pick<HomeView, 'categories' | 'banks' | 'bestScores'>
     & { onSelect: (categoryId: CategoryId) => void },
   ): void {
     el.grid.replaceChildren();
@@ -204,7 +192,7 @@ export function createHomeScreen({
       description.textContent = category.description;
 
       card.append(icon, name, description);
-      appendMeta(card, count, bestScores[category.id], questionsPerRound);
+      appendBestScore(card, bestScores[category.id]);
 
       card.addEventListener('click', () => onSelect(category.id));
       el.grid.append(card);
@@ -213,13 +201,13 @@ export function createHomeScreen({
 
   return {
     render({
-      categories, banks, bestScores, allCount, questionsPerRound, characterId,
+      categories, banks, bestScores, allCount, characterId,
       nickname: currentNickname,
     }) {
       nickname = currentNickname;
       el.nicknameValue.textContent = nickname;
       renderCategories({
-        categories, banks, bestScores, questionsPerRound, onSelect: onSelectCategory,
+        categories, banks, bestScores, onSelect: onSelectCategory,
       });
 
       // 정적 버튼은 HTML에서 disabled로 시작한다. 리스너가 달린 지금 열어준다
@@ -228,9 +216,8 @@ export function createHomeScreen({
       el.startAll.disabled = allCount === 0;
 
       const best = bestScores.all;
-      const parts = [allCount === 0 ? '문제 없음' : `${allCount}문제`];
-      if (best !== null && best !== undefined) parts.push(`최고 ${best}점`);
-      el.startAllMeta.textContent = parts.join(' · ');
+      el.startAllMeta.hidden = best === null || best === undefined;
+      el.startAllMeta.textContent = best === null || best === undefined ? '' : `최고 ${best}점`;
 
       // 선택한 모습은 홈을 직접 걷는 캐릭터 하나로 보여 준다.
       // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.
