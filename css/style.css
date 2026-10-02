@@ -2940,19 +2940,6 @@ select.is-standing {
 /* ── 픽셀 라운지 가구 ──
    부드러운 곡선이나 blur 대신 3~4px 단색 면과 딱 끊기는 그림자로 만든다.
    버튼 전체가 44px 이상이라 가구를 직접 눌러도, 워커로 올라가 선택해도 같은 길이다. */
-.lounge__furniture-hint {
-  position: absolute;
-  right: 8px;
-  bottom: 154px;
-  left: 8px;
-  margin: 0;
-  color: #655b4d;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-}
-
 .lounge__furniture {
   position: absolute;
   right: 8px;
