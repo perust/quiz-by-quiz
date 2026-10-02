@@ -50,3 +50,20 @@ test('대기실 워커는 중앙 가구가 아니라 왼쪽 빈 바닥에서 시
     /return \{ x: box\.left \+ 40, y: box\.bottom - 90 \};/,
   );
 });
+
+test('대기실 화면을 실제로 연 뒤 walker와 좌석을 다시 배치한다', async () => {
+  const [app, waiting] = await Promise.all([
+    source('../src/app.ts'),
+    source('../src/ui/waiting-room.ts'),
+  ]);
+
+  assert.match(waiting, /export interface WaitingRoom \{[\s\S]*?activate\(\): void;/);
+  assert.match(
+    waiting,
+    /activate\(\) \{\s*if \(el\.screen\.hidden\) return;\s*const point = waitingRoomStartPoint\(\);\s*if \(point\) walker\.placeAt\(point\);\s*alignSeatedWalkers\(\);\s*\}/,
+  );
+  assert.match(
+    app,
+    /goTo\('waiting'\);[\s\S]{0,260}?waitingRoom\.activate\(\);/,
+  );
+});

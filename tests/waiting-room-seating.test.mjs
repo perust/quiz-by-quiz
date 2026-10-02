@@ -91,7 +91,7 @@ test('대기실 가구는 네 개의 접근 가능한 좌석과 장식 테이블
     assert.match(html, new RegExp(`<button[^>]+data-waiting-seat="${seat}"[^>]+aria-pressed="false"`));
   }
   assert.match(html, /class="lounge__table"[^>]+aria-hidden="true"/);
-  assert.match(html, /의자·소파에 올라가 선택하면 앉아요/);
+  assert.doesNotMatch(html, /lounge__furniture-hint|lounge-furniture-hint/);
 });
 
 test('착석은 워커를 좌석에 맞추고 이동·화면 이탈 때 반드시 해제한다', async () => {
