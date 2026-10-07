@@ -27,6 +27,10 @@
 //      다른 쪽이 깨지는 일이 되풀이됐다 — 입력칸을 밟게 하자 체크박스 Space 가
 //      죽었고(#58), 포커스를 비켜 주게 하자 걸어가서 고르는 것이 막혔다(#67).
 //      그래서 넷을 한자리에서 함께 본다.
+//   ⑦ 시작 자리를 정하지 않은 결과 화면 워커가 «아직 잴 수 없음»만 되풀이해
+//      캐릭터가 좌상단에 박힌 채 움직이지 않았고, 세우려는 프레임만 끝없이 돌았다.
+//      한가운데로 세우자 1280×900 에서는 그 자리가 「랭킹 보기」 위였다 — 결과 화면은
+//      섹션에 포커스가 있어, 앞 화면에서 누르던 Enter 가 그대로 그 버튼을 누른다
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -270,6 +274,21 @@
       await 잠깐(150);
     }
     살펴본다('결과', 'result', true);
+    // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
+    // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다
+    프레임돌리기(3);
+    const 결과캐릭터 = document.getElementById('result-character');
+    결과.push({
+      자리: '결과', 이름: '캐릭터가 화면 안 자리에 선다',
+      통과: Boolean(결과캐릭터.style.transform),
+      무엇: 결과캐릭터.style.transform || '!! 자리를 잡지 못했다 (좌상단)',
+    });
+    const 결과발밑 = document.querySelector('[data-screen="result"] .is-standing');
+    결과.push({
+      자리: '결과', 이름: '버튼을 밟지 않은 자리에서 시작한다',
+      통과: !결과발밑,
+      무엇: 결과발밑 ? `!! ${결과발밑.id || 결과발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
+    });
     const 결과행동 = document.getElementById('result-retry').closest('.result-actions');
     const 오답풀이 = document.getElementById('result-review-block');
     결과.push({

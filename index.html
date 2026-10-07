@@ -184,33 +184,36 @@
 
     <!-- ─────────── 퀴즈 ─────────── -->
     <section class="screen quiz--character" data-screen="quiz" aria-labelledby="question-text" tabindex="-1" hidden>
-      <header class="quiz-header">
-        <div class="quiz-meta">
-          <span class="quiz-category" id="quiz-category"></span>
-          <span class="quiz-position" id="quiz-position"></span>
-        </div>
-        <!-- 조작법은 무대에 펼치지 않고 여기서 연다 -->
-        <button type="button" class="arena__help" id="arena-help" aria-haspopup="dialog">
-          <span aria-hidden="true">?</span>
-          <span class="sr-only">캐릭터 퀴즈 조작법</span>
-        </button>
-        <button type="button" class="button button--ghost" id="quiz-exit">나가기</button>
-      </header>
+      <!-- 한 블록 HUD. 분야·몇 번째(위치·진행률)·남은 시간을 한눈에 읽고,
+           조작법과 나가기는 같은 줄 오른쪽에 둔다 -->
+      <div class="quiz-hud">
+        <header class="quiz-header">
+          <div class="quiz-meta">
+            <span class="quiz-category" id="quiz-category"></span>
+            <span class="quiz-position" id="quiz-position"></span>
+            <div class="progress" id="progress" role="progressbar"
+                 aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress__fill" id="progress-fill"></div>
+            </div>
+          </div>
+          <!-- 조작법은 무대에 펼치지 않고 여기서 연다 -->
+          <button type="button" class="arena__help" id="arena-help" aria-haspopup="dialog">
+            <span aria-hidden="true">?</span>
+            <span class="sr-only">캐릭터 퀴즈 조작법</span>
+          </button>
+          <button type="button" class="button button--ghost" id="quiz-exit">나가기</button>
+        </header>
 
-      <div class="progress" id="progress" role="progressbar"
-           aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-        <div class="progress__fill" id="progress-fill"></div>
-      </div>
-
-      <!-- 남은 시간은 눈으로만 본다. 1초마다 낭독되면 문제를 읽을 수 없다 -->
-      <div class="timer" id="timer" aria-hidden="true">
-        <div class="timer__track">
-          <div class="timer__fill" id="timer-fill"></div>
+        <!-- 남은 시간은 눈으로만 본다. 1초마다 낭독되면 문제를 읽을 수 없다 -->
+        <div class="timer" id="timer" aria-hidden="true">
+          <div class="timer__track">
+            <div class="timer__fill" id="timer-fill"></div>
+          </div>
+          <p class="timer__label">
+            <span class="timer__icon" id="timer-icon">⏱</span>
+            <span id="timer-text">남은 시간 20초</span>
+          </p>
         </div>
-        <p class="timer__label">
-          <span class="timer__icon" id="timer-icon">⏱</span>
-          <span id="timer-text">남은 시간 20초</span>
-        </p>
       </div>
 
       <h1 class="question" id="question-text" tabindex="-1"></h1>
@@ -246,28 +249,30 @@
          local quiz 화면을 재사용하지 않는다. 이 화면은 REST snapshot과 position/choice
          submission만 다루므로 browser가 sampler·채점·점수를 가질 자리가 없다. -->
     <section class="screen online-quiz quiz--character" data-screen="online-quiz" aria-labelledby="online-question-text" tabindex="-1" hidden>
-      <header class="quiz-header">
-        <div class="quiz-meta">
-          <span class="quiz-category" id="online-quiz-category"></span>
-          <span class="quiz-position" id="online-quiz-position"></span>
+      <!-- 로컬 퀴즈와 같은 한 블록 HUD -->
+      <div class="quiz-hud">
+        <header class="quiz-header">
+          <div class="quiz-meta">
+            <span class="quiz-category" id="online-quiz-category"></span>
+            <span class="quiz-position" id="online-quiz-position"></span>
+            <div class="progress" id="online-progress" role="progressbar"
+                 aria-label="온라인 매치 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress__fill" id="online-progress-fill"></div>
+            </div>
+          </div>
+          <button type="button" class="arena__help" id="online-arena-help" aria-haspopup="dialog">
+            <span aria-hidden="true">?</span>
+            <span class="sr-only">온라인 캐릭터 퀴즈 조작법</span>
+          </button>
+          <button type="button" class="button button--ghost" id="online-quiz-exit">나가기</button>
+        </header>
+
+        <!-- server deadline의 시각적 안내일 뿐 timeout·채점·다음 문제 전환은 server가 한다. -->
+        <div class="timer" id="online-timer" aria-hidden="true">
+          <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
+          <p class="timer__label"><span class="timer__icon" id="online-timer-icon">⏱</span>
+            <span id="online-timer-text">서버 시간을 확인하는 중입니다</span></p>
         </div>
-        <button type="button" class="arena__help" id="online-arena-help" aria-haspopup="dialog">
-          <span aria-hidden="true">?</span>
-          <span class="sr-only">온라인 캐릭터 퀴즈 조작법</span>
-        </button>
-        <button type="button" class="button button--ghost" id="online-quiz-exit">나가기</button>
-      </header>
-
-      <div class="progress" id="online-progress" role="progressbar"
-           aria-label="온라인 매치 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-        <div class="progress__fill" id="online-progress-fill"></div>
-      </div>
-
-      <!-- server deadline의 시각적 안내일 뿐 timeout·채점·다음 문제 전환은 server가 한다. -->
-      <div class="timer" id="online-timer" aria-hidden="true">
-        <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
-        <p class="timer__label"><span class="timer__icon" id="online-timer-icon">⏱</span>
-          <span id="online-timer-text">서버 시간을 확인하는 중입니다</span></p>
       </div>
 
       <h1 class="question" id="online-question-text" tabindex="-1"></h1>
