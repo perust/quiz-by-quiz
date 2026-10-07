@@ -142,8 +142,8 @@ async function main(): Promise<void> {
 
   const soundToggle = createToggle({
     ids: { button: 'sound-toggle', icon: 'sound-icon', label: 'sound-label' },
-    on: { icon: '🔊', label: '소리 켜짐' },
-    off: { icon: '🔇', label: '소리 꺼짐' },
+    on: { icon: '음', label: '소리 켜짐' },
+    off: { icon: '×', label: '소리 꺼짐' },
     apply: setSoundEnabled,
     onChange: (enabled) => preferences.setSettings({ soundEnabled: enabled }),
   });

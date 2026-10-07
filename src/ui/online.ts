@@ -234,7 +234,7 @@ export function createOnlineScreen(
   }
 
   function categoryIcon(id: CategoryId | null): string {
-    return CATEGORIES.find((category) => category.id === id)?.icon ?? '🏆';
+    return CATEGORIES.find((category) => category.id === id)?.icon ?? '▨';
   }
 
   function gameFormat(room: PublicRoom): string {

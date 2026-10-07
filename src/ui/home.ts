@@ -177,10 +177,12 @@ export function createHomeScreen({
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'category-card';
+      card.dataset.category = category.id;
       card.disabled = count === 0;
 
       const icon = document.createElement('span');
       icon.className = 'category-card__icon';
+      icon.setAttribute('aria-hidden', 'true');
       icon.textContent = category.icon;
 
       const name = document.createElement('span');
