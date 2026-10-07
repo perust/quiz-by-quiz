@@ -7,7 +7,8 @@
   <meta name="description" content="브라우저에서 바로 즐기는 4지선다 상식 퀴즈. 한국사·과학·지리·일반상식·예술과문화 다섯 분야.">
   <meta name="quiz-api-base" content="https://quiz-by-quiz-api.150.230.222.142.sslip.io">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧠</text></svg>">
+  <link rel="stylesheet" href="css/voxel-theme.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='3' fill='%23ffe69b' stroke='%2359627f' stroke-width='3'/><text x='16' y='24' text-anchor='middle' font-family='monospace' font-size='24' font-weight='700' fill='%234f419f'>?</text></svg>">
   <script>
     // 모듈이 아닌 일반 스크립트라 어떤 환경에서도 실행된다.
     // app.js가 뜨면 이 타이머를 지운다. 지워지지 않으면 스크립트가 막힌 것이다
@@ -37,7 +38,7 @@
 
   <div class="app-bar">
     <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
-      <span class="icon-button__icon" id="sound-icon" aria-hidden="true">🔊</span>
+      <span class="icon-button__icon" id="sound-icon" aria-hidden="true">음</span>
       <span id="sound-label">소리 켜짐</span>
     </button>
   </div>
@@ -51,8 +52,65 @@
     <!-- ─────────── 홈 ─────────── -->
     <section class="screen" data-screen="home" aria-labelledby="home-title" tabindex="-1">
       <header class="home-header">
-        <h1 class="home-title" id="home-title">quiz by quiz</h1>
-        <p class="home-subtitle">카테고리를 골라 한 판 풀어보세요. 문항당 20초입니다.</p>
+        <div class="home-heading">
+          <span class="home-heading__badge" aria-hidden="true">?</span>
+          <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
+          <p class="home-subtitle">분야를 고르고 퀴즈 마을을 탐험해 보세요.</p>
+        </div>
+
+        <!-- 기능과 분리된 장식용 CSS 아이소메트릭 마을. 스크린리더와 조작 순서에는
+             들어가지 않고, 작은 화면에서는 같은 구도를 축소해 보여 준다. -->
+        <div class="voxel-scene" aria-hidden="true">
+          <span class="voxel-cloud voxel-cloud--one"></span>
+          <span class="voxel-cloud voxel-cloud--two"></span>
+
+          <span class="voxel-island">
+            <span class="voxel-island__top"></span>
+            <span class="voxel-island__left"></span>
+            <span class="voxel-island__right"></span>
+          </span>
+
+          <span class="voxel-path voxel-path--one"></span>
+          <span class="voxel-path voxel-path--two"></span>
+          <span class="voxel-path voxel-path--three"></span>
+
+          <span class="voxel-building voxel-building--school">
+            <span class="iso-cube voxel-building__base">
+              <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
+            </span>
+            <span class="iso-cube voxel-building__roof">
+              <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
+            </span>
+            <span class="voxel-building__door"></span>
+            <span class="voxel-building__window"></span>
+          </span>
+
+          <span class="voxel-building voxel-building--tower">
+            <span class="iso-cube voxel-building__base">
+              <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
+            </span>
+            <span class="iso-cube voxel-building__roof">
+              <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
+            </span>
+            <span class="voxel-building__clock">?</span>
+          </span>
+
+          <span class="voxel-tree voxel-tree--one">
+            <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+            <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+          </span>
+          <span class="voxel-tree voxel-tree--two">
+            <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+            <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+          </span>
+          <span class="voxel-tree voxel-tree--three">
+            <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+            <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
+          </span>
+
+          <span class="voxel-spark voxel-spark--one">◆</span>
+          <span class="voxel-spark voxel-spark--two">◆</span>
+        </div><!-- /voxel-scene -->
       </header>
 
       <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
@@ -60,7 +118,7 @@
       <div class="home-stage" id="home-stage">
         <!-- 랭킹과 온라인 방에서 쓰는 이름. 제일 위에 두어 무엇으로 불리는지 먼저 보인다 -->
         <button type="button" class="menu-card menu-card--wide" id="open-nickname">
-          <span class="menu-card__figure" aria-hidden="true">🏷️</span>
+          <span class="menu-card__figure" aria-hidden="true">◆</span>
           <span class="menu-card__body">
             <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
             <span class="menu-card__desc">내 닉네임 · 눌러서 바꾸기</span>
@@ -71,7 +129,7 @@
         <nav class="home-menu" aria-label="홈 바로가기">
           <button type="button" class="menu-card" id="open-characters"
                   aria-label="캐릭터 모습 바꾸기">
-            <span class="menu-card__figure" aria-hidden="true">🎨</span>
+            <span class="menu-card__figure" aria-hidden="true">▣</span>
             <span class="menu-card__body">
               <span class="menu-card__name">캐릭터</span>
               <span class="menu-card__desc">모습 바꾸기</span>
@@ -79,7 +137,7 @@
           </button>
           <button type="button" class="menu-card" id="open-ranking"
                   aria-label="랭킹에서 최고 기록 보기" disabled>
-            <span class="menu-card__figure" aria-hidden="true">🏅</span>
+            <span class="menu-card__figure" aria-hidden="true">▲</span>
             <span class="menu-card__body">
               <span class="menu-card__name">랭킹</span>
               <span class="menu-card__desc">최고 기록</span>
@@ -87,7 +145,7 @@
           </button>
           <button type="button" class="menu-card" id="open-online"
                   aria-label="온라인에서 친구와 풀기" disabled>
-            <span class="menu-card__figure" aria-hidden="true">🌐</span>
+            <span class="menu-card__figure" aria-hidden="true">◎</span>
             <span class="menu-card__body">
               <span class="menu-card__name">온라인</span>
               <span class="menu-card__desc">친구와 풀기</span>
@@ -102,7 +160,7 @@
              눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
              home.js가 리스너를 단 뒤 열어준다. -->
         <button type="button" class="challenge-card" id="start-all" disabled>
-          <span class="challenge-card__icon" aria-hidden="true">🏆</span>
+          <span class="challenge-card__icon" aria-hidden="true">▨</span>
           <span class="challenge-card__body">
             <span class="challenge-card__name">전체 도전</span>
             <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
@@ -305,7 +363,7 @@
       <nav class="online-actions" aria-label="온라인 주요 동작">
         <button type="button" class="online-action-card" id="open-public-rooms"
                 aria-controls="room-browser" aria-pressed="true">
-          <span class="online-action-card__icon" aria-hidden="true">🌐</span>
+          <span class="online-action-card__icon" aria-hidden="true">◎</span>
           <span class="online-action-card__body">
             <strong>방 찾기</strong>
             <span class="online-action-card__copy">열린 방을 둘러봐요</span>
@@ -313,7 +371,7 @@
         </button>
         <button type="button" class="online-action-card" id="open-private-join"
                 aria-controls="private-join-block" aria-pressed="false">
-          <span class="online-action-card__icon" aria-hidden="true">🔑</span>
+          <span class="online-action-card__icon" aria-hidden="true">◇</span>
           <span class="online-action-card__body">
             <strong>코드 참가</strong>
             <span class="online-action-card__copy">받은 코드로 들어가요</span>
@@ -321,7 +379,7 @@
         </button>
         <button type="button" class="online-action-card" id="open-create-room"
                 aria-controls="create-room-block" aria-pressed="false">
-          <span class="online-action-card__icon" aria-hidden="true">✨</span>
+          <span class="online-action-card__icon" aria-hidden="true">＋</span>
           <span class="online-action-card__body">
             <strong>방 만들기</strong>
             <span class="online-action-card__copy">새 퀴즈방을 열어요</span>
@@ -376,7 +434,7 @@
         <p class="room-list-summary" id="room-list-summary" role="status"></p>
         <ul class="room-list" id="room-list" aria-labelledby="rooms-title"></ul>
         <div class="room-empty" id="room-empty" hidden>
-          <span class="room-empty__icon" aria-hidden="true">🎈</span>
+          <span class="room-empty__icon" aria-hidden="true">○</span>
           <h3 class="room-empty__title" id="room-empty-title"></h3>
           <p class="room-empty__copy" id="room-empty-copy"></p>
           <button type="button" class="button button--primary button--small" id="room-empty-action"></button>
@@ -386,7 +444,7 @@
       <div class="online-block online-block--panel" id="private-join-block" role="region"
            aria-labelledby="private-join-title" hidden>
         <div class="online-panel-heading">
-          <span class="online-panel-heading__icon" aria-hidden="true">🔑</span>
+          <span class="online-panel-heading__icon" aria-hidden="true">◇</span>
           <div>
             <p class="online-block__eyebrow">초대받았나요?</p>
             <h2 class="online-block__title" id="private-join-title">방 코드로 참가</h2>
@@ -412,7 +470,7 @@
       <div class="online-block online-block--panel" id="create-room-block" role="region"
            aria-labelledby="create-room-title" hidden>
         <div class="online-panel-heading">
-          <span class="online-panel-heading__icon" aria-hidden="true">✨</span>
+          <span class="online-panel-heading__icon" aria-hidden="true">＋</span>
           <div>
             <p class="online-block__eyebrow">새로운 퀴즈 파티</p>
             <h2 class="online-block__title" id="create-room-title">방 만들기</h2>

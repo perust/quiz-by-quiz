@@ -78,9 +78,9 @@ export const DATA_DIR = 'data';
  * (`data/history.json` 등)
  */
 export const CATEGORIES: Category[] = [
-  { id: 'history', name: '한국사', icon: '📜', description: '연표 속 그날의 이야기' },
-  { id: 'science', name: '과학', icon: '🔬', description: '자연과 우주의 기본기' },
-  { id: 'geography', name: '지리', icon: '🗺️', description: '땅과 도시에 관한 감각' },
-  { id: 'general', name: '일반상식', icon: '💡', description: '알아두면 쓸모 있는 것들' },
-  { id: 'art', name: '예술과문화', icon: '🎨', description: '그림과 음악, 이야기의 결' },
+  { id: 'history', name: '한국사', icon: '▤', description: '연표 속 그날의 이야기' },
+  { id: 'science', name: '과학', icon: '▦', description: '자연과 우주의 기본기' },
+  { id: 'geography', name: '지리', icon: '◆', description: '땅과 도시에 관한 감각' },
+  { id: 'general', name: '일반상식', icon: '?', description: '알아두면 쓸모 있는 것들' },
+  { id: 'art', name: '예술과문화', icon: '▧', description: '그림과 음악, 이야기의 결' },
 ];

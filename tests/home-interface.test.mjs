@@ -24,7 +24,7 @@ test('홈 바로가기는 닉네임 아래 한 줄에 모이고 좁은 화면에
   assert.ok(home.indexOf('id="open-nickname"') < home.indexOf('<nav class="home-menu"'));
   assert.match(home, /<nav class="home-menu" aria-label="홈 바로가기">/);
   assert.equal((shortcuts.match(/class="menu-card"/g) ?? []).length, 3);
-  assert.match(shortcuts, /id="open-characters"[^>]*aria-label="캐릭터 모습 바꾸기"[\s\S]*?<span class="menu-card__figure" aria-hidden="true">🎨<\/span>[\s\S]*?<span class="menu-card__name">캐릭터<\/span>/);
+  assert.match(shortcuts, /id="open-characters"[^>]*aria-label="캐릭터 모습 바꾸기"[\s\S]*?<span class="menu-card__figure" aria-hidden="true">▣<\/span>[\s\S]*?<span class="menu-card__name">캐릭터<\/span>/);
   assert.doesNotMatch(shortcuts, /id="my-character-figure"/);
   assert.doesNotMatch(homeSource, /createBody|characterFigure/);
   assert.match(homeSource, /x: box\.right - 20/);
