@@ -45,7 +45,10 @@ export function createScreenWalker({
     // `.walker`의 논리 좌표는 발끝이지만 일반 화면에서는 눈에 보이는 몸통과 겹친
     // 버튼이 선택되어야 한다. arena의 발밑 칸 선택은 createWalker 기본값으로 남긴다.
     hitAnchor: 'center',
-    startAt: () => {
+    // 둘 다 없으면 시작점 함수를 아예 넘기지 않아 워커가 화면 한가운데에 세운다.
+    // 함수를 넘기면 워커는 null 을 «아직 잴 수 없다»로 읽고 기다리므로, 시작점을 정하지
+    // 않았던 결과 화면에서는 캐릭터가 좌상단에 박힌 채 세우려는 프레임만 끝없이 돌았다.
+    startAt: startPoint || startAt ? () => {
       const point = startPoint?.();
       if (point) return point;
 
@@ -55,7 +58,7 @@ export function createScreenWalker({
       // 홈의 메뉴 카드는 오른쪽을 비워 두었지만 일반 버튼에는 그런 여백이 없다.
       // 한 걸음이면 올라설 수 있으니 «여기서 시작하라»는 뜻은 그대로 전해진다.
       return { x: box.left + box.width / 2, y: box.bottom + 30 };
-    },
+    } : undefined,
   });
 
   document.addEventListener('keydown', (event) => {

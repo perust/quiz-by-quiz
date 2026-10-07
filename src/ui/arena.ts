@@ -21,7 +21,7 @@
 // 두 번 낭독하지 않는다. 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
 import { need } from '../dom.js';
-import { setArenaTileSelectable } from './arena-state.js';
+import { markArenaTarget, setArenaTileSelectable } from './arena-state.js';
 import { createWalker, type Point } from './walker.js';
 import { paintCharacter } from './sprite.js';
 
@@ -118,9 +118,18 @@ export function createArena({
   /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let helpOpener: HTMLElement | null = null;
 
+  /** 발밑이 바닥 칸이면 그 번호. 위 보기나 다른 버튼이면 null */
+  function tileIndexOf(node: HTMLElement | null): number | null {
+    const index = node ? tileNodes.indexOf(node) : -1;
+    return index === -1 ? null : index;
+  }
+
   const walker = createWalker({
     character: el.character,
     onMove,
+    // 바닥 칸에는 번호뿐이라, 같은 번호의 위 보기에도 불을 켜 «무슨 답 위인지» 잇는다.
+    // 칸이 선택 대상에서 빠지면(채점·제출 뒤) 발밑이 null 이 되어 함께 꺼진다
+    onStep: (node) => markArenaTarget(getChoiceNodes(), tileIndexOf(node)),
     // 무대 밖으로도 걸어 나가 화면의 아무 버튼이나 밟고 누를 수 있다.
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —
@@ -137,8 +146,8 @@ export function createArena({
   /** 발밑에 있는 것이 몇 번 보기인가. 바닥 칸이든 위 보기든 같은 번호로 본다 */
   function indexOfNode(node: HTMLElement | null): number | null {
     if (!node) return null;
-    const tile = tileNodes.indexOf(node);
-    if (tile !== -1) return tile;
+    const tile = tileIndexOf(node);
+    if (tile !== null) return tile;
     const choice = [...getChoiceNodes()].indexOf(node);
     return choice === -1 ? null : choice;
   }
@@ -215,6 +224,8 @@ export function createArena({
       el.root.hidden = !enabled;
       if (!enabled) {
         walker.setEnabled(false);
+        // 워커는 꺼질 때 발밑 표시만 거두고 onStep 을 부르지 않는다. 위 보기의 표시도 함께 거둔다
+        markArenaTarget(getChoiceNodes(), null);
         closeHelp(); // 무대가 사라지면 도움말도 함께 닫는다
         return;
       }

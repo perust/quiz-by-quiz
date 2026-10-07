@@ -49,10 +49,27 @@ export interface ResultScreen {
 /** 메시지의 결. null이면 아무 색도 입히지 않는다 */
 type MessageTone = 'error' | 'done' | null;
 
+/** 결과 헤더 안의 글자 없는 왼쪽 위를 워커의 안전한 시작점으로 잡는다. */
+export function resultWalkerStart(
+  header: HTMLElement,
+  character: HTMLElement,
+): { x: number; y: number } | null {
+  const box = header.getBoundingClientRect();
+  if (box.width === 0) return null;
+
+  const inset = 12;
+  return {
+    x: box.left + character.offsetWidth / 2 + inset,
+    y: box.top + character.offsetHeight + inset,
+  };
+}
+
 export function createResultScreen(
   { onRetry, onHome, onRoom, onRanking, onRegister }: ResultScreenDeps,
 ): ResultScreen {
   const el = {
+    header: needOne<HTMLElement>('[data-screen="result"] .result-header'),
+    character: need('result-character'),
     mode: need('result-mode'),
     score: need('result-score'),
     max: need('result-max'),
@@ -78,12 +95,16 @@ export function createResultScreen(
 
   // 걸어 다니며 버튼을 고를 수 있다. 닉네임 칸에 커서가 있으면 방향키는 그쪽 것이다.
   //
-  // 처음 설 자리를 지정하지 않아 화면 한가운데에서 시작한다. 결과 화면은 세로로 길어
-  // 버튼이 접힌 자리 밖에 있는데, 거기를 시작점으로 잡으면 점수와 해설을 지나쳐
-  // 아래로 끌려 내려간다 — 결과는 위에서부터 읽어야 한다.
+  // 점수 헤더의 왼쪽 위 빈 공간에서 시작한다. 버튼 위에는 세우지 않는다 —
+  // 이 화면에 들어오면 포커스가 화면 자체에 있어 발밑의 버튼을 Enter 가 그대로 누른다.
+  // 한가운데에서 시작하던 때는 1280×900 에서 그 자리가 「랭킹 보기」 위라,
+  // 「결과 보기」를 누르던 Enter 가 이어지면 기록을 등록하기도 전에 랭킹으로 넘어갔다.
+  // 헤더 아래 가운데에 세우면 좁은 화면에서 캐릭터가 통계의 「정답률」을 가리므로,
+  // 글자가 없는 모서리 안쪽을 명시적으로 고른다.
   const walker = createScreenWalker({
     screen: needOne<HTMLElement>('[data-screen="result"]'),
-    character: need('result-character'),
+    character: el.character,
+    startPoint: () => resultWalkerStart(el.header, el.character),
   });
 
   /** 한 판에 한 번만 등록할 수 있다 */

@@ -99,6 +99,32 @@ test('핵심 버튼 색은 기본·호버·위험 상태에서 작은 글자 AA 
   assert.match(theme, /\.walk-confirm:active\s*{[\s\S]*?background:\s*var\(--purple-hover\)/);
 });
 
+test('상태 블록의 작은 글자는 제 바탕에서 AA 대비를 지킨다', async () => {
+  const theme = await source('../css/voxel-theme.css');
+  const white = '#ffffff';
+  const pairs = [
+    // 정답·오답 공개: 채운 번호 칸과 ✓ ✗ 알약, 칸 번호
+    [white, '--correct'],
+    [white, '--wrong'],
+    ['--correct', '--correct-soft'],
+    ['--wrong', '--wrong-soft'],
+    // 온라인 «제출됨» 대기, HUD 분야 칩, 시간 경고, 랭킹 순위 칸
+    ['--ink', '--yellow-soft'],
+    ['--ink', '--yellow'],
+    ['--purple-dark', '--purple-soft'],
+    ['--warning', '--cream'],
+    ['--ink', '--silver'],
+    ['--ink', '--peach'],
+  ];
+
+  for (const [foreground, background] of pairs) {
+    const fg = foreground.startsWith('#') ? foreground : colorToken(theme, foreground);
+    const bg = colorToken(theme, background);
+    const ratio = contrastRatio(fg, bg);
+    assert.ok(ratio >= 4.5, `${foreground} on ${background} contrast ${ratio.toFixed(2)} is below 4.5:1`);
+  }
+});
+
 test('블록 아이콘은 번들 폰트에 없는 장식 글리프에 의존하지 않는다', async () => {
   const activeUi = (await Promise.all([
     source('../index.html'),

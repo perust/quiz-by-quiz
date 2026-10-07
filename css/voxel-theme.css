@@ -34,11 +34,14 @@
   --peach-deep: #e58d70;
   --yellow: #ffe69b;
   --yellow-deep: #d7a747;
+  --yellow-soft: #fff7d6;
   --pink: #ffcddd;
   --pink-deep: #d67b9d;
   --danger: #c74861;
   --blue: #c9e7ff;
   --blue-deep: #6aaed6;
+  --silver: #e4e9f2;
+  --silver-deep: #8f9bb3;
   --block-radius: 6px;
   --block-shadow: 0 4px 0 var(--edge-soft), 0 8px 14px rgba(52, 64, 90, 0.12);
 
@@ -882,6 +885,132 @@ h3,
     var(--warning);
 }
 
+/* ── 퀴즈 HUD ──
+   분야·문항 위치·진행률·남은 시간·조작법·나가기를 한 블록에 모은다. 예전에는 헤더·구분선·
+   진행률·타이머·글자가 따로 떨어져 무엇이 무엇인지 읽히지 않았고, 세로를 160px 넘게 먹어
+   좁은 화면에서 네 번째 보기가 손가락 조작부 밑으로 밀렸다.
+     1줄  [분야] 3 / 10  진행률                     [?] [나가기]
+     2줄  ⏱ 남은 시간 18초  타이머
+   진행률은 문항 위치 곁의 얇은 회색 막대, 타이머는 글자와 한 줄로 붙은 굵은 보라 막대라
+   둘이 섞이지 않는다. 좁은 화면에서는 진행률만 위치 아래로 내린다. */
+.quiz-hud {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 10px 10px;
+  border: 2px solid var(--edge);
+  border-radius: var(--block-radius);
+  background: rgba(255, 253, 244, 0.94);
+  box-shadow: 0 4px 0 var(--edge-soft);
+}
+
+.quiz-hud .quiz-header {
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.quiz-hud .quiz-meta {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.quiz-hud .quiz-category {
+  min-width: 0;
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 2px solid var(--purple-dark);
+  border-radius: 3px;
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quiz-hud .quiz-category:empty {
+  display: none;
+}
+
+.quiz-hud .quiz-position {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.quiz-hud .progress {
+  grid-column: 1 / -1;
+  height: 8px;
+  margin: 0;
+}
+
+/* 빈 막대가 흰 입력칸처럼 보이지 않게 홈을 옅은 회색으로 판다 */
+.quiz-hud .progress,
+.quiz-hud .timer__track {
+  background: #e9edf3;
+}
+
+.quiz-hud .progress__fill {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 9px, transparent 9px 12px),
+    var(--ink-soft);
+}
+
+/* 「나가기」를 곁의 ? 와 같은 44px 높이로 맞춘다 */
+.quiz-hud .button {
+  padding: 7px 12px;
+}
+
+.quiz-hud .timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+/* 글자가 막대 앞에 온다. «서두르세요 · 5초 남음»으로 바뀌어도 막대 길이가 튀지 않게
+   긴 쪽 폭을 미리 잡아 둔다. 온라인처럼 더 긴 안내는 막대를 다음 줄로 내린다 */
+.quiz-hud .timer__label {
+  order: -1;
+  min-width: 12.5em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.quiz-hud .timer--warning .timer__label {
+  color: var(--warning);
+}
+
+.quiz-hud .timer__track {
+  flex: 1 1 80px;
+  height: 12px;
+}
+
+.quiz-hud:has(.timer--warning) {
+  border-color: var(--warning);
+  box-shadow: 0 4px 0 #e2b48c;
+}
+
+/* 넓으면 진행률이 문항 위치 곁 같은 줄로 올라온다.
+   마지막 열에 못 박는다 — 온라인은 서버 상태를 받기 전에 화면이 먼저 열려 분야 칩이
+   비어 숨는데, 자동 배치에 맡기면 막대가 폭 없는 칸으로 밀려 사라졌다가 튀어나온다 */
+@media (min-width: 480px) {
+  .quiz-hud .quiz-meta {
+    grid-template-columns: minmax(0, auto) auto minmax(64px, 1fr);
+  }
+
+  .quiz-hud .progress {
+    grid-column: -2 / -1;
+  }
+}
+
 .question {
   padding: 14px 15px;
   border: 2px solid var(--edge);
@@ -930,10 +1059,120 @@ h3,
   color: var(--purple-dark);
 }
 
-.choice:hover:not(:disabled),
-.choice.is-standing:not(:disabled) {
-  border-color: var(--purple-dark);
+/* ── 보기의 상태 ──
+   한 보기가 가질 수 있는 상태를 서로 다른 모양으로 나눈다. 세기 순서가 곧 뜻의 순서다.
+     hover        눌릴 수 있다는 반응. 들리기만 하고 채우지 않는다
+     focus        키보드 위치. 공통 :focus-visible 테두리
+     캐릭터 위치   «불 켜짐». 시간이 다 되면 이 답이 나간다 — 아직 확정은 아니다
+     정답 공개     초록·빨강으로 채우고 ✓ ✗ 표시를 단다. 가장 강하다
+   hover 를 캐릭터 위치처럼 채우면 마우스만 올려도 고른 것처럼 보인다.
+
+   style.css 의 hover 테두리는 여기서 거둔다. 터치 기기에서는 스크롤하다 스친 보기에
+   hover 가 남아, 고르지 않은 답이 골라진 것처럼 보인다. */
+.choice:hover:not(:disabled) {
+  border-color: var(--edge);
+}
+
+@media (hover: hover) {
+  .choice:hover:not(:disabled) {
+    translate: 0 -2px;
+    border-color: var(--purple-dark);
+    background: #fff;
+    box-shadow: 0 5px 0 var(--edge-soft);
+  }
+}
+
+/* 캐릭터가 선 보기. 바닥 칸과 같은 뜻이라 같은 «불»로 칠한다.
+   [data-arena-target] 은 캐릭터가 바닥 칸에 섰을 때 arena 가 같은 번호의 보기에 다는
+   표시다. 칸에는 번호뿐이라 무슨 답 위인지는 여기서 읽힌다.
+   hover 규칙 뒤에 둔다 — 둘이 겹치면 캐릭터 위치가 이긴다. */
+.choice.is-standing:not(:disabled),
+.choice[data-arena-target]:not(:disabled) {
+  border-color: var(--purple);
   background: var(--purple-soft);
+  box-shadow: 0 3px 0 #a99ddd, 0 0 0 3px rgba(103, 82, 201, 0.2);
+}
+
+.choice.is-standing:not(:disabled) .choice__key,
+.choice[data-arena-target]:not(:disabled) .choice__key {
+  border-color: var(--purple-dark);
+  background: var(--purple);
+  color: #fff;
+}
+
+/* hover 는 기존 눌림 규칙과 명시도가 같고 뒤에서 선언된다. 다시 눌림을 마지막에 두어
+   포인터를 올린 채 누를 때도 블록이 아래로 내려가고 그림자가 접힌다. */
+@media (hover: hover) {
+  .choice:active:not(:disabled) {
+    translate: 0 4px;
+    box-shadow: 0 0 0 var(--edge-soft);
+  }
+}
+
+/* 정답 공개. 공통 표면 규칙(.choice)과 .quiz--character .choice 가 배경·테두리·그림자를
+   덮지 않도록 명시도를 한 단계 올려 다시 선언한다. 색만이 아니라 채운 번호 칸과
+   ✓ ✗ 표시로도 구분한다 (FR-4.1, FR-4.2) */
+.choice.choice--correct {
+  border-color: var(--correct);
+  background: var(--correct-soft);
+  box-shadow: 0 3px 0 #9fd3b6;
+}
+
+.choice.choice--wrong {
+  border-color: var(--wrong);
+  background: var(--wrong-soft);
+  box-shadow: 0 3px 0 #ecaab9;
+}
+
+.choice--correct .choice__key {
+  border-color: var(--correct);
+  background: var(--correct);
+  color: #fff;
+}
+
+.choice--wrong .choice__key {
+  border-color: var(--wrong);
+  background: var(--wrong);
+  color: #fff;
+}
+
+.choice--correct .choice__mark,
+.choice--wrong .choice__mark,
+.choice--submitted .choice__mark {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-block);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.choice--correct .choice__mark {
+  background: var(--correct);
+  color: #fff;
+}
+
+.choice--wrong .choice__mark {
+  background: var(--wrong);
+  color: #fff;
+}
+
+/* 온라인에서 답을 냈지만 아직 채점 전. 캐릭터 위치(보라)나 정답(초록)과 겹치지 않는
+   «기다림» 색을 쓴다 */
+.choice.choice--submitted {
+  border-color: var(--yellow-deep);
+  background: var(--yellow-soft);
+  box-shadow: 0 3px 0 #e8cf8e;
+}
+
+.choice--submitted .choice__mark {
+  background: var(--yellow);
+  box-shadow: inset 0 0 0 2px var(--yellow-deep);
+  color: var(--ink);
+}
+
+.choice.choice--muted {
+  box-shadow: none;
 }
 
 .arena__grid {
@@ -953,8 +1192,28 @@ h3,
 }
 
 .arena-tile.is-standing {
+  border-color: var(--purple);
   background: var(--purple-soft);
   box-shadow: inset 0 0 0 2px var(--purple), 0 5px 0 #8f82d1, 0 0 0 4px rgba(109, 91, 208, 0.16);
+}
+
+/* 채점 뒤의 칸. 위의 .arena-tile 이 style.css 의 상태색을 덮으므로 여기서 다시 칠한다.
+   캐릭터 위치(보라 불)보다 뒤에 두어, 둘이 겹쳐도 결과가 이긴다 */
+.arena-tile.arena-tile--correct {
+  border-color: var(--correct);
+  background: var(--correct-soft);
+  box-shadow: inset 0 0 0 2px var(--correct), 0 5px 0 #8cc9a8;
+}
+
+.arena-tile.arena-tile--wrong {
+  border-color: var(--wrong);
+  background: var(--wrong-soft);
+  box-shadow: inset 0 0 0 2px var(--wrong), 0 5px 0 #e39aac;
+}
+
+.arena-tile--correct .arena-tile__mark,
+.arena-tile--wrong .arena-tile__mark {
+  font-size: 17px;
 }
 
 .arena__help {
@@ -971,9 +1230,80 @@ h3,
   color: var(--purple-dark);
 }
 
+/* 데스크톱에서는 콘텐츠 열(.app 680px − 좌우 16px)과 같은 폭으로 붙는다.
+   그보다 좁으면 화면 폭을 다 쓰는 바닥 시트가 된다 */
 .feedback {
+  max-width: 648px;
   border-radius: 8px 8px 0 0;
   box-shadow: 0 -6px 0 rgba(89, 98, 127, 0.24), 0 -12px 24px rgba(45, 53, 83, 0.18);
+}
+
+/* 판정은 글자색만이 아니라 시트 테두리와 ✓ ✗ 블록으로도 읽힌다 (FR-4.1, FR-4.2).
+   시간 초과도 오답이라 ✗ 를 쓴다 — 무엇 때문인지는 판정 글이 말한다 */
+.feedback.feedback--correct {
+  border-color: var(--correct);
+  box-shadow: 0 -6px 0 rgba(40, 122, 87, 0.3), 0 -12px 24px rgba(45, 53, 83, 0.18);
+}
+
+.feedback.feedback--wrong {
+  border-color: var(--wrong);
+  box-shadow: 0 -6px 0 rgba(185, 63, 88, 0.3), 0 -12px 24px rgba(45, 53, 83, 0.18);
+}
+
+.feedback__verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-block);
+  font-size: 18px;
+  font-weight: 400;
+}
+
+/* 판정 글이 라이브 리전 안에 있으므로 기호는 대체 글을 비워 다시 낭독하지 않는다.
+   대체 글 문법을 모르는 브라우저는 그 선언을 통째로 버리므로, 기호만 있는 선언을
+   앞에 두어 표시만은 남긴다 (아래 캐릭터 ✓ 도 같다) */
+.feedback--correct .feedback__verdict::before,
+.feedback--wrong .feedback__verdict::before {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.feedback--correct .feedback__verdict::before {
+  content: '✓';
+  content: '✓' / '';
+  background: var(--correct);
+  box-shadow: 0 3px 0 #1d5a40;
+}
+
+.feedback--wrong .feedback__verdict::before {
+  content: '✗';
+  content: '✗' / '';
+  background: var(--wrong);
+  box-shadow: 0 3px 0 #8a2e41;
+}
+
+/* 「다음 문제」의 Space/Enter 표시. 시트는 z-index 없이 위에 오려고 <main> 밖에 있어
+   «.quiz--character .key-hint» 로는 닿지 않았다 — 그래서 한 번도 그려지지 않았다.
+   보라 바탕에서 작은 글자 대비(4.5:1)를 넘기도록 덜 흐리게 둔다 */
+@media (pointer: fine) {
+  .feedback .key-hint {
+    display: inline-flex;
+    opacity: 0.9;
+  }
+}
+
+/* 좁으면 버튼 글자와 부딪힌다. 위 규칙 뒤에 와야 이긴다 */
+@media (max-width: 400px) {
+  .feedback .key-hint {
+    display: none;
+  }
 }
 
 .dialog-backdrop {
@@ -1005,6 +1335,96 @@ h3,
   background: var(--purple);
   box-shadow: 0 3px 0 var(--purple-dark);
   color: #fff;
+}
+
+/* ── 고른 것 ──
+   공통 표면 규칙이 style.css 의 «지금 쓰는 캐릭터»·«방금 등록한 기록»·«내 순위» 색을
+   덮었다. 명시도를 한 단계 올려 보라 블록으로 다시 칠한다. */
+.character-card {
+  position: relative;
+}
+
+.character-card.character-card--on,
+.ranking-item.ranking-item--mine,
+.online-final-ranking__item.online-final-ranking__item--mine {
+  border-color: var(--purple-dark);
+  background: var(--purple-soft);
+  box-shadow: 0 4px 0 #a99ddd, 0 8px 14px rgba(79, 65, 159, 0.14);
+}
+
+/* 지금 쓰는 캐릭터에는 색에만 기대지 않도록 ✓ 블록을 단다.
+   낭독은 aria-pressed 가 맡으므로 대체 글을 비운다 */
+.character-card--on::after {
+  content: '✓';
+  content: '✓' / '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--purple-dark);
+  border-radius: 3px;
+  background: var(--purple);
+  color: #fff;
+  font-family: var(--font-block);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* ── 랭킹 순위 칸 ──
+   순위 숫자를 작은 블록으로 세워 목록을 위에서부터 훑게 한다. 1·2·3위는 금·은·동 블록이다.
+   순위를 말하는 것은 숫자이고 색은 거들 뿐이다. */
+.ranking-item {
+  grid-template-columns: 32px 1fr auto;
+}
+
+.ranking-item__rank {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--edge-soft);
+  border-radius: 4px;
+  background: #fff;
+  font-family: var(--font-block);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ranking-item:nth-child(1) .ranking-item__rank {
+  border-color: var(--yellow-deep);
+  background: var(--yellow);
+  box-shadow: 0 3px 0 var(--yellow-deep);
+  color: var(--ink);
+}
+
+.ranking-item:nth-child(2) .ranking-item__rank {
+  border-color: var(--silver-deep);
+  background: var(--silver);
+  box-shadow: 0 3px 0 var(--silver-deep);
+  color: var(--ink);
+}
+
+.ranking-item:nth-child(3) .ranking-item__rank {
+  border-color: var(--peach-deep);
+  background: var(--peach);
+  box-shadow: 0 3px 0 var(--peach-deep);
+  color: var(--ink);
+}
+
+@media (max-width: 360px) {
+  .ranking-item {
+    grid-template-columns: 28px 1fr auto;
+  }
+
+  .ranking-item__rank {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
 }
 
 .ranking-scope,
@@ -1065,6 +1485,29 @@ h3,
 .lounge__me,
 .lounge__ready {
   border-radius: 3px;
+}
+
+/* 「비공개로 만들기」는 18px 체크박스와 한 줄 라벨이라 손가락이 닿는 면이 19px 뿐이었다.
+   줄을 44px 로 세우고 위아래 여백을 라벨 안으로 옮겨, 라벨 영역 어디를 눌러도 켜진다.
+   체크박스는 좁은 화면에서도 찌그러지지 않게 크기를 지킨다 */
+.room-form__row--check {
+  align-items: stretch;
+  min-height: 44px;
+  padding: 0 10px;
+}
+
+.room-form__row--check input {
+  flex: none;
+  align-self: center;
+  margin: 0;
+}
+
+.room-form__row--check label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding-block: 8px;
+  cursor: pointer;
 }
 
 /* ── 블록 캐릭터 / 조작부 ─────────────────────────────────────── */
@@ -1133,6 +1576,25 @@ h3,
   background: var(--purple-hover);
 }
 
+/* 손가락 조작부(스틱·선택)는 화면 아래에 떠서 그 밑의 내용을 가린다. 페이지가 짧으면
+   스크롤할 자리도 없어, 홈의 「전체 도전」·로비의 「첫 방 만들기」·랭킹의 초기화가 반쯤
+   가린 채 꺼낼 수 없었다. 조작부가 떠 있는 동안 스틱 높이만큼 아래를 비워 마지막 행동도
+   스틱 위로 올릴 수 있게 한다. .app 이 이미 48px 를 비우므로 나머지에 숨 쉴 틈 8px 만 더한다.
+   조작부를 숨기는 규칙이 아니다 — 켜고 끄는 것은 여전히 walker.ts 의 --on 클래스다.
+   온라인 퀴즈는 채팅 블록이 같은 여백을 이미 두므로 뺀다. */
+@media (pointer: coarse) {
+  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
+    padding-bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 짧은 화면에서는 스틱이 130px 로 줄고 10px 위에 뜬다 */
+@media (pointer: coarse) and (max-height: 700px) {
+  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* 기존 픽셀 라운지를 새 팔레트에 맞춘다. 구조와 좌석 hit target은 유지한다. */
 .lounge {
   border: 2px solid var(--edge);
@@ -1147,6 +1609,31 @@ h3,
 }
 
 /* ── 반응형 ───────────────────────────────────────────────────── */
+
+/* 넓은 화면에서는 보기를 바닥 칸과 같은 2×2로 놓는다. 1·2가 위, 3·4가 아래라
+   «2번 칸 = 오른쪽 위 보기»로 자리가 그대로 이어지고, 무대가 피드백 시트 위로 올라와
+   채점 표시(✓ ✗)를 가리지 않는다. 좁은 화면은 긴 보기를 먼저 다 읽도록 한 줄에 하나다.
+   같은 이유로 캐릭터 고르기도 4열로 펼쳐 납작하고 넓기만 한 빈 카드를 줄인다. */
+@media (min-width: 600px) {
+  .quiz--character .choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  /* 한 줄의 두 보기 높이를 맞춘다. 긴 보기가 두 줄이 되어도 짝이 함께 커진다 */
+  .quiz--character .choices > li {
+    display: flex;
+  }
+
+  .quiz--character .choice {
+    flex: 1;
+  }
+
+  .character-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 @media (max-width: 620px) {
   .home-header {
     grid-template-columns: minmax(146px, 0.8fr) minmax(220px, 1.2fr);
