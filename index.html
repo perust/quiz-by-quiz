@@ -640,16 +640,16 @@
       </div>
     </section>
 
-    <!-- 공용 이동 스틱. 손가락 입력이 있는 기기에서만, 걸어 다닐 수 있는 화면에서만 그린다.
-         화면에 띄워(position: fixed) 세로 자리를 차지하지 않는다.
-         z-index를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. -->
-    <div class="walk-stick" id="walk-stick" aria-hidden="true">
-      <span class="walk-stick__knob" id="walk-knob"></span>
+    <!-- 모든 walker가 재사용하는 단일 이동 UI. 컴포넌트가 활성 walker의 배치 계약만
+         data-*로 바꾸며, 스틱과 선택 버튼의 모양·크기·입력 처리는 언제나 같다.
+         fixed 자식에는 z-index를 주지 않아 뒤에 오는 대화상자가 자연스럽게 위에 놓인다. -->
+    <div class="walk-controls" id="walk-controls" aria-hidden="true">
+      <div class="walk-stick" id="walk-stick">
+        <span class="walk-stick__knob" id="walk-knob"></span>
+      </div>
+      <!-- 손가락에는 Enter가 없으므로 반대편 선택 버튼이 같은 confirm 동작을 수행한다. -->
+      <button type="button" class="walk-confirm" id="walk-confirm" tabindex="-1">선택</button>
     </div>
-
-    <!-- 손가락에는 Enter가 없다. 스틱으로 걸어간 자리를 확정할 길이 없으면
-         결국 칸을 직접 눌러야 해서 스틱이 헛돈다. 엄지가 닿는 반대편에 둔다. -->
-    <button type="button" class="walk-confirm" id="walk-confirm" aria-hidden="true" tabindex="-1">선택</button>
   </main>
 
   <!-- 화면보다 뒤에 선언해 일반 화면 위, 피드백·대화상자 아래에 뜨는 시스템 버튼이다.

@@ -1366,10 +1366,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 /* 고정된 손가락 조작부 아래까지 스크롤해 채팅칸을 완전히 드러낼 수 있게 한다.
-   176px = 스틱 크기(160) + 화면 아래 여백(16). */
+   화면별 숫자를 복사하지 않고 공용 스틱 크기와 바닥 간격을 그대로 쓴다. */
 @media (pointer: coarse) {
   [data-screen='online-quiz'] .online-quiz-chat {
-    margin-bottom: calc(176px + env(safe-area-inset-bottom, 0px));
+    margin-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -1616,44 +1616,54 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   100% { scale: 1 1; opacity: 1; }
 }
 
-/* ── 이동 스틱 ──
-   손가락 입력이 있는 기기에서, 걸어 다닐 수 있는 화면에서만 그린다.
-   화면에 띄워 세로 자리를 차지하지 않는다.
-   z-index 를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다.
-   CSS 선택자로 숨기지 말 것 — 켜고 끄는 것은 walker.ts 의 --on 클래스다. */
+/* ── 공용 이동 UI ──
+   모든 walker는 index.html의 단일 컴포넌트를 공유한다. 화면별 CSS가 현재 화면을 추측해
+   스틱을 다시 그리지 않고, walk-controls.ts가 data-placement 배치만 건넨다.
+   home-dock은 모양이 아니라 하단 dock을 피하기 위한 배치 변형일 뿐이다.
+   z-index를 주지 않아 뒤에 오는 다이얼로그가 DOM 순서대로 위에 놓인다. */
+.walk-controls {
+  --walk-controls-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  --walk-stick-left: max(var(--space-4), env(safe-area-inset-left));
+  --walk-confirm-right: max(var(--space-4), env(safe-area-inset-right));
+}
+
+.walk-controls[data-placement='home-dock'] {
+  --walk-controls-bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
+}
+
 .walk-stick {
   display: none;
   position: fixed;
-  left: max(var(--space-4), env(safe-area-inset-left));
-  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  width: var(--stick-size);
-  height: var(--stick-size);
+  left: var(--walk-stick-left);
+  bottom: var(--walk-controls-bottom);
+  width: var(--walk-stick-size);
+  height: var(--walk-stick-size);
   /* 스틱을 밀 때 화면이 함께 스크롤되지 않게 막는다 */
   touch-action: none;
   user-select: none;
 }
 
-/* 손잡이가 밀려나는 최대 거리는 (스틱 폭 − 손잡이 폭) / 2 로 walker.ts 가 잰다 */
+/* 손잡이가 밀려나는 최대 거리는 (스틱 폭 − 손잡이 폭) / 2 로 walk-controls.ts 가 잰다 */
 .walk-stick__knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 64px;
-  height: 64px;
-  margin: -32px 0 0 -32px;
+  width: var(--walk-knob-size);
+  height: var(--walk-knob-size);
+  margin: calc(var(--walk-knob-size) / -2) 0 0 calc(var(--walk-knob-size) / -2);
 }
 
 /* 확정 버튼. 스틱의 반대편에 두어 두 엄지로 잡는다.
    손가락에는 Enter가 없어, 이게 없으면 스틱으로 걸어가도 칸을 직접 눌러야 한다.
-   로컬 피드백처럼 이동을 잠근 화면에서는 walker.js가 --on을 떼어 치운다.
+   로컬 피드백처럼 이동을 잠근 화면에서는 walker.ts가 컴포넌트 상태를 끈다.
    온라인은 답을 낸 뒤에도 함께 움직일 수 있도록 조작부를 유지한다. */
 .walk-confirm {
   display: none;
   position: fixed;
-  right: max(var(--space-4), env(safe-area-inset-right));
-  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  width: 88px;
-  height: 88px;
+  right: var(--walk-confirm-right);
+  bottom: var(--walk-controls-bottom);
+  width: var(--walk-confirm-size);
+  height: var(--walk-confirm-size);
   padding: 0;
   touch-action: manipulation;
   user-select: none;
@@ -1670,12 +1680,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
     display: inline;
   }
 
-  /* 걸어 다닐 수 있는 화면에서만 켠다 (walker.js 가 붙이는 클래스) */
-  .walk-stick--on {
+  /* 활성 walker 하나가 컴포넌트 전체를 켠다. 자식 상태를 따로 맞추지 않는다. */
+  .walk-controls--on .walk-stick {
     display: block;
   }
 
-  .walk-confirm--on {
+  .walk-controls--on .walk-confirm {
     display: block;
   }
 }
@@ -1689,45 +1699,43 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-/* 화면이 짧으면 무대와 겹칠 수 있다. 줄여서 가리는 넓이를 좁힌다 */
-@media (max-height: 700px) {
-  .walk-stick {
-    width: var(--stick-size-short);
-    height: var(--stick-size-short);
-    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-    left: max(var(--space-3), env(safe-area-inset-left));
-  }
-
-  .walk-stick__knob {
-    width: 56px;
-    height: 56px;
-    margin: -28px 0 0 -28px;
-  }
-
-  .walk-confirm {
-    width: 76px;
-    height: 76px;
-    right: max(var(--space-3), env(safe-area-inset-right));
-    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* 손가락 조작부(스틱·선택)는 화면 아래에 떠서 그 밑의 내용을 가린다. 페이지가 짧으면
-   스크롤할 자리도 없어, 홈의 「전체 도전」·로비의 「첫 방 만들기」·랭킹의 초기화가 반쯤
-   가린 채 꺼낼 수 없었다. 조작부가 떠 있는 동안 스틱 높이만큼 아래를 비워 마지막 행동도
-   스틱 위로 올릴 수 있게 한다. .app 이 이미 48px 를 비우므로 나머지에 숨 쉴 틈 8px 만 더한다
-   (160 + 16 + 8 − 48 = 136). 조작부를 숨기는 규칙이 아니다.
-   온라인 퀴즈는 채팅 블록이 같은 여백을 이미 두므로 뺀다. */
-@media (pointer: coarse) {
-  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
-    padding-bottom: calc(var(--stick-size) + var(--space-4) + var(--space-2) - var(--space-12) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* 짧은 화면에서는 스틱이 128px 로 줄고 12px 위에 뜬다 (128 + 12 + 8 − 48 = 100) */
+/* 같은 viewport에서는 홈·퀴즈·로비 모두 같은 크기를 쓴다. */
 @media (pointer: coarse) and (max-height: 700px) {
-  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
-    padding-bottom: calc(var(--stick-size-short) + var(--space-3) + var(--space-2) - var(--space-12) + env(safe-area-inset-bottom, 0px));
+  .walk-controls {
+    --walk-controls-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    --walk-stick-left: max(var(--space-3), env(safe-area-inset-left));
+    --walk-confirm-right: max(var(--space-3), env(safe-area-inset-right));
+  }
+
+  /* 홈 입구 한 줄 위. dock은 ResizeObserver가 잰 실제 높이를 쓴다. */
+  .walk-controls[data-placement='home-dock'] {
+    --walk-controls-bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 공용 크기는 theme token이 줄인다. 가로 홈은 상단 HUD를 피해 anchor만 안쪽에 둔다. */
+@media (pointer: coarse) and (max-height: 420px) and (min-width: 480px) {
+  .walk-controls[data-placement='home-dock'] {
+    --walk-stick-left: calc(50% - 140px);
+    --walk-confirm-right: calc(50% - 140px);
+  }
+}
+
+/* 360px 이하의 공용 크기도 theme token이 정한다. 홈 anchor만 HUD와 dock 사이에 맞춘다. */
+@media (pointer: coarse) and (max-height: 360px) and (min-width: 480px) {
+  .walk-controls[data-placement='home-dock'] {
+    --walk-controls-bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
+    --walk-stick-left: calc(50% - 112px);
+    --walk-confirm-right: calc(50% - 112px);
+  }
+}
+
+/* 손가락 조작부는 화면 아래에 떠서 그 밑의 내용을 가린다. 홈·로컬 퀴즈·온라인 퀴즈는
+   각 월드가 따로 계산하고, 나머지 walker 화면은 공용 크기만큼 아래를 비워 마지막 행동을
+   조작부 위까지 스크롤할 수 있게 한다. */
+@media (pointer: coarse) {
+  body:has(.walk-controls--on) .screen:not([data-screen='home']):not([data-screen='quiz']):not([data-screen='online-quiz']) {
+    padding-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -3224,58 +3232,10 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
 }
 
 @media (pointer: coarse) {
-  body:has([data-screen='home']:not([hidden])) .walk-stick {
-    bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
-    left: max(var(--space-3), env(safe-area-inset-left));
-    width: 96px;
-    height: 96px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
-    width: 48px;
-    height: 48px;
-    margin: -24px 0 0 -24px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-confirm {
-    right: max(var(--space-3), env(safe-area-inset-right));
-    bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
-    width: 72px;
-    height: 72px;
-  }
-
-  body:has([data-screen='quiz']:not([hidden])) .walk-stick,
-  body:has([data-screen='online-quiz']:not([hidden])) .walk-stick {
-    width: 120px;
-    height: 120px;
-  }
-
-  body:has([data-screen='quiz']:not([hidden])) .walk-stick__knob,
-  body:has([data-screen='online-quiz']:not([hidden])) .walk-stick__knob {
-    width: 64px;
-    height: 64px;
-    margin: -32px 0 0 -32px;
-  }
-
-  /* 로컬 quiz의 arena는 스틱이 켜진 동안 마지막 콘텐츠다. 화면 기본 여백을
-     빼서 계산하지 말고 실제 120px 스틱 + 16px 바닥 + 8px 간격을 온전히 비운다. */
-  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: calc(120px + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-
-  body:has([data-screen='home']:not([hidden])) .screen {
-    padding-bottom: 0;
-  }
-
-  /* 고정 조작부 뒤의 마지막 버튼도 위로 올려 직접 누를 수 있게 스크롤 여유를 남긴다.
-     홈과 퀴즈는 각각 전용 dock/arena가 조작부 자리를 계산한다. */
-  body:has(.walk-stick--on) [data-screen='result']:not([hidden]),
-  body:has(.walk-stick--on) [data-screen='online-result']:not([hidden]),
-  body:has(.walk-stick--on) [data-screen='ranking']:not([hidden]),
-  body:has(.walk-stick--on) [data-screen='characters']:not([hidden]),
-  body:has(.walk-stick--on) [data-screen='online']:not([hidden]),
-  body:has(.walk-stick--on) [data-screen='waiting']:not([hidden]) {
-    padding-bottom: calc(176px + env(safe-area-inset-bottom));
+  /* 로컬 quiz의 arena는 조작부가 켜진 동안 마지막 콘텐츠다. 공용 크기 토큰과
+     viewport 배치를 그대로 써서 화면마다 숫자를 복사하지 않는다. */
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -3360,84 +3320,10 @@ body:has(.home-note:not([hidden])) #home-character {
   display: none;
 }
 
-@media (pointer: coarse) and (max-height: 700px) {
-  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: calc(120px + var(--space-3) + var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* 홈 입구 한 줄 위에 두 조작부를 둔다. dock 높이는 런타임 측정값을 쓰므로 최고 기록이
-     생겨도 분야 버튼을 덮지 않는다. */
-  body:has([data-screen='home']:not([hidden])) .walk-stick {
-    bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
-    width: 80px;
-    height: 80px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
-    width: 40px;
-    height: 40px;
-    margin: -20px 0 0 -20px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-confirm {
-    bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
-    width: 64px;
-    height: 64px;
-  }
-}
-
-/* 아주 짧은 가로 화면에서는 왼쪽 닉네임·오른쪽 소리 HUD를 피해 중앙 양옆으로 모은다. */
-@media (pointer: coarse) and (max-height: 420px) and (min-width: 480px) {
-  body:has([data-screen='home']:not([hidden])) .walk-stick {
-    left: calc(50% - 140px);
-    width: 72px;
-    height: 72px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
-    width: 40px;
-    height: 40px;
-    margin: -20px 0 0 -20px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-confirm {
-    right: calc(50% - 140px);
-  }
-}
-
-/* 브라우저 UI까지 겹쳐 310px 이하가 된 가로 화면도 최소 44px touch target은 남긴다. */
-@media (pointer: coarse) and (max-height: 310px) and (min-width: 480px) {
-  body:has([data-screen='home']:not([hidden])) .walk-stick {
-    left: calc(50% - 112px);
-    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
-    width: 44px;
-    height: 44px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
-    width: 24px;
-    height: 24px;
-    margin: -12px 0 0 -12px;
-  }
-
-  body:has([data-screen='home']:not([hidden])) .walk-confirm {
-    right: calc(50% - 112px);
-    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
-    width: 44px;
-    height: 44px;
-  }
-}
-
-/* 짧은 touch 화면에서는 fixed 조작부와 2×2 arena를 동시에 둘 세로 공간이 없다.
-   보기 버튼이 같은 네 답을 온전히 제공하므로 walker만 남기고 스틱·선택은 거둔다. */
+/* 짧은 touch 퀴즈도 공용 compact 조작부를 유지한다. 이미 보이는 조작 설명만 접어
+   문제·보기·arena에 쓸 세로 공간을 돌려준다. */
 @media (pointer: coarse) and (max-height: 772px) {
-  body:has([data-screen='quiz']:not([hidden])) .walk-stick,
-  body:has([data-screen='quiz']:not([hidden])) .walk-confirm,
-  body:has([data-screen='quiz']:not([hidden])) .arena__hint {
+  [data-screen='quiz']:not([hidden]) .arena__hint {
     display: none;
-  }
-
-  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: var(--space-4);
   }
 }

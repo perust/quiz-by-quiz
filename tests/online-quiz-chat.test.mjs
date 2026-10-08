@@ -41,7 +41,7 @@ test('online quiz chat is a normal-flow control with an accessible recent-messag
   assert.doesNotMatch(css, /\.online-quiz-chat\s*{[^}]*position:\s*(?:fixed|absolute)/s);
   assert.match(
     css,
-    /@media \(pointer: coarse\)[\s\S]*\[data-screen='online-quiz'\] \.online-quiz-chat\s*{[^}]*margin-bottom:\s*calc\(176px \+ env\(safe-area-inset-bottom, 0px\)\)/,
+    /@media \(pointer: coarse\)[\s\S]*\[data-screen='online-quiz'\] \.online-quiz-chat\s*{[^}]*margin-bottom:\s*calc\(var\(--walk-stick-size\) \+ var\(--space-4\) \+ var\(--space-2\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
   );
 });
 

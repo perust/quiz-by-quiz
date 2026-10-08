@@ -121,7 +121,7 @@ test('토큰: 움직임은 100–180ms 의 짧은 피드백이고, 글자 크기
 // ── 규칙 검사 (장식 밖의 모든 컴포넌트) ───────────────────────────────
 
 const SPACING = /^(?:margin|padding|gap|row-gap|column-gap)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$/;
-const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|stick-size(?:-short)?|(?:screen-)?walker-width|lounge-floor)(?:,\s*0px)?\)/g;
+const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|walk-(?:stick|knob|confirm)-size|(?:screen-)?walker-width|lounge-floor)(?:,\s*0px)?\)/g;
 
 test('간격: margin·padding·gap 은 토큰이거나 4px 격자 위의 값이다', () => {
   const offenders = [];
@@ -528,15 +528,16 @@ test('안전 영역: 노치·홈 표시줄이 있는 기기에서도 조작과 �
   assert.doesNotMatch(viewport, /user-scalable\s*=\s*(?:no|0)|maximum-scale\s*=/i, '확대를 막지 않는다');
 
   const body = node('body');
+  const app = node('main.app', body);
+  const controls = node("div.walk-controls[data-placement='viewport']#walk-controls", app);
   const checks = [
-    [node('main.app', body), 'padding-inline', /safe-area-inset-left[\s\S]*safe-area-inset-right/],
+    [app, 'padding-inline', /safe-area-inset-left[\s\S]*safe-area-inset-right/],
     [node('div.app-bar', body), 'padding', /safe-area-inset-top/],
-    [node("section.screen[data-screen='home']", node('main.app', body)), 'padding-top', /safe-area-inset-top/],
+    [node("section.screen[data-screen='home']", app), 'padding-top', /safe-area-inset-top/],
     [nodeFromHtml(html, 'feedback'), 'padding', /safe-area-inset-bottom/],
-    [node('div.walk-stick#walk-stick', node('main.app', body)), 'bottom', /safe-area-inset-bottom/],
-    [node('div.walk-stick#walk-stick', node('main.app', body)), 'left', /safe-area-inset-left/],
-    [node('button.walk-confirm#walk-confirm', node('main.app', body)), 'bottom', /safe-area-inset-bottom/],
-    [node('button.walk-confirm#walk-confirm', node('main.app', body)), 'right', /safe-area-inset-right/],
+    [controls, '--walk-controls-bottom', /safe-area-inset-bottom/],
+    [controls, '--walk-stick-left', /safe-area-inset-left/],
+    [controls, '--walk-confirm-right', /safe-area-inset-right/],
     [node('div.dialog-backdrop', body), 'padding', /safe-area-inset-top[\s\S]*safe-area-inset-bottom/],
   ];
   for (const [element, property, pattern] of checks) {

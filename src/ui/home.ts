@@ -92,6 +92,8 @@ export function createHomeScreen({
   // 마우스로 눌렀을 때와 똑같이 움직인다 — 아래 세 줄이 그대로 쓰인다.
   const walker = createWalker({
     character: el.walker,
+    // 공용 조작부의 모양은 다른 화면과 같고, 하단 dock을 피하는 배치만 선언한다.
+    controls: { placement: 'home-dock' },
     // 처음에는 「내 캐릭터」 입구 바로 아래의 월드 바닥에 선다.
     // HUD 글자를 덮지 않으면서도 한 번 위로 걸으면 바로 입구를 고를 수 있다.
     startAt: () => {
