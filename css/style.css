@@ -3317,8 +3317,8 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
-/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 홈 목적지는 모두 직접 누를 수 있으므로
-   화면 스틱을 거두고 세 입구를 dock 바로 위 한 줄로 배치한다. */
+/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 브랜드는 접고 세 입구를 dock 바로 위
+   한 줄로 배치한다. 걷기와 직접 누르기는 별개 입력 경로이므로 스틱은 거두지 않는다. */
 @media (max-height: 700px) {
   .home-header {
     position: absolute;
@@ -3365,9 +3365,66 @@ body:has(.home-note:not([hidden])) #home-character {
     padding-bottom: calc(120px + var(--space-3) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 
-  body:has([data-screen='home']:not([hidden])) .walk-stick,
+  /* 홈 입구 한 줄 위에 두 조작부를 둔다. dock 높이는 런타임 측정값을 쓰므로 최고 기록이
+     생겨도 분야 버튼을 덮지 않는다. */
+  body:has([data-screen='home']:not([hidden])) .walk-stick {
+    bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
+    width: 80px;
+    height: 80px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+  }
+
   body:has([data-screen='home']:not([hidden])) .walk-confirm {
-    display: none;
+    bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* 아주 짧은 가로 화면에서는 왼쪽 닉네임·오른쪽 소리 HUD를 피해 중앙 양옆으로 모은다. */
+@media (pointer: coarse) and (max-height: 420px) and (min-width: 480px) {
+  body:has([data-screen='home']:not([hidden])) .walk-stick {
+    left: calc(50% - 140px);
+    width: 72px;
+    height: 72px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-confirm {
+    right: calc(50% - 140px);
+  }
+}
+
+/* 브라우저 UI까지 겹쳐 310px 이하가 된 가로 화면도 최소 44px touch target은 남긴다. */
+@media (pointer: coarse) and (max-height: 310px) and (min-width: 480px) {
+  body:has([data-screen='home']:not([hidden])) .walk-stick {
+    left: calc(50% - 112px);
+    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
+    width: 44px;
+    height: 44px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-confirm {
+    right: calc(50% - 112px);
+    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
+    width: 44px;
+    height: 44px;
   }
 }
 

@@ -115,6 +115,7 @@ export function createHomeScreen({
       };
     },
   });
+  let noteVisible = false;
 
   el.startAll.addEventListener('click', () => onStartAll());
   el.openRanking.addEventListener('click', () => onOpenRanking());
@@ -271,7 +272,9 @@ export function createHomeScreen({
       // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.
       paintCharacter(el.walker, characterId);
 
-      walker.setEnabled(true);
+      // 문제 은행 오류 문구가 떠 있으면 캐릭터도 CSS로 숨는다. 보이지 않는 캐릭터를
+      // 움직이는 조작부까지 남기면 문구를 덮으므로 정상 홈에서만 함께 켠다.
+      walker.setEnabled(!noteVisible);
     },
 
     hide() {
@@ -279,8 +282,16 @@ export function createHomeScreen({
     },
 
     setNote(message) {
+      noteVisible = Boolean(message);
       el.note.textContent = message ?? '';
-      el.note.hidden = !message;
+      el.note.hidden = !noteVisible;
+
+      if (noteVisible) {
+        walker.setEnabled(false);
+      } else {
+        const screen = el.stage.closest<HTMLElement>('[data-screen]');
+        if (screen && !screen.hidden) walker.setEnabled(true);
+      }
     },
   };
 }

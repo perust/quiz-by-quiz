@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { DESKTOP, MOBILE, NARROW, lengthOf, loadStyles, node, shorthandParts, valueOf } from './css-cascade.mjs';
 
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+const homeSource = await readFile(new URL('../src/ui/home.ts', import.meta.url), 'utf8');
 
 /**
  * 이긴 선언을 토큰까지 풀어 px 로 계산한다. 선언이 없으면 0 이다.
@@ -65,6 +67,32 @@ test('손가락 조작부: 여백은 조작부가 떠 있을 때만이고, 온�
   assert.ok(bottomSpace('quiz', MOBILE, { stickOn: false }) < stickReserve(MOBILE));
   // 온라인 퀴즈는 채팅 블록이 이미 176px 를 비워 둔다. 두 번 비우면 빈 화면만 길어진다
   assert.equal(bottomSpace('online-quiz', MOBILE), bottomSpace('quiz', MOBILE, { stickOn: false }));
+});
+
+test('짧은 touch 홈도 이동 스틱과 선택 버튼을 dock·입구 위에 유지한다', () => {
+  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])", '.walk-stick--on'] });
+  const app = node('main.app', body);
+  const stick = node('div.walk-stick.walk-stick--on#walk-stick', app);
+  const knob = node('div.walk-stick__knob#walk-knob', stick);
+  const confirm = node('button.walk-confirm.walk-confirm--on#walk-confirm', app);
+
+  assert.equal(valueOf(rules, stick, 'display', NARROW), 'block');
+  assert.equal(valueOf(rules, confirm, 'display', NARROW), 'block');
+  assert.equal(px(valueOf(rules, stick, 'width', NARROW), NARROW), 80);
+  assert.equal(px(valueOf(rules, stick, 'height', NARROW), NARROW), 80);
+  assert.equal(px(valueOf(rules, knob, 'width', NARROW), NARROW), 40);
+  assert.equal(px(valueOf(rules, confirm, 'width', NARROW), NARROW), 64);
+  assert.ok(px(valueOf(rules, stick, 'bottom', NARROW), NARROW) >= 230, '스틱은 dock과 홈 입구 한 줄 위에 뜬다');
+  assert.ok(px(valueOf(rules, confirm, 'bottom', NARROW), NARROW) >= 230, '선택 버튼은 dock과 홈 입구 한 줄 위에 뜬다');
+});
+
+test('홈 오류 문구가 보이면 숨은 캐릭터의 조작부도 꺼서 문구를 덮지 않는다', () => {
+  assert.match(homeSource, /let noteVisible = false/);
+  assert.match(homeSource, /walker\.setEnabled\(!noteVisible\)/);
+  assert.match(
+    homeSource,
+    /setNote\(message\)[\s\S]*?noteVisible = Boolean\(message\)[\s\S]*?if \(noteVisible\) \{\s*walker\.setEnabled\(false\)/,
+  );
 });
 
 test('손가락 목표: 「비공개로 만들기」의 라벨은 44px 높이와 남은 폭을 채운다', () => {
