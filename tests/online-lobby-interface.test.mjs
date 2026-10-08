@@ -96,12 +96,11 @@ test('빈 방 목록은 첫 방 만들기 또는 필터 초기화로 바로 이�
 
 test('온라인 워커는 홈 버튼을 가리지 않도록 캐릭터 높이만큼 아래에서 시작한다', async () => {
   const online = await source('../src/ui/online.ts');
+  const walker = await source('../src/ui/screen-walker.ts');
 
-  assert.match(
-    online,
-    /startPoint: \(\) => \{[\s\S]*?el\.home\.getBoundingClientRect\(\)[\s\S]*?box\.bottom \+ el\.character\.offsetHeight \+ 6/,
-  );
-  assert.doesNotMatch(online, /startAt: \(\) => el\.home/);
+  assert.match(online, /startAt: \(\) => el\.home/);
+  assert.doesNotMatch(online, /startPoint:[\s\S]*?el\.home\.getBoundingClientRect/);
+  assert.match(walker, /y: box\.bottom \+ character\.offsetHeight \+ 6/);
 });
 
 test('온라인 전용 시각 계층은 영웅 영역·행동 카드·빈 상태를 반응형으로 구분한다', async () => {

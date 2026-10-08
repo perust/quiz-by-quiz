@@ -96,16 +96,8 @@ export function createOnlineScreen(
   const walker = createScreenWalker({
     screen: el.screen,
     character: el.character,
-    // 일반 screen walker의 기본 간격(30px)은 이 캐릭터 높이보다 짧아 몸통이
-    // 홈 버튼을 가린다. 로비에서는 버튼 아래에 캐릭터 전체가 들어갈 자리를 둔다.
-    startPoint: () => {
-      const box = el.home.getBoundingClientRect();
-      if (box.width === 0) return null;
-      return {
-        x: box.left + box.width / 2,
-        y: box.bottom + el.character.offsetHeight + 6,
-      };
-    },
+    // 공통 screen walker가 실제 캐릭터 높이를 재 홈 버튼 바로 아래에 세운다.
+    startAt: () => el.home,
   });
 
   /** 저장소에서 마지막으로 읽은 원본. 필터를 바꿀 때 네트워크를 다시 부르지 않는다 */
@@ -233,8 +225,9 @@ export function createOnlineScreen(
     return CATEGORIES.find((category) => category.id === id)?.name ?? ALL_CATEGORY;
   }
 
+  /** 디자인 시스템 아이콘 이름. 전체 도전 방은 여러 분야를 묶는 grid 아이콘이다 */
   function categoryIcon(id: CategoryId | null): string {
-    return CATEGORIES.find((category) => category.id === id)?.icon ?? '▨';
+    return CATEGORIES.find((category) => category.id === id)?.icon ?? 'grid';
   }
 
   function gameFormat(room: PublicRoom): string {
@@ -274,13 +267,15 @@ export function createOnlineScreen(
   function createItem(room: PublicRoom): HTMLLIElement {
     const item = document.createElement('li');
     item.className = 'room-item';
+    // 홈의 분야 칸과 같은 식별 색을 아이콘 칸에 쓴다
+    item.dataset.category = room.categoryId ?? 'all';
     if (!room.isPublic) item.classList.add('room-item--private');
     if (room.players.length >= room.capacity) item.classList.add('room-item--full');
 
     const icon = document.createElement('span');
     icon.className = 'room-item__icon';
     icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = categoryIcon(room.categoryId);
+    icon.dataset.icon = categoryIcon(room.categoryId);
 
     const body = document.createElement('div');
     body.className = 'room-item__body';

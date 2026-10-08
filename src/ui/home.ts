@@ -180,10 +180,11 @@ export function createHomeScreen({
       card.dataset.category = category.id;
       card.disabled = count === 0;
 
+      // 아이콘 칸. 그림은 디자인 층이 data-icon 으로 그린다 — 글리프를 넣지 않는다
       const icon = document.createElement('span');
       icon.className = 'category-card__icon';
       icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = category.icon;
+      icon.dataset.icon = category.icon;
 
       const name = document.createElement('span');
       name.className = 'category-card__name';

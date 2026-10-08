@@ -33,6 +33,7 @@ export interface Question {
 export interface Category {
   id: CategoryId;
   name: string;
+  /** 디자인 시스템 아이콘 이름 (data-icon). 글리프가 아니다 */
   icon: string;
   description: string;
 }

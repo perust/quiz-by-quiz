@@ -79,6 +79,7 @@ function showFatalError(message: string): void {
 // ── 소리 설정 ────────────────────────────────────────────────────
 
 interface ToggleFace {
+  /** 아이콘 이름 (css/voxel-theme.css 의 data-icon 목록). 글리프를 쓰지 않는다 */
   icon: string;
   label: string;
 }
@@ -108,7 +109,7 @@ function createToggle({ ids, on, off, apply, onChange }: ToggleSpec): Toggle {
   function render(): void {
     apply(enabled);
     button.setAttribute('aria-pressed', String(enabled));
-    icon.textContent = enabled ? on.icon : off.icon;
+    icon.dataset.icon = enabled ? on.icon : off.icon;
     label.textContent = enabled ? on.label : off.label;
   }
 
@@ -142,8 +143,8 @@ async function main(): Promise<void> {
 
   const soundToggle = createToggle({
     ids: { button: 'sound-toggle', icon: 'sound-icon', label: 'sound-label' },
-    on: { icon: '음', label: '소리 켜짐' },
-    off: { icon: '×', label: '소리 꺼짐' },
+    on: { icon: 'sound-on', label: '소리 켜짐' },
+    off: { icon: 'sound-off', label: '소리 꺼짐' },
     apply: setSoundEnabled,
     onChange: (enabled) => preferences.setSettings({ soundEnabled: enabled }),
   });

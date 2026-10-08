@@ -314,7 +314,6 @@ export function createOnlineQuizScreen(
     progressFill: need('online-progress-fill'),
     timer: need('online-timer'),
     timerFill: need('online-timer-fill'),
-    timerIcon: need('online-timer-icon'),
     timerText: need('online-timer-text'),
     question: need<HTMLHeadingElement>('online-question-text'),
     choices: need('online-choices'),
@@ -558,7 +557,6 @@ export function createOnlineQuizScreen(
   function renderServerTimeNotice(): void {
     el.timer.classList.remove('timer--warning');
     el.timerFill.style.transform = 'scaleX(1)';
-    el.timerIcon.textContent = '⏱';
     el.timerText.textContent = '제출 시간은 서버가 관리합니다.';
   }
 
@@ -655,12 +653,13 @@ export function createOnlineQuizScreen(
         mark.textContent = '제출됨';
       }
       if (view.reveal !== null) {
+        // ✓ ✗ 표식은 디자인 층이 상태 클래스를 보고 아이콘으로 그린다
         if (index === view.reveal.answerIndex) {
           button.classList.add('choice--correct');
-          mark.textContent = '✓ 정답';
+          mark.textContent = '정답';
         } else if (index === view.reveal.chosenChoiceIndex) {
           button.classList.add('choice--wrong');
-          mark.textContent = '✗ 내 답';
+          mark.textContent = '내 답';
         } else {
           button.classList.add('choice--muted');
         }
@@ -671,6 +670,9 @@ export function createOnlineQuizScreen(
   function renderReveal(view: OnlineQuizView): void {
     const reveal = view.reveal;
     el.reveal.hidden = reveal === null;
+    // 로컬 피드백 시트와 같은 판정 배지·테두리를 쓰도록 결과를 클래스로도 남긴다
+    el.reveal.classList.toggle('online-reveal--correct', reveal?.correct === true);
+    el.reveal.classList.toggle('online-reveal--wrong', reveal !== null && !reveal.correct);
     if (reveal === null) return;
     const verdict = reveal.correct
       ? '정답입니다'
