@@ -9,11 +9,14 @@
 // 한 번에 하나만 움직인다. 화면이 바뀌면 이전 것을 끄고 새것을 켠다 —
 // 키와 스틱은 모듈 하나에 모아두고 지금 켜진 워커에게만 전달한다.
 
-import { maybe } from '../dom.js';
 import {
   walkerHitPoint,
   type WalkerHitAnchor,
 } from './walker-geometry.js';
+import {
+  createWalkControls,
+  type WalkControlsOptions,
+} from './walk-controls.js';
 
 /** 초당 이동 거리(px). 한 화면을 가로지르는 데 1초 남짓 걸린다 */
 const SPEED = 320;
@@ -29,9 +32,6 @@ const MAX_STEP_MS = 50;
  * 짧은 화면에서는 위아래가 다 여백이 되지 않도록 화면 높이의 ¼로 줄인다.
  */
 const CAMERA_MARGIN = 120;
-
-/** 이보다 조금 밀린 것은 손 떨림으로 보고 무시한다 */
-const STICK_DEADZONE = 5;
 
 /** 화면 기준 좌표. 캐릭터를 세울 자리를 주고받는 데 쓴다 */
 export interface Point {
@@ -61,6 +61,10 @@ export interface WalkerConfig {
   edge?: number;
   /** 처음 설 자리. 없으면 한가운데 */
   startAt?: () => Point | null;
+  /** 발밑 요소가 있어도 현재 화면 상태에서 확정할 수 있는지 */
+  canPick?: (target: HTMLElement) => boolean;
+  /** 모든 화면이 공유하는 손가락 조작부의 배치 */
+  controls?: WalkControlsOptions;
 }
 
 /**
@@ -162,91 +166,19 @@ function dropFocus(): void {
  */
 const held = new Set<string>();
 
-/** 스틱을 민 방향과 세기. -1 ~ 1 이고 길이가 곧 속도 비율이다 */
-const stick = { x: 0, y: 0 };
-let stickPointerId: number | null = null;
-
 /** 지금 움직이고 있는 워커. 화면 하나만 켜지므로 하나면 된다 */
 let active: Walker | null = null;
 
-// 손가락 조작부는 **없어도 앱이 돈다.** 그래서 maybe 로 집는다.
-// 아래 stickRadius·updateStick 은 둘이 다 있을 때 등록한 리스너에서만 불리지만,
-// TS 는 그 검사를 함수 경계 너머로 이어 주지 않으므로 안에서 `!` 로 단언한다.
-const stickEl = maybe('walk-stick');
-const knobEl = maybe('walk-knob');
-const confirmEl = maybe('walk-confirm');
-
-function releaseStick(): void {
-  stickPointerId = null;
-  stick.x = 0;
-  stick.y = 0;
-  if (knobEl) knobEl.style.translate = '';
-}
-
-/**
- * 손잡이가 밀려날 수 있는 최대 거리. 값을 박아두지 않고 크기에서 뽑는다 —
- * 짧은 화면에서 스틱이 작아지기 때문이다.
- */
-function stickRadius(): number {
-  return (stickEl!.offsetWidth - knobEl!.offsetWidth) / 2;
-}
-
-function updateStick(event: PointerEvent): void {
-  const radius = stickRadius();
-  const box = stickEl!.getBoundingClientRect();
-  const dx = event.clientX - (box.left + box.width / 2);
-  const dy = event.clientY - (box.top + box.height / 2);
-  const distance = Math.hypot(dx, dy);
-
-  if (distance < STICK_DEADZONE) {
-    stick.x = 0;
-    stick.y = 0;
-  } else {
-    // 민 거리가 그대로 속도가 된다. 끝까지 밀면 1(최고 속도)
-    const strength = Math.min(distance, radius) / radius;
-    stick.x = (dx / distance) * strength;
-    stick.y = (dy / distance) * strength;
-  }
-
-  // 손잡이는 테두리 안에서만 움직인다
-  const capped = Math.min(distance, radius);
-  const kx = distance > 0 ? (dx / distance) * capped : 0;
-  const ky = distance > 0 ? (dy / distance) * capped : 0;
-  knobEl!.style.translate = `${kx}px ${ky}px`;
-
-  active?.onStickInput();
-}
-
-if (stickEl && knobEl) {
-  stickEl.addEventListener('pointerdown', (event) => {
-    if (!active) return;
-    event.preventDefault();
-    stickPointerId = event.pointerId;
-    stickEl.setPointerCapture(event.pointerId);
-    updateStick(event);
-  });
-
-  stickEl.addEventListener('pointermove', (event) => {
-    if (event.pointerId !== stickPointerId) return;
-    updateStick(event);
-  });
-
-  // 손을 떼거나 통화 등으로 입력이 끊기면 제자리로 돌린다
-  stickEl.addEventListener('pointerup', releaseStick);
-  stickEl.addEventListener('pointercancel', releaseStick);
-}
-
-// 손가락에는 Enter가 없다. 스틱으로 걸어간 자리를 확정할 길이 있어야
-// «걸어가서 고르기»가 성립한다. 없으면 결국 칸을 직접 눌러야 해서 스틱이 헛돈다.
-//
-// 입력칸에 들어가 있을 때는 **나가는 버튼이 된다.** 손가락에는 Esc도 없어서,
-// 이게 없으면 걸어서 들어간 사람이 소프트 키보드 앞에 갇힌다.
-confirmEl?.addEventListener('pointerdown', (event) => {
-  event.preventDefault();
-  const node = document.activeElement;
-  if (isTypingTarget(node)) node.blur();
-  else active?.confirm();
-  paintConfirm();
+// DOM과 포인터 수명은 공용 컴포넌트가 소유하고, walker는 현재 방향과 confirm 의미만 받는다.
+const controls = createWalkControls({
+  onStickInput: () => active?.onStickInput(),
+  onConfirm: () => {
+    // 입력칸에 들어가 있을 때는 손가락용 Esc, 즉 «나가기»가 된다.
+    const node = document.activeElement;
+    if (isTypingTarget(node)) node.blur();
+    else active?.confirm();
+    paintConfirm();
+  },
 });
 
 /**
@@ -257,7 +189,7 @@ confirmEl?.addEventListener('pointerdown', (event) => {
  * 리스너는 워커를 거치지 않는 길(Tab, 칸을 손가락으로 직접 누르기)을 위해 함께 둔다.
  */
 function paintConfirm(node: EventTarget | null = document.activeElement): void {
-  if (confirmEl) confirmEl.textContent = isTypingTarget(node) ? '나가기' : '선택';
+  controls.setConfirmLabel(isTypingTarget(node) ? '나가기' : '선택');
 }
 document.addEventListener('focusin', () => paintConfirm());
 // 나가는 쪽은 «어디로 가는지»(relatedTarget)를 보고 곧바로 정한다. focusout 시점에는
@@ -298,7 +230,8 @@ window.addEventListener('scroll', () => active?.refresh(), { passive: true });
 /** 눌려 있는 키와 스틱을 합쳐 방향을 만든다. 대각선은 여기서 생긴다 */
 function inputVector(): readonly [number, number] {
   // 스틱을 밀고 있으면 그쪽이 우선. 민 정도가 속도가 된다
-  if (stick.x !== 0 || stick.y !== 0) return [stick.x, stick.y];
+  const stick = controls.vector();
+  if (stick[0] !== 0 || stick[1] !== 0) return stick;
 
   let dx = 0;
   let dy = 0;
@@ -320,10 +253,9 @@ function inputVector(): readonly [number, number] {
  * 움직일 수 있는 화면에서, 잠기지 않았을 때만 보인다.
  * 잠긴 뒤에도 남아 있으면 «다음 문제» 버튼을 가린다.
  */
-function showControls(value: boolean): void {
-  stickEl?.classList.toggle('walk-stick--on', value);
-  confirmEl?.classList.toggle('walk-confirm--on', value);
-  if (!value) releaseStick();
+function showControls(value: boolean, options?: WalkControlsOptions): void {
+  if (value) controls.show(options);
+  else controls.hide();
 }
 
 // ── 워커 ─────────────────────────────────────────────────────────
@@ -349,6 +281,8 @@ export function createWalker(config: WalkerConfig): Walker {
     // 캐릭터에게 막힌 셈이다. 로비의 방 코드, 대기실의 채팅칸이 그렇다
     pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
     onStep, onMove, standClass = 'is-standing', hitAnchor = 'foot', edge = 7, startAt,
+    canPick = () => true,
+    controls: controlOptions,
   } = config;
 
   let enabled = false;
@@ -398,7 +332,7 @@ export function createWalker(config: WalkerConfig): Walker {
   function pickableAtWalker(): HTMLElement | null {
     const point = walkerHitPoint(pos, { height: character.offsetHeight }, hitAnchor);
     const hit = document.elementFromPoint(point.x, point.y);
-    if (!hit || hit.closest('.walk-stick, .walk-confirm')) return null;
+    if (!hit || controls.contains(hit)) return null;
 
     const target = hit.closest<HTMLElement>(pickable);
     // disabled 는 button·input 등에만 있는 속성이다. 없는 요소에서는 undefined 라
@@ -587,7 +521,7 @@ export function createWalker(config: WalkerConfig): Walker {
    * 밟았을 때처럼 무언가 일어나는 게 아니라 이제부터 적겠다는 것이다.
    */
   function pick(): void {
-    if (!enabled || locked || !standingTarget) return;
+    if (!enabled || locked || !standingTarget || !canPick(standingTarget)) return;
     // 두 갈래가 같은 요소를 쓴다. isTypingTarget 은 «글자 칸이면 HTMLElement»라고
     // 좁혀 주는 함수라 아닌 쪽에서는 타입이 비어 버리므로, 선택 대상을 한 번 붙잡아 둔다
     const target: HTMLElement = standingTarget;
@@ -626,12 +560,12 @@ export function createWalker(config: WalkerConfig): Walker {
       if (active && active !== walker) active.setEnabled(false);
       active = walker;
       held.clear();
-      releaseStick();
+      controls.release();
       // 고를 때 붙인 «한 번 뛰기»를 여기서 뗀다. 이 클래스는 겹칠 때 이기려고
       // --idle 뒤에 두었기 때문에, 남아 있으면 제자리 뛰기가 영영 가려진다.
       // 실제로 그래서 2번 문제부터 캐릭터가 굳어 있었다.
       character.classList.remove('walker--hop');
-      showControls(true);
+      showControls(true, controlOptions);
       locked = false;
       placed = false;
       // 배치가 잡힌 다음 프레임에 좌표를 잰다.
@@ -656,7 +590,7 @@ export function createWalker(config: WalkerConfig): Walker {
       locked = Boolean(value);
       // CSS 선택자로 숨기지 않는다 — 조작부는 화면에 띄운(fixed) 요소라
       // 어느 화면의 자손도 아니다. 잠금은 워커가 아는 상태이므로 여기서 처리한다
-      showControls(enabled && !locked);
+      if (active === walker) showControls(enabled && !locked, controlOptions);
       if (locked) stop();
       else start();
     },

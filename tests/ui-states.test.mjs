@@ -113,7 +113,7 @@ test('캐릭터 위치: 바닥 칸 위에 서면 같은 번호의 위 보기에�
   assert.deepEqual(choices.map((item) => item.attrs.has('data-arena-target')), [false, false, false, false]);
 
   const arena = await source('src/ui/arena.ts');
-  assert.match(arena, /onStep:\s*\(node\)\s*=>\s*markArenaTarget\(getChoiceNodes\(\),\s*tileIndexOf\(node\)\)/);
+  assert.match(arena, /onStep:\s*\(node\)\s*=>\s*\{[\s\S]*?markArenaTarget\(getChoiceNodes\(\),\s*movedSinceReset \? tileIndexOf\(node\) : null\)/);
   // 워커는 꺼질 때 발밑 표시(is-standing)만 거두고 onStep 은 부르지 않는다.
   // 무대를 끌 때 위 보기의 표시도 함께 거둬야 꺼진 무대의 불이 남지 않는다
   assert.match(arena, /if \(!enabled\) \{[^}]*markArenaTarget\(getChoiceNodes\(\), null\);[^}]*return;\s*\}/);

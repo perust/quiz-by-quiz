@@ -88,13 +88,13 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 - margin·padding·gap 은 이 토큰(또는 0·auto·`env(safe-area-inset-*)`)만 쓴다. 계산이 필요하면
   `calc(var(--icon-tile) + var(--space-3))`처럼 공간을 차지하는 크기 토큰과 간격 토큰을 더한다.
 - 바깥 여백 `--page-pad` 는 16px, 420px 이하에서 12px 이다 (`:root` 하나만 바뀐다).
-- 테스트가 막는 예외 숫자는 4의 배수뿐이다 (`176px` = 스틱 160 + 여백 16 처럼 다른 계약이 고정한 값).
+- 테스트가 막는 예외 숫자는 4의 배수뿐이다. 이동 UI 여백은 literal 합계가 아니라 공용 크기 토큰에서 계산한다.
 
 ### 크기·모서리·테두리·높이
 
 | 무리 | 토큰 |
 | --- | --- |
-| 크기 | `--tap` 44px(손가락 목표) · `--tap-lg` 52px(시트 버튼) · `--icon-sm/md/lg` 16/20/24px · `--icon-tile` 40px · `--content-max` 680px · `--stick-size` 160px(짧은 화면 `--stick-size-short` 128px) · `--walker-width/height` 34/42px · `--screen-walker-width/height` 40/48px · `--lounge-floor` 176px |
+| 크기 | `--tap` 44px(손가락 목표) · `--tap-lg` 52px(시트 버튼) · `--icon-sm/md/lg` 16/20/24px · `--icon-tile` 40px · `--content-max` 680px · 이동 UI `--walk-stick/knob/confirm-size` 96/48/72px(짧은 화면 80/40/64px) · `--walker-width/height` 34/42px · `--screen-walker-width/height` 40/48px · `--lounge-floor` 176px |
 | 모서리 | `--radius-xs` 4 · `-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 24 · `-full` 999 (원은 `50%`) |
 | 테두리 | `--border-1` 1px(기본 담기) · `--border-2` 2px(상태가 바뀌는 게임 조각) — 두 종류뿐 |
 | 높이 | `--elevation-1` 쉬는 패널·버튼 · `--elevation-2` 떠 있는 조각(hover 보기, 손가락 조작부, 말풍선) · `--elevation-3` 덮는 것(대화상자, 피드백 시트) — 세 단계뿐 |
@@ -240,11 +240,11 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | ≤420px | 바깥 여백 12px, 브랜드·질문 한 단계 작게, 무대 칸 64px, 하단 분야 dock 5칸 유지 |
 | ≤360px | 분야 칸 설명 접고 아이콘 칸 32px, dock 이름 12px, 요약 칩 값 14px |
 | touch + 높이 ≤850px | 고정 스틱이 이미 설명하는 홈 도움말과 빈 방의 중복 설명을 접어 핵심 CTA를 비움 |
-| touch + 높이 ≤772px | 퀴즈의 fixed 스틱·선택을 거두고 같은 네 보기 버튼을 직접 누른다. arena를 조작부가 덮지 않음 |
-| 높이 ≤700px | 퀴즈·홈 외 화면의 스틱 128px · 선택 버튼 76px, 아래 비움도 함께 줄인다 |
-| 높이 ≤700px | 브랜드를 접고 세 홈 입구를 분야 dock 위 한 줄로 이동. coarse pointer의 홈 스틱·선택은 입구 위에서 80px·64px로 유지 |
-| touch + 높이 ≤420px + 폭 ≥480px | 홈 스틱을 72px로 줄이고 조작부를 화면 중앙 양옆으로 모아 닉네임·소리 HUD와 겹치지 않음 |
-| touch + 높이 ≤310px + 폭 ≥480px | 홈 조작부를 최소 touch target인 44px로 줄여 브라우저 UI가 겹친 가로 화면에서도 완전히 노출 |
+| touch + 높이 ≤772px | 퀴즈도 공용 스틱·선택을 유지하고 중복 조작 설명만 접는다. 마지막 arena 아래에는 조작부만큼 스크롤 여백을 둠 |
+| touch + 높이 ≤700px | 모든 화면의 공용 스틱·손잡이·선택을 80/40/64px로 함께 줄이고 아래 비움도 같은 토큰으로 계산 |
+| 높이 ≤700px | 브랜드를 접고 세 홈 입구를 분야 dock 위 한 줄로 이동. 홈은 같은 공용 조작부의 `home-dock` anchor만 입구 위로 이동 |
+| touch + 높이 ≤420px | 모든 화면의 공용 스틱·손잡이·선택을 64/40/56px로 함께 줄임. 폭 ≥480px 홈의 `home-dock` anchor만 중앙 양옆으로 모아 닉네임·소리 HUD를 피함 |
+| touch + 높이 ≤360px | 모든 화면의 공용 조작부를 최소 touch target 44px까지 줄여 브라우저 UI가 겹친 가로 화면에서도 노출 |
 
 - `viewport-fit=cover` 를 쓰고 `env(safe-area-inset-*)` 로 홈과 앱 바 위, 콘텐츠 좌우, 피드백 시트·스틱·선택 버튼
   아래, 대화상자 위아래를 띄운다.
@@ -283,7 +283,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/design-system.test.mjs` | 토큰 값, 간격 격자, 높이 3단계, 테두리 2종, 모서리·색·글꼴·움직임 토큰, 픽셀 글꼴 허용 목록, 홈·결과 위계, 상태의 비색 단서, 아이콘 묶음(24×24·2 단위), 손가락 목표, 안전 영역 |
 | `tests/voxel-theme.test.mjs` | 폰트 로딩, 마을 장식 구조, 분야 아이콘·식별 색, 대비(AA·3:1), 글리프 금지 |
 | `tests/ui-states.test.mjs` | 정답·오답·선택·hover·눌림·캐릭터 위치·제출 대기가 캐스케이드에서 서로 다르게 이기는지 |
-| `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/touch-clearance.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs`, `tests/home-interface.test.mjs` | HUD 묶음, 시트 폭·배지·키 표시, 스틱 위 비움, 넓은 화면 2×2, 44px, 결과 행동 순서, dock |
+| `tests/walk-controls*.test.mjs`, `tests/arena-neutral-start.test.mjs`, `tests/touch-clearance.test.mjs`, `tests/home-interface.test.mjs` | 단일 이동 UI DOM·pointer lifecycle·포인터 소유권·명시적 배치 계약, 짧은 화면의 이동 전 중립, 화면 이름 기반 스타일·짧은 화면 숨김 금지, 공용 크기, 스틱 위 비움, dock·safe-area |
+| `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음, 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |
 
 `tests/css-cascade.mjs` 는 브라우저 없이 «실제로 이기는 선언»을 계산하고, 토큰과 `calc()·max()·env()` 를
 풀어 px 로 비교한다 (풀지 못하면 NaN 이라 거짓으로 통과하지 않는다).

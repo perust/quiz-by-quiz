@@ -115,11 +115,17 @@
       .filter((d) => !d.hidden).map((d) => d.id);
     본다('열린 대화상자가 없다', 열린것.length === 0, 열린것.join(', ') || '없음');
 
-    // ② 손가락 조작부는 걸어 다니는 화면의 것이어야 한다
-    const 스틱 = document.getElementById('walk-stick')?.classList.contains('walk-stick--on');
-    const 확정 = document.getElementById('walk-confirm')?.classList.contains('walk-confirm--on');
-    본다('손가락 조작부가 화면과 맞는다', Boolean(스틱) === 걷는가 && Boolean(확정) === 걷는가,
-      `스틱 ${스틱 ? '켜짐' : '꺼짐'} · 확정 ${확정 ? '켜짐' : '꺼짐'} (바란 것: ${걷는가 ? '켜짐' : '꺼짐'})`);
+    // ② 스틱·선택을 따로 켜지 않고 공용 컴포넌트 하나가 활성 walker 계약을 가진다
+    const 조작부 = document.getElementById('walk-controls');
+    const 켜짐 = 조작부?.classList.contains('walk-controls--on');
+    본다('손가락 조작부가 화면과 맞는다', Boolean(켜짐) === 걷는가,
+      `공용 조작부 ${켜짐 ? '켜짐' : '꺼짐'} (바란 것: ${걷는가 ? '켜짐' : '꺼짐'})`);
+    if (걷는가) {
+      const 바란배치 = 화면 === 'home' ? 'home-dock' : 'viewport';
+      본다('공용 조작부의 배치 계약이 맞는다',
+        조작부?.dataset.placement === 바란배치,
+        `${조작부?.dataset.placement} (바란 것: ${바란배치})`);
+    }
 
     // 방향키를 지금 화면의 캐릭터가 받는가. 아무도 안 받으면 브라우저 스크롤이 된다
     const 키 = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });

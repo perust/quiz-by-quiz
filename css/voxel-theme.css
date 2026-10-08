@@ -154,8 +154,10 @@
   --icon-tile: 40px;
   --content-max: 680px;
   --page-pad: var(--space-4);
-  --stick-size: 160px;
-  --stick-size-short: 128px;
+  /* 모든 화면이 같은 이동 UI 크기를 쓴다. 아래 media query가 세 토큰을 함께 바꾼다. */
+  --walk-stick-size: 96px;
+  --walk-knob-size: 48px;
+  --walk-confirm-size: 72px;
   --walker-width: 34px;
   --walker-height: 42px;
   --screen-walker-width: 40px;
@@ -238,6 +240,31 @@
     -1px 1px 0 rgb(29 31 58 / 0.82),
     1px 1px 0 rgb(29 31 58 / 0.82),
     0 3px 10px rgb(29 31 58 / 0.46);
+}
+
+/* viewport별 크기도 화면 이름이 아니라 공용 토큰 한 벌로 정한다. */
+@media (pointer: coarse) and (max-height: 700px) {
+  :root {
+    --walk-stick-size: 80px;
+    --walk-knob-size: 40px;
+    --walk-confirm-size: 64px;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 420px) {
+  :root {
+    --walk-stick-size: 64px;
+    --walk-knob-size: 40px;
+    --walk-confirm-size: 56px;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 360px) {
+  :root {
+    --walk-stick-size: 44px;
+    --walk-knob-size: 24px;
+    --walk-confirm-size: 44px;
+  }
 }
 
 /* 좁은 화면은 바깥 여백만 한 단계 줄인다 */
@@ -2329,6 +2356,13 @@ select.room-form__input {
   font-family: var(--font-text);
   font-size: var(--text-md);
   font-weight: var(--weight-heavy);
+}
+
+/* 최소 44px 원에서도 세 글자 「나가기」가 넘치지 않는다. */
+@media (pointer: coarse) and (max-height: 360px) {
+  .walk-confirm {
+    font-size: var(--text-xs);
+  }
 }
 
 .walk-confirm:active {

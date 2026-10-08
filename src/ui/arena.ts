@@ -121,6 +121,9 @@ export function createArena({
   };
 
   let enabled = false;
+  // arena가 viewport 아래에 있으면 walker 좌표가 화면 끝으로 clamp되어 위 보기 버튼과
+  // 우연히 겹칠 수 있다. 실제 이동 전에는 그 겹침을 답으로 인정하지 않는다.
+  let movedSinceReset = false;
   const tileNodes: HTMLElement[] = [];
   /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let helpOpener: HTMLElement | null = null;
@@ -133,15 +136,31 @@ export function createArena({
 
   const walker = createWalker({
     character: el.character,
-    onMove,
+    onMove: (point, moving) => {
+      if (moving && !movedSinceReset) {
+        movedSinceReset = true;
+        // 첫 이동이 clamp 안에서 같은 요소에 머물면 onStep이 다시 불리지 않으므로
+        // 그때부터는 현재 발밑 표시를 명시적으로 복원한다.
+        const standing = walker.standingElement();
+        standing?.classList.add('is-standing');
+        markArenaTarget(getChoiceNodes(), tileIndexOf(standing));
+      }
+      onMove?.(point, moving);
+    },
     // 바닥 칸에는 번호뿐이라, 같은 번호의 위 보기에도 불을 켜 «무슨 답 위인지» 잇는다.
     // 칸이 선택 대상에서 빠지면(채점·제출 뒤) 발밑이 null 이 되어 함께 꺼진다
-    onStep: (node) => markArenaTarget(getChoiceNodes(), tileIndexOf(node)),
+    onStep: (node) => {
+      if (!movedSinceReset && indexOfNode(node) !== null) node?.classList.remove('is-standing');
+      markArenaTarget(getChoiceNodes(), movedSinceReset ? tileIndexOf(node) : null);
+    },
     // 무대 밖으로도 걸어 나가 화면의 아무 버튼이나 밟고 누를 수 있다.
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —
     // 시간 초과의 뜻이 그대로 유지된다
     pickable: '.arena-tile[data-selectable="true"], button, a[href], [role="button"]',
+    // 짧은 viewport의 초기 clamp가 위 보기와 겹쳐도 선택·Enter가 답을 내지 않는다.
+    // 도움말·나가기 같은 답이 아닌 버튼과 직접 터치한 보기는 그대로 동작한다.
+    canPick: (node) => movedSinceReset || indexOfNode(node) === null,
     startAt: () => {
       const box = el.tiles.getBoundingClientRect();
       if (box.width === 0) return null;
@@ -259,6 +278,7 @@ export function createArena({
      * 가만히 있어도 답이 나가버려, 아무것도 하지 않은 사람이 25%를 거저 얻는다.
      */
     reset(choiceCount) {
+      movedSinceReset = false;
       buildTiles(choiceCount);
       el.character.classList.remove('walker--sad');
       if (!enabled) return;
@@ -279,7 +299,7 @@ export function createArena({
      * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다.
      */
     standingIndex() {
-      return enabled ? indexOfNode(walker.standingElement()) : null;
+      return enabled && movedSinceReset ? indexOfNode(walker.standingElement()) : null;
     },
 
     /** 채점 결과를 바닥에 칠한다. 무엇이 정답인지는 quiz.js가 알려준다 */

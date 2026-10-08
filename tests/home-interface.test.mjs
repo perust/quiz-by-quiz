@@ -50,9 +50,10 @@ test('홈 바로가기는 월드 가장자리 HUD이고 캐릭터는 입구 아�
   assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
   assert.match(worldFirst, /\.home-menu \.menu-card \{[\s\S]*?min-height: 64px/);
   assert.match(css, /@media \(max-height: 700px\)[\s\S]*?#open-characters,[\s\S]*?bottom: calc\(var\(--home-dock-h/);
-  assert.doesNotMatch(css, /\[data-screen='home'\][^{}]*\.walk-stick[^{}]*\{[^}]*display:\s*none/);
-  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 700px\)[\s\S]*?\[data-screen='home'\][^{}]*\.walk-stick \{[\s\S]*?--home-dock-h[\s\S]*?width: 80px/);
-  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 420px\) and \(min-width: 480px\)[\s\S]*?\.walk-stick \{[\s\S]*?left: calc\(50% - 140px\)/);
+  assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
+  assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
+  assert.match(css, /\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--home-dock-h/);
+  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 420px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
   assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-header \{[\s\S]*?position: absolute;[\s\S]*?width: 1px/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
   assert.match(css, /\.home-note \{[\s\S]*?bottom: calc\(var\(--home-dock-h/);
