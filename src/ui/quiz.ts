@@ -8,6 +8,7 @@ import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { need, needOne } from '../dom.js';
 import { announce } from './screens.js';
 import { createArena } from './arena.js';
+import type { Point } from './walker.js';
 import type { QuizSession } from '../core/session.js';
 import type { AnswerRecord, Question } from '../types.js';
 
@@ -82,6 +83,13 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     // 캐릭터가 위 보기 버튼 위에 서도 같은 번호로 본다
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
     trapFocus,
+    // 도움말을 보는 동안 시간이 끝났다면 닫는 즉시 결과 패널로 이어 간다.
+    onDialogClose: () => {
+      if (!el.feedback.hidden && feedbackWaitingForDialogClose) {
+        feedbackWaitingForDialogClose = false;
+        revealFeedback();
+      }
+    },
   });
 
   /**
@@ -101,6 +109,10 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   let warned = false;
   /** 다이얼로그를 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let dialogOpener: HTMLElement | null = null;
+  /** 피드백 레이아웃 전 캐릭터 발의 arena 내부 상대 좌표 */
+  let feedbackCharacterAnchor: Point | null = null;
+  /** 열린 dialog 뒤에서 timeout 결과가 나와, 닫을 때 다음 버튼으로 이어야 하는가 */
+  let feedbackWaitingForDialogClose = false;
 
   // ── 타이머 표시 ────────────────────────────────────────────────
 
@@ -196,16 +208,31 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
    * 이유이고, 놓치면 결과 화면이나 홈 위에 그대로 남는다.
    */
   function hideFeedback(): void {
+    const wasVisible = !el.feedback.hidden;
     el.feedback.hidden = true;
     el.feedback.classList.remove('feedback--correct', 'feedback--wrong');
-    document.documentElement.style.setProperty('--feedback-h', '0px');
+    feedbackCharacterAnchor = null;
+    feedbackWaitingForDialogClose = false;
+    // 피드백은 문서 흐름에서 화면 뒤에 이어진다. 다음 문제·결과로 갈 때 그 위치에
+    // 스크롤이 남으면 새 화면의 머리말을 건너뛰므로 맨 위로 되돌린다.
+    if (wasVisible) window.scrollTo(0, 0);
+  }
+
+  /** 결과 패널까지 문서를 옮기고 새 arena의 같은 상대 위치에 fixed 캐릭터를 복원한다. */
+  function revealFeedback(focusNext = true): void {
+    if (focusNext && el.dialog.hidden && !arena.isDialogOpen()) {
+      el.nextButton.focus({ preventScroll: true });
+    }
+    el.feedback.scrollIntoView({ block: 'end' });
+    if (feedbackCharacterAnchor) arena.restoreCharacterAnchor(feedbackCharacterAnchor);
   }
 
   function renderQuestion(): void {
     const question = session!.currentQuestion();
 
     el.category.textContent = categoryLabel;
-    el.position.textContent = `${session!.position} / ${session!.total}`;
+    el.position.textContent = `${session!.position}/${session!.total}`;
+    el.position.setAttribute('aria-label', `전체 ${session!.total}문제 중 ${session!.position}번 문제`);
     el.question.textContent = question.question;
 
     updateProgress();
@@ -249,6 +276,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   function showFeedback(record: AnswerRecord): void {
     stopTicking();
     renderTimer(timer.remainingMs()); // 멈춘 시점의 남은 시간으로 고정
+    feedbackCharacterAnchor = arena.captureCharacterAnchor();
 
     const question = session!.currentQuestion();
     const buttons = el.choices.querySelectorAll<HTMLButtonElement>('.choice');
@@ -300,14 +328,10 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     // 버튼이 아니라 글자 span만 바꾼다. 버튼째 갈아치우면 Enter 표시가 지워진다
     el.nextLabel.textContent = session!.hasNext() ? '다음 문제' : '결과 보기';
 
-    // 시트는 fixed 라 문서 흐름에서 빠져 있다. 높이만큼 아래 여백을 더 주지 않으면
-    // 마지막 보기가 시트에 가린다. 해설 길이에 따라 달라지므로 그릴 때마다 잰다
-    document.documentElement.style.setProperty('--feedback-h', `${el.feedback.offsetHeight}px`);
-
-    // 다이얼로그가 열려 있으면 포커스를 가져오지 않는다.
-    // 시간 초과는 다이얼로그 뒤에서도 일어나는데, 그때 포커스를 옮기면
-    // 갇혀 있어야 할 포커스가 밖으로 새고 Tab이 다이얼로그를 벗어난다.
-    if (el.dialog.hidden && !arena.isDialogOpen()) el.nextButton.focus();
+    // 열린 dialog의 focus trap은 건드리지 않는다. timeout이 뒤에서 났을 때만
+    // dialog가 닫히는 순간 다음 버튼으로 이어 간다.
+    feedbackWaitingForDialogClose = !el.dialog.hidden || arena.isDialogOpen();
+    revealFeedback(!feedbackWaitingForDialogClose);
   }
 
   function goNext(): void {
@@ -343,8 +367,13 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   function closeExitDialog(): void {
     if (el.dialog.hidden) return;
     el.dialog.hidden = true;
-    // 열기 전에 있던 자리로 포커스를 돌려준다
-    if (dialogOpener && document.contains(dialogOpener)) dialogOpener.focus();
+    if (!el.feedback.hidden && feedbackWaitingForDialogClose) {
+      feedbackWaitingForDialogClose = false;
+      revealFeedback();
+    } else if (dialogOpener && document.contains(dialogOpener)) {
+      // 답을 낸 뒤 사용자가 새로 연 dialog는 원래 opener로 돌아간다.
+      dialogOpener.focus();
+    }
     dialogOpener = null;
   }
 

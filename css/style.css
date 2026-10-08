@@ -80,10 +80,7 @@ button,
   /* 노치가 있는 기기를 눕혔을 때 글자가 둥근 모서리에 잘리지 않게 안전 영역만큼 띄운다 */
   padding-inline: max(var(--page-pad), env(safe-area-inset-left)) max(var(--page-pad), env(safe-area-inset-right));
   padding-top: 0;
-  /* 아래 여백은 피드백 시트 높이만큼 늘어난다. 시트가 fixed 라 문서 흐름에서
-     빠져 있어, 이게 없으면 마지막 보기가 시트에 가려 보이지 않는다.
-     실제 높이는 해설 길이에 따라 달라지므로 quiz.js 가 재서 넣는다. */
-  padding-bottom: calc(var(--space-12) + var(--feedback-h, 0px));
+  padding-bottom: var(--space-12);
 }
 
 body.is-booted .app {
@@ -138,8 +135,7 @@ body.is-boot-failed .boot__error {
 }
 
 /* ── 상단 바 (소리 토글) ──
-   모든 화면 위의 얇은 시스템 줄이다. 홈에서는 따로 한 줄을 차지하지 않고
-   플레이어 줄의 오른쪽 빈자리에 떠서 «내 정보 · 소리»가 한 줄로 읽힌다. */
+   기본 흐름 규칙. 월드 우선 구성에서는 section 30이 DOM 순서에 맞춰 fixed edge HUD로 덮는다. */
 .app-bar {
   display: none;
   max-width: var(--content-max);
@@ -152,10 +148,7 @@ body.is-booted .app-bar {
   display: flex;
 }
 
-/* 홈의 앱 바는 문서 흐름에서 빠져 플레이어 줄 오른쪽에 겹쳐 뜬다.
-   z-index 없이 위에 오려면 그 자리 아래에 위치 지정 요소가 없어야 한다 —
-   그래서 닉네임 줄은 이 버튼 폭만큼 오른쪽을 비우고(.menu-card--wide)
-   .home-stage 에는 position 을 주지 않는다. */
+/* 구형 폭 제한 레이아웃의 홈 배치. section 30은 같은 선택자로 fixed 위치를 확정한다. */
 body:has([data-screen='home']:not([hidden])) .app-bar {
   position: absolute;
   top: 0;
@@ -230,11 +223,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   padding: var(--space-1) var(--space-3);
 }
 
-/* ── 홈 ──
-   한 장면으로 읽히도록 네 덩어리를 위에서 아래로 쌓는다.
-     플레이어 줄(닉네임 + 소리)  →  세 칸 바로가기(dock)
-     →  마을 패널(브랜드 + 장식)  →  분야 고르기 패널(다섯 분야 + 전체 도전)
-   캐릭터는 화면에 붙어(fixed) 이 위를 걸어 다니므로 무대가 좌표 기준일 필요가 없다. */
+/* ── 홈 무대 기본 구조 ──
+   DOM의 읽기 순서와 비-JS fallback을 정한다. section 30이 이를 전체 viewport 월드와 edge HUD로 배치한다. */
 .home-stage {
   display: grid;
   gap: var(--space-4);
@@ -245,14 +235,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   gap: var(--space-3);
 }
 
-/* 랭킹과 온라인 방에서 쓰는 이름. 홈 맨 위 카드다.
-   오른쪽은 앱 바의 소리 버튼(44px)이 뜨는 자리라 비워 둔다 */
+/* 랭킹과 온라인 방에서 쓰는 이름의 기본 폭. 월드 HUD에서는 section 30이 148px 슬롯으로 덮는다. */
 .menu-card--wide {
   width: calc(100% - 44px - var(--space-2));
   min-height: 52px;
 }
 
-/* 자주 쓰는 보조 동작은 한 묶음(dock)에 모아 분야 고르기를 아래로 밀지 않는다 */
+/* 보조 동작의 읽기 순서용 기본 grid. 월드 HUD에서는 display: contents로 가장자리에 흩어진다. */
 .home-menu {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -774,21 +763,16 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 /* ── 피드백 ──
-   화면 맨 아래에 붙는 시트.
-   답을 고른 뒤 스크롤을 내려 찾지 않아도 되고, 엄지가 닿는 자리에 버튼이 온다.
-
-   z-index 를 주지 않는다 — DOM 순서가 곧 겹치는 순서다. 그래서 이 요소는 <main> 밖,
-   대화상자들 앞에 있다. .app 은 --feedback-h 만큼 아래 여백을 더 두어 시트가 마지막
-   보기를 가리지 않는다. 데스크톱에서는 콘텐츠 열과 같은 폭으로 붙는다. */
+   퀴즈 화면 바로 뒤의 문서 흐름에 놓이는 결과 패널이다. 답을 고르면 버튼에 포커스를
+   옮기고 이 패널 끝까지 스크롤해, 긴 질문·해설이나 낮은 viewport에서도 보기와 arena를
+   덮지 않는다. <main> 밖, 대화상자 앞의 DOM 순서는 z-index 없는 레이어 계약을 유지한다. */
 .feedback {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  width: min(calc(100% - var(--space-6)), calc(var(--content-max) - 2 * var(--page-pad)));
   max-width: calc(var(--content-max) - 2 * var(--page-pad));
-  margin: 0 auto;
+  margin: var(--space-3) auto 0;
   padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  /* 해설이 길어도 화면을 다 먹지 않는다 */
+  /* 해설이 아주 길어도 패널 내부에서 끝까지 읽고 다음 버튼에 닿는다. */
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -2752,5 +2736,651 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   .ranking-item__rank {
     width: 28px;
     height: 28px;
+  }
+}
+
+/* ── 30. 월드 우선 화면 구성 ─────────────────────────────────────
+   카드 열을 가운데 쌓는 웹앱 골격 대신, 화면 전체를 하나의 게임 월드로 쓴다.
+   상시 UI는 가장자리 HUD와 하단 dock뿐이고 긴 목록·폼만 상황별 표면으로 남긴다.
+   app-bar는 <main> 뒤에 있어 z-index 없이도 월드 위, 피드백·대화상자 아래에 온다. */
+.app {
+  max-width: none;
+  padding: 0;
+}
+
+body:has([data-screen='home']:not([hidden])) .app {
+  padding-bottom: 0;
+}
+
+.screen {
+  width: 100%;
+  min-height: 100svh;
+  padding: max(var(--space-4), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)) max(var(--page-pad), env(safe-area-inset-left));
+}
+
+.app-bar,
+body:has([data-screen='home']:not([hidden])) .app-bar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: auto;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: max(var(--space-3), env(safe-area-inset-top)) max(var(--space-3), env(safe-area-inset-right)) 0 0;
+  pointer-events: none;
+}
+
+.app-bar > * {
+  pointer-events: auto;
+}
+
+/* 홈: 중앙은 월드와 캐릭터에게 비우고 조작부만 가장자리에 둔다. */
+.screen[data-screen='home'] {
+  min-height: 100svh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.home-stage {
+  position: relative;
+  display: block;
+  min-height: 100svh;
+}
+
+.home-player {
+  position: absolute;
+  top: max(var(--space-3), env(safe-area-inset-top));
+  left: max(var(--space-3), env(safe-area-inset-left));
+  width: 148px;
+}
+
+.menu-card--wide {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-1) var(--space-2);
+}
+
+.menu-card--wide .menu-card__edit {
+  display: none;
+}
+
+.menu-card--wide .menu-card__figure {
+  width: 36px;
+  height: 36px;
+}
+
+.menu-card--wide .menu-card__desc {
+  display: block;
+}
+
+.home-menu {
+  display: contents;
+}
+
+.home-menu .menu-card {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: var(--space-1);
+  width: 64px;
+  min-height: 64px;
+  padding: var(--space-1);
+  text-align: center;
+}
+
+.home-menu .menu-card__figure {
+  width: 28px;
+  height: 28px;
+}
+
+.home-menu .menu-card__body {
+  display: block;
+  min-width: 0;
+}
+
+.home-menu .menu-card__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-menu .menu-card__desc,
+.home-menu .menu-card__meta,
+.home-menu .menu-card__arrow {
+  display: none;
+}
+
+#open-characters {
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 64px);
+  left: max(var(--space-3), env(safe-area-inset-left));
+}
+
+#open-ranking {
+  top: 42%;
+  left: max(var(--space-3), env(safe-area-inset-left));
+}
+
+#open-online {
+  top: 42%;
+  right: max(var(--space-3), env(safe-area-inset-right));
+}
+
+.home-header {
+  position: absolute;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 68px);
+  left: 50%;
+  display: block;
+  width: min(44vw, 360px);
+  min-height: 0;
+  padding: 0;
+  translate: -50% 0;
+  overflow: visible;
+  text-align: center;
+  pointer-events: none;
+}
+
+.home-title,
+.home-subtitle {
+  margin: 0;
+}
+
+.home-quests {
+  position: absolute;
+  right: max(var(--space-3), env(safe-area-inset-right));
+  bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  left: max(var(--space-3), env(safe-area-inset-left));
+  width: min(calc(100% - var(--space-6)), 700px);
+  margin: 0 auto;
+  padding: var(--space-2);
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+.category-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  position: relative;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 64px;
+  padding: var(--space-1);
+  text-align: center;
+}
+
+.category-card__icon {
+  width: 28px;
+  height: 28px;
+}
+
+.category-card__body {
+  display: block;
+  min-width: 0;
+}
+
+.category-card__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-card__desc {
+  display: none;
+}
+
+.category-card__name--compact {
+  display: none;
+}
+
+/* 기존 2열 카드 목록의 홀수 마지막 확장 규칙을 5칸 game dock에서는 해제한다. */
+.category-card:nth-child(odd):last-child {
+  grid-column: auto;
+}
+
+.challenge-card {
+  width: min(280px, 100%);
+  min-height: 52px;
+  margin: var(--space-2) auto 0;
+  padding: var(--space-2) var(--space-4);
+}
+
+.challenge-card__desc {
+  display: none;
+}
+
+.home-hint {
+  display: none;
+}
+
+.home-note {
+  position: fixed;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 148px);
+  left: 50%;
+  width: min(calc(100% - var(--space-6)), 520px);
+  margin: 0;
+  translate: -50% 0;
+}
+
+/* 퀴즈: HUD·질문·보기는 좁은 띠로, 남은 공간은 실제 arena로 쓴다. */
+.quiz--character {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+}
+
+.quiz--character .quiz-hud {
+  width: min(100%, 1200px);
+  margin: 0 auto var(--space-3);
+  /* 오른쪽 위의 전역 소리 HUD와 나가기 버튼이 겹치지 않게 한 슬롯을 비운다. */
+  padding: var(--space-2) 64px var(--space-2) var(--space-3);
+}
+
+.quiz--character .question {
+  width: min(100%, 760px);
+  margin: 0 auto var(--space-3);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.quiz--character .choices {
+  width: min(100%, 780px);
+  margin: 0 auto var(--space-3);
+}
+
+.quiz--character .choice {
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.quiz--character .arena {
+  display: grid;
+  align-content: end;
+  width: min(88vw, 560px);
+  min-height: 184px;
+  margin: auto auto 0;
+  padding-top: var(--space-3);
+}
+
+.quiz--character .arena__grid {
+  padding: var(--space-2);
+}
+
+/* 피드백은 arena 뒤의 문서 흐름에서 이어진다. 결과 바닥을 고정 offset으로 움직이면
+   긴 질문에는 보기를, 긴 해설에는 패널을 덮으므로 어떤 viewport에서도 옮기지 않는다. */
+body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
+  translate: none;
+}
+
+.quiz--character .arena-tile {
+  height: clamp(64px, 10vh, 96px);
+}
+
+.quiz--character .arena__hint {
+  margin-bottom: 0;
+}
+
+/* 결과 첫 화면은 점수·세 통계·다음 행동만 띄우고, 상세 기록은 아래로 스크롤한다. */
+[data-screen='result'] > :not(.walker):not(.sr-only),
+[data-screen='online-result'] > :not(.walker):not(.sr-only),
+[data-screen='ranking'] > :not(.walker):not(.sr-only),
+[data-screen='characters'] > :not(.walker):not(.sr-only),
+[data-screen='waiting'] > :not(.walker):not(.sr-only) {
+  width: min(100%, 760px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+/* 직접 자식인 대기실 행동은 inline-flex 기본값이면 auto margin이 남은 폭을 나누지
+   못한다. 읽기 열과 같은 폭의 block flex로 만들어 모바일·데스크톱 모두 가운데 둔다. */
+[data-screen='waiting'] > .button {
+  display: flex;
+}
+
+[data-screen='online'] > :not(.walker) {
+  width: min(100%, 880px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+[data-screen='result'] .result-header {
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+}
+
+[data-screen='result'] .result-score {
+  margin: var(--space-2) 0 0;
+}
+
+[data-screen='result'] .result-stats {
+  margin-bottom: var(--space-3);
+}
+
+[data-screen='result'] .result-actions {
+  margin-bottom: var(--space-6);
+}
+
+.ranking-header,
+[data-screen='characters'] .quiz-header,
+[data-screen='waiting'] > .quiz-header,
+.online-hero__header {
+  min-height: 52px;
+  padding: var(--space-2) 64px var(--space-2) var(--space-3);
+}
+
+.ranking-scope,
+.screen-lead {
+  padding: var(--space-2) var(--space-3);
+}
+
+.character-stage {
+  min-height: 64svh;
+  padding: var(--space-4);
+}
+
+.character-card {
+  min-height: 112px;
+}
+
+.online-hero {
+  padding: 0;
+}
+
+.online-actions {
+  padding: var(--space-1);
+}
+
+.online-block {
+  padding: var(--space-4);
+}
+
+[data-screen='waiting'] .lounge {
+  min-height: 58svh;
+}
+
+/* 긴 내용이 없는 첫 화면에서는 world가 최소 70%가량 드러난다. */
+@media (min-width: 600px) {
+  .home-header {
+    top: max(var(--space-12), env(safe-area-inset-top));
+    width: min(42vw, 520px);
+    min-height: 0;
+    padding: 0;
+  }
+
+  .home-menu .menu-card {
+    width: 72px;
+    min-height: 72px;
+  }
+
+  .quiz--character .choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quiz--character .arena {
+    min-height: 272px;
+  }
+
+  .quiz--character .arena-tile {
+    height: 104px;
+  }
+}
+
+@media (max-width: 420px) {
+  .category-card__name--full {
+    display: none;
+  }
+
+  .category-card__name--compact {
+    display: block;
+  }
+
+  .home-header {
+    top: calc(max(var(--space-3), env(safe-area-inset-top)) + 72px);
+    width: 44vw;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .home-title {
+    font-size: var(--text-xl);
+  }
+
+  .home-subtitle {
+    display: none;
+  }
+
+  .home-player {
+    width: 140px;
+  }
+
+  .menu-card--wide .menu-card__name,
+  .menu-card--wide .menu-card__desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .home-menu .menu-card {
+    width: 60px;
+    min-height: 60px;
+  }
+
+  .category-card__name,
+  .home-menu .menu-card__name {
+    font-size: var(--text-xs);
+  }
+
+  .quiz--character {
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+  }
+
+  .quiz--character .quiz-hud {
+    margin-bottom: var(--space-2);
+  }
+
+  .quiz--character .question {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .quiz--character .choices {
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+  }
+
+  .quiz--character .choice {
+    min-height: 52px;
+  }
+
+  .quiz--character .arena {
+    width: min(88vw, 360px);
+    min-height: 152px;
+    padding-top: var(--space-2);
+  }
+
+  .quiz--character .arena__hint {
+    display: none;
+  }
+
+  [data-screen='result'] .result-header {
+    padding-top: var(--space-8);
+  }
+}
+
+@media (max-width: 360px) {
+  .quiz--character .quiz-hud {
+    padding-right: 52px;
+  }
+}
+
+@media (pointer: coarse) {
+  body:has([data-screen='home']:not([hidden])) .walk-stick {
+    bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
+    left: max(var(--space-3), env(safe-area-inset-left));
+    width: 96px;
+    height: 96px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-stick__knob {
+    width: 48px;
+    height: 48px;
+    margin: -24px 0 0 -24px;
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-confirm {
+    right: max(var(--space-3), env(safe-area-inset-right));
+    bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
+    width: 72px;
+    height: 72px;
+  }
+
+  body:has([data-screen='quiz']:not([hidden])) .walk-stick,
+  body:has([data-screen='online-quiz']:not([hidden])) .walk-stick {
+    width: 120px;
+    height: 120px;
+  }
+
+  body:has([data-screen='quiz']:not([hidden])) .walk-stick__knob,
+  body:has([data-screen='online-quiz']:not([hidden])) .walk-stick__knob {
+    width: 64px;
+    height: 64px;
+    margin: -32px 0 0 -32px;
+  }
+
+  /* 로컬 quiz의 arena는 스틱이 켜진 동안 마지막 콘텐츠다. 화면 기본 여백을
+     빼서 계산하지 말고 실제 120px 스틱 + 16px 바닥 + 8px 간격을 온전히 비운다. */
+  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(120px + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  body:has([data-screen='home']:not([hidden])) .screen {
+    padding-bottom: 0;
+  }
+
+  /* 고정 조작부 뒤의 마지막 버튼도 위로 올려 직접 누를 수 있게 스크롤 여유를 남긴다.
+     홈과 퀴즈는 각각 전용 dock/arena가 조작부 자리를 계산한다. */
+  body:has(.walk-stick--on) [data-screen='result']:not([hidden]),
+  body:has(.walk-stick--on) [data-screen='online-result']:not([hidden]),
+  body:has(.walk-stick--on) [data-screen='ranking']:not([hidden]),
+  body:has(.walk-stick--on) [data-screen='characters']:not([hidden]),
+  body:has(.walk-stick--on) [data-screen='online']:not([hidden]),
+  body:has(.walk-stick--on) [data-screen='waiting']:not([hidden]) {
+    padding-bottom: calc(176px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-height: 700px) {
+  .home-player {
+    width: 120px;
+  }
+
+  .home-menu .menu-card {
+    width: 56px;
+    min-height: 56px;
+  }
+
+  #open-characters {
+    top: calc(max(var(--space-3), env(safe-area-inset-top)) + 56px);
+  }
+
+  .home-quests {
+    padding: var(--space-1);
+  }
+
+  .category-card {
+    min-height: 52px;
+  }
+
+  .challenge-card {
+    min-height: 48px;
+  }
+
+  /* 오류·문항 부족 알림은 direct-entry 줄 위에 두고, 그 드문 상태에서는 캐릭터를
+     거둬 메시지와 겹치지 않게 한다. */
+  .home-note {
+    top: auto;
+    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .quiz--character .arena {
+    min-height: 128px;
+  }
+}
+
+/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 홈 목적지는 모두 직접 누를 수 있으므로
+   화면 스틱을 거두고 세 입구를 dock 바로 위 한 줄로 배치한다. */
+@media (max-height: 700px) {
+  .home-header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  #open-characters,
+  #open-ranking,
+  #open-online {
+    top: auto;
+    bottom: calc(var(--home-dock-h, 148px) + 20px + env(safe-area-inset-bottom, 0px));
+    width: 56px;
+    min-height: 56px;
+  }
+
+  #open-characters {
+    left: max(var(--space-3), env(safe-area-inset-left));
+  }
+
+  #open-ranking {
+    left: 50%;
+    translate: -50% 0;
+  }
+
+  #open-online {
+    right: max(var(--space-3), env(safe-area-inset-right));
+  }
+}
+
+/* 로드 오류 문구는 행동보다 우선한다. 캐릭터를 잠시 거두면 높이와 무관하게 겹치지 않는다. */
+body:has(.home-note:not([hidden])) #home-character {
+  display: none;
+}
+
+@media (pointer: coarse) and (max-height: 700px) {
+  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(120px + var(--space-3) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  body:has([data-screen='home']:not([hidden])) .walk-stick,
+  body:has([data-screen='home']:not([hidden])) .walk-confirm {
+    display: none;
+  }
+}
+
+/* 짧은 touch 화면에서는 fixed 조작부와 2×2 arena를 동시에 둘 세로 공간이 없다.
+   보기 버튼이 같은 네 답을 온전히 제공하므로 walker만 남기고 스틱·선택은 거둔다. */
+@media (pointer: coarse) and (max-height: 772px) {
+  body:has([data-screen='quiz']:not([hidden])) .walk-stick,
+  body:has([data-screen='quiz']:not([hidden])) .walk-confirm,
+  body:has([data-screen='quiz']:not([hidden])) .arena__hint {
+    display: none;
+  }
+
+  body:has(.walk-stick--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: var(--space-4);
   }
 }

@@ -38,6 +38,8 @@ export interface ArenaDeps {
    */
   getChoiceNodes: () => Iterable<Element>;
   trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
+  /** 도움말을 닫은 뒤 화면이 후속 상태(예: timeout 피드백)를 드러낼 때 쓴다. */
+  onDialogClose?: () => void;
   /** 로컬·온라인 화면이 독립된 무대를 가질 수 있게 DOM id를 주입한다. */
   ids?: ArenaElementIds;
 }
@@ -95,6 +97,10 @@ export interface Arena {
   handleDialogKey(event: KeyboardEvent): boolean;
   /** 퀴즈 화면이 받은 키를 넘겨준다. 처리했으면 true */
   handleKey(event: KeyboardEvent): boolean;
+  /** 현재 캐릭터 발의 arena 내부 상대 좌표를 보존한다. */
+  captureCharacterAnchor(): Point;
+  /** 레이아웃 변경 뒤 새 arena의 같은 상대 좌표에 캐릭터를 놓는다. */
+  restoreCharacterAnchor(anchor: Point): void;
 }
 
 export function createArena({
@@ -102,6 +108,7 @@ export function createArena({
   onMove,
   getChoiceNodes,
   trapFocus,
+  onDialogClose,
   ids = DEFAULT_IDS,
 }: ArenaDeps): Arena {
   const el = {
@@ -174,6 +181,7 @@ export function createArena({
     // 열기 전에 있던 자리로 포커스를 돌려준다
     if (helpOpener && document.contains(helpOpener)) helpOpener.focus();
     helpOpener = null;
+    onDialogClose?.();
   }
 
   el.help.addEventListener('click', openHelp);
@@ -327,6 +335,24 @@ export function createArena({
     /** 퀴즈 화면이 받은 키를 넘겨준다. 처리했으면 true */
     handleKey(event) {
       return walker.handleKey(event);
+    },
+
+    captureCharacterAnchor() {
+      const grid = el.tiles.getBoundingClientRect();
+      const character = el.character.getBoundingClientRect();
+      return {
+        x: character.left + character.width / 2 - grid.left,
+        y: character.bottom - grid.top,
+      };
+    },
+
+    restoreCharacterAnchor(anchor) {
+      if (!enabled) return;
+      const grid = el.tiles.getBoundingClientRect();
+      walker.placeAt({
+        x: grid.left + anchor.x,
+        y: grid.top + anchor.y,
+      }, false);
     },
   };
 }
