@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DESKTOP, MOBILE, loadStyles, node, nodeFromHtml, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, lengthOf, loadStyles, node, nodeFromHtml, shorthandParts, tokens, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
@@ -24,21 +24,46 @@ test('피드백 시트: 「다음 문제」의 키 표시는 시트가 실제로
 test('피드백 시트: 데스크톱에서 콘텐츠 열과 같은 폭으로 붙는다', () => {
   const app = node('main.app', node('body'));
   const sheet = nodeFromHtml(html, 'feedback');
-  const px = (value) => Number.parseFloat(value);
+  const px = (value) => lengthOf(rules, value, DESKTOP);
 
-  const column = px(valueOf(rules, app, 'max-width', DESKTOP)) - 2 * px(valueOf(rules, app, 'padding-inline', DESKTOP));
-  assert.equal(px(valueOf(rules, sheet, 'max-width', DESKTOP)), column);
+  // 토큰을 풀어 실제 px 로 비교한다. 풀지 못하면 NaN 이 되어 «NaN === NaN» 으로 통과하던
+  // 빈 검사가 되지 않게, 숫자인지부터 확인한다
+  const max = px(valueOf(rules, app, 'max-width', DESKTOP));
+  const inline = shorthandParts(valueOf(rules, app, 'padding-inline', DESKTOP)).map(px);
+  const column = max - (inline.length === 1 ? 2 * inline[0] : inline[0] + inline[1]);
+  const width = px(valueOf(rules, sheet, 'max-width', DESKTOP));
+  assert.ok(Number.isFinite(column) && column > 0, `콘텐츠 열 폭을 계산하지 못했다: ${column}`);
+  assert.equal(width, column);
 });
 
-test('피드백 시트: 판정은 글자색만이 아니라 시트 테두리와 ✓ ✗ 블록으로도 구분된다', () => {
+test('피드백 시트: 판정은 글자색만이 아니라 시트 테두리와 ✓ ✗ 배지로도 구분된다', () => {
   const body = node('body');
-  const verdictOf = (state) => node('p.feedback__verdict::before', node(`div.feedback.feedback--${state}#feedback`, body));
+  const sheetOf = (state) => node(`div.feedback.feedback--${state}#feedback`, body);
+  const verdictOf = (state) => node('p.feedback__verdict::before', sheetOf(state));
+  const root = tokens(rules, DESKTOP);
 
   for (const env of [DESKTOP, MOBILE]) {
-    assert.match(valueOf(rules, node('div.feedback.feedback--correct#feedback', body), 'border-color', env), /var\(--correct\)/);
-    assert.match(valueOf(rules, node('div.feedback.feedback--wrong#feedback', body), 'border-color', env), /var\(--wrong\)/);
+    assert.match(valueOf(rules, sheetOf('correct'), 'border-color', env), /var\(--correct\)/);
+    assert.match(valueOf(rules, sheetOf('wrong'), 'border-color', env), /var\(--wrong\)/);
   }
-  // 라이브 리전 안이라 기호를 다시 낭독하지 않도록 대체 글을 비운다
-  assert.match(valueOf(rules, verdictOf('correct'), 'content', DESKTOP), /^'✓'\s*\/\s*''$/);
-  assert.match(valueOf(rules, verdictOf('wrong'), 'content', DESKTOP), /^'✗'\s*\/\s*''$/);
+
+  // 배지는 상태 색으로 채운 칸 위의 흰 아이콘이다. 정답은 체크, 오답·시간 초과는 엑스 —
+  // 색을 못 보는 사람에게도 모양이 다르다
+  const badge = {
+    correct: valueOf(rules, verdictOf('correct'), '--badge-icon', DESKTOP),
+    wrong: valueOf(rules, verdictOf('wrong'), '--badge-icon', DESKTOP),
+  };
+  assert.equal(badge.correct, 'var(--i-check-inverse)');
+  assert.equal(badge.wrong, 'var(--i-cross-inverse)');
+  for (const name of ['--i-check-inverse', '--i-cross-inverse']) {
+    assert.match(root.get(name) ?? '', /^url\("data:image\/svg\+xml,.*viewBox='0 0 24 24'/, `${name} 는 24×24 아이콘이다`);
+  }
+  assert.equal(valueOf(rules, verdictOf('correct'), '--badge-color', DESKTOP), 'var(--correct)');
+  assert.equal(valueOf(rules, verdictOf('wrong'), '--badge-color', DESKTOP), 'var(--wrong)');
+  assert.match(valueOf(rules, verdictOf('correct'), 'background', DESKTOP), /var\(--badge-icon\)[\s\S]*var\(--badge-color\)/);
+
+  // 라이브 리전 안이라 배지는 다시 낭독할 글자가 없어야 한다
+  for (const state of ['correct', 'wrong']) {
+    assert.equal(valueOf(rules, verdictOf(state), 'content', DESKTOP), "''");
+  }
 });

@@ -335,6 +335,177 @@ export function valueOf(rules, element, property, env) {
   return winning(rules, element, property, env)?.value ?? null;
 }
 
+// ── 토큰 ───────────────────────────────────────────────────────────
+// 디자인 층은 값을 :root 의 토큰으로만 정한다. 이긴 선언이 `var(--space-4)` 같은 원문이면
+// 숫자로 비교할 수 없어, 거꾸로 «NaN === NaN» 처럼 아무것도 검사하지 못한 채 통과할 수 있다.
+// 그래서 토큰을 풀고 calc()·max()·min()·env() 까지 계산하는 도우미를 둔다.
+
+/** env 에서 :root 에 선언된 사용자 속성. @media 안의 :root 재정의도 따른다 */
+export function tokens(rules, env) {
+  const values = new Map();
+  const winners = new Map();
+  for (const rule of rules) {
+    if (!rule.media.every((query) => mediaMatches(query, env))) continue;
+    if (!rule.selectors.some((selector) => selector.trim() === ':root')) continue;
+    rule.declarations.forEach((declaration, position) => {
+      if (!declaration.property.startsWith('--')) return;
+      const order = rule.order * 1000 + position;
+      const previous = winners.get(declaration.property);
+      if (previous === undefined || order > previous) {
+        winners.set(declaration.property, order);
+        values.set(declaration.property, declaration.value);
+      }
+    });
+  }
+  return values;
+}
+
+/** var(--x, fallback) 를 토큰 값으로 바꾼다. 없는 토큰은 대체값, 대체값도 없으면 그대로 둔다 */
+export function resolveVars(value, map, depth = 0) {
+  if (value === null || value === undefined) return value;
+  if (depth > 20) throw new Error(`토큰이 순환한다: ${value}`);
+  let out = '';
+  let index = 0;
+  while (index < value.length) {
+    const at = value.indexOf('var(', index);
+    if (at === -1) {
+      out += value.slice(index);
+      break;
+    }
+    out += value.slice(index, at);
+    let level = 0;
+    let end = at + 3;
+    for (; end < value.length; end += 1) {
+      if (value[end] === '(') level += 1;
+      else if (value[end] === ')') {
+        level -= 1;
+        if (level === 0) break;
+      }
+    }
+    const inner = value.slice(at + 4, end);
+    const comma = splitTopLevel(inner, ',');
+    const name = comma[0].trim();
+    const fallback = comma.length > 1 ? inner.slice(inner.indexOf(',') + 1).trim() : null;
+    const replacement = map.has(name) ? map.get(name) : fallback;
+    out += replacement === null ? `var(${inner})` : resolveVars(replacement, map, depth + 1);
+    index = end + 1;
+  }
+  return out;
+}
+
+/**
+ * px 길이 하나를 계산한다. calc·max·min·env(대체값 또는 0)과 사칙연산을 이해한다.
+ * 계산할 수 없으면(%, em, 모르는 함수) NaN 이다 — 모르는 것을 0 으로 치면 거짓으로 통과한다.
+ */
+export function evaluateLength(value) {
+  if (value === null || value === undefined) return Number.NaN;
+  const source = String(value).trim();
+  const tokens_ = [];
+  // 숫자(px 또는 단위 없음) · 함수 이름( · 식별자 · 연산자. 부호는 파서가 단항 연산으로 다룬다
+  const pattern = /\s*(?:(\d*\.?\d+)([a-z%]*)|([a-z-]+)\(|([a-z][a-z0-9-]*)|([()+\-*/,]))/y;
+  let position = 0;
+  while (position < source.length) {
+    pattern.lastIndex = position;
+    const match = pattern.exec(source);
+    if (!match || match[0].length === 0) return Number.NaN;
+    position = pattern.lastIndex;
+    if (match[1] !== undefined) {
+      if (match[2] && match[2] !== 'px') return Number.NaN; // %·em 은 이 도우미가 모른다
+      tokens_.push({ type: 'num', value: Number(match[1]) });
+    } else if (match[3] !== undefined) tokens_.push({ type: 'fn', value: match[3] });
+    else if (match[4] !== undefined) tokens_.push({ type: 'ident', value: match[4] });
+    else tokens_.push({ type: 'op', value: match[5] });
+  }
+  let at = 0;
+  const peek = () => tokens_[at];
+  const take = () => tokens_[at++];
+  function args() {
+    const list = [];
+    while (peek() && !(peek().type === 'op' && peek().value === ')')) {
+      list.push(expression());
+      if (peek()?.type === 'op' && peek().value === ',') take();
+    }
+    take();
+    return list;
+  }
+  function factor() {
+    const token = take();
+    if (!token) return Number.NaN;
+    if (token.type === 'num') return token.value;
+    if (token.type === 'op' && token.value === '-') return -factor();
+    if (token.type === 'op' && token.value === '(') {
+      const inner = expression();
+      take();
+      return inner;
+    }
+    if (token.type === 'fn') {
+      if (token.value === 'env') {
+        // env(이름, 대체값) — 브라우저 밖에서는 안전 영역이 0 이다
+        if (peek()?.type !== 'ident') return Number.NaN;
+        take();
+        let fallback = 0;
+        if (peek()?.type === 'op' && peek().value === ',') {
+          take();
+          fallback = expression();
+        }
+        take();
+        return fallback;
+      }
+      const values = args();
+      if (token.value === 'calc') return values[0];
+      if (token.value === 'max') return Math.max(...values);
+      if (token.value === 'min') return Math.min(...values);
+      return Number.NaN;
+    }
+    return Number.NaN;
+  }
+  function term() {
+    let value = factor();
+    while (peek()?.type === 'op' && (peek().value === '*' || peek().value === '/')) {
+      const op = take().value;
+      const right = factor();
+      value = op === '*' ? value * right : value / right;
+    }
+    return value;
+  }
+  function expression() {
+    let value = term();
+    while (peek()?.type === 'op' && (peek().value === '+' || peek().value === '-')) {
+      const op = take().value;
+      const right = term();
+      value = op === '+' ? value + right : value - right;
+    }
+    return value;
+  }
+  const result = expression();
+  return at === tokens_.length ? result : Number.NaN;
+}
+
+/** 이긴 선언(또는 원문 값)을 토큰까지 풀어 px 숫자로 */
+export function lengthOf(rules, value, env) {
+  return evaluateLength(resolveVars(value, tokens(rules, env)));
+}
+
+/** 공백으로 나뉜 단축 값을 괄호 깊이를 지켜 나눈다 ('0 calc(a + b)' → ['0', 'calc(a + b)']) */
+export function shorthandParts(value) {
+  if (!value) return [];
+  const parts = [];
+  let depth = 0;
+  let current = '';
+  for (const char of value) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (/\s/.test(char) && depth === 0) {
+      if (current) parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
 export const DESKTOP = { width: 1280, height: 900, pointer: 'fine', hover: 'hover', reducedMotion: false };
 export const MOBILE = { width: 390, height: 844, pointer: 'coarse', hover: 'none', reducedMotion: false };
 export const NARROW = { width: 320, height: 640, pointer: 'coarse', hover: 'none', reducedMotion: false };

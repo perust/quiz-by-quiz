@@ -76,11 +76,15 @@ export const DATA_DIR = 'data';
 /**
  * 카테고리 정의. id는 PRD 6.1의 카테고리 코드이자 JSON 파일 이름이다.
  * (`data/history.json` 등)
+ *
+ * icon 은 글리프가 아니라 디자인 시스템 아이콘 이름이다 (css/voxel-theme.css 의 data-icon
+ * 목록, docs/design-system.md). 카테고리를 더할 때는 목록에 있는 이름을 고르면 CSS 를
+ * 고치지 않아도 된다. 분야 색은 data-category 로 따로 붙고, 없으면 브랜드 보라가 된다.
  */
 export const CATEGORIES: Category[] = [
-  { id: 'history', name: '한국사', icon: '▤', description: '연표 속 그날의 이야기' },
-  { id: 'science', name: '과학', icon: '▦', description: '자연과 우주의 기본기' },
-  { id: 'geography', name: '지리', icon: '◆', description: '땅과 도시에 관한 감각' },
-  { id: 'general', name: '일반상식', icon: '?', description: '알아두면 쓸모 있는 것들' },
-  { id: 'art', name: '예술과문화', icon: '▧', description: '그림과 음악, 이야기의 결' },
+  { id: 'history', name: '한국사', icon: 'book', description: '연표 속 그날의 이야기' },
+  { id: 'science', name: '과학', icon: 'flask', description: '자연과 우주의 기본기' },
+  { id: 'geography', name: '지리', icon: 'globe', description: '땅과 도시에 관한 감각' },
+  { id: 'general', name: '일반상식', icon: 'bulb', description: '알아두면 쓸모 있는 것들' },
+  { id: 'art', name: '예술과문화', icon: 'music', description: '그림과 음악, 이야기의 결' },
 ];

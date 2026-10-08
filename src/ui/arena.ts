@@ -161,7 +161,11 @@ export function createArena({
     // 포커스가 있는 것은 곧 눌린 버튼이라 focus() 를 가진 요소다
     helpOpener = document.activeElement as HTMLElement | null;
     el.helpDialog.hidden = false;
-    el.helpClose.focus();
+    // 닫기 버튼은 긴 설명의 맨 아래에 있다. 그곳으로 바로 포커스를 보내면 200% 확대에서
+    // 브라우저가 제목을 화면 위로 밀어낸다. 대화상자 자체부터 읽고 Tab으로 닫기에 간다.
+    el.helpDialog.scrollTop = 0;
+    const helpPanel = el.helpDialog.querySelector<HTMLElement>('[role="dialog"]');
+    helpPanel?.focus({ preventScroll: true });
   }
 
   function closeHelp(): void {

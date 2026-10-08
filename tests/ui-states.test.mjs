@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DESKTOP, MOBILE, loadStyles, node, valueOf } from './css-cascade.mjs';
 
-// 브라우저와 같은 순서로 읽는다. 복셀 테마가 뒤에 와서 같은 명시도에서 이긴다.
+// 브라우저와 같은 순서로 읽는다. 디자인 층(voxel-theme.css)이 뒤에 와서 같은 명시도에서 이긴다.
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -19,7 +19,7 @@ function look(element, env) {
   return ['background', 'border-color'].map((property) => valueOf(rules, element, property, env)).join(' | ');
 }
 
-test('정답 공개: 정답·오답 보기는 복셀 공통 표면에 덮이지 않고 제 상태색을 쓴다', () => {
+test('정답 공개: 정답·오답 보기는 공통 표면 규칙에 덮이지 않고 제 상태색을 쓴다', () => {
   for (const env of [DESKTOP, MOBILE]) {
     const correct = choice('button.choice.choice--correct:disabled');
     const wrong = choice('button.choice.choice--wrong:disabled');
@@ -70,9 +70,14 @@ test('상호작용: 마우스 hover는 캐릭터가 선 보기나 정답처럼 �
 });
 
 test('상호작용: 마우스로 보기를 누르는 동안 hover보다 아래로 눌리고 그림자가 접힌다', () => {
+  const hover = choice('button.choice:hover');
   const pressed = choice('button.choice:hover:active');
-  assert.equal(valueOf(rules, pressed, 'translate', DESKTOP), '0 4px');
-  assert.equal(valueOf(rules, pressed, 'box-shadow', DESKTOP), '0 0 0 var(--edge-soft)');
+  // hover 는 한 칸 들리고(음수) 떠 있는 그림자(높이 2)를 갖는다. 누르면 아래로(양수) 내려앉고
+  // 그림자가 사라진다 — 색이 아니라 높이로 «눌렸다»가 읽힌다
+  assert.match(valueOf(rules, hover, 'translate', DESKTOP), /^0 -\d+px$/);
+  assert.equal(valueOf(rules, hover, 'box-shadow', DESKTOP), 'var(--elevation-2)');
+  assert.match(valueOf(rules, pressed, 'translate', DESKTOP), /^0 [1-9]\d*px$/);
+  assert.equal(valueOf(rules, pressed, 'box-shadow', DESKTOP), 'none');
 });
 
 test('캐릭터 위치: 바닥 칸 위에 서면 같은 번호의 위 보기에도 같은 불이 켜진다', async () => {
@@ -114,7 +119,7 @@ test('캐릭터 위치: 바닥 칸 위에 서면 같은 번호의 위 보기에�
   assert.match(arena, /if \(!enabled\) \{[^}]*markArenaTarget\(getChoiceNodes\(\), null\);[^}]*return;\s*\}/);
 });
 
-test('랭킹: 순위는 블록 칸으로 서고 1·2·3위는 서로 다른 칸이라 위에서부터 훑어 읽힌다', () => {
+test('랭킹: 순위는 칸 안의 숫자로 서고 1·2·3위는 서로 다른 칸이라 위에서부터 훑어 읽힌다', () => {
   const list = node('ol.ranking-list#ranking-list', node("section.screen[data-screen='ranking']"));
   const rank = (place) => node('span.ranking-item__rank', node(`li.ranking-item:nth-child(${place})`, list));
 
@@ -142,4 +147,22 @@ test('온라인 제출 대기: «제출됨» 보기는 캐릭터 위치·정답 
       assert.notEqual(look(submitted, env), look(other, env), `${env.width}px: ${label}와 구분된다`);
     }
   }
+});
+
+test('온라인 정답 공개: 정답·오답 판정은 서로 다른 선과 아이콘을 받고 렌더러가 상태 클래스를 갱신한다', async () => {
+  const screen = node("section.screen.online-quiz.quiz--character[data-screen='online-quiz']", node('main.app', node('body')));
+  const correct = node('section.online-reveal.online-reveal--correct#online-reveal', screen);
+  const wrong = node('section.online-reveal.online-reveal--wrong#online-reveal', screen);
+  const correctMark = node('p.online-reveal__verdict::before', correct);
+  const wrongMark = node('p.online-reveal__verdict::before', wrong);
+
+  for (const env of [DESKTOP, MOBILE]) {
+    assert.notEqual(valueOf(rules, correct, 'border-color', env), valueOf(rules, wrong, 'border-color', env));
+    assert.equal(valueOf(rules, correctMark, '--badge-icon', env), 'var(--i-check-inverse)');
+    assert.equal(valueOf(rules, wrongMark, '--badge-icon', env), 'var(--i-cross-inverse)');
+  }
+
+  const renderer = await source('src/ui/online-quiz.ts');
+  assert.match(renderer, /el\.reveal\.classList\.toggle\('online-reveal--correct', reveal\?\.correct === true\)/);
+  assert.match(renderer, /el\.reveal\.classList\.toggle\('online-reveal--wrong', reveal !== null && !reveal\.correct\)/);
 });

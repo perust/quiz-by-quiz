@@ -59,7 +59,6 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     progressFill: need('progress-fill'),
     timer: need('timer'),
     timerFill: need('timer-fill'),
-    timerIcon: need('timer-icon'),
     timerText: need('timer-text'),
     question: need('question-text'),
     choices: need('choices'),
@@ -113,10 +112,10 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     if (seconds === lastShownSeconds) return;
     lastShownSeconds = seconds;
 
-    // 경고는 색상뿐 아니라 아이콘·문구로도 알린다 (FR-3.9)
+    // 경고는 색상뿐 아니라 아이콘·문구로도 알린다 (FR-3.9).
+    // 아이콘(시계 → 경고 삼각형)은 디자인 층이 timer--warning 을 보고 바꿔 그린다
     const isWarning = remaining <= WARNING_THRESHOLD_MS;
     el.timer.classList.toggle('timer--warning', isWarning);
-    el.timerIcon.textContent = isWarning ? '⚠' : '⏱';
     el.timerText.textContent = isWarning ? `서두르세요 · ${seconds}초 남음` : `남은 시간 ${seconds}초`;
 
     // 타이머 영역은 aria-hidden이라 낭독되지 않는다.
@@ -258,12 +257,13 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
       button.disabled = true; // 같은 문제를 다시 풀 수 없다 (FR-3.3)
       const mark = button.querySelector('.choice__mark')!;
 
+      // ✓ ✗ 표식은 디자인 층이 상태 클래스를 보고 아이콘으로 그린다. 글에는 뜻만 남긴다
       if (index === question.answerIndex) {
         button.classList.add('choice--correct');
-        mark.textContent = '✓ 정답';
+        mark.textContent = '정답';
       } else if (index === record.choiceIndex) {
         button.classList.add('choice--wrong');
-        mark.textContent = '✗ 오답';
+        mark.textContent = '오답';
       } else {
         button.classList.add('choice--muted');
       }
@@ -448,7 +448,12 @@ export function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
   const first = items[0];
   const last = items[items.length - 1];
 
-  if (event.shiftKey && document.activeElement === first) {
+  // 조작법처럼 읽기 시작점인 패널(tabindex=-1)에 포커스를 둔 경우도 있다.
+  // 그 자리에서 Tab/Shift+Tab을 누르면 각각 첫/마지막 조작부로 들여보낸다.
+  if (!items.includes(document.activeElement as HTMLElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  } else if (event.shiftKey && document.activeElement === first) {
     event.preventDefault();
     last.focus();
   } else if (!event.shiftKey && document.activeElement === last) {

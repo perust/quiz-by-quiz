@@ -84,14 +84,15 @@ test('결과 화면 워커는 점수·통계 글자를 가리지 않는 헤더 �
   assert.equal(resultWalkerStart(hiddenHeader, character), null);
 });
 
-test('화면 워커: 시작 버튼이나 자리를 정한 화면은 그대로 그 곁에서 시작한다', () => {
+test('화면 워커: 시작 버튼 아래에 몸통 전체가 보이고, 직접 정한 자리는 그대로 쓴다', () => {
   frames.length = 0;
   const button = { getBoundingClientRect: () => ({ left: 100, width: 80, bottom: 200 }) };
   const ranking = fakeElement();
   const rankingWalker = createScreenWalker({ screen: { hidden: false }, character: ranking, startAt: () => button });
   rankingWalker.show('slime-blue');
   runFrames();
-  assert.equal(placedAt(ranking), 'translate(140px, 230px) translate(-50%, -100%)');
+  // 발끝 좌표 = 버튼 아래 + 캐릭터 높이 + 6px. 따라서 몸통 위가 버튼과 겹치지 않는다.
+  assert.equal(placedAt(ranking), 'translate(140px, 254px) translate(-50%, -100%)');
   rankingWalker.hide();
 
   // 아직 잴 수 없다(null)고 답하는 동안은 기다렸다가 잴 수 있게 되면 그 자리에 선다

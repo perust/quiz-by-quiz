@@ -1,26 +1,17 @@
-/* quiz by quiz — 3단계 스타일
-   모바일 우선. 320px 폭까지 깨지지 않게 맞췄다. */
+/* quiz by quiz — 기반 스타일: 구조·배치·동작 계약
 
-:root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --border: #e2e5ea;
-  --text: #1c1f24;
-  /* 상태 색은 WCAG AA(4.5:1)를 제 배경과 흰 배경 양쪽에서 넘긴다.
-     이 색들은 12~13px 이나 상속 크기로만 쓰여 «큰 글자» 예외에 드는 곳이 없다.
-     기호(✓ ✗)와 글자가 뜻을 지고 색은 거들 뿐이지만(FR-4.1, FR-4.2),
-     거드는 것도 보여야 거든다. 밝기만 낮추고 색상·채도는 그대로 두었다. */
-  --text-muted: #69707e;
-  --accent: #3b5bdb;
-  --accent-soft: #edf0fd;
-  --correct: #268037;
-  --correct-soft: #ebfbee;
-  --wrong: #db2121;
-  --wrong-soft: #fff5f5;
-  --warning: #bf490a;
-  --radius: 14px;
-  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-}
+   두 파일이 함께 하나의 디자인 시스템을 이룬다 (docs/design-system.md).
+
+     css/style.css        구조·배치·동작 계약. 무엇이 어디에 놓이고 어떻게 눌리는가
+     css/voxel-theme.css  토큰과 시각 언어. 색·글꼴·표면·테두리·상태·움직임·세계 장식
+
+   일반 UI 컴포넌트의 색·글꼴·그림자·둥근 모서리는 디자인 층에 둔다. 이 파일은 구조와
+   직접 맞물린 세계·캐릭터·대기실 상태에 한해 역할 토큰을 참조할 수 있지만, raw 시각 값은
+   «세계 장식»(대기실 픽셀 가구·액자, 캐릭터 몸통) 밖에 두지 않는다.
+
+   간격은 --space-* 토큰만 쓴다 (4px 미세 / 8px 기본 격자). 토큰은 voxel-theme.css 의
+   :root 에 있고 CSS 변수는 쓰는 자리에서 풀리므로 두 파일의 로드 순서와 무관하다.
+   두 파일은 언제나 함께 로드된다 (index.html). 모바일 우선, 320px 폭까지 맞췄다. */
 
 * {
   box-sizing: border-box;
@@ -33,11 +24,7 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard',
-    'Malgun Gothic', system-ui, sans-serif;
-  line-height: 1.6;
+  min-height: 100vh;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -83,24 +70,20 @@ button,
   border: 0;
 }
 
-/* 키보드로 이동할 때만 테두리를 보여준다. 마우스 클릭에는 뜨지 않는다 */
-:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
 /* ── 부팅 상태 ──
    스크립트가 실행되지 못하면 .is-booted가 붙지 않아 앱이 계속 숨겨진다.
    3초 뒤 인라인 스크립트가 .is-boot-failed를 붙여 이유를 알린다. */
 .app {
   display: none;
-  max-width: 560px;
+  max-width: var(--content-max);
   margin: 0 auto;
+  /* 노치가 있는 기기를 눕혔을 때 글자가 둥근 모서리에 잘리지 않게 안전 영역만큼 띄운다 */
+  padding-inline: max(var(--page-pad), env(safe-area-inset-left)) max(var(--page-pad), env(safe-area-inset-right));
+  padding-top: 0;
   /* 아래 여백은 피드백 시트 높이만큼 늘어난다. 시트가 fixed 라 문서 흐름에서
      빠져 있어, 이게 없으면 마지막 보기가 시트에 가려 보이지 않는다.
      실제 높이는 해설 길이에 따라 달라지므로 quiz.js 가 재서 넣는다. */
-  padding: 0 16px calc(48px + var(--feedback-h, 0px));
+  padding-bottom: calc(var(--space-12) + var(--feedback-h, 0px));
 }
 
 body.is-booted .app {
@@ -108,9 +91,9 @@ body.is-booted .app {
 }
 
 .boot {
-  max-width: 560px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 48px 16px;
+  padding: var(--space-12) var(--page-pad);
 }
 
 body.is-booted .boot {
@@ -119,17 +102,12 @@ body.is-booted .boot {
 
 .boot__loading {
   margin: 0;
-  color: var(--text-muted);
   text-align: center;
 }
 
 .boot__error {
   display: none;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  padding: var(--space-5);
 }
 
 body.is-boot-failed .boot__loading {
@@ -141,40 +119,32 @@ body.is-boot-failed .boot__error {
 }
 
 .boot__title {
-  margin: 0 0 10px;
-  font-size: 19px;
+  margin: 0 0 var(--space-3);
 }
 
 .boot__body {
-  margin: 0 0 12px;
-  font-size: 14px;
-  color: var(--text-muted);
+  margin: 0 0 var(--space-3);
   word-break: keep-all;
 }
 
 .boot__code {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #1c1f24;
-  color: #e8eaed;
-  font-size: 13px;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
   overflow-x: auto;
 }
 
 .boot code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--bg);
-  font-size: 0.92em;
+  padding: 0 var(--space-1);
 }
 
-/* ── 상단 바 (소리 토글) ── */
+/* ── 상단 바 (소리 토글) ──
+   모든 화면 위의 얇은 시스템 줄이다. 홈에서는 따로 한 줄을 차지하지 않고
+   플레이어 줄의 오른쪽 빈자리에 떠서 «내 정보 · 소리»가 한 줄로 읽힌다. */
 .app-bar {
   display: none;
-  max-width: 560px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 8px 16px 0;
+  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) 0 max(var(--page-pad), env(safe-area-inset-left));
   justify-content: flex-end;
 }
 
@@ -182,29 +152,39 @@ body.is-booted .app-bar {
   display: flex;
 }
 
+/* 홈의 앱 바는 문서 흐름에서 빠져 플레이어 줄 오른쪽에 겹쳐 뜬다.
+   z-index 없이 위에 오려면 그 자리 아래에 위치 지정 요소가 없어야 한다 —
+   그래서 닉네임 줄은 이 버튼 폭만큼 오른쪽을 비우고(.menu-card--wide)
+   .home-stage 에는 position 을 주지 않는다. */
+body:has([data-screen='home']:not([hidden])) .app-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-top: max(var(--space-4), env(safe-area-inset-top));
+  pointer-events: none;
+}
+
+body:has([data-screen='home']:not([hidden])) .app-bar > * {
+  pointer-events: auto;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 44px;
   min-height: 44px;
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  font: inherit;
-  font-size: 12px;
-  color: var(--text-muted);
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 
-.icon-button:hover {
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.icon-button__icon {
-  font-size: 15px;
-  line-height: 1;
+/* 소리 토글은 글을 스크린리더에만 남긴 아이콘 버튼이라 정확히 44px 원이다.
+   홈에서 닉네임 줄이 비워 두는 자리(44px + 8px)와 맞물린다 */
+.app-bar .icon-button {
+  width: 44px;
+  padding: 0;
 }
 
 .screen[hidden] {
@@ -215,75 +195,178 @@ body.is-booted .app-bar {
   outline: none; /* 화면 전환용 포커스라 테두리를 그리지 않는다 */
 }
 
+/* 홈은 앱 바가 겹쳐 뜨므로 제 위쪽 여백을 직접 둔다.
+   standalone/fullscreen의 노치보다도 안쪽에서 시작한다. */
+.screen[data-screen='home'] {
+  padding-top: max(var(--space-3), env(safe-area-inset-top));
+}
+
+/* 읽기 시작점을 위해 프로그램으로 받은 포커스다. 카드 전체를 두르는 고리는 그리지 않고,
+   Tab을 누른 뒤 실제 조작부에만 :focus-visible 고리를 보인다. */
+.dialog[tabindex='-1']:focus {
+  outline: none;
+}
+
 /* ── 버튼 공통 ── */
 .button {
-  font: inherit;
-  font-weight: 600;
-  border-radius: 10px;
-  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   /* 손가락으로 누를 수 있는 크기 (3-B 반응형) */
   min-height: 44px;
-  padding: 10px 16px;
+  padding: var(--space-2) var(--space-4);
+  text-align: center;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
 }
 
-.button--primary {
-  background: var(--accent);
-  color: #fff;
+/* 목록과 폼에서 함께 쓰는 작은 버튼. 글자만 작아지고 누르는 크기는 그대로다 */
+.button--small {
+  min-height: 44px;
+  padding: var(--space-1) var(--space-3);
 }
 
-.button--primary:hover {
-  background: #364fc7;
+/* ── 홈 ──
+   한 장면으로 읽히도록 네 덩어리를 위에서 아래로 쌓는다.
+     플레이어 줄(닉네임 + 소리)  →  세 칸 바로가기(dock)
+     →  마을 패널(브랜드 + 장식)  →  분야 고르기 패널(다섯 분야 + 전체 도전)
+   캐릭터는 화면에 붙어(fixed) 이 위를 걸어 다니므로 무대가 좌표 기준일 필요가 없다. */
+.home-stage {
+  display: grid;
+  gap: var(--space-4);
 }
 
-.button--ghost {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text-muted);
+.home-player {
+  display: grid;
+  gap: var(--space-3);
 }
 
-.button--ghost:hover {
-  border-color: #c8ccd4;
-  color: var(--text);
+/* 랭킹과 온라인 방에서 쓰는 이름. 홈 맨 위 카드다.
+   오른쪽은 앱 바의 소리 버튼(44px)이 뜨는 자리라 비워 둔다 */
+.menu-card--wide {
+  width: calc(100% - 44px - var(--space-2));
+  min-height: 52px;
 }
 
-.button--danger {
-  background: var(--wrong);
-  color: #fff;
+/* 자주 쓰는 보조 동작은 한 묶음(dock)에 모아 분야 고르기를 아래로 밀지 않는다 */
+.home-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-1);
 }
 
-.button--danger:hover {
-  background: #c92a2a;
+.menu-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 52px;
+  /* 오른쪽은 캐릭터가 설 자리로 비워 둔다. 글자를 덜 가린다 (home.ts 의 시작 자리) */
+  padding: var(--space-2) var(--space-10) var(--space-2) var(--space-3);
+  text-align: left;
+  cursor: pointer;
 }
 
-/* ── 홈 ── */
+.menu-card--wide {
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+}
+
+/* 아이콘 자리. 그림은 디자인 층이 data-icon 으로 그린다 */
+.menu-card__figure {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.menu-card--wide .menu-card__figure {
+  width: var(--tap);
+  height: var(--tap);
+}
+
+.menu-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-card__desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-card__edit {
+  flex: none;
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+/* 좁은 화면의 dock 은 아이콘과 짧은 이름만 세로로 쌓는다.
+   세 보조 동작을 한 줄에 유지해 분야 고르기가 첫 화면 안으로 올라오게 한다. */
+@media (max-width: 576px) {
+  .home-menu .menu-card {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 64px;
+  }
+
+  .home-menu .menu-card__desc {
+    display: none;
+  }
+}
+
+/* 마을 패널: 브랜드와 장식 마을이 한 장면이다. 장식이 글을 밀어내지 않게 높이를 묶는다 */
 .home-header {
-  margin-bottom: 28px;
-  text-align: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 160px;
+  padding: var(--space-4) var(--space-2) var(--space-4) var(--space-5);
+  overflow: hidden;
+}
+
+.home-heading {
+  min-width: 0;
 }
 
 .home-title {
-  margin: 0 0 6px;
-  font-size: 28px;
-  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-2);
 }
 
 .home-subtitle {
   margin: 0;
-  color: var(--text-muted);
-  font-size: 14px;
+  word-break: keep-all;
+}
+
+/* 분야 고르기: 다섯 분야와 전체 도전을 한 패널에 담는다 */
+.home-quests {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
 }
 
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
 }
 
 /* 카테고리가 홀수 개면 마지막 카드가 한 칸만 채워 오른쪽이 빈다.
@@ -294,92 +377,60 @@ body.is-booted .app-bar {
 }
 
 .category-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 12px 16px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font: inherit;
+  display: grid;
+  grid-template-columns: var(--icon-tile) minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
+  align-items: start;
+  column-gap: var(--space-3);
+  min-width: 0;
+  min-height: 72px;
+  padding: var(--space-3);
   text-align: left;
-  color: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.1s;
-}
-
-.category-card:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.category-card:active:not(:disabled) {
-  transform: scale(0.99);
-}
-
-.category-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .category-card__icon {
-  font-size: 20px;
-  line-height: 1.2;
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: var(--icon-tile);
+  height: var(--icon-tile);
 }
 
 .category-card__name {
-  font-size: 16px;
-  font-weight: 700;
+  min-width: 0;
 }
 
 .category-card__desc {
-  font-size: 12px;
-  color: var(--text-muted);
+  min-width: 0;
+  word-break: keep-all;
 }
 
 /* 최고 점수 (FR-2.3). 기록이 없으면 아예 그리지 않는다 */
 .category-card__best {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
+  justify-self: start;
+  align-self: end;
+  margin-top: var(--space-1);
 }
 
-/* ── 전체 도전 (FR-2.2) ── */
+/* ── 전체 도전 (FR-2.2) — 홈의 주 행동 ── */
 .challenge-card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
-  margin-top: 12px;
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font: inherit;
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
   text-align: left;
-  color: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.1s;
-}
-
-.challenge-card:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.challenge-card:active:not(:disabled) {
-  transform: scale(0.99);
-}
-
-.challenge-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .challenge-card__icon {
-  font-size: 24px;
-  line-height: 1;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--icon-tile);
+  height: var(--icon-tile);
 }
 
 .challenge-card__body {
@@ -389,171 +440,206 @@ body.is-booted .app-bar {
   min-width: 0;
 }
 
-.challenge-card__name {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.challenge-card__desc {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
 .challenge-card__meta {
   flex: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  text-align: right;
-}
-
-.home-actions {
-  display: flex;
-  justify-content: center;
-  margin-top: 16px;
 }
 
 .home-note {
-  margin-top: 20px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--wrong-soft);
-  color: var(--wrong);
-  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
 }
 
-/* ── 퀴즈 헤더 ── */
+/* ── 화면 머리 (제목 + 돌아가기) ── */
 .quiz-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.screen-title {
+  margin: 0;
+  min-width: 0;
+}
+
+.screen-lead {
+  margin: 0 0 var(--space-4);
+}
+
+/* ── 퀴즈 HUD ──
+   분야·문항 위치·진행률·남은 시간·조작법·나가기를 한 블록에 모은다.
+     1줄  [분야] 3 / 10  진행률                     [?] [나가기]
+     2줄  ⏱ 남은 시간 18초  타이머
+   진행률은 위치 곁의 얇은 막대, 타이머는 글자와 한 줄로 붙은 굵은 막대라 섞이지 않는다.
+   좁은 화면에서는 진행률만 위치 아래로 내린다. */
+.quiz-hud {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 .quiz-meta {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
-.quiz-category {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
+.quiz-hud .quiz-header {
+  gap: var(--space-2);
+  margin: 0;
 }
 
-.quiz-position {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+.quiz-hud .quiz-meta {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.quiz-hud .quiz-category {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quiz-hud .quiz-category:empty {
+  display: none;
+}
+
+.quiz-hud .quiz-position {
+  white-space: nowrap;
 }
 
 .progress {
   height: 6px;
-  background: var(--border);
-  border-radius: 999px;
   overflow: hidden;
-  margin-bottom: 20px;
 }
 
 .progress__fill {
   height: 100%;
   width: 0;
-  background: var(--accent);
-  border-radius: 999px;
-  transition: width 0.25s ease;
 }
 
-/* ── 타이머 ── */
-.timer {
-  margin-bottom: 20px;
+.quiz-hud .progress {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .timer__track {
-  height: 8px;
-  background: var(--border);
-  border-radius: 999px;
+  height: 10px;
   overflow: hidden;
 }
 
 .timer__fill {
   height: 100%;
   width: 100%;
-  background: var(--accent);
-  border-radius: 999px;
   transform-origin: left center;
 }
 
 .timer__label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 6px 0 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
+  gap: var(--space-2);
+  margin: 0;
   font-variant-numeric: tabular-nums;
 }
 
-/* 경고 상태: 색상만이 아니라 아이콘과 문구도 함께 바뀐다 (FR-3.9) */
-.timer--warning .timer__fill {
-  background: var(--warning);
+.timer__icon {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
-.timer--warning .timer__label {
-  color: var(--warning);
+.quiz-hud .timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
 }
 
-.timer--warning .timer__icon {
-  animation: pulse 0.8s ease-in-out infinite;
+/* 글자가 막대 앞에 온다. «서두르세요 · 5초 남음»으로 바뀌어도 막대 길이가 튀지 않게
+   긴 쪽 폭을 미리 잡아 둔다. 온라인처럼 더 긴 안내는 막대를 다음 줄로 내린다 */
+.quiz-hud .timer__label {
+  order: -1;
+  min-width: 12.5em;
 }
 
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
+.quiz-hud .timer__track {
+  flex: 1 1 80px;
+}
+
+/* 넓으면 진행률이 문항 위치 곁 같은 줄로 올라온다.
+   마지막 열에 못 박는다 — 온라인은 서버 상태를 받기 전에 화면이 먼저 열려 분야 칩이
+   비어 숨는데, 자동 배치에 맡기면 막대가 폭 없는 칸으로 밀려 사라졌다가 튀어나온다 */
+@media (min-width: 480px) {
+  .quiz-hud .quiz-meta {
+    grid-template-columns: minmax(0, auto) auto minmax(64px, 1fr);
   }
+
+  .quiz-hud .progress {
+    grid-column: -2 / -1;
+  }
+}
+
+/* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
+   무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다. */
+.arena__help {
+  display: none;
+  flex: none;
+  /* 「나가기」 옆에 붙는다. 헤더가 space-between이라 이게 없으면 가운데로 뜬다 */
+  margin-left: auto;
+  /* 아이콘이 작아 보여도 실제 터치 목표는 나가기 버튼과 같은 44px다 */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.quiz--character .arena__help {
+  display: grid;
 }
 
 /* ── 문제와 보기 ── */
 .question {
-  margin: 0 0 18px;
-  font-size: 20px;
-  line-height: 1.45;
-  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-4);
   word-break: keep-all;
+}
+
+/* 화면 전환·문제 이동용 포커스라 테두리를 그리지 않는다 */
+.question:focus {
+  outline: none;
 }
 
 .choices {
   list-style: none;
-  margin: 0 0 20px;
+  margin: 0 0 var(--space-4);
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .choice {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
   min-height: 52px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  font: inherit;
+  padding: var(--space-3);
   text-align: left;
-  color: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
-}
-
-.choice:hover:not(:disabled) {
-  border-color: var(--accent);
 }
 
 .choice:disabled {
@@ -562,105 +648,104 @@ body.is-booted .app-bar {
 
 .choice__key {
   flex: none;
-  width: 24px;
-  height: 24px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
+  width: 28px;
+  height: 28px;
 }
 
 .choice__text {
   flex: 1;
+  min-width: 0;
   word-break: keep-all;
 }
 
-/* 정답·오답 표시는 색상에 더해 아이콘으로도 구분한다 (FR-4.1, FR-4.2) */
+/* 정답·오답·제출됨 표시. 비어 있으면 자리를 차지하지 않는다 */
 .choice__mark {
   flex: none;
-  font-size: 14px;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
 }
 
-.choice--correct {
-  border-color: var(--correct);
-  background: var(--correct-soft);
+.choice__mark:empty {
+  display: none;
 }
 
-.choice--correct .choice__key {
-  background: var(--correct);
-  color: #fff;
+/* 캐릭터 퀴즈에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
+   무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
+.quiz--character .choices {
+  margin-bottom: var(--space-3);
 }
 
-.choice--correct .choice__mark {
-  color: var(--correct);
+.quiz--character .choice {
+  /* 무대와 함께 보여도 직접 누르는 보기는 공통 터치 목표(44px)를 줄이지 않는다 */
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
 }
 
-.choice--wrong {
-  border-color: var(--wrong);
-  background: var(--wrong-soft);
+/* 넓은 화면에서는 보기를 바닥 칸과 같은 2×2로 놓는다. 1·2가 위, 3·4가 아래라
+   «2번 칸 = 오른쪽 위 보기»로 자리가 그대로 이어지고, 무대가 피드백 시트 위로 올라와
+   채점 표시(✓ ✗)를 가리지 않는다. 좁은 화면은 긴 보기를 먼저 다 읽도록 한 줄에 하나다. */
+@media (min-width: 600px) {
+  .quiz--character .choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 한 줄의 두 보기 높이를 맞춘다. 긴 보기가 두 줄이 되어도 짝이 함께 커진다 */
+  .quiz--character .choices > li {
+    display: flex;
+  }
+
+  .quiz--character .choice {
+    flex: 1;
+  }
 }
 
-.choice--wrong .choice__key {
-  background: var(--wrong);
-  color: #fff;
-}
-
-.choice--wrong .choice__mark {
-  color: var(--wrong);
-}
-
-.choice--muted {
-  opacity: 0.55;
-}
-
-/* Online running state deliberately has a third visual status: submitted, not judged. */
-.choice--submitted {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.choice--submitted .choice__mark {
-  color: var(--accent);
-}
-
+/* ── 온라인 매치 상태·결과 공개·최종 순위 ── */
 .online-match-status {
-  margin: -8px 0 16px;
-  color: var(--text-muted);
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.online-match-status:empty {
+  display: none;
 }
 
 .online-reveal {
-  margin: 0 0 20px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
 }
 
 .online-reveal__verdict {
-  margin: 0 0 8px;
-  font-size: 17px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
 }
 
 .online-reveal__explanation {
   margin: 0;
-  color: var(--text-muted);
-  line-height: 1.65;
+  word-break: keep-all;
 }
 
 .online-final__summary {
-  margin: 0 0 16px;
-  color: var(--text-muted);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  word-break: keep-all;
+}
+
+.online-final__summary:empty {
+  display: none;
 }
 
 .online-final-ranking {
   display: grid;
-  gap: 8px;
-  margin: 0 0 24px;
+  margin: 0 0 var(--space-6);
   padding: 0;
   list-style: none;
 }
@@ -669,79 +754,54 @@ body.is-booted .app-bar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
 
-.online-final-ranking__item--mine {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-}
-
-.online-final-ranking__place,
-.online-final-ranking__score {
-  color: var(--text-muted);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+.online-final-ranking__place {
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  height: 32px;
+  padding: 0 var(--space-2);
 }
 
 .online-final-ranking__name {
   min-width: 0;
-  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ── 피드백 ── */
-/* 화면 맨 아래에 붙는 시트.
+/* ── 피드백 ──
+   화면 맨 아래에 붙는 시트.
    답을 고른 뒤 스크롤을 내려 찾지 않아도 되고, 엄지가 닿는 자리에 버튼이 온다.
 
-   z-index 를 주지 않는다 — 이 프로젝트에는 하나도 없고 DOM 순서가 곧 겹치는
-   순서다. 그래서 이 요소는 <main> 밖, 대화상자들 앞에 있다.
-   .app 은 --feedback-h 만큼 아래 여백을 더 두어 시트가 마지막 보기를 가리지 않는다. */
+   z-index 를 주지 않는다 — DOM 순서가 곧 겹치는 순서다. 그래서 이 요소는 <main> 밖,
+   대화상자들 앞에 있다. .app 은 --feedback-h 만큼 아래 여백을 더 두어 시트가 마지막
+   보기를 가리지 않는다. 데스크톱에서는 콘텐츠 열과 같은 폭으로 붙는다. */
 .feedback {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  max-width: 560px;
+  max-width: calc(var(--content-max) - 2 * var(--page-pad));
   margin: 0 auto;
-  padding: 16px;
-  /* 노치가 있는 기기에서 홈 인디케이터에 눌리지 않게 */
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
-  /* 그림자를 위로 드리워 «떠 있는 것»으로 읽히게 한다 */
-  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.14);
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   /* 해설이 길어도 화면을 다 먹지 않는다 */
   max-height: 60vh;
   overflow-y: auto;
 }
 
 .feedback__verdict {
-  margin: 0 0 6px;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.feedback--correct .feedback__verdict {
-  color: var(--correct);
-}
-
-.feedback--wrong .feedback__verdict {
-  color: var(--wrong);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
 }
 
 .feedback__explanation {
-  margin: 0 0 14px;
-  font-size: 14px;
-  color: var(--text-muted);
+  margin: 0 0 var(--space-4);
   word-break: keep-all;
 }
 
@@ -754,36 +814,28 @@ body.is-booted .app-bar {
 /* ── 키 표시 ──
    손이 방향키에 있으므로, 마우스로 옮겨 가지 않아도
    Enter 로 이어갈 수 있다는 것을 버튼에서 바로 알린다.
-   키보드가 없는 기기에는 쓸모가 없어 pointer: fine 에서만 그린다. */
+   키보드가 없는 기기에는 쓸모가 없어 pointer: fine 에서만 그린다.
+   시트는 <main> 밖이라 «.quiz--character .key-hint» 로는 닿지 않는다. */
 .key-hint {
   display: none;
   position: absolute;
   top: 50%;
-  right: 12px;
+  right: var(--space-3);
   translate: 0 -50%;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  opacity: 0.75;
+  gap: var(--space-1);
 }
 
 .key-hint__key {
   display: inline-grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 3px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.24);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
 }
 
 @media (pointer: fine) {
-  .quiz--character .key-hint {
+  .feedback .key-hint {
     display: inline-flex;
   }
 }
@@ -791,19 +843,24 @@ body.is-booted .app-bar {
 /* 좁으면 버튼 글자와 부딪힌다. 키 표시는 부가 정보라 접는다 —
    조작법은 ? 대화상자에 그대로 있다. 뒤에 와야 위 규칙을 이긴다. */
 @media (max-width: 400px) {
-  .quiz--character .key-hint {
+  .feedback .key-hint {
     display: none;
   }
 }
 
-/* ── 나가기 확인 다이얼로그 ── */
+/* ── 대화상자 ──
+   내용이 화면보다 길면(200% 확대·가로 휴대폰) 배경 안에서 스크롤한다.
+   margin: auto 는 남는 자리가 있을 때만 가운데로 모으고, 넘치면 위에서 시작해
+   제목이 화면 위로 잘려 나가지 않는다. */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-start; /* overflow-position 미지원 브라우저의 안전한 fallback */
+  align-items: safe center;
+  justify-content: center;
+  padding: max(var(--space-4), env(safe-area-inset-top)) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom));
+  overflow-y: auto;
 }
 
 .dialog-backdrop[hidden] {
@@ -812,142 +869,173 @@ body.is-booted .app-bar {
 
 .dialog {
   width: 100%;
-  max-width: 340px;
-  padding: 20px;
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+  max-width: 360px;
+  margin: 0;
+  padding: var(--space-6) var(--space-5) var(--space-5);
 }
 
 .dialog__title {
-  margin: 0 0 6px;
-  font-size: 17px;
+  margin: 0 0 var(--space-2);
 }
 
 .dialog__body {
-  margin: 0 0 18px;
-  font-size: 14px;
-  color: var(--text-muted);
+  margin: 0 0 var(--space-5);
+  word-break: keep-all;
 }
 
 .dialog__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .dialog__actions .button {
   flex: 1;
 }
 
+/* ── 조작법 목록 ── */
+.help-list {
+  margin: 0 0 var(--space-5);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+}
+
+.help-list dt {
+  white-space: nowrap;
+}
+
+.help-list dd {
+  margin: 0;
+  word-break: keep-all;
+}
+
+.help-list kbd,
+.chat__hint kbd {
+  display: inline-block;
+  min-width: var(--icon-lg);
+  padding: 0 var(--space-1);
+  text-align: center;
+}
+
+/* 닉네임 다이얼로그. 입력칸과 버튼 줄 사이를 띄운다 */
+#nickname-form .room-form__input {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
 /* ── 결과 ── */
 .result-header {
-  margin-bottom: 20px;
-  padding: 24px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  position: relative;
+  margin-bottom: var(--space-3);
+  padding: var(--space-6) var(--space-4) var(--space-5);
+  overflow: hidden;
   text-align: center;
 }
 
 .result-mode {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
+  padding: 0 var(--space-3);
+}
+
+.result-mode:empty {
+  display: none;
 }
 
 .result-score {
-  margin: 4px 0 8px;
-  font-size: 16px;
-  color: var(--text-muted);
+  margin: var(--space-3) 0 var(--space-1);
   font-variant-numeric: tabular-nums;
 }
 
-.result-score strong {
-  font-size: 44px;
-  line-height: 1.1;
-  color: var(--text);
-  letter-spacing: -0.03em;
-}
-
 .result-score__max {
-  margin-left: 2px;
+  margin-left: var(--space-1);
 }
 
 .result-grade {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
 }
 
 .result-grade-message {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
+  margin: var(--space-1) 0 0;
   word-break: keep-all;
 }
 
 /* 최고 기록 비교 (FR-5.7) */
 .result-best {
-  margin: 14px 0 0;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--bg);
-  font-size: 13px;
-  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
   word-break: keep-all;
 }
 
-.result-best--new {
-  background: var(--correct-soft);
-  color: var(--correct);
-  font-weight: 600;
-}
-
+/* 세 가지 요약은 세 개의 칩이다. 한 카드 안에 세 칸을 넣지 않는다 */
 .result-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 0 0 20px;
-  padding: 14px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
 }
 
 .result-stats__item {
-  text-align: center;
+  display: grid;
+  grid-template-columns: var(--icon-md) minmax(0, 1fr);
+  grid-template-areas:
+    'icon label'
+    'value value';
+  align-items: center;
+  column-gap: var(--space-1);
+  row-gap: var(--space-1);
   min-width: 0;
+  padding: var(--space-3);
 }
 
 .result-stats dt {
-  font-size: 12px;
-  color: var(--text-muted);
+  grid-area: label;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-stats dd {
-  margin: 2px 0 0;
-  font-size: 15px;
-  font-weight: 700;
+  grid-area: value;
+  margin: 0;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 다시 하기는 한 줄을 다 쓰고, 나머지 행동은 그 아래 한 줄에 나란히 선다 */
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+[data-screen='result'] .result-actions {
+  margin-bottom: var(--space-5);
+}
+
+.result-actions .button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.result-actions .button--primary {
+  flex-basis: 100%;
 }
 
 .result-block {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
 }
 
 .result-block__title {
-  margin: 0 0 12px;
-  font-size: 15px;
-  font-weight: 700;
+  margin: 0 0 var(--space-3);
 }
 
 /* 카테고리별 정답 개수 (FR-5.6) */
@@ -957,19 +1045,19 @@ body.is-booted .app-bar {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .category-score__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 14px;
+  gap: var(--space-3);
+  min-height: 44px;
 }
 
 .category-score__count {
-  font-weight: 700;
+  flex: none;
+  padding: 0 var(--space-2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -980,119 +1068,64 @@ body.is-booted .app-bar {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 .review__item {
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  padding: var(--space-4) 0;
 }
 
 .review__item:first-child {
   padding-top: 0;
-  border-top: none;
+}
+
+.review__item:last-child {
+  padding-bottom: 0;
 }
 
 .review__question {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 600;
+  margin: 0 0 var(--space-2);
   word-break: keep-all;
 }
 
-/* 정답·오답을 색상만이 아니라 앞의 기호와 글자로도 구분한다 */
+/* 정답·오답을 색상만이 아니라 앞의 표식과 글자로도 구분한다 */
 .review__row {
   display: flex;
-  gap: 8px;
-  margin: 0 0 4px;
-  font-size: 14px;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
   word-break: keep-all;
 }
 
 .review__tag {
   flex: none;
-  font-weight: 700;
-}
-
-.review__row--mine .review__tag {
-  color: var(--wrong);
-}
-
-.review__row--answer .review__tag {
-  color: var(--correct);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .review__explanation {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
+  margin: var(--space-2) 0 0;
   word-break: keep-all;
 }
 
 /* 랭킹 등록 (FR-6.1) */
 .register__row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-}
-
-.register__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
+  gap: var(--space-2);
 }
 
 .register__input {
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fff;
-  font: inherit;
-  color: inherit;
-}
-
-.register__input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  border-color: var(--accent);
-}
-
-.register__input:disabled {
-  background: var(--bg);
-  color: var(--text-muted);
+  min-height: 44px;
+  padding: 0 var(--space-3);
 }
 
 .register__message {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
+  margin: var(--space-3) 0 0;
   word-break: keep-all;
-}
-
-.register__message--error {
-  color: var(--wrong);
-}
-
-.register__message--done {
-  color: var(--correct);
-  font-weight: 600;
-}
-
-.result-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-[data-screen='result'] .result-actions {
-  margin-bottom: 20px;
-}
-
-.result-actions .button {
-  flex: 1 1 30%;
-  min-width: 96px;
 }
 
 /* ── 랭킹 ── */
@@ -1100,75 +1133,53 @@ body.is-booted .app-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .ranking-title {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.02em;
 }
 
 /* 저장 범위 안내 (FR-6.10) */
 .ranking-scope {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  /* 화면 워커가 홈 버튼 아래에서 쉬는 동안 안내문을 덮지 않는 주차 공간 */
+  padding-inline-end: calc(var(--space-3) + var(--screen-walker-width) + var(--space-5));
   word-break: keep-all;
 }
 
 .ranking-tabs {
   display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-  padding-bottom: 4px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: var(--space-1);
   overflow-x: auto;
 }
 
 .ranking-tab {
   flex: none;
   min-height: 44px;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.ranking-tab:hover {
-  border-color: var(--accent);
-}
-
-.ranking-tab--active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 @media (max-width: 576px) {
   .ranking-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    padding-bottom: 0;
     overflow-x: visible;
   }
 
   .ranking-tab {
     min-width: 0;
-    padding-inline: 8px;
+    padding-inline: var(--space-2);
   }
 }
-
-/* 랭킹 목록 */
 
 .ranking-list {
   list-style: none;
@@ -1176,90 +1187,57 @@ body.is-booted .app-bar {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .ranking-item {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   grid-template-areas:
     'rank nickname score'
     'rank date date';
   align-items: center;
-  column-gap: 10px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-}
-
-/* 방금 등록한 기록 (FR-6.5) */
-.ranking-item--mine {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  column-gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
 
 .ranking-item__rank {
   grid-area: rank;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.ranking-item--mine .ranking-item__rank {
-  color: var(--accent);
 }
 
 .ranking-item__nickname {
   grid-area: nickname;
-  font-weight: 600;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .ranking-item__badge {
   display: inline-block;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 0 var(--space-2);
   vertical-align: middle;
 }
 
 .ranking-item__score {
   grid-area: score;
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-/* 몇 문제 중 몇 개인지. 점수보다 작게 붙여 순위는 점수로 읽히게 둔다 */
-.ranking-item__hits {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
 }
 
 .ranking-item__date {
   grid-area: date;
-  font-size: 12px;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 /* 빈 상태 (FR-6.12) */
 .ranking-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
   margin: 0;
-  padding: 32px 16px;
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: 14px;
+  padding: var(--space-8) var(--space-4);
   text-align: center;
   word-break: keep-all;
 }
@@ -1267,84 +1245,58 @@ body.is-booted .app-bar {
 .ranking-footer {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: var(--space-5);
 }
 
-/* ── 애니메이션 ──
-   정답·오답을 눈으로도 짚어 준다. 색상 대신이 아니라 색상에 더하는 것이다. */
-@keyframes pop {
-  40% {
-    transform: scale(1.03);
+/* ── 내 캐릭터 화면 ── */
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.character-card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* 이름이 없으니 그림만 들어간다. 여백을 넉넉히 줘 누르기 편하게 한다 */
+  min-height: 96px;
+  padding: var(--space-4) var(--space-2);
+  cursor: pointer;
+}
+
+/* 미리보기는 정지 그림이다. 뛰는 것은 걸어 다니는 캐릭터 하나뿐이라
+   목록이 어수선해지지 않는다. 이름을 붙이지 않으므로 칸에는 그림만 들어간다. */
+.character-card__figure {
+  position: relative;
+  width: 40px;
+  height: 48px;
+}
+
+/* 넓은 화면에서는 캐릭터 고르기를 4열로 펼쳐 납작하고 넓기만 한 빈 카드를 줄인다 */
+@media (min-width: 600px) {
+  .character-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-@keyframes shake {
-  25% {
-    transform: translateX(-4px);
+@media (max-width: 360px) {
+  .character-grid {
+    gap: var(--space-2);
   }
-  75% {
-    transform: translateX(4px);
-  }
-}
 
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
+  .character-card {
+    padding: var(--space-3) var(--space-1);
   }
 }
 
-.choice--correct {
-  animation: pop 0.32s ease;
-}
-
-.choice--wrong {
-  animation: shake 0.3s ease;
-}
-
-.feedback:not([hidden]) {
-  animation: sheet-up 0.22s ease-out;
-}
-
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
 /* ── 캐릭터 퀴즈 무대 ──
    바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
    조작의 실체는 위 보기 버튼이고 여기는 그 버튼을 부르는 시각적 조작부다.
-   그래서 번호 선택 접근성도 그대로 유지된다. */
-
-/* 캐릭터 퀴즈에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
-   무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
-.quiz--character .choices {
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.quiz--character .choice {
-  /* 무대와 함께 보여도 직접 누르는 보기는 공통 터치 목표(44px)를 줄이지 않는다 */
-  min-height: 44px;
-  padding: 7px 12px;
-  font-size: 14px;
-  box-shadow: none;
-}
-
-.quiz--character .choice__key {
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
-}
-
-/* 방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
-   손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다.
-   덕분에 바닥이 폭을 다 쓰고 세로도 바닥 높이만 차지한다. */
+   방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
+   손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다. */
 .arena {
-  margin: 0 0 20px;
+  margin: 0 0 var(--space-5);
 }
 
 .arena__stage {
@@ -1358,12 +1310,66 @@ body.is-booted .app-bar {
   pointer-events: none;
 }
 
+/* 칸 사이 틈이 곧 십자선이자 «아무 칸도 아닌 자리»다.
+   캐릭터는 여기 한가운데에서 시작하므로 눈에 보일 만큼 넓혀 둔다.
+   선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */
+.arena__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.arena-tile {
+  position: relative;
+  min-width: 0;
+  height: 72px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 번호와 채점 표시는 칸 «위쪽» 양 끝에 붙이고 캐릭터는 아래쪽에 세운다.
+   위아래로 나눠 두면 칸이 좁아져도 가로로 겹칠 일이 없다. */
+.arena-tile__number {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-2);
+  line-height: 1;
+}
+
+.arena-tile__mark {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+.arena-tile[data-selectable='false'] {
+  cursor: default;
+}
+
+/* ── 무대 아래 한 줄 안내 ── */
+.arena__hint,
+.home-hint {
+  margin: var(--space-2) 0 0;
+  text-align: center;
+}
+
+.home-hint {
+  margin-top: var(--space-3);
+}
+
+.arena__hint-touch,
+.home-hint-touch {
+  display: none;
+}
+
 /* 문제·보기와 같은 문서 흐름에 둬 채팅이 답 버튼을 덮지 않는다. */
 .online-quiz-chat {
   position: relative;
-  margin: 12px 0 16px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin: var(--space-3) 0 var(--space-4);
+  padding-top: var(--space-3);
 }
 
 .online-quiz-chat__form {
@@ -1371,113 +1377,16 @@ body.is-booted .app-bar {
 }
 
 .online-quiz-chat__log {
-  max-height: 76px;
+  max-height: 80px;
   overflow-y: auto;
 }
 
-/* 고정된 손가락 조작부 아래까지 스크롤해 채팅칸을 완전히 드러낼 수 있게 한다. */
+/* 고정된 손가락 조작부 아래까지 스크롤해 채팅칸을 완전히 드러낼 수 있게 한다.
+   176px = 스틱 크기(160) + 화면 아래 여백(16). */
 @media (pointer: coarse) {
   [data-screen='online-quiz'] .online-quiz-chat {
     margin-bottom: calc(176px + env(safe-area-inset-bottom, 0px));
   }
-}
-
-/* ── 바닥 ──
-   칸 사이의 틈으로 컨테이너 배경이 비쳐 십자선이 된다.
-   선을 따로 그리지 않으므로 칸 수가 바뀌어도 그대로 맞는다. */
-/* 칸 사이 틈이 곧 십자선이자 «아무 칸도 아닌 자리»다.
-   캐릭터는 여기 한가운데에서 시작하므로 눈에 보일 만큼 넓혀 둔다. */
-.arena__grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 7px;
-  /* --border 는 페이지 배경과 가까워 십자선이 묻힌다. 한 단계 진한 값을 쓴다 */
-  background: #ccd2dd;
-  border-radius: 16px;
-}
-
-.arena-tile {
-  position: relative;
-  min-width: 0;
-  height: 72px;
-  border-radius: 10px;
-  background: var(--surface);
-  cursor: pointer;
-  user-select: none;
-  transition: background-color 0.18s, box-shadow 0.18s, color 0.18s;
-}
-
-/* 번호와 채점 표시는 칸 «위쪽» 양 끝에 붙이고 캐릭터는 아래쪽에 세운다.
-   위아래로 나눠 두면 칸이 좁아져도 가로로 겹칠 일이 없다.
-   조작부를 옆에 두면서 칸 폭이 줄어 이 배치가 필요해졌다. */
-.arena-tile__number {
-  position: absolute;
-  top: 5px;
-  left: 9px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-muted);
-  line-height: 1;
-  transition: color 0.18s;
-}
-
-.arena-tile__mark {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-/* 캐릭터가 서 있는 칸. 불이 들어온 것처럼 보이게 한다.
-   클래스 이름은 워커가 붙이는 is-standing 하나로 통일했다 —
-   홈이든 무대든 «발밑»을 나타내는 것은 같은 개념이다. */
-.arena-tile.is-standing {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(59, 91, 219, 0.45);
-}
-
-.arena-tile.is-standing .arena-tile__number {
-  color: var(--accent);
-}
-
-/* 채점 뒤. 색만이 아니라 표시로도 구분한다 (FR-4.1, FR-4.2) */
-.arena-tile--correct {
-  background: var(--correct-soft);
-  box-shadow: inset 0 0 0 2px var(--correct);
-}
-
-.arena-tile--correct .arena-tile__number,
-.arena-tile--correct .arena-tile__mark {
-  color: var(--correct);
-}
-
-.arena-tile--correct .arena-tile__mark::after {
-  content: '✓';
-}
-
-.arena-tile--wrong {
-  background: var(--wrong-soft);
-  box-shadow: inset 0 0 0 2px var(--wrong);
-}
-
-.arena-tile--wrong .arena-tile__number,
-.arena-tile--wrong .arena-tile__mark {
-  color: var(--wrong);
-}
-
-.arena-tile--wrong .arena-tile__mark::after {
-  content: '✗';
-}
-
-.arena-tile--muted {
-  opacity: 0.55;
-}
-
-.arena-tile[data-selectable='false'] {
-  cursor: default;
 }
 
 /* ── 걸어 다니는 캐릭터 ──
@@ -1488,24 +1397,26 @@ body.is-booted .app-bar {
      .walker__shadow  땅에 남는 그림자
 
    몸통을 ::before 로 그리면 눈이 따로 놀고 그림자가 몸을 따라 떠올라
-   튀는 것으로 보이지 않는다. 그래서 실제 요소로 나눴다. */
-/* 캐릭터는 페이지가 아니라 «화면»에 붙는다. 스크롤해도 제자리에 있고
+   튀는 것으로 보이지 않는다. 그래서 실제 요소로 나눴다.
+
+   캐릭터는 페이지가 아니라 «화면»에 붙는다. 스크롤해도 제자리에 있고
    그 아래로 내용이 흘러간다.
-   z-index 를 주지 말 것 — 뒤에 오는 다이얼로그가 DOM 순서로 위에 와야 한다. */
+   z-index 를 주지 말 것 — 뒤에 오는 다이얼로그가 DOM 순서로 위에 와야 한다.
+   pointer-events: none 을 떼지 말 것 — elementFromPoint 가 캐릭터 자신을 집는다. */
 .walker {
   position: fixed;
   top: 0;
   left: 0;
-  width: 34px;
-  height: 42px;
+  width: var(--walker-width);
+  height: var(--walker-height);
   pointer-events: none;
   will-change: transform;
 }
 
 /* 홈과 캐릭터 화면은 무대가 넓어 조금 크게 그린다 */
 .walker--home {
-  width: 40px;
-  height: 48px;
+  width: var(--screen-walker-width);
+  height: var(--screen-walker-height);
 }
 
 /* 상대는 125ms 간격으로 오는 server 좌표 사이를 짧게 이어서 순간이동처럼 보이지 않게 한다. */
@@ -1520,27 +1431,20 @@ body.is-booted .app-bar {
 
 .walker__name {
   position: absolute;
-  top: calc(100% + 9px);
+  top: calc(100% + var(--space-2));
   left: 50%;
   translate: -50% 0;
   max-width: 112px;
-  padding: 2px 6px;
+  padding: 0 var(--space-2);
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
 }
 
 /* 화면 아래쪽에서는 닉네임을 몸 위로 올려 viewport 밖으로 잘리지 않게 한다. */
 .walker--name-above .walker__name {
   top: auto;
-  bottom: calc(100% + 9px);
+  bottom: calc(100% + var(--space-2));
 }
 
 .walker--name-left .walker__name {
@@ -1557,17 +1461,12 @@ body.is-booted .app-bar {
 .walker__body {
   position: absolute;
   inset: 0;
-  border-radius: 46% 46% 38% 38%;
-  box-shadow: inset 0 -6px 0 rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.3);
   /* 발밑 기준으로 눌린다. 가운데 기준이면 땅으로 꺼져 보인다 */
   transform-origin: 50% 100%;
 }
 
-/* 도트 몬스터는 덩어리가 아니라 스프라이트다. 배경과 그림자를 지운다 */
+/* 도트 몬스터는 덩어리가 아니라 스프라이트다 */
 .walker__body--pixel {
-  background: none;
-  border-radius: 0;
-  box-shadow: none;
   display: grid;
   place-items: center;
 }
@@ -1586,13 +1485,10 @@ body.is-booted .app-bar {
 .walker__shadow {
   position: absolute;
   left: 50%;
-  bottom: -7px;
+  bottom: -6px;
   width: 26px;
-  height: 7px;
+  height: 6px;
   translate: -50% 0;
-  border-radius: 50%;
-  background: rgba(15, 23, 42, 0.22);
-  filter: blur(1px);
 }
 
 .walker--home .walker__shadow {
@@ -1606,8 +1502,6 @@ body.is-booted .app-bar {
   top: 14px;
   width: 6px;
   height: 8px;
-  border-radius: 50%;
-  background: #fff;
 }
 
 .walker__face {
@@ -1628,7 +1522,8 @@ body.is-booted .app-bar {
 /* ── 움직임 ──
    공이 튀듯 — 땅에 닿는 순간 납작하게 눌리고, 솟아오르며 길쭉해진다.
    솟는 구간은 점점 느려지고(ease-out) 떨어지는 구간은 점점 빨라진다(ease-in).
-   rotate 를 넣지 말 것. 좌우로 흔들면 튀는 게 아니라 떠다니는 것으로 보인다. */
+   rotate 를 넣지 말 것. 좌우로 흔들면 튀는 게 아니라 떠다니는 것으로 보인다.
+   이건 화면 피드백이 아니라 캐릭터의 몸짓이다 — 움직임 줄이기 설정은 디자인 층이 끈다. */
 .walker--walking .walker__body {
   animation: walker-bounce 0.3s infinite;
 }
@@ -1665,18 +1560,6 @@ body.is-booted .app-bar {
 .walker--seated .walker__shadow {
   width: 23px;
   animation: none;
-  filter: none;
-  opacity: 0.5;
-}
-
-/* 틀렸을 때. 색을 뺀다 */
-.walker--sad .walker__body {
-  background: linear-gradient(160deg, #b4bcc9, #808a9b);
-}
-
-.walker--sad .walker__body--pixel {
-  background: none;
-  filter: grayscale(1);
 }
 
 @keyframes walker-bounce {
@@ -1732,6 +1615,8 @@ body.is-booted .app-bar {
   100% { scale: 1.08 1; opacity: 1; }
 }
 
+/* 이름 walker-land 를 바꾸지 말 것 — walker.ts 가 이 애니메이션의 animationend 로
+   한 번 뛰기(--hop)를 스스로 뗀다 */
 @keyframes walker-land {
   0% { translate: 0 0; scale: 1 1; animation-timing-function: cubic-bezier(0.15, 0.8, 0.4, 1); }
   28% { translate: 0 -22px; scale: 0.86 1.2; animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5); }
@@ -1747,42 +1632,46 @@ body.is-booted .app-bar {
   100% { scale: 1 1; opacity: 1; }
 }
 
-/* ── 무대 아래 한 줄 안내 ── */
-.arena__hint,
-.home-hint {
-  margin: 9px 0 0;
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-
-.home-hint {
-  margin-top: 14px;
-}
-
-.arena__hint-touch,
-.home-hint-touch {
-  display: none;
-}
-
 /* ── 이동 스틱 ──
    손가락 입력이 있는 기기에서, 걸어 다닐 수 있는 화면에서만 그린다.
    화면에 띄워 세로 자리를 차지하지 않는다.
-   z-index 를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다. */
+   z-index 를 주지 않는다 — 주면 뒤에 오는 다이얼로그보다 위로 올라온다.
+   CSS 선택자로 숨기지 말 것 — 켜고 끄는 것은 walker.ts 의 --on 클래스다. */
 .walk-stick {
   display: none;
   position: fixed;
-  left: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  background: rgba(226, 229, 234, 0.72);
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+  left: max(var(--space-4), env(safe-area-inset-left));
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  width: var(--stick-size);
+  height: var(--stick-size);
   /* 스틱을 밀 때 화면이 함께 스크롤되지 않게 막는다 */
   touch-action: none;
+  user-select: none;
+}
+
+/* 손잡이가 밀려나는 최대 거리는 (스틱 폭 − 손잡이 폭) / 2 로 walker.ts 가 잰다 */
+.walk-stick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+}
+
+/* 확정 버튼. 스틱의 반대편에 두어 두 엄지로 잡는다.
+   손가락에는 Enter가 없어, 이게 없으면 스틱으로 걸어가도 칸을 직접 눌러야 한다.
+   로컬 피드백처럼 이동을 잠근 화면에서는 walker.js가 --on을 떼어 치운다.
+   온라인은 답을 낸 뒤에도 함께 움직일 수 있도록 조작부를 유지한다. */
+.walk-confirm {
+  display: none;
+  position: fixed;
+  right: max(var(--space-4), env(safe-area-inset-right));
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  touch-action: manipulation;
   user-select: none;
 }
 
@@ -1801,568 +1690,138 @@ body.is-booted .app-bar {
   .walk-stick--on {
     display: block;
   }
-}
 
-/* 화면이 짧으면 무대와 겹칠 수 있다. 줄여서 가리는 넓이를 좁힌다 */
-@media (max-height: 700px) {
-  .walk-stick {
-    width: 130px;
-    height: 130px;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    left: 10px;
-  }
-
-  .walk-stick__knob {
-    width: 54px;
-    height: 54px;
-    margin: -27px 0 0 -27px;
-  }
-
-  .walk-confirm {
-    width: 76px;
-    height: 76px;
-    right: 10px;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    font-size: 14px;
-  }
-}
-
-/* 확정 버튼. 스틱의 반대편에 두어 두 엄지로 잡는다.
-   손가락에는 Enter가 없어, 이게 없으면 스틱으로 걸어가도 칸을 직접 눌러야 한다.
-   로컬 피드백처럼 이동을 잠근 화면에서는 walker.js가 --on을 떼어 치운다.
-   온라인은 답을 낸 뒤에도 함께 움직일 수 있도록 조작부를 유지한다. */
-.walk-confirm {
-  display: none;
-  position: fixed;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: none;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  touch-action: manipulation;
-  user-select: none;
-}
-
-.walk-confirm:active {
-  translate: 0 2px;
-  background: #2c46ad;
-}
-
-@media (pointer: coarse) {
   .walk-confirm--on {
     display: block;
   }
 }
 
-.walk-stick__knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 66px;
-  height: 66px;
-  margin: -33px 0 0 -33px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
-}
-
-/* ── 홈 무대 ──
-   캐릭터가 이 안을 걸어 다닌다. 좌표 기준이므로 position 이 필요하다. */
-.home-stage {
-  position: relative;
-}
-
-/* 카테고리보다 위에 두되 한 줄로 묶는다. 보조 동작이 퀴즈 선택을 아래로 밀지 않게 한다. */
-.home-menu {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.menu-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  /* 오른쪽은 캐릭터가 설 자리로 비워 둔다. 글자를 덜 가린다 */
-  padding: 14px 44px 14px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-
-/* 닉네임 카드는 메뉴 줄 위에 홀로 놓여 폭을 다 쓴다 */
-.menu-card--wide {
-  width: 100%;
-  margin-bottom: 12px;
-}
-
-.menu-card:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.menu-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-/* 미리보기 자리. 슬라임·도트가 여기 들어간다 */
-.menu-card__figure {
-  position: relative;
-  flex: none;
-  width: 34px;
-  height: 40px;
-  font-size: 22px;
-  line-height: 40px;
-  text-align: center;
-}
-
-.menu-card__body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.menu-card__name {
-  font-size: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu-card__desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 좁은 화면에서는 아이콘과 짧은 이름만 세로로 쌓는다.
-   세 보조 동작을 한 줄에 유지해 첫 퀴즈 카드가 첫 화면 안으로 올라오게 한다. */
-@media (max-width: 576px) {
-  .home-header {
-    margin-bottom: 22px;
-  }
-
-  .home-menu {
-    gap: 8px;
-  }
-
-  .home-menu .menu-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    min-height: 76px;
-    padding: 8px 38px 8px 9px;
-  }
-
-  .home-menu .menu-card__name {
-    font-size: 13px;
-  }
-
-  .home-menu .menu-card__desc {
+/* 844px 이하 touch 화면에서는 이미 보이는 스틱·선택 버튼을 다시 설명하지 않는다.
+   빈 방의 제목과 CTA만 남기면 첫 행동도 조작부 위에서 바로 읽힌다. */
+@media (pointer: coarse) and (max-height: 850px) {
+  .home-hint,
+  .room-empty__copy {
     display: none;
   }
 }
 
-/* 캐릭터가 보기 버튼 위에 섰을 때. 바닥 칸과 같은 뜻이라 같은 결로 칠한다 */
-.choice.is-standing:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* 카드처럼 제 표시가 따로 없는 버튼들. 걸어 올라서면 눌릴 수 있다고 알린다.
-   focus 테두리와 같은 모양을 쓴다 — 「지금 이걸 누르면 된다」는 뜻이 같다.
-
-   글자를 적는 칸도 같은 표시를 쓴다. 밟으면 «누르는» 대신 커서가 들어가지만,
-   보는 쪽에서는 둘 다 「지금 여기서 Enter」라 표시를 나눌 이유가 없다. */
-.button.is-standing,
-.icon-button.is-standing,
-.ranking-tab.is-standing,
-.character-card.is-standing,
-.arena__help.is-standing,
-input.is-standing,
-textarea.is-standing,
-select.is-standing {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* 캐릭터가 올라선 칸. 눌러서 고를 수 있다는 표시다 */
-.category-card.is-standing,
-.challenge-card.is-standing,
-.menu-card.is-standing {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 18px rgba(59, 91, 219, 0.28);
-}
-
-/* ── 내 캐릭터 화면 ── */
-.screen-title {
-  margin: 0;
-  font-size: 20px;
-}
-
-.screen-lead {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.character-stage {
-  position: relative;
-}
-
-.character-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.character-card {
-  display: grid;
-  place-items: center;
-  /* 이름이 없으니 그림만 들어간다. 여백을 넉넉히 줘 누르기 편하게 한다 */
-  padding: 16px 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
-}
-
-/* 미리보기는 정지 그림이다. 뛰는 것은 걸어 다니는 캐릭터 하나뿐이라
-   목록이 어수선해지지 않는다. 이름을 붙이지 않으므로 칸에는 그림만 들어간다. */
-.character-card__figure {
-  position: relative;
-  width: 40px;
-  height: 48px;
-}
-
-/* 지금 쓰고 있는 캐릭터 */
-.character-card--on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-@media (max-width: 360px) {
-  .character-grid {
-    gap: 8px;
+/* 화면이 짧으면 무대와 겹칠 수 있다. 줄여서 가리는 넓이를 좁힌다 */
+@media (max-height: 700px) {
+  .walk-stick {
+    width: var(--stick-size-short);
+    height: var(--stick-size-short);
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    left: max(var(--space-3), env(safe-area-inset-left));
   }
 
-  .character-card {
-    padding: 12px 4px;
+  .walk-stick__knob {
+    width: 56px;
+    height: 56px;
+    margin: -28px 0 0 -28px;
+  }
+
+  .walk-confirm {
+    width: 76px;
+    height: 76px;
+    right: max(var(--space-3), env(safe-area-inset-right));
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
 }
 
-
-/* 조작법 대화상자를 여는 버튼. 퀴즈 헤더의 «나가기» 옆에 붙는다.
-   무대 안에 두면 무대 세로를 먹으므로 헤더로 뺐다. */
-.arena__help {
-  display: none;
-  flex: none;
-  /* 「나가기」 옆에 붙는다. 헤더가 space-between이라 이게 없으면 가운데로 뜬다 */
-  margin-left: auto;
-  /* 물음표가 작아 보여도 실제 터치 목표는 나가기 버튼과 같은 44px다 */
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-muted);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.quiz--character .arena__help {
-  display: grid;
-}
-
-.arena__help:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* ── 조작법 목록 ── */
-.help-list {
-  margin: 0 0 18px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px 14px;
-  font-size: 14px;
-}
-
-.help-list dt {
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.help-list dd {
-  margin: 0;
-  color: var(--text-muted);
-  word-break: keep-all;
-}
-
-.help-list kbd {
-  display: inline-block;
-  min-width: 20px;
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-}
-
-/* 움직임에 민감한 사용자를 위해 OS 설정을 따른다 */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+/* 손가락 조작부(스틱·선택)는 화면 아래에 떠서 그 밑의 내용을 가린다. 페이지가 짧으면
+   스크롤할 자리도 없어, 홈의 「전체 도전」·로비의 「첫 방 만들기」·랭킹의 초기화가 반쯤
+   가린 채 꺼낼 수 없었다. 조작부가 떠 있는 동안 스틱 높이만큼 아래를 비워 마지막 행동도
+   스틱 위로 올릴 수 있게 한다. .app 이 이미 48px 를 비우므로 나머지에 숨 쉴 틈 8px 만 더한다
+   (160 + 16 + 8 − 48 = 136). 조작부를 숨기는 규칙이 아니다.
+   온라인 퀴즈는 채팅 블록이 같은 여백을 이미 두므로 뺀다. */
+@media (pointer: coarse) {
+  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
+    padding-bottom: calc(var(--stick-size) + var(--space-4) + var(--space-2) - var(--space-12) + env(safe-area-inset-bottom, 0px));
   }
 }
 
-/* 화면 전환·문제 이동용 포커스라 테두리를 그리지 않는다 */
-.question:focus {
-  outline: none;
-}
-
-/* ── 좁은 화면 (320px까지) ── */
-@media (max-width: 360px) {
-  .app,
-  .app-bar,
-  .boot {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-
-  .home-title {
-    font-size: 24px;
-  }
-
-  .category-grid {
-    gap: 10px;
-  }
-
-  .category-card {
-    padding: 10px 12px 12px;
-  }
-
-  .challenge-card {
-    gap: 10px;
-    padding: 14px 12px;
-  }
-
-  .question {
-    font-size: 18px;
-  }
-
-  .arena-tile {
-    height: 64px;
-  }
-
-  .result-score strong {
-    font-size: 36px;
-  }
-
-  .result-stats {
-    padding: 12px 4px;
-    gap: 4px;
-  }
-
-  .result-stats dd {
-    font-size: 14px;
-  }
-
-  .result-stats dt {
-    font-size: 11px;
-  }
-
-  .result-block {
-    padding: 14px 12px;
-  }
-
-  /* 닉네임 칸이 너무 좁아지지 않게 라벨을 윗줄로 뺀다 */
-  .register__row {
-    grid-template-columns: 1fr auto;
-  }
-
-  .register__label {
-    grid-column: 1 / -1;
-  }
-
-  .result-actions .button {
-    flex-basis: 100%;
-  }
-
-  .ranking-item {
-    grid-template-columns: 24px 1fr auto;
-    padding: 10px 12px;
+/* 짧은 화면에서는 스틱이 128px 로 줄고 12px 위에 뜬다 (128 + 12 + 8 − 48 = 100) */
+@media (pointer: coarse) and (max-height: 700px) {
+  body:has(.walk-stick--on) .screen:not([data-screen='online-quiz']) {
+    padding-bottom: calc(var(--stick-size-short) + var(--space-3) + var(--space-2) - var(--space-12) + env(safe-area-inset-bottom, 0px));
   }
 }
-
 
 /* ── 온라인 로비 ──
    첫 화면은 방 목록이 주인공이다. 코드 참가·방 만들기 폼은 사용자가 고를 때만
    하나씩 열고, 장식은 온라인 화면 안에서만 쓴다. */
 .online-hero {
-  margin-bottom: 12px;
-  padding: 18px;
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
   overflow: hidden;
-  border: 1px solid #dce4ff;
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at 92% 8%, rgba(116, 143, 252, 0.18) 0 62px, transparent 63px),
-    radial-gradient(circle at 4% 108%, rgba(255, 212, 59, 0.18) 0 70px, transparent 71px),
-    linear-gradient(135deg, #f4f6ff 0%, #fffdf7 100%);
-  box-shadow: 0 10px 28px rgba(59, 91, 219, 0.08);
 }
 
 .online-hero__header {
   align-items: flex-start;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3);
 }
 
 .online-hero__eyebrow,
 .online-block__eyebrow {
-  margin: 0 0 2px;
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.online-hero__eyebrow span {
-  display: inline-block;
-  margin-right: 4px;
-  color: #51cf66;
-  font-size: 8px;
-  vertical-align: 2px;
-}
-
-.online-hero__title {
-  color: #172554;
-  font-size: clamp(24px, 7vw, 32px);
-  letter-spacing: -0.04em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-1);
 }
 
 .online-hero__lead {
-  max-width: 390px;
-  margin: 4px 0 0;
-  color: #556078;
-  font-size: 13px;
-  line-height: 1.55;
+  max-width: 400px;
+  margin: var(--space-1) 0 0;
   word-break: keep-all;
 }
 
 .online-home {
   flex: none;
   min-height: 44px;
-  padding: 7px 11px;
-  border-color: rgba(59, 91, 219, 0.18);
-  background: rgba(255, 255, 255, 0.72);
-  color: #4c5d82;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .online-note {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 9px 11px;
-  border: 1px solid rgba(59, 91, 219, 0.12);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.7);
-  color: #42527a;
-  font-size: 12px;
-  line-height: 1.5;
+  padding: var(--space-2) var(--space-3);
   word-break: keep-all;
 }
 
-.online-note::before {
-  content: '';
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin-top: 5px;
-  border-radius: 999px;
-  background: #51cf66;
-}
-
 .online-message {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid #ffd8d8;
-  border-radius: 12px;
-  background: var(--wrong-soft);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
 }
 
+/* 세 동작은 한 묶음의 탭처럼 본문 하나를 고른다 */
 .online-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  padding: var(--space-1);
 }
 
 .online-action-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   min-width: 0;
-  min-height: 68px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
+  min-height: 64px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
 }
 
-.online-action-card:hover {
-  border-color: #bac7fa;
-  transform: translateY(-1px);
-}
-
+/* 이미 열린 본문을 다시 눌러도 아무 일이 없다 — 누를 수 있다는 손 모양을 거둔다 */
 .online-action-card[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 6px 18px rgba(59, 91, 219, 0.12);
+  cursor: default;
 }
 
 .online-action-card__icon {
@@ -2370,13 +1829,6 @@ select.is-standing {
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: 11px;
-  background: #f6f7fb;
-  font-size: 18px;
-}
-
-.online-action-card[aria-pressed='true'] .online-action-card__icon {
-  background: #fff;
 }
 
 .online-action-card__body,
@@ -2385,88 +1837,60 @@ select.is-standing {
   min-width: 0;
 }
 
-.online-action-card__body strong {
-  display: block;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
 .online-action-card__copy {
-  margin-top: 1px;
   overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .online-block {
-  margin-bottom: 14px;
-  padding: 17px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.06);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
 }
 
 .online-block--rooms {
-  min-height: 230px;
+  min-height: 232px;
 }
 
 .online-block--panel {
-  border-color: #ccd6ff;
-  background: linear-gradient(180deg, #fbfcff 0%, #fff 100%);
-  scroll-margin-top: 12px;
+  scroll-margin-top: var(--space-3);
 }
 
 .online-block__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .online-block__title {
   margin: 0;
-  font-size: 17px;
-  line-height: 1.35;
 }
 
 .online-block__caption {
-  margin: 3px 0 12px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  margin: var(--space-1) 0 var(--space-3);
   word-break: keep-all;
-}
-
-.online-block__head .online-block__caption {
-  margin-bottom: 12px;
 }
 
 .online-block__tools {
   display: flex;
   flex: none;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .online-panel-heading {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .online-panel-heading__icon {
   display: grid;
   flex: none;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--accent-soft);
-  font-size: 20px;
+  width: var(--icon-tile);
+  height: var(--icon-tile);
 }
 
 .online-panel-heading .online-block__caption {
@@ -2477,12 +1901,9 @@ select.is-standing {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
   align-items: end;
-  gap: 8px;
-  margin: 2px 0 12px;
-  padding: 11px;
-  border: 1px solid #e5e9f5;
-  border-radius: 12px;
-  background: #f8f9fc;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
 }
 
 .room-filters[hidden] {
@@ -2492,18 +1913,14 @@ select.is-standing {
 .room-filter {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .room-filter .room-form__input {
   width: 100%;
   min-height: 44px;
-  padding: 6px 9px;
-  font-size: 13px;
+  padding: 0 var(--space-2);
 }
 
 .room-filters__reset {
@@ -2515,26 +1932,13 @@ select.is-standing {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  margin: 0 0 9px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #f3f5f9;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 목록과 폼에서 함께 쓰는 작은 버튼 */
-.button--small {
-  min-height: 44px;
-  padding: 6px 12px;
-  font-size: 13px;
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .room-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2543,34 +1947,22 @@ select.is-standing {
 .room-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: var(--surface);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.room-item:hover {
-  border-color: #c7d2fe;
-  box-shadow: 0 4px 12px rgba(59, 91, 219, 0.08);
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
 }
 
 .room-item__icon {
   display: grid;
   flex: none;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: #f5f7fb;
-  font-size: 19px;
+  width: var(--icon-tile);
+  height: var(--icon-tile);
 }
 
 .room-item__actions {
   display: flex;
   flex: none;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .room-item__body {
@@ -2583,157 +1975,108 @@ select.is-standing {
 .room-item__title-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .room-item__visibility {
   flex: none;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.room-item__visibility--public {
-  background: var(--correct-soft);
-  color: var(--correct);
-}
-
-.room-item__visibility--private {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.room-item--full {
-  background: #fafbfc;
-}
-
-.room-item--full .room-item__icon {
-  filter: grayscale(0.65);
-  opacity: 0.7;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .room-item__name {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.room-item__meta {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 
 .room-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-height: 154px;
-  padding: 20px 14px;
-  border: 1px dashed #cdd5e5;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fbfcff 0%, #f8f9fc 100%);
+  min-height: 152px;
+  padding: var(--space-5) var(--space-4);
   text-align: center;
 }
 
 .room-empty__icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 7px;
-  border-radius: 14px;
-  background: #fff3bf;
-  font-size: 22px;
-  transform: rotate(-4deg);
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-2);
 }
 
 .room-empty__title {
   margin: 0;
-  font-size: 15px;
 }
 
 .room-empty__copy {
-  margin: 3px 0 10px;
-  color: var(--text-muted);
-  font-size: 12px;
+  margin: var(--space-1) 0 var(--space-3);
   word-break: keep-all;
 }
 
 .room-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .room-form__row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
+/* 「비공개로 만들기」는 18px 체크박스와 한 줄 라벨이라 손가락이 닿는 면이 19px 뿐이었다.
+   줄을 44px 로 세우고 위아래 여백을 라벨 안으로 옮겨, 라벨 영역 어디를 눌러도 켜진다.
+   체크박스는 좁은 화면에서도 찌그러지지 않게 크기를 지킨다 */
 .room-form__row--check {
-  align-items: flex-start;
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: #f6f7fb;
-  color: var(--text-muted);
-  font-size: 12px;
+  align-items: stretch;
+  min-height: 44px;
+  padding: 0 var(--space-3);
 }
 
 .room-form__row--check input {
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
+  flex: none;
+  align-self: center;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  margin: 0;
+}
+
+.room-form__row--check label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding-block: var(--space-2);
+  cursor: pointer;
 }
 
 .room-form__label {
   flex: none;
-  width: 68px;
-  font-size: 12px;
-  font-weight: 700;
+  width: 72px;
 }
 
 .room-form__input {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-}
-
-.room-form__input:hover {
-  border-color: #c8cfde;
-}
-
-.room-form__input:focus-visible {
-  border-color: var(--accent);
+  padding: 0 var(--space-3);
 }
 
 .room-form__submit {
   width: 100%;
-  margin-top: 2px;
+  margin-top: var(--space-1);
 }
 
 .room-message {
-  margin: 10px 0 0;
-  color: var(--correct);
-  font-size: 13px;
+  margin: var(--space-3) 0 0;
   word-break: keep-all;
-}
-
-.room-message--bad {
-  color: var(--wrong);
 }
 
 @media (max-width: 560px) {
@@ -2754,9 +2097,10 @@ select.is-standing {
     align-self: center;
   }
 
+  /* 버튼 줄을 이름 줄과 같은 왼쪽 선에 맞춘다 (아이콘 칸 + 간격) */
   .room-item__actions {
     width: 100%;
-    padding-left: 48px;
+    padding-left: calc(var(--icon-tile) + var(--space-3));
   }
 
   .room-item__actions .button {
@@ -2765,36 +2109,23 @@ select.is-standing {
 }
 
 @media (max-width: 420px) {
-  .online-hero {
-    padding: 15px;
-  }
-
-  .online-hero__lead {
-    font-size: 12px;
-  }
-
   .online-actions {
-    gap: 6px;
+    gap: var(--space-1);
   }
 
   .online-action-card {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 5px;
-    min-height: 76px;
-    padding: 8px 5px;
+    gap: var(--space-1);
+    min-height: 72px;
+    padding: var(--space-2) var(--space-1);
     text-align: center;
   }
 
   .online-action-card__icon {
-    width: 31px;
-    height: 31px;
-    font-size: 16px;
-  }
-
-  .online-action-card__body strong {
-    font-size: 12px;
+    width: 32px;
+    height: 32px;
   }
 
   .online-action-card__copy {
@@ -2802,7 +2133,7 @@ select.is-standing {
   }
 
   .online-block {
-    padding: 14px;
+    padding: var(--space-3);
   }
 
   .online-block__head {
@@ -2831,20 +2162,20 @@ select.is-standing {
   }
 }
 
-/* 좁은 화면에서는 라벨을 위로 올린다. 68px 라벨이 입력칸을 너무 좁힌다 */
+/* 좁은 화면에서는 라벨을 위로 올린다. 72px 라벨이 입력칸을 너무 좁힌다 */
 @media (max-width: 380px) {
   .online-hero__header {
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .online-home {
-    padding-inline: 9px;
+    padding-inline: var(--space-2);
   }
 
   .room-form__row:not(.room-form__row--check) {
     flex-direction: column;
     align-items: stretch;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .room-form__label {
@@ -2856,79 +2187,65 @@ select.is-standing {
    방에 들어오면 오는 곳. 참가자가 바닥에 서 있고 내 캐릭터가 그 사이를 걷는다. */
 .waiting-settings {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
-/* 누르면 다음 값으로 도는 버튼. select 로 두면 캐릭터가 밟아도 목록이 열리지 않는다 */
+/* 누르면 다음 값으로 도는 버튼. select 로 두면 캐릭터가 밟아도 목록이 열리지 않는다.
+   오른쪽은 «돈다»는 표식 자리다 */
 .setting-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  font: inherit;
+  justify-content: center;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-10) var(--space-2) var(--space-3);
   text-align: left;
-  color: inherit;
   cursor: pointer;
-}
-
-.setting-card:hover:not(:disabled) {
-  border-color: var(--accent);
 }
 
 .setting-card:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.setting-card__label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.setting-card__value {
-  font-size: 15px;
-  font-weight: 700;
 }
 
 .waiting-ready,
 .waiting-start {
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 /* 참가자 명단은 벽의 액자, 움직이는 캐릭터와 가구는 아래 바닥에 둔다.
-   액자는 인원이 늘면 벽을 아래로 늘리고 가구가 있는 바닥 176px은 항상 남긴다. */
+   액자는 인원이 늘면 벽을 아래로 늘리고 가구가 있는 바닥(--lounge-floor)은 항상 남긴다. */
 .lounge {
   position: relative;
   min-height: 360px;
-  padding: 28px 14px 186px;
-  border: 1px solid #d8d0c2;
-  border-radius: var(--radius);
-  background: linear-gradient(
-    to bottom,
-    #f4f0e8 0 calc(100% - 176px),
-    #b9ab91 calc(100% - 176px) calc(100% - 172px),
-    #dfd4c0 calc(100% - 172px) 100%
-  );
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.72);
+  padding: var(--space-8) var(--space-3) calc(var(--lounge-floor) + var(--space-3));
   /* 움직이는 캐릭터의 말풍선은 벽과 바닥 경계를 넘어도 보여야 한다. */
   overflow: visible;
+  border: var(--border-1) solid var(--world-wood-edge);
+  border-radius: var(--radius-xl);
+  /* 벽 · 걸레받이 4px · 바닥. 바닥 높이는 가구가 놓이는 --lounge-floor 로 고정이다 */
+  background: linear-gradient(
+    to bottom,
+    var(--world-wall) 0 calc(100% - var(--lounge-floor)),
+    var(--world-baseboard) calc(100% - var(--lounge-floor)) calc(100% - var(--lounge-floor) + 4px),
+    var(--world-floor) calc(100% - var(--lounge-floor) + 4px) 100%
+  );
+  box-shadow: var(--elevation-1);
 }
 
-/* ── 픽셀 라운지 가구 ──
-   부드러운 곡선이나 blur 대신 3~4px 단색 면과 딱 끊기는 그림자로 만든다.
+/* ── 세계 장식: 픽셀 라운지 가구 ──
+   부드러운 곡선이나 blur 대신 4px 단색 면과 딱 끊기는 그림자로 만든 «세계»다.
+   자리와 크기가 곧 좌석의 누르는 자리라서 그림을 구조와 함께 둔다.
    버튼 전체가 44px 이상이라 가구를 직접 눌러도, 워커로 올라가 선택해도 같은 길이다. */
 .lounge__furniture {
   position: absolute;
-  right: 8px;
+  right: var(--space-2);
   bottom: 0;
-  left: 8px;
+  left: var(--space-2);
   height: 150px;
   pointer-events: none;
 }
@@ -2952,13 +2269,13 @@ select.is-standing {
 .lounge__seat:focus-visible,
 .lounge__seat.is-standing {
   outline-width: 3px;
-  outline-color: var(--accent);
+  outline-color: var(--focus);
 }
 
 .lounge__seat[aria-pressed='true'] {
   outline-width: 3px;
   outline-color: var(--correct);
-  box-shadow: 0 0 0 2px #f4f0e8;
+  box-shadow: 0 0 0 2px #f6f1e4;
 }
 
 .lounge__seat:disabled {
@@ -3003,8 +2320,8 @@ select.is-standing {
   width: 42px;
   height: 18px;
   border: 4px solid #4b2f22;
-  background: #4c78c2;
-  box-shadow: inset 0 -4px 0 #365895;
+  background: #6a58c8;
+  box-shadow: inset 0 -4px 0 #4f3fa6;
 }
 
 .lounge__chair-legs {
@@ -3039,8 +2356,8 @@ select.is-standing {
   width: 118px;
   height: 49px;
   border: 4px solid #53342c;
-  background: #c85f62;
-  box-shadow: inset 0 0 0 4px #e58a82, 4px 4px 0 rgba(83, 52, 44, 0.18);
+  background: #e07a7e;
+  box-shadow: inset 0 0 0 4px #f2a39c, 4px 4px 0 rgba(83, 52, 44, 0.18);
 }
 
 .lounge__sofa-arm {
@@ -3048,7 +2365,7 @@ select.is-standing {
   width: 18px;
   height: 34px;
   border: 4px solid #53342c;
-  background: #a94750;
+  background: #c35a66;
 }
 
 .lounge__sofa-arm--left {
@@ -3064,8 +2381,8 @@ select.is-standing {
   width: 49px;
   height: 39px;
   border: 4px solid #53342c;
-  background: #d97070;
-  box-shadow: inset 0 -5px 0 #ac4650;
+  background: #ec8a88;
+  box-shadow: inset 0 -5px 0 #c35a66;
 }
 
 .lounge__seat--sofa-left {
@@ -3120,10 +2437,10 @@ select.is-standing {
 
 .lounge__players {
   display: grid;
-  grid-template-columns: repeat(auto-fit, 72px);
+  grid-template-columns: repeat(auto-fit, 80px);
   justify-content: center;
   align-items: start;
-  gap: 18px 12px;
+  gap: var(--space-5) var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3133,8 +2450,8 @@ select.is-standing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  width: 72px;
+  gap: var(--space-1);
+  width: 80px;
   min-width: 0;
 }
 
@@ -3197,129 +2514,131 @@ select.is-standing {
   animation: none;
 }
 
-/* 내 액자는 파란 테두리로 찾아볼 수 있게 하되, `나` 글자도 함께 둬 색에만 기대지 않는다. */
+/* 내 액자는 보라 테두리로 찾아볼 수 있게 하되, `나` 글자도 함께 둬 색에만 기대지 않는다. */
 .lounge__player--me .lounge__portrait {
   border-color: var(--accent);
   box-shadow:
-    inset 0 0 0 2px #b9c5ff,
-    0 0 0 2px rgba(59, 91, 219, 0.18),
-    0 5px 10px rgba(59, 91, 219, 0.16);
+    inset 0 0 0 2px var(--accent-line),
+    0 0 0 2px var(--accent-soft),
+    0 5px 10px rgba(59, 41, 140, 0.16);
 }
 
-/* 준비 상태는 본인 파란 강조보다 우선해 액자 자체가 초록색으로 바뀐다. */
+/* 준비 상태는 본인 보라 강조보다 우선해 액자 자체가 초록색으로 바뀐다. */
 .lounge__player--ready .lounge__portrait {
   border-color: var(--correct);
   box-shadow:
-    inset 0 0 0 2px #b7e2bd,
-    0 0 0 2px rgba(38, 128, 55, 0.22),
-    0 5px 10px rgba(38, 128, 55, 0.18);
+    inset 0 0 0 2px #b7e2c8,
+    0 0 0 2px var(--correct-soft),
+    0 5px 10px rgba(29, 125, 85, 0.18);
 }
 
 .lounge__identity {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: var(--space-1);
   width: 100%;
   min-width: 0;
-  line-height: 1.3;
+  line-height: var(--leading-tight);
 }
 
 .lounge__name {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 방장 왕관. 글리프가 아니라 아이콘 묶음의 crown 을 그린다 (낭독은 항목의 aria-label 이 한다) */
 .lounge__host {
   flex: none;
-  color: #825900;
-  font-size: 13px;
-  line-height: 1;
+  width: 12px;
+  height: 12px;
+  background-color: var(--warning);
+  -webkit-mask: var(--i-crown) center / contain no-repeat;
+  mask: var(--i-crown) center / contain no-repeat;
 }
 
 .lounge__me {
   flex: none;
-  padding: 1px 4px;
-  border-radius: 999px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
   background: var(--accent-soft);
-  color: #2949bd;
-  font-size: 9px;
-  font-weight: 800;
+  color: var(--accent-ink);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  line-height: var(--leading-snug);
 }
 
-/* 상태판은 액자 바로 아래에 붙는다. 기호와 글자를 함께 써 색이 없어도 상태가 남는다. */
+/* 상태판은 액자 바로 아래에 붙는다. 표식과 글자를 함께 써 색이 없어도 상태가 남는다.
+   대기는 빈 동그라미, 준비는 체크 — 모양부터 다르다. */
 .lounge__ready {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  min-width: 46px;
-  padding: 2px 6px;
-  border: 1px solid #cfd5df;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #5d6573;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.35;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: var(--border-1) solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
 }
 
 .lounge__ready::before {
-  content: '○';
-  line-height: 1;
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: var(--border-2) solid currentColor;
+  border-radius: 50%;
 }
 
 .lounge__ready--on {
-  border-color: rgba(38, 128, 55, 0.38);
+  border-color: var(--correct);
   background: var(--correct-soft);
-  color: var(--correct);
+  color: var(--correct-ink);
 }
 
 .lounge__ready--on::before {
-  content: '✓';
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 0;
+  border-radius: 0;
+  background-color: currentColor;
+  -webkit-mask: var(--i-check) center / contain no-repeat;
+  mask: var(--i-check) center / contain no-repeat;
 }
 
 /* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 원격 캐릭터의 남의 말이 같은 모양이며,
    몸통 애니메이션은 body에만 걸려 있어 말풍선 자체는 흔들리지 않는다. */
-.walker__bubble,
-.lounge__bubble {
+.walker__bubble {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + var(--space-3));
   translate: calc(-50% + var(--bubble-shift, 0px)) 0;
   max-width: 190px;
   width: max-content;
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: var(--text);
-  color: #fff;
-  font-size: 13px;
-  line-height: 1.4;
+  padding: var(--space-2) var(--space-3);
   text-align: center;
   word-break: keep-all;
   overflow-wrap: anywhere;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
 }
 
-.walker__bubble::after,
-.lounge__bubble::after {
+/* 꼬리. 회전한 작은 네모라 테두리를 이어 그릴 수 있다 */
+.walker__bubble::after {
   content: '';
   position: absolute;
   top: 100%;
   left: calc(50% - var(--bubble-shift, 0px));
-  translate: -50% 0;
-  border: 6px solid transparent;
-  border-top-color: var(--text);
-}
-
-.lounge__bubble {
-  z-index: 1;
-  max-width: min(280px, calc(100vw - 48px));
-  pointer-events: none;
+  width: 10px;
+  height: 10px;
+  translate: -50% -50%;
+  rotate: 45deg;
 }
 
 .walker--remote .walker__bubble {
@@ -3327,40 +2646,14 @@ select.is-standing {
   max-width: min(280px, calc(100vw - 48px));
 }
 
-.chat {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.chat__input {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  font: inherit;
-  font-size: 15px;
-  color: inherit;
-}
-
-.chat__input:focus-visible {
-  border-color: var(--accent);
-}
-
 /* 말풍선이 화면 위로 넘칠 때는 캐릭터 아래에 띄운다. 꼬리도 함께 뒤집는다 */
 .walker__bubble--below {
   bottom: auto;
-  top: calc(100% + 8px);
+  top: calc(100% + var(--space-3));
 }
 
 .walker__bubble--below::after {
-  top: auto;
-  bottom: 100%;
-  border-top-color: transparent;
-  border-bottom-color: var(--text);
+  top: 0;
 }
 
 /* 아래로 뒤집힌 말풍선과 닉네임이 겹치면 말풍선을 우선한다. */
@@ -3368,55 +2661,96 @@ select.is-standing {
   visibility: hidden;
 }
 
+.chat {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.chat__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+}
+
 /* 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다 */
 .chat-log {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 8px 0 0;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
 
 .chat-log__line {
-  font-size: 13px;
-  color: var(--text);
   word-break: keep-all;
 }
 
-.chat-log__who {
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.chat-log__line--notice {
-  color: var(--warning);
-  font-size: 12px;
-}
-
 .chat__hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
+  margin: var(--space-2) 0 0;
 }
 
-.chat__hint kbd {
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  font: inherit;
-  font-size: 11px;
-}
+/* 휴대폰에서는 무대 전체가 피드백 시트 위에 남도록 세로를 아낀다.
+   390×844 에서 두 줄 문제와 세 줄 해설이면 네 칸과 채점 표시가 모두 시트 위에 보인다 */
+@media (max-width: 420px) {
+  .question {
+    padding: var(--space-3) var(--space-4);
+  }
 
-@media (max-width: 380px) {
-  .waiting-settings {
-    grid-template-columns: repeat(2, 1fr);
+  .arena-tile {
+    height: 64px;
   }
 }
 
-/* 닉네임 다이얼로그. 입력칸과 버튼 줄 사이를 띄운다 */
-#nickname-form .room-form__input {
-  width: 100%;
-  margin-bottom: 8px;
+/* ── 좁은 화면 (320px까지) ── */
+@media (max-width: 360px) {
+  /* 분야 칸은 설명을 접고 아이콘 칸을 한 단계 줄여 이름이 한 줄에 들어가게 한다.
+     칸이 세 줄로 길어지면 다섯 분야와 전체 도전이 첫 화면에서 밀려난다 */
+  .category-card__desc,
+  .challenge-card__desc {
+    display: none;
+  }
+
+  .category-card {
+    grid-template-columns: 32px minmax(0, 1fr);
+    min-height: 56px;
+    column-gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .category-card__icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .home-menu .menu-card {
+    padding-left: var(--space-2);
+  }
+
+  /* 칩의 아이콘을 한 단계 줄이고 가로 여백을 조여 「소요 시간」과 값을 온전히 보인다 */
+  .result-stats__item {
+    grid-template-columns: var(--icon-sm) minmax(0, 1fr);
+    padding: var(--space-2) var(--space-1);
+  }
+
+  /* 닉네임 칸이 너무 좁아지지 않게 라벨을 윗줄로 뺀다 */
+  .register__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .register__label {
+    grid-column: 1 / -1;
+  }
+
+  .ranking-item {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    padding: var(--space-3);
+  }
+
+  .ranking-item__rank {
+    width: 28px;
+    height: 28px;
+  }
 }

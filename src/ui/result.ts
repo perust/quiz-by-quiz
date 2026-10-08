@@ -204,9 +204,9 @@ export function createResultScreen(
 
       entry.append(
         question,
-        // 시간 초과는 고른 보기가 없다
-        createReviewRow('✗ 내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
-        createReviewRow('✓ 정답', item.correctChoice, 'answer'),
+        // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
+        createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
+        createReviewRow('정답', item.correctChoice, 'answer'),
         explanation
       );
 

@@ -98,7 +98,8 @@ python3 tools/check_bank.py --category 과학 --show-questions
 
 ```text
 index.html             화면별 <section data-screen="...">
-css/style.css          화면 스타일
+css/style.css          구조·배치·동작 계약
+css/voxel-theme.css    디자인 층: 토큰·아이콘·시각 언어 (docs/design-system.md)
 src/constants.ts       제한 시간·출제 수·배점·카테고리 정의
 src/characters.ts      선택 가능한 캐릭터
 src/core/              DOM과 분리된 게임 규칙
@@ -120,11 +121,11 @@ tests/                 Python 검증기 회귀 테스트
 
 - 마우스 없이 키보드만으로 홈 → 퀴즈 → 결과 → 랭킹을 진행할 수 있다.
 - 보기는 숫자 키 `1`–`4`로도 고른다.
-- 정답과 오답은 색상뿐 아니라 `✓ 정답` / `✗ 오답` 텍스트로 구분한다.
+- 정답과 오답은 색상뿐 아니라 ✓ ✗ 아이콘과 «정답»·«오답» 글자로 구분한다. 온라인 제출 대기는 점선 테두리와 모래시계다.
 - 화면이 바뀌면 포커스를 옮기고 스크린리더가 새 제목부터 읽는다.
 - 타이머는 매초 낭독하지 않고 남은 5초 경고만 한 번 알린다.
 - 애니메이션은 `prefers-reduced-motion`을 따른다.
-- 320px 폭까지 레이아웃을 유지한다.
+- 320px 폭까지 레이아웃을 유지하고, 직접 누르는 조작은 모두 44px 이상이다.
 
 ## 저장되는 값
 

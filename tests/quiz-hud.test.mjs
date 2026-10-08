@@ -73,11 +73,13 @@ test('퀴즈 HUD: 하나의 블록 표면이고, 안쪽 조각은 따로 놀던 
   const timer = node('div.timer#timer', hud);
 
   for (const env of [DESKTOP, NARROW]) {
-    assert.match(valueOf(rules, hud, 'border-color', env) ?? '', /var\(--edge\)/, 'HUD는 블록 테두리를 가진다');
-    assert.ok(valueOf(rules, hud, 'background', env), 'HUD는 제 표면을 가진다');
-    assert.ok(valueOf(rules, hud, 'box-shadow', env), 'HUD는 블록 그림자를 가진다');
+    assert.match(valueOf(rules, hud, 'border-color', env) ?? '', /var\(--border\)/, 'HUD는 기본 1px 패널 테두리를 가진다');
+    assert.match(valueOf(rules, hud, 'background', env) ?? '', /var\(--surface\)/, 'HUD는 제 표면을 가진다');
+    assert.match(valueOf(rules, hud, 'box-shadow', env) ?? '', /^var\(--elevation-1\)$/, 'HUD는 쉬는 패널 높이(1)에 있다');
 
-    assert.match(valueOf(rules, header, 'border-bottom', env), /^(?:0|none)\b/, '헤더 아래 구분선은 HUD 안에서 없앤다');
+    // 구분선 선언이 아예 없거나 0/none 이어야 한다. HUD 안에 따로 노는 줄을 긋지 않는다
+    const divider = valueOf(rules, header, 'border-bottom', env);
+    assert.ok(divider === null || /^(?:0|none)\b/.test(divider), `헤더 아래 구분선은 HUD 안에서 없다: ${divider}`);
     for (const [label, element] of [['헤더', header], ['진행률', progress], ['타이머', timer]]) {
       assert.match(valueOf(rules, element, 'margin-bottom', env), /^0(?:px)?$/, `${label}는 HUD 안에서 따로 아래 여백을 두지 않는다`);
     }

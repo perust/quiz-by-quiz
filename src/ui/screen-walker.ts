@@ -54,10 +54,12 @@ export function createScreenWalker({
 
       const box = startAt?.()?.getBoundingClientRect();
       if (!box || box.width === 0) return null;
-      // 버튼 «위»가 아니라 바로 아래에 선다. 위에 세우면 글자를 가린다 —
-      // 홈의 메뉴 카드는 오른쪽을 비워 두었지만 일반 버튼에는 그런 여백이 없다.
-      // 한 걸음이면 올라설 수 있으니 «여기서 시작하라»는 뜻은 그대로 전해진다.
-      return { x: box.left + box.width / 2, y: box.bottom + 30 };
+      // 버튼 글자를 가리지 않도록 캐릭터 몸통 전체를 바로 아래에 세운다.
+      // 한 번 위로 움직이면 목표에 닿을 만큼 가깝되, 쉬는 상태에서는 겹치지 않는다.
+      return {
+        x: box.left + box.width / 2,
+        y: box.bottom + character.offsetHeight + 6,
+      };
     } : undefined,
   });
 

@@ -386,9 +386,9 @@ export function createWaitingRoom(
       identity.append(name);
 
       if (player.isHost) {
+        // 왕관은 디자인 층의 crown 아이콘이다. 번들 픽셀 글꼴에 없는 글리프를 쓰지 않는다
         const host = document.createElement('span');
         host.className = 'lounge__host';
-        host.textContent = '♛';
         host.title = '방장';
         host.setAttribute('aria-hidden', 'true');
         identity.append(host);
