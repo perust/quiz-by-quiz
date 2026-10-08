@@ -37,14 +37,6 @@
     </div>
   </div>
 
-  <!-- 모든 화면 위의 얇은 시스템 줄. 홈에서는 플레이어 줄 오른쪽 자리에 떠서 한 줄로 읽힌다.
-       아이콘 모양(소리 / 음소거)과 aria-pressed 가 상태를 알리고, 글은 스크린리더가 읽는다 -->
-  <div class="app-bar">
-    <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
-      <span class="icon-button__icon icon" id="sound-icon" data-icon="sound-on" aria-hidden="true"></span>
-      <span class="sr-only" id="sound-label">소리 켜짐</span>
-    </button>
-  </div>
 
   <!-- 화면 전환과 타이머 경고를 스크린리더에 알린다.
        타이머 숫자는 1초마다 바뀌므로 넣지 않는다. 남은 5초 경고만 한 번 알린다. -->
@@ -53,15 +45,13 @@
   <main class="app">
 
     <!-- ─────────── 홈 ───────────
-         한 장면으로 읽히도록 위에서 아래로 넷을 쌓는다.
-           플레이어 줄(닉네임) → 세 칸 바로가기 → 마을 패널(브랜드) → 분야 고르기(주 행동 포함) -->
+         세계가 화면 전체를 채우고, 플레이어·바로가기·분야·주 행동만 가장자리에 뜬다. -->
     <section class="screen" data-screen="home" aria-labelledby="home-title" tabindex="-1">
       <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
            버튼은 그대로 눌러도 되고, 걷기는 문제 화면 조작을 미리 익히는 길이다. -->
       <div class="home-stage" id="home-stage">
         <div class="home-player">
-          <!-- 랭킹과 온라인 방에서 쓰는 이름. 맨 위에 두어 무엇으로 불리는지 먼저 보인다.
-               오른쪽 빈자리에는 앱 바의 소리 버튼이 뜬다 -->
+          <!-- 랭킹과 온라인 방에서 쓰는 이름. 세계 위의 작은 플레이어 HUD다. -->
           <button type="button" class="menu-card menu-card--wide" id="open-nickname">
             <span class="menu-card__figure" data-icon="user" aria-hidden="true"></span>
             <span class="menu-card__body">
@@ -70,9 +60,10 @@
             </span>
             <span class="menu-card__edit" aria-hidden="true"></span>
           </button>
+        </div>
 
-          <!-- 자주 쓰는 보조 동작은 한 묶음(dock)에 모아 분야 고르기를 아래로 밀지 않는다 -->
-          <nav class="home-menu" aria-label="홈 바로가기">
+        <!-- 보조 동작은 세계 가장자리의 작은 HUD 버튼으로 둔다. -->
+        <nav class="home-menu" aria-label="홈 바로가기">
             <button type="button" class="menu-card" id="open-characters"
                     aria-label="캐릭터 모습 바꾸기">
               <span class="menu-card__figure" data-icon="palette" aria-hidden="true"></span>
@@ -97,72 +88,18 @@
                 <span class="menu-card__desc">친구와 풀기</span>
               </span>
             </button>
-          </nav>
-        </div>
+        </nav>
 
-        <!-- 마을 패널. 브랜드와 기능과 분리된 장식용 CSS 아이소메트릭 마을이 한 장면이다.
-             마을은 스크린리더와 조작 순서에 들어가지 않는다. -->
+        <!-- 배경의 원본 복셀 월드는 장식이고, 제목만 읽기 순서에 남는다. -->
         <header class="home-header">
           <div class="home-heading">
             <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
-            <p class="home-subtitle">분야를 고르고 퀴즈 마을을 탐험해 보세요.</p>
+            <p class="home-subtitle">퀴즈 아카데미를 탐험하세요.</p>
           </div>
-
-          <div class="voxel-scene" aria-hidden="true">
-            <span class="voxel-cloud voxel-cloud--one"></span>
-            <span class="voxel-cloud voxel-cloud--two"></span>
-
-            <span class="voxel-island">
-              <span class="voxel-island__top"></span>
-              <span class="voxel-island__left"></span>
-              <span class="voxel-island__right"></span>
-            </span>
-
-            <span class="voxel-path voxel-path--one"></span>
-            <span class="voxel-path voxel-path--two"></span>
-            <span class="voxel-path voxel-path--three"></span>
-
-            <span class="voxel-building voxel-building--school">
-              <span class="iso-cube voxel-building__base">
-                <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
-              </span>
-              <span class="iso-cube voxel-building__roof">
-                <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
-              </span>
-              <span class="voxel-building__door"></span>
-              <span class="voxel-building__window"></span>
-            </span>
-
-            <span class="voxel-building voxel-building--tower">
-              <span class="iso-cube voxel-building__base">
-                <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
-              </span>
-              <span class="iso-cube voxel-building__roof">
-                <span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span>
-              </span>
-              <span class="voxel-building__clock">?</span>
-            </span>
-
-            <span class="voxel-tree voxel-tree--one">
-              <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-              <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-            </span>
-            <span class="voxel-tree voxel-tree--two">
-              <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-              <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-            </span>
-            <span class="voxel-tree voxel-tree--three">
-              <span class="iso-cube voxel-tree__trunk"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-              <span class="iso-cube voxel-tree__crown"><span class="iso-cube__top"></span><span class="iso-cube__left"></span><span class="iso-cube__right"></span></span>
-            </span>
-
-            <span class="voxel-spark voxel-spark--one"></span>
-            <span class="voxel-spark voxel-spark--two"></span>
-          </div><!-- /voxel-scene -->
         </header>
 
         <!-- 분야 고르기. 다섯 분야와 전체 도전이 한 패널 안에 있다 -->
-        <div class="home-quests" role="group" aria-label="퀴즈 분야">
+        <div class="home-quests" id="home-quests" role="group" aria-label="퀴즈 분야">
           <div class="category-grid" id="category-grid"></div>
 
           <!-- 전체 도전 (FR-2.2) — 홈의 주 행동.
@@ -715,11 +652,20 @@
     <button type="button" class="walk-confirm" id="walk-confirm" aria-hidden="true" tabindex="-1">선택</button>
   </main>
 
-  <!-- ─────────── 피드백 시트 ───────────
-       화면 맨 아래에 붙어 뜬다. 스크롤을 내려가 찾지 않아도 되고 엄지로 누르기 쉽다.
+  <!-- 화면보다 뒤에 선언해 일반 화면 위, 피드백·대화상자 아래에 뜨는 시스템 버튼이다.
+       아이콘 모양과 aria-pressed가 소리 상태를 알리고 글은 스크린리더가 읽는다. -->
+  <div class="app-bar">
+    <button type="button" class="icon-button" id="sound-toggle" aria-pressed="true">
+      <span class="icon-button__icon icon" id="sound-icon" data-icon="sound-on" aria-hidden="true"></span>
+      <span class="sr-only" id="sound-label">소리 켜짐</span>
+    </button>
+  </div>
+
+  <!-- ─────────── 피드백 패널 ───────────
+       퀴즈 화면 뒤의 문서 흐름에서 이어지고, 답을 고르면 이 끝까지 자동으로 스크롤한다.
+       질문·해설 길이나 viewport 높이에 관계없이 보기와 arena를 덮지 않기 위한 구조다.
        **<main> 밖에 둔다** — 이 프로젝트에는 z-index가 하나도 없어 DOM 순서가 곧
-       겹치는 순서다. 안에 두면 같은 fixed 요소인 스틱·확정 버튼에 가린다.
-       뒤에 오는 대화상자들이 이 시트보다 위에 오는 것도 같은 이유다. -->
+       겹치는 순서이고, 뒤에 오는 대화상자가 이 패널보다 위에 와야 한다. -->
   <div class="feedback" id="feedback" hidden>
     <!-- 라이브 리전은 «알리는 말»까지다. 버튼을 안에 두면 role="status"가
          암묵적으로 aria-atomic 이라 「정답입니다 … 다음 문제」가 한 덩어리로

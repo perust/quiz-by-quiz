@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { DESKTOP, loadStyles, resolveVars, tokens } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -59,18 +59,24 @@ test('디자인 층은 기본 스타일 뒤에 로드되고 로컬 한글 픽셀
   assert.equal(root.get('--space-1'), '4px');
 });
 
-test('홈 마을 패널은 지형·건물·나무가 있는 장식용 아이소메트릭 마을을 가진다', async () => {
-  const html = await source('../index.html');
+test('홈은 장식 패널 대신 세로·가로 원본 월드 art를 viewport 전체에 쓴다', async () => {
+  const [html, theme, mobileArt, desktopArt] = await Promise.all([
+    source('../index.html'),
+    source('../css/voxel-theme.css'),
+    stat(new URL('../css/assets/world-academy-mobile.webp', import.meta.url)),
+    stat(new URL('../css/assets/world-academy-desktop.webp', import.meta.url)),
+  ]);
   const home = between(html, 'data-screen="home"', 'data-screen="quiz"');
   const hero = between(home, '<header class="home-header">', '</header>');
-  const scene = between(hero, '<div class="voxel-scene"', '</div><!-- /voxel-scene -->');
 
-  assert.match(hero, /<h1 class="home-title" id="home-title">/, '브랜드와 마을은 한 패널이다');
-  assert.match(scene, /aria-hidden="true"/);
-  assert.match(scene, /class="voxel-island/);
-  assert.ok((scene.match(/class="voxel-building/g) ?? []).length >= 2, '건물은 둘 이상이어야 한다');
-  assert.ok((scene.match(/class="voxel-tree/g) ?? []).length >= 3, '나무는 셋 이상이어야 한다');
-  assert.match(scene, /class="voxel-path/);
+  assert.match(hero, /<h1 class="home-title" id="home-title">/);
+  assert.doesNotMatch(home, /class="voxel-scene/, '별도 장식 카드가 월드를 복제하지 않는다');
+  assert.match(root.get('--world-art-mobile') ?? '', /world-academy-mobile\.webp/);
+  assert.match(root.get('--world-art-desktop') ?? '', /world-academy-desktop\.webp/);
+  assert.ok(mobileArt.size > 100_000, '세로 월드 art가 실재한다');
+  assert.ok(desktopArt.size > 100_000, '가로 월드 art가 실재한다');
+  assert.match(theme, /body:has\(\[data-screen='home'\]:not\(\[hidden\]\)\)[\s\S]*var\(--world-art-mobile\)/);
+  assert.match(theme, /@media \(min-width: 600px\)[\s\S]*var\(--world-art-desktop\)/);
 });
 
 test('카테고리 카드는 분야 식별자를 노출해 같은 아이콘 묶음과 작은 식별 색을 받는다', async () => {

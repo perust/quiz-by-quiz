@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DESKTOP, MOBILE, lengthOf, loadStyles, node, nodeFromHtml, shorthandParts, tokens, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, lengthOf, loadStyles, node, nodeFromHtml, tokens, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
@@ -21,19 +21,36 @@ test('피드백 시트: 「다음 문제」의 키 표시는 시트가 실제로
   );
 });
 
-test('피드백 시트: 데스크톱에서 콘텐츠 열과 같은 폭으로 붙는다', () => {
-  const app = node('main.app', node('body'));
+test('피드백 시트: 데스크톱에서도 읽기 폭을 넘지 않고 가운데 붙는다', () => {
   const sheet = nodeFromHtml(html, 'feedback');
   const px = (value) => lengthOf(rules, value, DESKTOP);
 
-  // 토큰을 풀어 실제 px 로 비교한다. 풀지 못하면 NaN 이 되어 «NaN === NaN» 으로 통과하던
-  // 빈 검사가 되지 않게, 숫자인지부터 확인한다
-  const max = px(valueOf(rules, app, 'max-width', DESKTOP));
-  const inline = shorthandParts(valueOf(rules, app, 'padding-inline', DESKTOP)).map(px);
-  const column = max - (inline.length === 1 ? 2 * inline[0] : inline[0] + inline[1]);
+  // 앱은 이제 전체 월드 폭이라 max-width가 없다. 시트만 기존 읽기 열
+  // (--content-max - 양쪽 page pad)을 유지해 해설 한 줄이 과도하게 길어지지 않는다.
+  const root = tokens(rules, DESKTOP);
+  const column = px(root.get('--content-max')) - 2 * px(root.get('--page-pad'));
   const width = px(valueOf(rules, sheet, 'max-width', DESKTOP));
   assert.ok(Number.isFinite(column) && column > 0, `콘텐츠 열 폭을 계산하지 못했다: ${column}`);
   assert.equal(width, column);
+});
+
+test('피드백 패널: 문서 흐름에서 arena 뒤에 이어져 질문·보기·바닥 칸을 덮지 않는다', () => {
+  const sheet = nodeFromHtml(html, 'feedback');
+  for (const env of [DESKTOP, MOBILE]) {
+    assert.equal(valueOf(rules, sheet, 'position', env), 'relative');
+    assert.equal(valueOf(rules, sheet, 'overflow-y', env), 'auto');
+  }
+});
+
+test('피드백 패널: 자동 스크롤 뒤 fixed 캐릭터도 arena와 함께 옮기고 다음 문제에서 맨 위로 돌아온다', async () => {
+  const [quiz, arena] = await Promise.all([source('src/ui/quiz.ts'), source('src/ui/arena.ts')]);
+  assert.match(quiz, /scrollIntoView\(\{ block: 'end' \}\)/);
+  assert.match(quiz, /feedbackCharacterAnchor = arena\.captureCharacterAnchor\(\)/);
+  assert.match(quiz, /arena\.restoreCharacterAnchor\(feedbackCharacterAnchor\)/);
+  assert.match(quiz, /if \(wasVisible\) window\.scrollTo\(0, 0\)/);
+  assert.match(arena, /captureCharacterAnchor\(\)[\s\S]*?character\.bottom - grid\.top/);
+  assert.match(arena, /restoreCharacterAnchor\(anchor\)[\s\S]*?grid\.top \+ anchor\.y/);
+  assert.doesNotMatch(arena, /shiftForPageScroll/);
 });
 
 test('피드백 시트: 판정은 글자색만이 아니라 시트 테두리와 ✓ ✗ 배지로도 구분된다', () => {

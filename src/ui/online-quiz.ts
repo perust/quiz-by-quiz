@@ -700,7 +700,8 @@ export function createOnlineQuizScreen(
     el.category.textContent = question.categoryId
       ? categoryNames.get(question.categoryId) ?? question.categoryId
       : '전체 도전';
-    el.position.textContent = `${question.position} / ${question.total}`;
+    el.position.textContent = `${question.position}/${question.total}`;
+    el.position.setAttribute('aria-label', `전체 ${question.total}문제 중 ${question.position}번 문제`);
     const percent = Math.round((question.position / question.total) * 100);
     el.progressFill.style.width = `${percent}%`;
     el.progress.setAttribute('aria-valuenow', String(percent));

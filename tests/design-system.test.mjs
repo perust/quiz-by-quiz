@@ -121,7 +121,7 @@ test('토큰: 움직임은 100–180ms 의 짧은 피드백이고, 글자 크기
 // ── 규칙 검사 (장식 밖의 모든 컴포넌트) ───────────────────────────────
 
 const SPACING = /^(?:margin|padding|gap|row-gap|column-gap)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$/;
-const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|stick-size(?:-short)?|(?:screen-)?walker-width|lounge-floor|feedback-h)(?:,\s*0px)?\)/g;
+const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|stick-size(?:-short)?|(?:screen-)?walker-width|lounge-floor)(?:,\s*0px)?\)/g;
 
 test('간격: margin·padding·gap 은 토큰이거나 4px 격자 위의 값이다', () => {
   const offenders = [];
@@ -166,10 +166,14 @@ test('표면: box-shadow 는 세 단계 높이 토큰과 정해진 표식만 쓴
   }
   const dialog = node('div.dialog', node('div.dialog-backdrop#exit-dialog', node('body')));
   assert.equal(valueOf(rules, dialog, 'box-shadow', MOBILE), 'var(--elevation-3)');
-  // 쉬는 패널은 1단계다
-  for (const descriptor of ['div.quiz-hud', 'h1.question', 'div.home-quests', 'div.result-block', 'ol.ranking-list']) {
+  // 읽는 표면은 1단계, 가장자리에 떠 있는 상태 HUD는 2단계다.
+  for (const descriptor of ['div.result-block', 'ol.ranking-list']) {
     const element = node(descriptor, node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body'))));
     assert.equal(valueOf(rules, element, 'box-shadow', MOBILE), 'var(--elevation-1)', descriptor);
+  }
+  for (const descriptor of ['div.quiz-hud', 'h1.question', 'div.home-quests']) {
+    const element = node(descriptor, node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body'))));
+    assert.equal(valueOf(rules, element, 'box-shadow', MOBILE), 'var(--elevation-2)', descriptor);
   }
 });
 
@@ -205,7 +209,7 @@ test('모서리·색·글꼴: 컴포넌트는 토큰만 쓴다', () => {
       if (declaration.value !== 'inherit') offenders.push(where);
     }
     if (declaration.property === 'font-size') {
-      if (!/^(?:var\(--text-(?:xs|sm|md|lg|xl|2xl|3xl|4xl)\)|inherit)$/.test(declaration.value)) offenders.push(where);
+      if (!/^(?:var\(--text-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|5xl)\)|inherit)$/.test(declaration.value)) offenders.push(where);
     }
     if (declaration.property === 'font-weight') {
       if (!/^(?:var\(--weight-(?:bold|heavy)\)|400|inherit)$/.test(declaration.value)) offenders.push(where);
@@ -289,7 +293,7 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
 
 // ── 화면 위계 ──────────────────────────────────────────────────────
 
-test('홈: 플레이어 줄 → 세 칸 dock → 마을 패널 → 분야 고르기 한 패널, 전체 도전이 유일한 주 행동이다', () => {
+test('홈: 전체 월드 위 edge HUD와 하단 5칸 dock, 전체 도전 하나만 주 행동이다', () => {
   const home = html.slice(html.indexOf('data-screen="home"'), html.indexOf('data-screen="quiz"'));
   const order = ['id="open-nickname"', '<nav class="home-menu"', '<header class="home-header">', 'class="home-quests"', 'id="category-grid"', 'id="start-all"'];
   order.reduce((previous, marker) => {
@@ -305,9 +309,9 @@ test('홈: 플레이어 줄 → 세 칸 dock → 마을 패널 → 분야 고르
   const panel = node('div.home-quests', stage);
   const startAll = node('button.challenge-card#start-all', panel);
   for (const env of [DESKTOP, MOBILE]) {
-    assert.equal(valueOf(rules, startAll, 'background', env), 'var(--accent)', '전체 도전은 보라로 채운 주 행동이다');
+    assert.equal(valueOf(rules, startAll, 'background', env), 'var(--primary-action)', '전체 도전은 골드 주 행동이다');
     assert.match(valueOf(rules, startAll, 'box-shadow', env), /var\(--press-edge\)/, '눌러 들어가는 두께가 있다');
-    assert.equal(valueOf(rules, panel, 'background', env), 'var(--surface)');
+    assert.equal(valueOf(rules, panel, 'background', env), 'var(--hud-bg)');
 
     // 분야 색은 아이콘 칸에만. 칸 자체는 모두 같은 중립 바탕이다 — 무지개 카드를 만들지 않는다
     const looks = new Set();
@@ -319,17 +323,19 @@ test('홈: 플레이어 줄 → 세 칸 dock → 마을 패널 → 분야 고르
     }
     assert.equal(looks.size, 1, `분야 칸의 바탕과 테두리는 하나다: ${[...looks].join(' / ')}`);
 
-    // dock 은 하나의 표면이고 칸은 따로 놀지 않는다
-    const dock = node('nav.home-menu', node('div.home-player', stage));
-    assert.equal(valueOf(rules, dock, 'background', env), 'var(--surface)');
-    assert.equal(valueOf(rules, node('button.menu-card#open-ranking', dock), 'background', env), 'transparent');
+    // 세 바로가기는 중앙 콘텐츠를 미는 panel이 아니라 독립 edge HUD 슬롯이다.
+    const dock = node('nav.home-menu', stage);
+    assert.equal(valueOf(rules, dock, 'display', env), 'contents');
+    assert.equal(valueOf(rules, node('button.menu-card#open-ranking', dock), 'background', env), 'var(--hud-bg)');
+    assert.equal(valueOf(rules, node('header.home-header', stage), 'background', env), 'transparent');
   }
 
-  // 앱 바의 소리 버튼은 홈에서 플레이어 줄 오른쪽 빈자리에 떠서 한 줄로 읽힌다
+  // 앱 바는 main 뒤에 있어 z-index 없이 월드 위, modal 아래에 뜬다.
+  assert.ok(html.indexOf('</main>') < html.indexOf('<div class="app-bar"'));
+  assert.ok(html.indexOf('<div class="app-bar"') < html.indexOf('id="feedback"'));
   const appBar = node('div.app-bar', body);
-  assert.equal(valueOf(rules, appBar, 'position', MOBILE), 'absolute');
-  assert.match(valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname', node('div.home-player', stage)), 'width', MOBILE), /^calc\(100% - 44px - var\(--space-2\)\)$/);
-  assert.equal(valueOf(rules, node('div.app-bar', node('body')), 'position', MOBILE), null, '다른 화면에서는 제 줄을 차지한다');
+  assert.equal(valueOf(rules, appBar, 'position', MOBILE), 'fixed');
+  assert.equal(valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname', node('div.home-player', stage)), 'width', MOBILE), '100%');
 });
 
 test('홈: 창 점·이중 테두리 같은 가짜 장식이 없다', () => {
@@ -554,4 +560,17 @@ test('확대: viewport보다 긴 대화상자는 위에서 시작해 제목부�
   assert.equal(valueOf(rules, dialog, 'margin', DESKTOP), '0');
   assert.equal(valueOf(rules, backdrop, 'overflow-y', DESKTOP), 'auto');
   assert.equal(valueOf(rules, node("div.dialog[tabindex='-1']:focus", backdrop), 'outline', DESKTOP), 'none');
+});
+
+test('화면 읽기 폭: 숨은 제목은 1px 접근성 위치를 지키고 대기실 직접 행동은 가운데 block flex다', () => {
+  const resultTitle = nodeFromHtml(html, 'result-title');
+  const ready = nodeFromHtml(html, 'waiting-ready');
+
+  for (const env of [DESKTOP, MOBILE, NARROW]) {
+    assert.equal(valueOf(rules, resultTitle, 'position', env), 'absolute');
+    assert.equal(lengthOf(rules, valueOf(rules, resultTitle, 'width', env), env), 1);
+    assert.equal(valueOf(rules, ready, 'display', env), 'flex');
+    assert.equal(valueOf(rules, ready, 'margin-left', env), 'auto');
+    assert.equal(valueOf(rules, ready, 'margin-right', env), 'auto');
+  }
 });

@@ -93,6 +93,9 @@
   --warning-soft: var(--gold-2);
   --gold: var(--gold-9);
   --gold-soft: var(--gold-4);
+  --primary-action: var(--gold-4);
+  --primary-action-hover: var(--gold-9);
+  --primary-action-line: var(--gold-2);
 
   --focus: var(--violet-10);
   --overlay: rgb(29 31 58 / 0.48);
@@ -196,6 +199,7 @@
   --text-2xl: 24px;
   --text-3xl: 32px;
   --text-4xl: 48px;
+  --text-5xl: 64px;
   --leading-tight: 1.25;
   --leading-snug: 1.4;
   --leading-normal: 1.6;
@@ -212,6 +216,28 @@
   /* 초점 고리. 캐릭터가 올라선 버튼도 같은 모양을 쓴다 — 「지금 이걸 누르면 된다」는 뜻이 같다 */
   --focus-width: 3px;
   --focus-offset: 2px;
+
+  /* 월드 우선 화면: 생성한 원본 복셀 배경 위에 올라가는 제한된 HUD 표면 */
+  --world-art-mobile: url('assets/world-academy-mobile.webp');
+  --world-art-desktop: url('assets/world-academy-desktop.webp');
+  --world-clear: rgb(29 31 58 / 0.04);
+  --world-veil: rgb(29 31 58 / 0.16);
+  --world-veil-strong: rgb(29 31 58 / 0.3);
+  --hud-bg: rgb(29 31 58 / 0.88);
+  --hud-bg-soft: rgb(29 31 58 / 0.76);
+  --hud-line: rgb(255 255 255 / 0.34);
+  --hud-text: var(--mist-0);
+  --hud-text-muted: #e6e8f8;
+  --world-glass: rgb(255 255 255 / 0.9);
+  --world-glass-soft: rgb(255 255 255 / 0.8);
+  --world-floor-glass: rgb(255 255 255 / 0.22);
+  --world-floor-line: rgb(255 255 255 / 0.78);
+  --world-title-shadow:
+    -1px -1px 0 rgb(29 31 58 / 0.82),
+    1px -1px 0 rgb(29 31 58 / 0.82),
+    -1px 1px 0 rgb(29 31 58 / 0.82),
+    1px 1px 0 rgb(29 31 58 / 0.82),
+    0 3px 10px rgb(29 31 58 / 0.46);
 }
 
 /* 좁은 화면은 바깥 여백만 한 단계 줄인다 */
@@ -764,6 +790,7 @@ textarea {
   font-size: var(--text-lg);
   font-weight: var(--weight-heavy);
   line-height: var(--leading-tight);
+  white-space: nowrap;
 }
 
 .challenge-card__desc {
@@ -1201,8 +1228,7 @@ textarea {
    ✓ ✗ 배지로도 읽힌다. 시간 초과도 오답이라 ✗ 를 쓴다 — 무엇 때문인지는 판정 글이 말한다 */
 .feedback {
   border: var(--border-2) solid var(--border);
-  border-bottom: 0;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-radius: var(--radius-xl);
   background: var(--surface);
   box-shadow: var(--elevation-3);
 }
@@ -2736,12 +2762,9 @@ select.is-standing {
   }
 }
 
-@keyframes sheet-up {
+@keyframes panel-fade {
   from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
+    opacity: 0.72;
   }
 }
 
@@ -2754,7 +2777,7 @@ select.is-standing {
 }
 
 .feedback:not([hidden]) {
-  animation: sheet-up var(--duration-slow) var(--ease-out);
+  animation: panel-fade var(--duration-slow) var(--ease-out);
 }
 
 /* ── 28. 고대비(강제 색) 모드 ─────────────────────────────────────
@@ -2832,5 +2855,520 @@ select.is-standing {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ── 30. 월드 우선 시각 언어 ─────────────────────────────────────
+   배경은 장식 패널이 아니라 모든 화면이 공유하는 실제 게임 공간이다. 흰 표면은 읽거나
+   입력해야 하는 순간에만 쓰고, 상시 조작은 어두운 가장자리 HUD 한 벌로 통일한다. */
+body {
+  background-color: var(--world-sky-2);
+  background-image:
+    linear-gradient(var(--world-veil), var(--world-veil)),
+    var(--world-art-mobile);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+body:has([data-screen='home']:not([hidden])) {
+  background-image:
+    linear-gradient(var(--world-clear), var(--world-clear)),
+    var(--world-art-mobile);
+}
+
+@media (min-width: 600px) {
+  body {
+    background-image:
+      linear-gradient(var(--world-veil), var(--world-veil)),
+      var(--world-art-desktop);
+    background-attachment: fixed;
+  }
+
+  body:has([data-screen='home']:not([hidden])) {
+    background-image:
+      linear-gradient(var(--world-clear), var(--world-clear)),
+      var(--world-art-desktop);
+  }
+}
+
+.screen {
+  color: var(--text);
+}
+
+.app-bar .icon-button {
+  border-color: var(--hud-line);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+/* 홈 HUD */
+.home-player .menu-card--wide,
+.home-menu .menu-card {
+  border-color: var(--hud-line);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.home-player .menu-card__figure,
+.home-menu .menu-card__figure,
+.home-player .menu-card__name,
+.home-menu .menu-card__name,
+.home-player .menu-card__desc {
+  color: var(--hud-text);
+}
+
+.home-player .menu-card__figure {
+  background: var(--correct-soft);
+  color: var(--correct-ink);
+}
+
+.home-menu .menu-card__figure {
+  color: var(--gold-soft);
+}
+
+.home-menu .menu-card:focus-visible,
+.home-menu .menu-card.is-standing,
+.home-player .menu-card--wide:focus-visible,
+.home-player .menu-card--wide.is-standing {
+  border-color: var(--gold-soft);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+}
+
+.home-title,
+.home-subtitle {
+  color: var(--hud-text);
+  text-shadow: var(--world-title-shadow);
+}
+
+.home-title {
+  font-size: var(--text-4xl);
+}
+
+.home-title span {
+  color: var(--gold-soft);
+}
+
+.home-subtitle {
+  font-weight: var(--weight-bold);
+}
+
+.home-header {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.home-quests {
+  border-color: var(--hud-line);
+  border-radius: var(--radius-lg);
+  background: var(--hud-bg);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.category-card {
+  border-color: var(--hud-line);
+  border-radius: var(--radius-sm);
+  background: var(--world-glass);
+  box-shadow: none;
+}
+
+.category-card__icon {
+  border-radius: var(--radius-xs);
+}
+
+.category-card__name {
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+}
+
+.category-card__best {
+  gap: 0;
+  padding: 0 var(--space-1);
+  background: var(--gold-soft);
+  color: var(--warning);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.category-card__best::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--i-star) center / contain no-repeat;
+  mask: var(--i-star) center / contain no-repeat;
+}
+
+@media (hover: hover) {
+  .category-card:hover:not(:disabled) {
+    border-color: var(--gold-soft);
+    background: var(--surface);
+    box-shadow: none;
+  }
+}
+
+.category-card.is-standing,
+.category-card:focus-visible {
+  border-color: var(--gold-soft);
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+
+.challenge-card {
+  border-color: var(--primary-action-line);
+  border-radius: var(--radius-md);
+  background: var(--primary-action);
+  color: var(--text);
+  box-shadow: var(--press-edge);
+}
+
+.challenge-card__icon {
+  color: var(--text);
+}
+
+.challenge-card__name {
+  font-size: var(--text-lg);
+}
+
+@media (hover: hover) {
+  .challenge-card:hover:not(:disabled) {
+    border-color: var(--primary-action-line);
+    background: var(--primary-action-hover);
+  }
+}
+
+/* 퀴즈 HUD·질문·보기 */
+.quiz--character .quiz-hud {
+  border-color: var(--hud-line);
+  border-radius: var(--radius-lg);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.quiz--character .quiz-category {
+  background: var(--gold-soft);
+  color: var(--text);
+}
+
+.quiz--character .quiz-position,
+.quiz--character .timer__label {
+  color: var(--hud-text);
+}
+
+.quiz--character .progress,
+.quiz--character .timer__track {
+  background: var(--hud-line);
+}
+
+.quiz--character .progress__fill {
+  background: var(--correct-soft);
+}
+
+.quiz--character .timer__fill {
+  background: var(--gold-soft);
+}
+
+.quiz--character .arena__help,
+.quiz--character .button--ghost {
+  border-color: var(--hud-line);
+  background: transparent;
+  color: var(--hud-text);
+}
+
+.quiz--character .question {
+  border-color: var(--world-floor-line);
+  border-radius: var(--radius-xl);
+  background: var(--world-glass);
+  color: var(--text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.quiz--character .choice {
+  border-color: var(--world-floor-line);
+  background: var(--world-glass);
+  box-shadow: var(--elevation-1);
+  backdrop-filter: blur(8px);
+}
+
+.quiz--character .arena__grid {
+  border-color: var(--world-floor-line);
+  background: var(--world-floor-glass);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(2px);
+}
+
+.quiz--character .arena-tile {
+  border-color: var(--world-floor-line);
+  background: var(--world-floor-glass);
+}
+
+/* 월드 유리 표면보다 채점·제출 상태가 항상 우선한다. 색과 함께 선·표식을 유지한다. */
+.quiz--character .choice.choice--correct,
+.quiz--character .arena-tile.arena-tile--correct {
+  border-color: var(--correct);
+  background: var(--correct-soft);
+  box-shadow: none;
+}
+
+.quiz--character .choice.choice--wrong,
+.quiz--character .arena-tile.arena-tile--wrong {
+  border-color: var(--wrong);
+  background: var(--wrong-soft);
+  box-shadow: none;
+}
+
+.quiz--character .choice.choice--submitted {
+  border-color: var(--gold);
+  border-style: dashed;
+  background: var(--warning-soft);
+  box-shadow: none;
+}
+
+.quiz--character .arena-tile__number,
+.quiz--character .arena__hint {
+  color: var(--hud-text);
+  text-shadow: var(--world-title-shadow);
+}
+
+/* 결과: 점수는 세계 위에 직접 뜨고 상세 기록부터 표면을 쓴다. */
+[data-screen='result'] .result-header {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--hud-text);
+  text-shadow: var(--world-title-shadow);
+}
+
+[data-screen='result'] .result-header::before,
+[data-screen='result'] .result-header::after {
+  display: none;
+}
+
+[data-screen='result'] .result-mode {
+  background: var(--hud-bg-soft);
+  color: var(--hud-text);
+}
+
+[data-screen='result'] .result-score strong,
+[data-screen='result'] .result-score__max,
+[data-screen='result'] .result-grade,
+[data-screen='result'] .result-grade-message {
+  color: var(--hud-text);
+}
+
+[data-screen='result'] .result-score strong {
+  font-size: var(--text-5xl);
+}
+
+[data-screen='result'] .result-best {
+  border: var(--border-1) solid var(--hud-line);
+  background: var(--hud-bg-soft);
+  color: var(--hud-text);
+}
+
+.result-stats__item,
+.result-block,
+.online-final__summary,
+.online-final-ranking {
+  border-color: var(--world-floor-line);
+  background: var(--world-glass);
+  backdrop-filter: blur(8px);
+}
+
+[data-screen='result'] .result-actions .button--ghost,
+[data-screen='online-result'] .result-actions .button--ghost {
+  border-color: var(--hud-line);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+}
+
+[data-screen='result'] .result-actions .button--primary,
+[data-screen='online-result'] .result-actions .button--primary {
+  border-color: var(--primary-action-line);
+  background: var(--primary-action);
+  color: var(--text);
+}
+
+/* 랭킹·캐릭터·온라인·대기실은 같은 월드 위의 상황별 표면이다. */
+.ranking-header,
+[data-screen='characters'] .quiz-header,
+[data-screen='waiting'] > .quiz-header,
+.online-hero__header {
+  border: var(--border-1) solid var(--hud-line);
+  border-radius: var(--radius-lg);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.ranking-header .ranking-title,
+[data-screen='characters'] .screen-title,
+[data-screen='waiting'] .screen-title,
+.online-hero__title,
+.online-hero__eyebrow,
+.online-hero__lead {
+  color: var(--hud-text);
+}
+
+.ranking-header .button--ghost,
+[data-screen='characters'] .button--ghost,
+[data-screen='waiting'] > .quiz-header .button--ghost,
+.online-home {
+  border-color: var(--hud-line);
+  background: transparent;
+  color: var(--hud-text);
+}
+
+.ranking-scope,
+[data-screen='characters'] .screen-lead,
+[data-screen='waiting'] > .screen-lead,
+.online-note {
+  border-color: var(--world-floor-line);
+  background: var(--world-glass);
+  color: var(--text);
+  backdrop-filter: blur(8px);
+}
+
+.ranking-tabs,
+.ranking-list,
+.character-stage,
+.online-actions,
+.online-block,
+.setting-card,
+.lounge {
+  border-color: var(--world-floor-line);
+  background: var(--world-glass-soft);
+  backdrop-filter: blur(8px);
+}
+
+.ranking-empty {
+  border: var(--border-1) solid var(--world-floor-line);
+  border-radius: var(--radius-lg);
+  background: var(--world-glass);
+  color: var(--text);
+  box-shadow: var(--elevation-1);
+  backdrop-filter: blur(8px);
+}
+
+.character-stage {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.character-card {
+  border-color: var(--world-floor-line);
+  background: var(--world-floor-glass);
+  box-shadow: none;
+  backdrop-filter: blur(2px);
+}
+
+.character-card[aria-pressed='true'],
+.character-card.is-standing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.online-actions {
+  border-radius: var(--radius-lg);
+  background: var(--hud-bg);
+  box-shadow: var(--elevation-2);
+}
+
+.online-action-card {
+  border-color: var(--hud-line);
+  background: transparent;
+  color: var(--hud-text);
+}
+
+.online-action-card strong,
+.online-action-card__copy,
+.online-action-card__icon {
+  color: var(--hud-text);
+}
+
+.online-action-card[aria-pressed='true'] {
+  border-color: var(--gold-soft);
+  background: var(--hud-bg-soft);
+}
+
+.online-block,
+.lounge {
+  box-shadow: var(--elevation-2);
+}
+
+/* 대기실의 라운지는 overlay 카드가 아니라 실제로 걷는 월드 바닥이다. */
+[data-screen='waiting'] .lounge {
+  background: var(--world-floor-glass);
+  box-shadow: var(--elevation-1);
+  backdrop-filter: none;
+}
+
+.waiting-settings .setting-card {
+  background: var(--world-glass);
+}
+
+.feedback {
+  border-color: var(--world-floor-line);
+  background: var(--world-glass);
+  backdrop-filter: blur(12px);
+}
+
+/* 그림이 지워지는 강제 색상에서는 시스템 표면만 남기고 상태 표식 계약을 유지한다. */
+@media (forced-colors: active) {
+  body,
+  body:has([data-screen='home']:not([hidden])) {
+    background: Canvas;
+  }
+
+  .home-title,
+  .home-subtitle,
+  .quiz--character .arena-tile__number,
+  .quiz--character .arena__hint,
+  [data-screen='result'] .result-header {
+    color: CanvasText;
+    text-shadow: none;
+  }
+
+  .home-player .menu-card--wide,
+  .home-menu .menu-card,
+  .home-quests,
+  .quiz--character .quiz-hud,
+  .ranking-header,
+  [data-screen='characters'] .quiz-header,
+  [data-screen='waiting'] > .quiz-header,
+  .online-hero__header,
+  .online-actions {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
+@media (max-width: 420px) {
+  .home-title {
+    font-size: var(--text-xl);
+  }
+}
+
+@media (max-height: 500px) {
+  .category-card__best {
+    position: absolute;
+    top: 2px;
+    right: 2px;
   }
 }

@@ -47,11 +47,18 @@ export interface HomeScreen {
   setNote(message: string | null | undefined): void;
 }
 
+/** 320px의 다섯 칸 dock에서도 서로 붙지 않는 시각용 짧은 이름. 접근 가능한 이름은 전체 이름을 쓴다. */
+const COMPACT_CATEGORY_NAMES: Partial<Record<CategoryId, string>> = {
+  general: '상식',
+  art: '예술',
+};
+
 export function createHomeScreen({
   onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onNickname,
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
+    quests: need('home-quests'),
     grid: need('category-grid'),
     startAll: need<HTMLButtonElement>('start-all'),
     startAllMeta: need('start-all-meta'),
@@ -69,20 +76,42 @@ export function createHomeScreen({
     note: need('home-note'),
   };
 
+  // 하단 dock은 최고 기록 유무·번역 길이에 따라 높이가 달라진다. 고정 조작부가 그 높이를
+  // 추측하지 않고 실제 값을 따라가게 해, 저장 기록이 생긴 뒤에도 버튼을 덮지 않는다.
+  const syncDockHeight = (): void => {
+    const height = Math.ceil(el.quests.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty('--home-dock-h', `${height}px`);
+  };
+  const dockObserver = new ResizeObserver(syncDockHeight);
+  dockObserver.observe(el.quests);
+  requestAnimationFrame(syncDockHeight);
+
   // 화면 전체를 걸어 다닌다. 칸 목록을 따로 만들지 않고 발밑에 실제로 무엇이
   // 있는지 그때그때 보므로, 카드를 더하거나 빼도 여기를 고칠 일이 없다.
   // 고르는 것도 워커가 그 자리를 진짜로 누르는 것이라, 버튼에 달린 리스너가
   // 마우스로 눌렀을 때와 똑같이 움직인다 — 아래 세 줄이 그대로 쓰인다.
   const walker = createWalker({
     character: el.walker,
-    // 처음에는 「내 캐릭터」 위에 선다. 무엇을 할 수 있는지 눈이 먼저 간다
+    // 처음에는 「내 캐릭터」 입구 바로 아래의 월드 바닥에 선다.
+    // HUD 글자를 덮지 않으면서도 한 번 위로 걸으면 바로 입구를 고를 수 있다.
     startAt: () => {
+      // 200% 확대나 가로 화면에서는 입구 셋이 dock 위 한 줄로 이동한다.
+      // 그때는 가운데 위의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
+      if (window.innerHeight <= 700) {
+        const entry = el.openRanking.getBoundingClientRect();
+        return {
+          x: window.innerWidth / 2,
+          y: Math.max(
+            el.walker.offsetHeight,
+            Math.min(el.walker.offsetHeight + 48, entry.top - 8),
+          ),
+        };
+      }
       const box = el.openCharacters.getBoundingClientRect();
       if (box.width === 0) return null;
       return {
-        // 카드 오른쪽 끝에 세운다. 가운데면 이름을 가린다
-        x: box.right - 20,
-        y: box.bottom - 10,
+        x: box.left + box.width / 2,
+        y: box.bottom + el.walker.offsetHeight + 6,
       };
     },
   });
@@ -160,7 +189,10 @@ export function createHomeScreen({
 
     const best = document.createElement('span');
     best.className = 'category-card__best';
-    best.textContent = `최고 ${bestScore}점`;
+    best.textContent = String(bestScore);
+    best.dataset.icon = 'star';
+    best.setAttribute('aria-hidden', 'true');
+    best.title = `최고 ${bestScore}점`;
     card.append(best);
   }
 
@@ -178,6 +210,13 @@ export function createHomeScreen({
       card.type = 'button';
       card.className = 'category-card';
       card.dataset.category = category.id;
+      const bestScore = bestScores[category.id];
+      card.setAttribute(
+        'aria-label',
+        bestScore === null || bestScore === undefined
+          ? `${category.name} 문제 풀기`
+          : `${category.name} 문제 풀기, 최고 ${bestScore}점`,
+      );
       card.disabled = count === 0;
 
       // 아이콘 칸. 그림은 디자인 층이 data-icon 으로 그린다 — 글리프를 넣지 않는다
@@ -187,15 +226,21 @@ export function createHomeScreen({
       icon.dataset.icon = category.icon;
 
       const name = document.createElement('span');
-      name.className = 'category-card__name';
+      name.className = 'category-card__name category-card__name--full';
       name.textContent = category.name;
+      name.setAttribute('aria-hidden', 'true');
+
+      const compactName = document.createElement('span');
+      compactName.className = 'category-card__name category-card__name--compact';
+      compactName.textContent = COMPACT_CATEGORY_NAMES[category.id] ?? category.name;
+      compactName.setAttribute('aria-hidden', 'true');
 
       const description = document.createElement('span');
       description.className = 'category-card__desc';
       description.textContent = category.description;
 
-      card.append(icon, name, description);
-      appendBestScore(card, bestScores[category.id]);
+      card.append(icon, name, compactName, description);
+      appendBestScore(card, bestScore);
 
       card.addEventListener('click', () => onSelect(category.id));
       el.grid.append(card);
