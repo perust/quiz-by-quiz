@@ -56,7 +56,7 @@
             <span class="menu-card__figure" data-icon="user" aria-hidden="true"></span>
             <span class="menu-card__body">
               <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
-              <span class="menu-card__desc">닉네임 바꾸기</span>
+              <span class="menu-card__desc sr-only">닉네임 바꾸기</span>
             </span>
             <span class="menu-card__edit" aria-hidden="true"></span>
           </button>
@@ -277,10 +277,12 @@
     <section class="screen" data-screen="characters" aria-labelledby="characters-title" tabindex="-1" hidden>
       <header class="quiz-header">
         <h1 class="screen-title" id="characters-title">내 캐릭터</h1>
-        <button type="button" class="button button--ghost" id="characters-back">홈으로</button>
+        <button type="button" class="button button--ghost" id="characters-back">
+          <span class="icon" data-icon="arrow-left" aria-hidden="true"></span>홈
+        </button>
       </header>
 
-      <p class="screen-lead">캐릭터를 걸어서 올라가면 그 자리에서 바꿔 볼 수 있어요.</p>
+      <p class="screen-lead">원하는 캐릭터를 골라 모습을 바꿔보세요.</p>
 
       <div class="character-stage" id="character-stage">
         <div class="character-grid" id="character-grid"></div>
@@ -299,7 +301,7 @@
           <div>
             <p class="online-hero__eyebrow"><span class="online-hero__dot" aria-hidden="true"></span>친구와 함께</p>
             <h1 class="screen-title online-hero__title" id="online-title">온라인 퀴즈</h1>
-            <p class="online-hero__lead">열린 방에 바로 들어가거나, 우리만의 방을 만들어 보세요.</p>
+            <p class="online-hero__lead">방에 참여하거나 새로 만들어 보세요.</p>
           </div>
           <button type="button" class="button button--ghost online-home" id="online-home">
             <span class="icon" data-icon="arrow-left" aria-hidden="true"></span>홈
@@ -344,8 +346,8 @@
         <div class="online-block__head">
           <div>
             <p class="online-block__eyebrow">지금 열린 방</p>
-            <h2 class="online-block__title" id="rooms-title">함께 풀 방을 골라요</h2>
-            <p class="online-block__caption">참가할 수 있는 방을 먼저 보여드려요.</p>
+            <h2 class="online-block__title" id="rooms-title">열린 방</h2>
+            <p class="online-block__caption">지금 참가할 수 있는 방부터 보여드려요.</p>
           </div>
           <div class="online-block__tools">
             <button type="button" class="button button--ghost button--small" id="room-filter-toggle"
@@ -617,21 +619,24 @@
     <section class="screen" data-screen="ranking" aria-labelledby="ranking-title" tabindex="-1" hidden>
       <header class="ranking-header">
         <h1 class="ranking-title" id="ranking-title">랭킹</h1>
-        <button type="button" class="button button--ghost" id="ranking-home">홈으로</button>
+        <button type="button" class="button button--ghost" id="ranking-home">
+          <span class="icon" data-icon="arrow-left" aria-hidden="true"></span>홈
+        </button>
       </header>
 
       <!-- 저장 범위 명시 (FR-6.10) -->
-      <p class="ranking-scope">
-        이 브라우저에 저장된 내 기록입니다. 다른 기기나 다른 사람의 기록과는 공유되지 않습니다.
-      </p>
+      <p class="ranking-scope">이 브라우저에 저장된 내 기록입니다.</p>
 
       <div class="ranking-tabs" id="ranking-tabs" role="group" aria-label="랭킹 종류"></div>
 
       <ol class="ranking-list" id="ranking-list"></ol>
-      <p class="ranking-empty" id="ranking-empty" hidden></p>
+      <div class="ranking-empty" id="ranking-empty" hidden>
+        <p class="ranking-empty__message" id="ranking-empty-message"></p>
+        <button type="button" class="button button--primary" id="ranking-empty-home">퀴즈 시작하기</button>
+      </div>
 
       <div class="ranking-footer">
-        <button type="button" class="button button--ghost" id="ranking-clear">전체 기록 초기화</button>
+        <button type="button" class="button button--ghost" id="ranking-clear">모든 기록 지우기</button>
       </div>
 
       <!-- 이 화면도 걸어 다닐 수 있다. 화면에 붙어(fixed) 있어 자리를 차지하지 않는다 -->

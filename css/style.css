@@ -1132,8 +1132,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
   padding: var(--space-3);
-  /* 화면 워커가 홈 버튼 아래에서 쉬는 동안 안내문을 덮지 않는 주차 공간 */
-  padding-inline-end: calc(var(--space-3) + var(--screen-walker-width) + var(--space-5));
+  /* 화면 워커가 머리말 오른쪽 아래에서 쉬는 동안 안내문을 덮지 않는 주차 공간 */
+  padding-inline-end: calc(var(--screen-walker-width) + var(--space-5));
   word-break: keep-all;
 }
 
@@ -1215,7 +1215,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   font-variant-numeric: tabular-nums;
 }
 
-/* 빈 상태 (FR-6.12) */
+/* 빈 상태 (FR-6.12). 막힌 설명으로 끝내지 않고 곧바로 첫 기록을 시작할 수 있게 한다. */
 .ranking-empty {
   display: grid;
   justify-items: center;
@@ -1226,10 +1226,26 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   word-break: keep-all;
 }
 
+.ranking-empty__message {
+  margin: 0;
+}
+
+.ranking-empty .button {
+  min-width: 132px;
+}
+
 .ranking-footer {
   display: flex;
   justify-content: center;
   margin-top: var(--space-5);
+}
+
+@media (max-width: 360px) and (max-height: 700px) {
+  /* 320×550에서는 양쪽 고정 조작부 사이에 위험 행동을 온전히 둔다. */
+  .ranking-footer .button {
+    padding-inline: var(--space-2);
+    font-size: var(--text-sm);
+  }
 }
 
 /* ── 내 캐릭터 화면 ── */
@@ -1779,6 +1795,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   gap: var(--space-2);
   margin: 0;
   padding: var(--space-2) var(--space-3);
+  /* 머리말 오른쪽 아래에서 시작한 워커와 안내 문장이 320px에서도 겹치지 않는다. */
+  padding-inline-end: calc(var(--screen-walker-width) + var(--space-5));
   word-break: keep-all;
 }
 
@@ -2100,24 +2118,41 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 420px), (max-height: 480px) {
+  /* 좁거나 짧은 화면은 같은 뜻을 반복하는 소개를 접고, 제목과 세 가지 행동을 먼저 보여 준다. */
+  .online-hero__header {
+    align-items: center;
+    margin-bottom: 0;
+  }
+
+  .online-hero__eyebrow,
+  .online-hero__lead,
+  .online-block__eyebrow,
+  .online-block__caption {
+    display: none;
+  }
+
   .online-actions {
     gap: var(--space-1);
   }
 
   .online-action-card {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: var(--icon-sm) minmax(0, 1fr);
     gap: var(--space-1);
-    min-height: 72px;
+    min-height: 56px;
     padding: var(--space-2) var(--space-1);
-    text-align: center;
+    text-align: left;
   }
 
   .online-action-card__icon {
-    width: 32px;
-    height: 32px;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  .online-action-card__body strong {
+    font-size: var(--text-xs);
+    white-space: nowrap;
   }
 
   .online-action-card__copy {
@@ -2129,17 +2164,21 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 
   .online-block__head {
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
   }
 
   .online-block__tools {
-    width: 100%;
+    width: auto;
+    margin-left: auto;
   }
 
   .online-block__tools .button {
-    flex: 1;
+    flex: none;
   }
+}
 
+@media (max-width: 420px) {
   .room-filters {
     grid-template-columns: 1fr;
   }
@@ -2151,6 +2190,22 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
   .room-filters__reset {
     justify-self: stretch;
+  }
+}
+
+@media (max-height: 480px) {
+  /* 짧은 가로 화면의 고정 스틱 아래에는 같은 빈 상태를 되풀이하는 개수 문구를
+     시각적으로 접는다. role=status 낭독은 유지한다. */
+  .room-list-summary {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
   }
 }
 
@@ -2805,14 +2860,17 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 
 .menu-card--wide {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  gap: var(--space-1);
   width: 100%;
   min-height: 52px;
   padding: var(--space-1) var(--space-2);
 }
 
 .menu-card--wide .menu-card__edit {
-  display: none;
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .menu-card--wide .menu-card__figure {
@@ -3085,7 +3143,12 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   padding: var(--space-2) 64px var(--space-2) var(--space-3);
 }
 
-.ranking-scope,
+.ranking-scope {
+  padding-block: var(--space-2);
+  padding-inline-start: var(--space-3);
+  padding-inline-end: calc(var(--screen-walker-width) + var(--space-5));
+}
+
 .screen-lead {
   padding: var(--space-2) var(--space-3);
 }
@@ -3242,6 +3305,16 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
 @media (max-height: 700px) {
   .home-player {
     width: 120px;
+  }
+
+  /* 짧은 화면은 슬롯 폭을 줄이므로 연필을 거두고 닉네임 자체를 우선한다. 버튼의
+     스크린리더 이름에는 「닉네임 바꾸기」가 그대로 남는다. */
+  .menu-card--wide {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .menu-card--wide .menu-card__edit {
+    display: none;
   }
 
   .home-menu .menu-card {

@@ -169,7 +169,7 @@ copy(['nickname,mode,category,score,correctCount,totalCount,durationMs,playedAt'
                r.totalCount, r.durationMs, r.playedAt].join(','))).join('\n'));
 ```
 
-**지우기** — 앱의 랭킹 화면에 있는 `전체 기록 초기화` 버튼을 쓰는 편이 낫다.
+**지우기** — 앱의 랭킹 화면에 있는 `모든 기록 지우기` 버튼을 쓰는 편이 낫다.
 확인 절차가 있고 어댑터를 거친다(FR-6.6). 콘솔로 지우려면 아래다.
 
 ```js

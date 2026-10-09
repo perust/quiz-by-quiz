@@ -130,13 +130,13 @@ export function createResultScreen(
     el.best.classList.toggle('result-best--new', isRecord || bestScore === null);
 
     if (bestScore === null) {
-      el.best.textContent = '첫 기록입니다. 다음 판부터 이 점수와 비교해 드릴게요.';
+      el.best.textContent = '첫 기록이에요.';
     } else if (isRecord) {
-      el.best.textContent = `신기록입니다. 이전 최고 ${bestScore}점을 넘었어요.`;
+      el.best.textContent = `신기록 · 이전 최고 ${bestScore}점`;
     } else if (summary.score === bestScore) {
-      el.best.textContent = `최고 기록과 같은 ${bestScore}점입니다.`;
+      el.best.textContent = `최고 기록과 같은 ${bestScore}점`;
     } else {
-      el.best.textContent = `최고 기록은 ${bestScore}점입니다.`;
+      el.best.textContent = `최고 기록 ${bestScore}점`;
     }
   }
 

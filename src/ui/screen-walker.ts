@@ -36,6 +36,23 @@ export interface ScreenWalker {
   hide(): void;
 }
 
+/**
+ * 머리말 오른쪽 아래의 빈 가장자리에 캐릭터를 세운다. 안내 배너가 바로 이어지는
+ * 화면에서 버튼 아래 중앙에 세우면 320px 폭에서 문장을 덮으므로, 실제 머리말과
+ * 캐릭터 크기를 재 오른쪽에 작은 간격을 남긴다.
+ */
+export function pointBelowRightEdge(
+  anchor: HTMLElement,
+  character: HTMLElement,
+): Point | null {
+  const box = anchor.getBoundingClientRect();
+  if (box.width === 0) return null;
+  return {
+    x: box.right - character.offsetWidth / 2 - 12,
+    y: box.bottom + character.offsetHeight + 6,
+  };
+}
+
 export function createScreenWalker({
   screen, character, startAt, startPoint, onMove,
 }: ScreenWalkerConfig): ScreenWalker {

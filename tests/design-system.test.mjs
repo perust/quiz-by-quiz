@@ -419,7 +419,7 @@ test('상태: 버튼은 쉬는·눌림·꺼짐이 높이와 채움으로 구분�
   assert.equal(valueOf(rules, node('button.ranking-tab.ranking-tab--active', tabs), 'box-shadow', MOBILE), 'var(--elevation-1)');
   assert.equal(valueOf(rules, node('button.ranking-tab', tabs), 'box-shadow', MOBILE), null);
 
-  // 랭킹 워커는 홈 버튼 아래 안내 배너에 쉬므로, 본문을 덮지 않는 전용 주차 폭을 둔다
+  // 온라인·랭킹 워커는 머리말 오른쪽 아래에 쉬므로, 본문을 덮지 않는 전용 주차 폭을 둔다
   const ranking = node("section.screen[data-screen='ranking']", node('main.app', node('body')));
   assert.equal(root.get('--walker-width'), '34px');
   assert.equal(root.get('--walker-height'), '42px');
@@ -429,7 +429,11 @@ test('상태: 버튼은 쉬는·눌림·꺼짐이 높이와 채움으로 구분�
   assert.equal(valueOf(rules, node('div.walker.walker--home'), 'height', MOBILE), 'var(--screen-walker-height)');
   assert.equal(
     valueOf(rules, node('p.ranking-scope', ranking), 'padding-inline-end', MOBILE),
-    'calc(var(--space-3) + var(--screen-walker-width) + var(--space-5))',
+    'calc(var(--screen-walker-width) + var(--space-5))',
+  );
+  assert.equal(
+    valueOf(rules, node('p.online-note#online-note'), 'padding-inline-end', MOBILE),
+    'calc(var(--screen-walker-width) + var(--space-5))',
   );
 
   // 고른 캐릭터·준비 완료·대기실 준비판은 ✓ 표식을 함께 단다
@@ -437,6 +441,21 @@ test('상태: 버튼은 쉬는·눌림·꺼짐이 높이와 채움으로 구분�
   assert.match(valueOf(rules, node("button.button.waiting-ready[aria-pressed='true']::before"), '-webkit-mask', MOBILE), /var\(--i-check\)/);
   assert.match(valueOf(rules, node('span.lounge__ready.lounge__ready--on::before'), 'mask', MOBILE), /var\(--i-check\)/);
   assert.equal(valueOf(rules, node('span.lounge__ready::before'), 'border-radius', MOBILE), '50%', '대기는 빈 동그라미다');
+});
+
+test('좁거나 짧은 온라인 동작의 compact 글자·아이콘은 theme cascade 뒤에도 유지된다', () => {
+  const card = node('button.online-action-card');
+  const body = node('span.online-action-card__body', card);
+  const label = node('strong', body);
+  const icon = node('span.online-action-card__icon', card);
+  const glyph = node('span.online-action-card__icon::before', card);
+
+  for (const viewport of [MOBILE, NARROW]) {
+    assert.equal(valueOf(rules, label, 'font-size', viewport), 'var(--text-xs)');
+    assert.equal(valueOf(rules, icon, 'width', viewport), 'var(--icon-sm)');
+    assert.equal(valueOf(rules, glyph, 'width', viewport), 'var(--icon-sm)');
+    assert.equal(valueOf(rules, glyph, 'height', viewport), 'var(--icon-sm)');
+  }
 });
 
 // ── 아이콘 ─────────────────────────────────────────────────────────

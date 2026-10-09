@@ -94,12 +94,12 @@ test('빈 방 목록은 첫 방 만들기 또는 필터 초기화로 바로 이�
   );
 });
 
-test('온라인 워커는 홈 버튼을 가리지 않도록 캐릭터 높이만큼 아래에서 시작한다', async () => {
+test('온라인 워커는 좁은 화면의 안내문을 가리지 않는 머리말 오른쪽에서 시작한다', async () => {
   const online = await source('../src/ui/online.ts');
   const walker = await source('../src/ui/screen-walker.ts');
 
-  assert.match(online, /startAt: \(\) => el\.home/);
-  assert.doesNotMatch(online, /startPoint:[\s\S]*?el\.home\.getBoundingClientRect/);
+  assert.match(online, /startPoint: \(\) => pointBelowRightEdge\(el\.header, el\.character\)/);
+  assert.match(walker, /x: box\.right - character\.offsetWidth \/ 2 - 12/);
   assert.match(walker, /y: box\.bottom \+ character\.offsetHeight \+ 6/);
 });
 
