@@ -335,6 +335,13 @@ test('홈: 전체 월드 위 edge HUD와 하단 5칸 dock, 전체 도전 하나�
   assert.ok(html.indexOf('<div class="app-bar"') < html.indexOf('id="feedback"'));
   const appBar = node('div.app-bar', body);
   assert.equal(valueOf(rules, appBar, 'position', MOBILE), 'fixed');
+  const shortLandscape = { ...MOBILE, width: 568, height: 320 };
+  assert.equal(valueOf(rules, appBar, 'position', shortLandscape), 'fixed', '짧은 홈의 소리 HUD는 월드 가장자리에 남는다');
+  assert.equal(
+    valueOf(rules, node('div.app-bar', node('body')), 'position', shortLandscape),
+    'absolute',
+    '짧은 스크롤 화면의 소리 버튼은 아래 콘텐츠를 덮지 않고 문서와 함께 흐른다',
+  );
   assert.equal(valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname', node('div.home-player', stage)), 'width', MOBILE), '100%');
 });
 
