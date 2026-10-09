@@ -59,24 +59,24 @@ test('디자인 층은 기본 스타일 뒤에 로드되고 로컬 한글 픽셀
   assert.equal(root.get('--space-1'), '4px');
 });
 
-test('홈은 장식 패널 대신 세로·가로 원본 월드 art를 viewport 전체에 쓴다', async () => {
+test('홈은 캐릭터와 같은 2D 픽셀 격자의 세로·가로 월드 art를 viewport 전체에 쓴다', async () => {
   const [html, theme, mobileArt, desktopArt] = await Promise.all([
     source('../index.html'),
     source('../css/voxel-theme.css'),
-    stat(new URL('../css/assets/world-academy-mobile.webp', import.meta.url)),
-    stat(new URL('../css/assets/world-academy-desktop.webp', import.meta.url)),
+    stat(new URL('../css/assets/world-academy-pixel-mobile.webp', import.meta.url)),
+    stat(new URL('../css/assets/world-academy-pixel-desktop.webp', import.meta.url)),
   ]);
   const home = between(html, 'data-screen="home"', 'data-screen="quiz"');
   const hero = between(home, '<header class="home-header">', '</header>');
 
   assert.match(hero, /<h1 class="home-title" id="home-title">/);
   assert.doesNotMatch(home, /class="voxel-scene/, '별도 장식 카드가 월드를 복제하지 않는다');
-  assert.match(root.get('--world-art-mobile') ?? '', /world-academy-mobile\.webp/);
-  assert.match(root.get('--world-art-desktop') ?? '', /world-academy-desktop\.webp/);
-  assert.ok(mobileArt.size > 100_000, '세로 월드 art가 실재한다');
-  assert.ok(desktopArt.size > 100_000, '가로 월드 art가 실재한다');
+  assert.match(root.get('--world-art-mobile') ?? '', /world-academy-pixel-mobile\.webp/);
+  assert.match(root.get('--world-art-desktop') ?? '', /world-academy-pixel-desktop\.webp/);
+  assert.ok(mobileArt.size > 100_000, '세로 픽셀 월드 art가 실재한다');
+  assert.ok(desktopArt.size > 100_000, '가로 픽셀 월드 art가 실재한다');
   assert.match(theme, /body:has\(\[data-screen='home'\]:not\(\[hidden\]\)\)[\s\S]*var\(--world-art-mobile\)/);
-  assert.match(theme, /@media \(min-width: 600px\)[\s\S]*var\(--world-art-desktop\)/);
+  assert.match(theme, /@media \(min-width: 600px\), \(orientation: landscape\)[\s\S]*var\(--world-art-desktop\)/);
 });
 
 test('카테고리 카드는 분야 식별자를 노출해 같은 아이콘 묶음과 작은 식별 색을 받는다', async () => {
