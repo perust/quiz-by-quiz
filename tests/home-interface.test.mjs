@@ -20,8 +20,11 @@ test('홈 바로가기는 월드 가장자리 HUD이고 캐릭터는 입구 아�
   ]);
   const home = between(html, 'data-screen="home"', 'data-screen="quiz"');
   const shortcuts = between(home, '<nav class="home-menu"', '</nav>');
+  const profile = between(home, 'id="open-nickname"', '</button>');
 
   assert.ok(home.indexOf('id="open-nickname"') < home.indexOf('<nav class="home-menu"'));
+  assert.match(profile, /menu-card__desc sr-only">닉네임 바꾸기/);
+  assert.match(profile, /menu-card__edit" aria-hidden="true"/);
   assert.match(home, /<nav class="home-menu" aria-label="홈 바로가기">/);
   assert.equal((shortcuts.match(/class="menu-card"/g) ?? []).length, 3);
   // 아이콘은 글리프가 아니라 디자인 시스템 아이콘이다. 낭독은 버튼의 aria-label 이 맡는다
@@ -49,6 +52,9 @@ test('홈 바로가기는 월드 가장자리 HUD이고 캐릭터는 입구 아�
   assert.doesNotMatch(css, /\.menu-card:nth-child\(odd\):last-child/);
   assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
   assert.match(worldFirst, /\.home-menu \.menu-card \{[\s\S]*?min-height: 64px/);
+  assert.match(worldFirst, /\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\) 16px/);
+  assert.match(worldFirst, /\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: block/);
+  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-player \{[\s\S]*?width: 120px[\s\S]*?\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\)[\s\S]*?\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: none/);
   assert.match(css, /@media \(max-height: 700px\)[\s\S]*?#open-characters,[\s\S]*?bottom: calc\(var\(--home-dock-h/);
   assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
   assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);

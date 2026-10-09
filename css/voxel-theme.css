@@ -223,7 +223,7 @@
   --world-art-mobile: url('assets/world-academy-pixel-mobile.webp');
   --world-art-desktop: url('assets/world-academy-pixel-desktop.webp');
   --world-clear: rgb(29 31 58 / 0.04);
-  --world-veil: rgb(29 31 58 / 0.16);
+  --world-veil: rgb(29 31 58 / 0.2);
   --world-veil-strong: rgb(29 31 58 / 0.3);
   --hud-bg: rgb(29 31 58 / 0.88);
   --hud-bg-soft: rgb(29 31 58 / 0.76);
@@ -1914,6 +1914,19 @@ select.room-form__input {
   line-height: var(--leading-snug);
 }
 
+/* style.css의 짧은 로비 배치를 theme 뒤에서도 지킨다. 같은 specificity의 기본
+   아이콘·글자 규칙이 compact 값을 되돌리면 320px에서 동작 이름이 잘린다. */
+@media (max-width: 420px), (max-height: 480px) {
+  .online-action-card__icon::before {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  .online-action-card__body strong {
+    font-size: var(--text-xs);
+  }
+}
+
 .online-action-card__copy {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -2952,7 +2965,8 @@ body:has([data-screen='home']:not([hidden])) {
 .home-menu .menu-card__figure,
 .home-player .menu-card__name,
 .home-menu .menu-card__name,
-.home-player .menu-card__desc {
+.home-player .menu-card__desc,
+.home-player .menu-card__edit {
   color: var(--hud-text);
 }
 

@@ -29,7 +29,7 @@ import {
   isCurrentOnlineScreenAction,
   type OnlineScreenActionOwnership,
 } from './online-action.js';
-import { createScreenWalker } from './screen-walker.js';
+import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 
 const ALL_CATEGORY = '전체 도전';
 type OnlinePanel = 'rooms' | 'join' | 'create';
@@ -55,6 +55,7 @@ export function createOnlineScreen(
 ): OnlineScreen {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online"]'),
+    header: needOne<HTMLElement>('[data-screen="online"] .online-hero__header'),
     note: need('online-note'),
     // 로비 전체에 걸리는 알림. 목록에서 참가 실패나 대기실에서 돌아온 이유가 뜬다
     message: need('online-message'),
@@ -96,8 +97,8 @@ export function createOnlineScreen(
   const walker = createScreenWalker({
     screen: el.screen,
     character: el.character,
-    // 공통 screen walker가 실제 캐릭터 높이를 재 홈 버튼 바로 아래에 세운다.
-    startAt: () => el.home,
+    // 좁은 화면에서도 바로 아래 안내문을 덮지 않는 머리말 오른쪽 빈자리에 선다.
+    startPoint: () => pointBelowRightEdge(el.header, el.character),
   });
 
   /** 저장소에서 마지막으로 읽은 원본. 필터를 바꿀 때 네트워크를 다시 부르지 않는다 */

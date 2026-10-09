@@ -4,7 +4,7 @@
 
 import { CATEGORIES } from '../constants.js';
 import { need, needOne } from '../dom.js';
-import { createScreenWalker } from './screen-walker.js';
+import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 import { formatPlayedAt } from './format.js';
 import { trapFocus } from './quiz.js';
 import { announce } from './screens.js';
@@ -59,8 +59,12 @@ export function createRankingScreen(
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
+    header: needOne<HTMLElement>('[data-screen="ranking"] .ranking-header'),
+    character: need('ranking-character'),
     list: need('ranking-list'),
     empty: need('ranking-empty'),
+    emptyMessage: need('ranking-empty-message'),
+    emptyHomeButton: need<HTMLButtonElement>('ranking-empty-home'),
     homeButton: need<HTMLButtonElement>('ranking-home'),
     clearButton: need<HTMLButtonElement>('ranking-clear'),
     dialog: need('clear-dialog'),
@@ -70,8 +74,8 @@ export function createRankingScreen(
 
   const walker = createScreenWalker({
     screen: needOne<HTMLElement>('[data-screen="ranking"]'),
-    character: need('ranking-character'),
-    startAt: () => need('ranking-home'),
+    character: el.character,
+    startPoint: () => pointBelowRightEdge(el.header, el.character),
   });
 
   let activeKey = TABS[0].key;
@@ -166,7 +170,7 @@ export function createRankingScreen(
 
     if (records.length === 0) {
       // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12)
-      el.empty.textContent = `${tab.label} 기록이 아직 없습니다. 한 판 풀고 첫 기록을 남겨보세요.`;
+      el.emptyMessage.textContent = `${tab.label} 기록이 아직 없습니다.`;
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -203,6 +207,7 @@ export function createRankingScreen(
   buildTabs();
 
   el.homeButton.addEventListener('click', () => onHome());
+  el.emptyHomeButton.addEventListener('click', () => onHome());
   el.clearButton.addEventListener('click', openClearDialog);
   el.dialogCancel.addEventListener('click', closeClearDialog);
   el.dialogConfirm.addEventListener('click', confirmClear);

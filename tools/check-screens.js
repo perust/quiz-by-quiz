@@ -31,6 +31,8 @@
 //      캐릭터가 좌상단에 박힌 채 움직이지 않았고, 세우려는 프레임만 끝없이 돌았다.
 //      한가운데로 세우자 1280×900 에서는 그 자리가 「랭킹 보기」 위였다 — 결과 화면은
 //      섹션에 포커스가 있어, 앞 화면에서 누르던 Enter 가 그대로 그 버튼을 누른다
+//   ⑧ 온라인·랭킹 워커가 320px 머리말 아래 안내문 위에 주차해 글자를 가렸다. 안내문이
+//      줄어들거나 머리말 버튼 폭이 바뀌어도 글 끝과 캐릭터 왼쪽 사이를 직접 확인한다
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -91,6 +93,26 @@
   };
 
   // ── 불변식 ────────────────────────────────────────────────────
+
+  function 겹친글자줄(요소, 상자) {
+    const 범위 = document.createRange();
+    범위.selectNodeContents(요소);
+    return [...범위.getClientRects()].filter((줄) =>
+      줄.left < 상자.right && 줄.right > 상자.left
+      && 줄.top < 상자.bottom && 줄.bottom > 상자.top);
+  }
+
+  function 글자너비(요소) {
+    const 범위 = document.createRange();
+    범위.selectNodeContents(요소);
+    return 범위.getBoundingClientRect().width;
+  }
+
+  function 겹친넓이(왼쪽, 오른쪽) {
+    const 너비 = Math.max(0, Math.min(왼쪽.right, 오른쪽.right) - Math.max(왼쪽.left, 오른쪽.left));
+    const 높이 = Math.max(0, Math.min(왼쪽.bottom, 오른쪽.bottom) - Math.max(왼쪽.top, 오른쪽.top));
+    return 너비 * 높이;
+  }
 
   /**
    * 이 화면에 있을 때 참이어야 하는 것들.
@@ -223,10 +245,27 @@
     const 랭킹탭크기 = [...(활성랭킹?.querySelectorAll('.ranking-tab') ?? [])]
       .filter((탭) => 탭.getClientRects().length > 0)
       .map((탭) => 탭.getBoundingClientRect().height);
+    프레임돌리기();
     결과.push({
       자리: '랭킹', 이름: '랭킹 탭의 터치 목표가 44px 이상이다',
       통과: 랭킹탭크기.length === 6 && 랭킹탭크기.every((높이) => 높이 >= 44),
       무엇: 랭킹탭크기.map((높이) => `${높이}px`).join(', '),
+    });
+    const 랭킹안내 = document.querySelector('.ranking-scope');
+    const 랭킹캐릭터 = document.getElementById('ranking-character');
+    const 겹친랭킹글 = 겹친글자줄(랭킹안내, 랭킹캐릭터.getBoundingClientRect());
+    결과.push({
+      자리: '랭킹', 이름: '주차한 캐릭터가 저장 범위 안내 글을 덮지 않는다',
+      통과: 겹친랭킹글.length === 0,
+      무엇: `겹친 글자 줄 ${겹친랭킹글.length}개`,
+    });
+    const 기록지우기상자 = document.getElementById('ranking-clear').getBoundingClientRect();
+    const 조작부겹침 = 겹친넓이(기록지우기상자, document.querySelector('.walk-stick').getBoundingClientRect())
+      + 겹친넓이(기록지우기상자, document.querySelector('.walk-confirm').getBoundingClientRect());
+    결과.push({
+      자리: '랭킹', 이름: '위험 행동이 양쪽 고정 조작부와 겹치지 않는다',
+      통과: 조작부겹침 === 0,
+      무엇: `겹친 넓이 ${조작부겹침}px²`,
     });
     잠든퀴즈를깨워본다('랭킹');
     await 눌러('ranking-home');
@@ -317,10 +356,26 @@
     살펴본다('로비', 'online', true);
     const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
       .map((id) => [id, document.getElementById(id).getBoundingClientRect()]);
+    프레임돌리기();
     결과.push({
       자리: '로비', 이름: '반복 조작의 터치 목표가 44px 이상이다',
       통과: 로비터치크기.every(([, 크기]) => 크기.width >= 44 && 크기.height >= 44),
       무엇: 로비터치크기.map(([id, 크기]) => `${id} ${크기.width}px × ${크기.height}px`).join(' · '),
+    });
+    const 로비동작이름 = [...document.querySelectorAll('.online-action-card__body strong')];
+    결과.push({
+      자리: '로비', 이름: '세 주요 동작의 이름이 좁은 화면에서도 8px 이상 여유를 둔다',
+      통과: 로비동작이름.every((이름) => 이름.clientWidth - 글자너비(이름) >= 8),
+      무엇: 로비동작이름.map((이름) =>
+        `${이름.textContent.trim()} 여유 ${(이름.clientWidth - 글자너비(이름)).toFixed(1)}px`).join(' · '),
+    });
+    const 온라인안내 = document.getElementById('online-note');
+    const 온라인캐릭터 = document.getElementById('online-character');
+    const 겹친온라인글 = 겹친글자줄(온라인안내, 온라인캐릭터.getBoundingClientRect());
+    결과.push({
+      자리: '로비', 이름: '주차한 캐릭터가 연결 안내 글을 덮지 않는다',
+      통과: 겹친온라인글.length === 0,
+      무엇: `겹친 글자 줄 ${겹친온라인글.length}개`,
     });
     잠든퀴즈를깨워본다('로비');
 
