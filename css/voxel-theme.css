@@ -219,9 +219,9 @@
   --focus-width: 3px;
   --focus-offset: 2px;
 
-  /* 월드 우선 화면: 생성한 원본 복셀 배경 위에 올라가는 제한된 HUD 표면 */
-  --world-art-mobile: url('assets/world-academy-mobile.webp');
-  --world-art-desktop: url('assets/world-academy-desktop.webp');
+  /* 월드 우선 화면: 캐릭터와 같은 큰 픽셀 격자의 2D 배경 위에 올라가는 제한된 HUD 표면 */
+  --world-art-mobile: url('assets/world-academy-pixel-mobile.webp');
+  --world-art-desktop: url('assets/world-academy-pixel-desktop.webp');
   --world-clear: rgb(29 31 58 / 0.04);
   --world-veil: rgb(29 31 58 / 0.16);
   --world-veil-strong: rgb(29 31 58 / 0.3);
@@ -2911,7 +2911,7 @@ body:has([data-screen='home']:not([hidden])) {
     var(--world-art-mobile);
 }
 
-@media (min-width: 600px) {
+@media (min-width: 600px), (orientation: landscape) {
   body {
     background-image:
       linear-gradient(var(--world-veil), var(--world-veil)),
