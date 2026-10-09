@@ -377,6 +377,12 @@
       통과: 겹친온라인글.length === 0,
       무엇: `겹친 글자 줄 ${겹친온라인글.length}개`,
     });
+    const 소리버튼위치 = getComputedStyle(document.querySelector('.app-bar')).position;
+    결과.push({
+      자리: '로비', 이름: '짧은 가로에서는 소리 버튼이 스크롤 동작을 덮지 않고 문서와 함께 흐른다',
+      통과: innerHeight > 480 || 소리버튼위치 === 'absolute',
+      무엇: `높이 ${innerHeight}px · position ${소리버튼위치}`,
+    });
     잠든퀴즈를깨워본다('로비');
 
     // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다

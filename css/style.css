@@ -3400,3 +3400,12 @@ body:has(.home-note:not([hidden])) #home-character {
     display: none;
   }
 }
+
+/* 짧은 가로의 스크롤 화면에서는 고정 소리 버튼이 아래로 올라온 새로고침·필터 같은
+   동작을 덮지 않게 문서와 함께 흘려보낸다. 홈은 더 구체적인 home app-bar 규칙이
+   fixed를 유지해, 스크롤 없는 월드의 edge HUD가 그대로 남는다. */
+@media (max-height: 480px) {
+  .app-bar {
+    position: absolute;
+  }
+}
