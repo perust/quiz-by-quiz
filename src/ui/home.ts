@@ -97,7 +97,7 @@ export function createHomeScreen({
     // 처음에는 「내 캐릭터」 입구 바로 아래의 월드 바닥에 선다.
     // HUD 글자를 덮지 않으면서도 한 번 위로 걸으면 바로 입구를 고를 수 있다.
     startAt: () => {
-      // 200% 확대나 가로 화면에서는 입구 셋이 dock 위 한 줄로 이동한다.
+      // 200% 확대나 가로 화면에서는 두 보조 입구가 dock 위 양쪽으로 이동한다.
       // 그때는 가운데 위의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
       if (window.innerHeight <= 700) {
         const entry = el.openRanking.getBoundingClientRect();
@@ -269,6 +269,10 @@ export function createHomeScreen({
       const best = bestScores.all;
       el.startAllMeta.hidden = best === null || best === undefined;
       el.startAllMeta.textContent = best === null || best === undefined ? '' : `최고 ${best}점`;
+      el.startAll.setAttribute(
+        'aria-label',
+        best === null || best === undefined ? '전체 도전' : `전체 도전, 최고 ${best}점`,
+      );
 
       // 선택한 모습은 홈을 직접 걷는 캐릭터 하나로 보여 준다.
       // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.

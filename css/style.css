@@ -305,8 +305,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   height: var(--icon-md);
 }
 
-/* 좁은 화면의 dock 은 아이콘과 짧은 이름만 세로로 쌓는다.
-   세 보조 동작을 한 줄에 유지해 분야 고르기가 첫 화면 안으로 올라오게 한다. */
+/* 좁은 화면의 보조 HUD는 아이콘과 짧은 이름만 세로로 쌓는다. */
 @media (max-width: 576px) {
   .home-menu .menu-card {
     flex-direction: column;
@@ -402,7 +401,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin-top: var(--space-1);
 }
 
-/* ── 전체 도전 (FR-2.2) — 홈의 주 행동 ── */
+/* 온라인과 전체 도전 — 홈의 두 주요 게임 진입점 */
+.home-primary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
 .challenge-card {
   display: flex;
   align-items: center;
@@ -2928,11 +2933,6 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 
 #open-ranking {
   top: 42%;
-  left: max(var(--space-3), env(safe-area-inset-left));
-}
-
-#open-online {
-  top: 42%;
   right: max(var(--space-3), env(safe-area-inset-right));
 }
 
@@ -3013,10 +3013,15 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
   grid-column: auto;
 }
 
-.challenge-card {
-  width: min(280px, 100%);
-  min-height: 52px;
+.home-primary-actions {
+  width: min(568px, 100%);
   margin: var(--space-2) auto 0;
+}
+
+.challenge-card {
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
   padding: var(--space-2) var(--space-4);
 }
 
@@ -3206,6 +3211,26 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
+/* 중간 폭은 기본적으로 기록 pill까지 한 줄에 우겨 넣지 않는다. 짧은 가로 화면은
+   조작부 공간을 지키기 위해 두 열을 유지하고, 보조 기록만 아래 규칙에서 접는다. */
+@media (max-width: 560px) {
+  .home-primary-actions {
+    grid-template-columns: minmax(0, 280px);
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) and (max-height: 480px) {
+  .home-primary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .home-primary-actions .challenge-card__meta {
+    display: none;
+  }
+}
+
 @media (max-width: 420px) {
   .category-card__name--full {
     display: none;
@@ -3232,6 +3257,21 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
 
   .home-player {
     width: 140px;
+  }
+
+  .home-primary-actions {
+    grid-template-columns: minmax(0, 280px);
+    justify-content: center;
+  }
+
+  .home-primary-actions .challenge-card {
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
+  }
+
+  .home-primary-actions .challenge-card__icon {
+    width: 36px;
+    height: 36px;
   }
 
   .menu-card--wide .menu-card__name,
@@ -3308,7 +3348,7 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 
   /* 짧은 화면은 슬롯 폭을 줄이므로 연필을 거두고 닉네임 자체를 우선한다. 버튼의
-     스크린리더 이름에는 「닉네임 바꾸기」가 그대로 남는다. */
+     스크린리더 이름에는 「닉네임·현재 값·바꾸기」가 그대로 남는다. */
   .menu-card--wide {
     grid-template-columns: 36px minmax(0, 1fr);
   }
@@ -3350,8 +3390,8 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
-/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 브랜드는 접고 세 입구를 dock 바로 위
-   한 줄로 배치한다. 걷기와 직접 누르기는 별개 입력 경로이므로 스틱은 거두지 않는다. */
+/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 브랜드는 접고 두 보조 입구를 dock 바로 위
+   양쪽에 배치한다. 걷기와 직접 누르기는 별개 입력 경로이므로 스틱은 거두지 않는다. */
 @media (max-height: 700px) {
   .home-header {
     position: absolute;
@@ -3366,8 +3406,7 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 
   #open-characters,
-  #open-ranking,
-  #open-online {
+  #open-ranking {
     top: auto;
     bottom: calc(var(--home-dock-h, 148px) + 20px + env(safe-area-inset-bottom, 0px));
     width: 56px;
@@ -3379,12 +3418,9 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 
   #open-ranking {
-    left: 50%;
-    translate: -50% 0;
-  }
-
-  #open-online {
     right: max(var(--space-3), env(safe-area-inset-right));
+    left: auto;
+    translate: none;
   }
 }
 

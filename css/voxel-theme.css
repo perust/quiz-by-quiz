@@ -627,6 +627,13 @@ textarea {
   font-size: var(--text-lg);
 }
 
+.menu-card__label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
 .menu-card__desc {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -650,9 +657,10 @@ textarea {
     background: var(--surface-subtle);
   }
 
-  .home-player .menu-card--wide:hover:not(:disabled) {
+  .home-player .menu-card--wide:hover:not(:disabled),
+  .home-menu .menu-card:hover:not(:disabled) {
     border-color: var(--accent-line);
-    background: var(--surface);
+    background: var(--hud-bg);
   }
 }
 
@@ -794,7 +802,7 @@ textarea {
   opacity: 0.5;
 }
 
-/* 전체 도전: 홈의 주 행동. 한 화면에서 가장 무겁게 채운 유일한 조각이다 */
+/* 온라인과 전체 도전: 같은 크기와 눌림 깊이를 가진 주요 게임 진입점 */
 .challenge-card {
   border: var(--border-1) solid transparent;
   border-radius: var(--radius-lg);
@@ -2970,6 +2978,10 @@ body:has([data-screen='home']:not([hidden])) {
   color: var(--hud-text);
 }
 
+.home-player .menu-card__label {
+  color: var(--hud-text-muted);
+}
+
 .home-player .menu-card__figure {
   background: var(--correct-soft);
   color: var(--correct-ink);
@@ -3091,6 +3103,35 @@ body:has([data-screen='home']:not([hidden])) {
   .challenge-card:hover:not(:disabled) {
     border-color: var(--primary-action-line);
     background: var(--primary-action-hover);
+  }
+}
+
+/* 온라인은 브랜드 보라, 전체 도전은 골드로 구분하되 크기와 높이는 같다. */
+.challenge-card--online {
+  border-color: var(--accent-line);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.challenge-card--online .challenge-card__icon {
+  color: var(--accent);
+}
+
+/* 어두운 dock 밖에서도 키보드 초점과 캐릭터 위치를 색 변화에 기대지 않고 읽는다. */
+.home-primary-actions .challenge-card:focus-visible,
+.home-primary-actions .challenge-card.is-standing {
+  outline-color: var(--hud-text);
+}
+
+.home-primary-actions .challenge-card.is-standing {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+
+@media (hover: hover) {
+  .challenge-card--online:hover:not(:disabled) {
+    border-color: var(--accent-line);
+    background: var(--accent-hover);
   }
 }
 

@@ -293,25 +293,52 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
 
 // ── 화면 위계 ──────────────────────────────────────────────────────
 
-test('홈: 전체 월드 위 edge HUD와 하단 5칸 dock, 전체 도전 하나만 주 행동이다', () => {
+test('홈: 닉네임 라벨, 보조 edge HUD, 하단 5칸 dock과 동등한 온라인·전체 도전 진입점이다', () => {
   const home = html.slice(html.indexOf('data-screen="home"'), html.indexOf('data-screen="quiz"'));
-  const order = ['id="open-nickname"', '<nav class="home-menu"', '<header class="home-header">', 'class="home-quests"', 'id="category-grid"', 'id="start-all"'];
+  const order = ['id="open-nickname"', '<nav class="home-menu"', '<header class="home-header">', 'class="home-quests"', 'id="category-grid"', 'class="home-primary-actions"', 'id="open-online"', 'id="start-all"'];
   order.reduce((previous, marker) => {
     const at = home.indexOf(marker);
     assert.ok(at > previous, `${marker} 의 순서가 어긋났다`);
     return at;
   }, -1);
   const quests = home.slice(home.indexOf('class="home-quests"'), home.indexOf('id="home-character"'));
-  assert.match(quests, /id="category-grid"[\s\S]*id="start-all"/, '다섯 분야와 전체 도전은 한 패널 안에 있다');
+  assert.match(quests, /id="category-grid"[\s\S]*id="open-online"[\s\S]*id="start-all"/, '다섯 분야와 두 주요 게임 진입점은 한 패널 안에 있다');
 
   const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
   const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", node('main.app', body)));
   const panel = node('div.home-quests', stage);
-  const startAll = node('button.challenge-card#start-all', panel);
+  const primaryActions = node('div.home-primary-actions', panel);
+  const online = node('button.challenge-card.challenge-card--online#open-online', primaryActions);
+  const startAll = node('button.challenge-card.challenge-card--all#start-all', primaryActions);
+  const nickname = node('button.menu-card.menu-card--wide#open-nickname', node('div.home-player', stage));
+  const nicknameLabel = node('span.menu-card__label', nickname);
   for (const env of [DESKTOP, MOBILE]) {
     assert.equal(valueOf(rules, startAll, 'background', env), 'var(--primary-action)', '전체 도전은 골드 주 행동이다');
+    assert.equal(valueOf(rules, online, 'background', env), 'var(--accent)', '온라인은 브랜드 보라 주요 행동이다');
     assert.match(valueOf(rules, startAll, 'box-shadow', env), /var\(--press-edge\)/, '눌러 들어가는 두께가 있다');
+    assert.equal(valueOf(rules, online, 'box-shadow', env), valueOf(rules, startAll, 'box-shadow', env), '두 주요 행동의 눌림 깊이는 같다');
+    assert.equal(valueOf(rules, online, 'width', env), valueOf(rules, startAll, 'width', env), '두 주요 행동의 폭 계약은 같다');
+    assert.equal(valueOf(rules, online, 'min-height', env), valueOf(rules, startAll, 'min-height', env), '두 주요 행동의 높이 계약은 같다');
     assert.equal(valueOf(rules, panel, 'background', env), 'var(--hud-bg)');
+    assert.equal(valueOf(rules, nicknameLabel, 'color', env), 'var(--hud-text-muted)', '작은 닉네임 라벨은 어두운 HUD에서 읽힌다');
+    assert.equal(
+      valueOf(rules, node('button.challenge-card.challenge-card--online#open-online:focus-visible', primaryActions), 'outline-color', env),
+      'var(--hud-text)',
+      '온라인의 키보드 초점은 어두운 dock과 구분된다',
+    );
+    assert.equal(
+      valueOf(rules, node('button.challenge-card.challenge-card--online#open-online.is-standing', primaryActions), 'outline-color', env),
+      'var(--hud-text)',
+      '온라인의 캐릭터 위치는 배경색 변화에만 기대지 않는다',
+    );
+    assert.equal(
+      valueOf(rules, node('button.challenge-card.challenge-card--all#start-all.is-standing', primaryActions), 'color', env),
+      'var(--on-accent)',
+      '전체 도전도 캐릭터가 올라서면 보라 바탕에서 읽힌다',
+    );
+    const standingHoveredAll = node('button.challenge-card.challenge-card--all#start-all.is-standing:hover', primaryActions);
+    assert.equal(valueOf(rules, standingHoveredAll, 'background', env), 'var(--accent-hover)', '전체 도전의 캐릭터 위치는 hover보다 우선한다');
+    assert.equal(valueOf(rules, standingHoveredAll, 'color', env), 'var(--on-accent)', 'hover 중인 캐릭터 위치도 보라 바탕에서 읽힌다');
 
     // 분야 색은 아이콘 칸에만. 칸 자체는 모두 같은 중립 바탕이다 — 무지개 카드를 만들지 않는다
     const looks = new Set();
@@ -323,12 +350,34 @@ test('홈: 전체 월드 위 edge HUD와 하단 5칸 dock, 전체 도전 하나�
     }
     assert.equal(looks.size, 1, `분야 칸의 바탕과 테두리는 하나다: ${[...looks].join(' / ')}`);
 
-    // 세 바로가기는 중앙 콘텐츠를 미는 panel이 아니라 독립 edge HUD 슬롯이다.
+    // 두 보조 바로가기는 중앙 콘텐츠를 미는 panel이 아니라 독립 edge HUD 슬롯이다.
     const dock = node('nav.home-menu', stage);
     assert.equal(valueOf(rules, dock, 'display', env), 'contents');
     assert.equal(valueOf(rules, node('button.menu-card#open-ranking', dock), 'background', env), 'var(--hud-bg)');
     assert.equal(valueOf(rules, node('header.home-header', stage), 'background', env), 'transparent');
   }
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', DESKTOP), 'repeat(2, minmax(0, 1fr))');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', MOBILE), 'minmax(0, 280px)');
+  const mediumPortrait = { ...MOBILE, width: 440, height: 844 };
+  const shortMedium = { ...MOBILE, width: 440, height: 400 };
+  const fractionalMedium = { ...MOBILE, width: 440, height: 480.5 };
+  const shortNarrow = { ...MOBILE, width: 400, height: 400 };
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', mediumPortrait), 'minmax(0, 280px)', '기록 pill이 있는 중간 폭 세로 화면은 한 열이다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortMedium), 'repeat(2, minmax(0, 1fr))', '짧은 가로 화면은 조작부 공간을 위해 두 열이다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', fractionalMedium), 'minmax(0, 280px)', '소수 viewport 높이에도 반응형 규칙 사이 빈틈이 없다');
+  assert.equal(valueOf(rules, node('span.challenge-card__meta#start-all-meta', startAll), 'display', shortMedium), 'none', '짧고 좁은 화면은 보조 기록을 접는다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortNarrow), 'minmax(0, 280px)', '420px 이하 화면은 짧아도 한 열을 유지한다');
+  assert.equal(valueOf(rules, node('span.challenge-card__meta#start-all-meta', startAll), 'display', shortNarrow), 'none', '420px 이하 짧은 화면도 기록 pill은 시각적으로 접는다');
+  assert.equal(
+    valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname:hover', node('div.home-player', stage)), 'background', DESKTOP),
+    'var(--hud-bg)',
+    '닉네임은 마우스를 올려도 밝은 글자가 어두운 HUD 위에 남는다',
+  );
+  assert.equal(
+    valueOf(rules, node('button.menu-card#open-ranking:hover', node('nav.home-menu', stage)), 'background', DESKTOP),
+    'var(--hud-bg)',
+    '랭킹과 캐릭터 HUD도 마우스를 올렸을 때 어두운 바탕을 유지한다',
+  );
 
   // 앱 바는 main 뒤에 있어 z-index 없이 월드 위, modal 아래에 뜬다.
   assert.ok(html.indexOf('</main>') < html.indexOf('<div class="app-bar"'));
@@ -342,7 +391,7 @@ test('홈: 전체 월드 위 edge HUD와 하단 5칸 dock, 전체 도전 하나�
     'absolute',
     '짧은 스크롤 화면의 소리 버튼은 아래 콘텐츠를 덮지 않고 문서와 함께 흐른다',
   );
-  assert.equal(valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname', node('div.home-player', stage)), 'width', MOBILE), '100%');
+  assert.equal(valueOf(rules, nickname, 'width', MOBILE), '100%');
 });
 
 test('홈: 창 점·이중 테두리 같은 가짜 장식이 없다', () => {
