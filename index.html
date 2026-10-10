@@ -55,8 +55,9 @@
           <button type="button" class="menu-card menu-card--wide" id="open-nickname">
             <span class="menu-card__figure" data-icon="user" aria-hidden="true"></span>
             <span class="menu-card__body">
+              <span class="menu-card__label">닉네임</span>
               <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
-              <span class="menu-card__desc sr-only">닉네임 바꾸기</span>
+              <span class="menu-card__desc sr-only">바꾸기</span>
             </span>
             <span class="menu-card__edit" aria-hidden="true"></span>
           </button>
@@ -80,14 +81,6 @@
                 <span class="menu-card__desc">최고 기록</span>
               </span>
             </button>
-            <button type="button" class="menu-card" id="open-online"
-                    aria-label="온라인에서 친구와 풀기" disabled>
-              <span class="menu-card__figure" data-icon="users" aria-hidden="true"></span>
-              <span class="menu-card__body">
-                <span class="menu-card__name">온라인</span>
-                <span class="menu-card__desc">친구와 풀기</span>
-              </span>
-            </button>
         </nav>
 
         <!-- 배경의 2D 픽셀 월드는 장식이고, 제목만 읽기 순서에 남는다. -->
@@ -98,22 +91,32 @@
           </div>
         </header>
 
-        <!-- 분야 고르기. 다섯 분야와 전체 도전이 한 패널 안에 있다 -->
-        <div class="home-quests" id="home-quests" role="group" aria-label="퀴즈 분야">
+        <!-- 분야 고르기. 다섯 분야와 두 주요 게임 진입점이 한 패널 안에 있다 -->
+        <div class="home-quests" id="home-quests" role="group" aria-label="게임 선택">
           <div class="category-grid" id="category-grid"></div>
 
-          <!-- 전체 도전 (FR-2.2) — 홈의 주 행동.
+          <!-- 온라인과 전체 도전은 같은 크기의 주요 게임 진입점이다.
                정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
                눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
                home.js가 리스너를 단 뒤 열어준다. -->
-          <button type="button" class="challenge-card" id="start-all" disabled>
-            <span class="challenge-card__icon" data-icon="play" aria-hidden="true"></span>
-            <span class="challenge-card__body">
-              <span class="challenge-card__name">전체 도전</span>
-              <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
-            </span>
-            <span class="challenge-card__meta" id="start-all-meta" hidden></span>
-          </button>
+          <div class="home-primary-actions">
+            <button type="button" class="challenge-card challenge-card--online" id="open-online"
+                    aria-label="온라인에서 친구와 풀기" disabled>
+              <span class="challenge-card__icon" data-icon="users" aria-hidden="true"></span>
+              <span class="challenge-card__body">
+                <span class="challenge-card__name">온라인</span>
+                <span class="challenge-card__desc">친구와 풀기</span>
+              </span>
+            </button>
+            <button type="button" class="challenge-card challenge-card--all" id="start-all" disabled>
+              <span class="challenge-card__icon" data-icon="play" aria-hidden="true"></span>
+              <span class="challenge-card__body">
+                <span class="challenge-card__name">전체 도전</span>
+                <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
+              </span>
+              <span class="challenge-card__meta" id="start-all-meta" hidden></span>
+            </button>
+          </div>
         </div>
 
         <!-- 홈을 걸어 다니는 캐릭터. 몸통은 sprite.js가 그려 넣는다 -->

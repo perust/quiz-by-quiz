@@ -125,6 +125,7 @@ test('주 행동·위험·상태 글자는 제 바탕에서 작은 글자 AA(4.5
     ['--text-muted', '--bg'],
     ['--text-muted', '--surface-subtle'],
     ['--text-muted', '--surface-sunken'],
+    ['--hud-text-muted', '--mist-12'],
     // 마을 패널 위 브랜드와 설명
     ['--accent-strong', '--world-sky-1'],
     ['--accent-strong', '--world-sky-2'],
@@ -143,6 +144,7 @@ test('입력칸 테두리와 초점 고리는 흰 바탕에서 3:1 을 넘겨 �
     ['--focus', '--surface'],
     ['--focus', '--bg'],
     ['--accent', '--surface'],
+    ['--hud-text', '--mist-12'],
   ], 3);
 });
 

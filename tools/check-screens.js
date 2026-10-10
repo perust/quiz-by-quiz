@@ -33,6 +33,8 @@
 //      섹션에 포커스가 있어, 앞 화면에서 누르던 Enter 가 그대로 그 버튼을 누른다
 //   ⑧ 온라인·랭킹 워커가 320px 머리말 아래 안내문 위에 주차해 글자를 가렸다. 안내문이
 //      줄어들거나 머리말 버튼 폭이 바뀌어도 글 끝과 캐릭터 왼쪽 사이를 직접 확인한다
+//   ⑨ 홈에서 온라인이 작은 보조 HUD로 밀려 주요 게임 진입점처럼 보이지 않았다. 온라인과
+//      전체 도전의 실제 크기가 같은지, 닉네임 라벨이 값 위에 남는지 직접 확인한다
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -106,6 +108,12 @@
     const 범위 = document.createRange();
     범위.selectNodeContents(요소);
     return 범위.getBoundingClientRect().width;
+  }
+
+  function 글자상자(요소) {
+    const 범위 = document.createRange();
+    범위.selectNodeContents(요소);
+    return 범위.getBoundingClientRect();
   }
 
   function 겹친넓이(왼쪽, 오른쪽) {
@@ -212,6 +220,51 @@
       통과: 소리크기.width >= 44 && 소리크기.height >= 44,
       무엇: `${소리크기.width}px × ${소리크기.height}px`,
     });
+    const 닉네임라벨 = document.querySelector('#open-nickname .menu-card__label');
+    const 닉네임값 = document.getElementById('nickname-value');
+    const 닉네임라벨상자 = 닉네임라벨.getBoundingClientRect();
+    const 닉네임값상자 = 닉네임값.getBoundingClientRect();
+    결과.push({
+      자리: '홈', 이름: '작은 닉네임 라벨이 현재 값 위에 있다',
+      통과: 닉네임라벨.textContent.trim() === '닉네임'
+        && 닉네임라벨상자.bottom <= 닉네임값상자.top + 1,
+      무엇: `${닉네임라벨.textContent.trim()} · label bottom ${닉네임라벨상자.bottom}px / value top ${닉네임값상자.top}px`,
+    });
+    const 온라인크기 = document.getElementById('open-online').getBoundingClientRect();
+    const 전체도전크기 = document.getElementById('start-all').getBoundingClientRect();
+    결과.push({
+      자리: '홈', 이름: '온라인과 전체 도전은 같은 크기의 주요 버튼이다',
+      통과: Math.abs(온라인크기.width - 전체도전크기.width) <= 1
+        && Math.abs(온라인크기.height - 전체도전크기.height) <= 1
+        && 온라인크기.width >= 44 && 온라인크기.height >= 44,
+      무엇: `온라인 ${온라인크기.width}px × ${온라인크기.height}px · 전체 ${전체도전크기.width}px × ${전체도전크기.height}px`,
+    });
+    결과.push({
+      자리: '홈', 이름: '온라인은 보조 HUD가 아니라 주요 행동 묶음에 있다',
+      통과: document.getElementById('open-online').parentElement?.classList.contains('home-primary-actions')
+        && !document.querySelector('.home-menu #open-online'),
+      무엇: document.getElementById('open-online').parentElement?.className ?? '(부모 없음)',
+    });
+    // 기록이 없는 새 브라우저에서도 가장 긴 실제 pill을 잠깐 보여, 중간 폭에서 이름과
+    // 겹치는 회귀를 잡는다. 화면 점검 뒤에는 원래 DOM 상태로 되돌린다.
+    const 전체도전이름 = document.querySelector('#start-all .challenge-card__name');
+    const 전체도전기록 = document.getElementById('start-all-meta');
+    const 원래기록숨김 = 전체도전기록.hidden;
+    const 원래기록문구 = 전체도전기록.textContent;
+    전체도전기록.hidden = false;
+    전체도전기록.textContent = '최고 100점';
+    const 기록이보이는가 = getComputedStyle(전체도전기록).display !== 'none';
+    const 전체도전이름상자 = 글자상자(전체도전이름);
+    const 전체도전기록상자 = 전체도전기록.getBoundingClientRect();
+    결과.push({
+      자리: '홈', 이름: '전체 도전 이름과 최고 기록 pill이 겹치지 않는다',
+      통과: !기록이보이는가 || 전체도전이름상자.right <= 전체도전기록상자.left + 1,
+      무엇: 기록이보이는가
+        ? `이름 right ${전체도전이름상자.right}px / 기록 left ${전체도전기록상자.left}px`
+        : '짧은 화면에서 보조 기록을 접음',
+    });
+    전체도전기록.hidden = 원래기록숨김;
+    전체도전기록.textContent = 원래기록문구;
 
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
