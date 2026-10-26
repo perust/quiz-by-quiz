@@ -35,6 +35,11 @@ export interface RankingScreenDeps {
   onHome: () => void;
   /** 빈 탭에서 그 탭의 판을 곧바로 연다 (FR-6.12). 홈으로 돌려보내 다시 고르게 하지 않는다 */
   onStart: (target: RankingTarget) => void;
+  /**
+   * 그 탭의 판을 지금 열 수 있는가. 홈의 분야 칸·전체 도전이 잠기는 것과 같은 규칙이다 —
+   * 문제를 불러오지 못한 분야에 「… 시작하기」를 권하면 눌렀을 때 홈으로 튕겨 나간다
+   */
+  canStart: (target: RankingTarget) => boolean;
   loadRankings: (target: RankingTarget) => Promise<ScoreRecord[]>;
   clearRankings: () => Promise<void>;
 }
@@ -57,7 +62,7 @@ export interface RankingScreen {
 }
 
 export function createRankingScreen(
-  { onHome, onStart, loadRankings, clearRankings }: RankingScreenDeps,
+  { onHome, onStart, canStart, loadRankings, clearRankings }: RankingScreenDeps,
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
@@ -181,9 +186,10 @@ export function createRankingScreen(
 
     if (records.length === 0) {
       // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12).
-      // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다
+      // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
+      // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
       el.emptyMessage.textContent = `${tab.label} 기록이 아직 없습니다.`;
-      el.emptyStartButton.textContent = `${tab.label} 시작하기`;
+      el.emptyStartButton.textContent = canStart(tab.target) ? `${tab.label} 시작하기` : '홈으로';
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -222,7 +228,12 @@ export function createRankingScreen(
   buildTabs();
 
   el.homeButton.addEventListener('click', () => onHome());
-  el.emptyStartButton.addEventListener('click', () => onStart(currentTab().target));
+  // 글자를 그린 때와 같은 판정으로 고른다. 열 수 없는 판을 열려다 홈으로 튕기지 않는다
+  el.emptyStartButton.addEventListener('click', () => {
+    const { target } = currentTab();
+    if (canStart(target)) onStart(target);
+    else onHome();
+  });
   el.clearButton.addEventListener('click', openClearDialog);
   el.dialogCancel.addEventListener('click', closeClearDialog);
   el.dialogConfirm.addEventListener('click', confirmClear);

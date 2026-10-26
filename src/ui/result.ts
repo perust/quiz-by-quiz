@@ -22,6 +22,9 @@ export interface RegisterOutcome {
 /**
  * 화면을 옮기는 콜백. 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려줘도 된다 —
  * 자동 저장이 실패했다는 말은 **옮긴 뒤의 화면에서** 한 번 알린다.
+ *
+ * 기다리는 동안 다른 행동을 누르면 그 콜백도 곧바로 불린다. 먼저 부른 이동을 버리는 것은
+ * 부르는 쪽(app.ts 의 navigation 세대)의 몫이다 — 나중에 누른 것이 이긴다.
  */
 type Leave = () => void | Promise<void>;
 
@@ -170,8 +173,21 @@ export function createResultScreen(
   let saving: Promise<RegisterOutcome> | null = null;
   /** 몇 번째로 올린 결과인가. 늦게 끝난 저장이 다음 판의 화면을 건드리지 않게 한다 */
   let round = 0;
-  /** 떠나는 중이다. 행동 버튼을 연달아 눌러도 한 번만 옮긴다 */
+  /**
+   * 떠나며 저장하는 중이다. 같은 틱에 행동 버튼을 연달아 눌러도 한 번만 저장하고 옮긴다.
+   * **저장하는 동안만 선다** — 옮기기까지 붙들면 느린 「대기실로」(네트워크를 기다린다)가
+   * 끝날 때까지 홈·다시 하기·랭킹·브라우저 «뒤로»가 모두 삼켜졌다
+   */
   let leaving = false;
+  /**
+   * 몇 번째로 떠났는가. 옮기기를 기다리는 동안 다른 행동을 누르면 그쪽이 이긴다 — 늦게 끝난
+   * 이동은 app.ts 의 navigation 세대가 버리고, 여기서는 바쁨 표시·등록 칸·알림을 건드리지 않는다
+   */
+  let departure = 0;
+  /** 아직 등록 칸에 옮기지 않은 자동 저장 결과. 마지막으로 옮긴 쪽이 한 번만 반영하고 알린다 */
+  let unsettled: Settled | null = null;
+  /** 옮기기를 기다리는 버튼과 원래 글자. 네트워크를 기다리는 「대기실로」만 단다 */
+  let busy: { button: HTMLButtonElement; label: string | null } | null = null;
   /** 칸이 규칙에 맞지 않을 때 대신 쓸 이름. show()가 받은 저장된 닉네임이다 */
   let fallbackNickname = DEFAULT_NICKNAME;
 
@@ -305,12 +321,16 @@ export function createResultScreen(
    * **잠그기 전에 «어디 있을 것»이라고 넘겨짚지 않는다.** 폼 제출은 브라우저가
    * 포커스를 옮길 수도 있어, 미리 검사하면 맞지 않는다 — 실제로 그래서 한 번
    * 놓쳤다. 잠근 뒤의 실제 상태만 본다.
+   *
+   * 떠나는 길에서 잠글 때는 포커스를 옮기지 않는다(`rescueFocus` false). 누른 자리에 두어야
+   * 옮기기를 기다리는 동안 걷던 사람의 다음 Enter 가 엉뚱한 「다시 하기」를 누르지 않는다.
    */
-  function lockForm(): void {
+  function lockForm(rescueFocus = true): void {
     registered = true;
     el.input.disabled = true;
     el.registerButton.disabled = true;
     el.registerButton.textContent = '등록 완료';
+    if (!rescueFocus) return;
     const focused = document.activeElement;
     if (!focused || focused === document.body) el.retryButton.focus();
   }
@@ -402,30 +422,62 @@ export function createResultScreen(
     }
   }
 
-  async function leave(next: Leave): Promise<void> {
-    if (leaving) return;
+  /**
+   * 옮기기를 기다리는 버튼에 바쁨을 단다 (`aria-busy` + 글자). null 이면 걷는다.
+   * 잠그지는 않는다 — 잠그면 포커스가 떨어지고, 다른 행동으로 갈아타는 길은 열려 있어야 한다.
+   */
+  function markBusy(button: HTMLButtonElement | null, busyLabel?: string): void {
+    if (busy) {
+      if (busy.label !== null) busy.button.textContent = busy.label;
+      busy.button.removeAttribute('aria-busy');
+      busy = null;
+    }
+    if (!button || !busyLabel) return;
+    busy = { button, label: button.textContent };
+    button.textContent = busyLabel;
+    button.setAttribute('aria-busy', 'true');
+  }
+
+  async function leave(next: Leave, button: HTMLButtonElement, busyLabel?: string): Promise<void> {
+    // 같은 틱에 연달아 누른 것은 한 번만 받는다. 기다리는 이동을 같은 버튼으로 겹쳐 보내지도 않는다
+    if (leaving || busy?.button === button) return;
     leaving = true;
+    // commitIfNeeded 는 실패해도 던지지 않는다. 잠금은 저장까지만 — 옮기는 동안에는 풀어 둔다
     const settled = await commitIfNeeded();
+    leaving = false;
+    if (settled) {
+      // 남겼으면 등록 칸부터 잠근다. 옮기기를 기다리는 동안 「등록」이 살아 있는 것처럼 보이면
+      // 눌러도 아무 일이 없다(이미 남긴 판이다). 문구는 아래에서 옮긴 뒤에 넣는다
+      if ('outcome' in settled && settled.round === round) lockForm(false);
+      unsettled = settled;
+    }
+
+    const mine = ++departure;
+    markBusy(button, busyLabel);
     try {
       await next();
     } finally {
-      leaving = false;
+      if (mine === departure) markBusy(null);
     }
-    if (!settled) return;
-    // 등록 칸은 화면을 옮긴 뒤에 고친다. 숨은 status는 낭독되지 않으므로,
+    // 그사이 다른 행동이 옮기기를 넘겨받았다. 등록 칸과 알림도 그쪽이 맡는다
+    if (mine !== departure || !unsettled) return;
+    const done = unsettled;
+    unsettled = null;
+    // 등록 칸 문구는 화면을 옮긴 뒤에 고친다. 숨은 status는 낭독되지 않으므로,
     // 저장하지 못했다는 말은 옮겨 간 화면에서 `announce`로 **한 번만** 알린다
-    applySettled(settled);
-    const failure = 'error' in settled
-      ? `기록을 저장하지 못했어요: ${settled.error}`
-      : (settled.outcome.stored ? null : SAVE_FAILED);
+    applySettled(done);
+    const failure = 'error' in done
+      ? `기록을 저장하지 못했어요: ${done.error}`
+      : (done.outcome.stored ? null : SAVE_FAILED);
     if (failure) announce(failure);
   }
 
   el.form.addEventListener('submit', submitNickname);
-  el.retryButton.addEventListener('click', () => { void leave(onRetry); });
-  el.rankingButton.addEventListener('click', () => { void leave(onRanking); });
-  el.homeButton.addEventListener('click', () => { void leave(onHome); });
-  el.roomButton.addEventListener('click', () => { void leave(onRoom); });
+  el.retryButton.addEventListener('click', () => { void leave(onRetry, el.retryButton); });
+  el.rankingButton.addEventListener('click', () => { void leave(onRanking, el.rankingButton); });
+  el.homeButton.addEventListener('click', () => { void leave(onHome, el.homeButton); });
+  // 대기실은 방 정보를 받아 그린 뒤에 열린다(네트워크). 기다리는 동안 홈의 온라인 입구처럼 글자로 말한다
+  el.roomButton.addEventListener('click', () => { void leave(onRoom, el.roomButton, '연결 중…'); });
 
   // 주소에 «#»을 붙이지 않는다 — 해시 라우팅을 쓰지 않고, 붙이면 히스토리에 항목이 하나 더 쌓인다.
   // 제목으로 포커스를 옮겨 스크린리더도 거기서부터 읽게 한다
@@ -456,6 +508,10 @@ export function createResultScreen(
       registered = false;
       saving = null;
       leaving = false;
+      // 앞 판에서 아직 끝나지 않은 이동은 이 판의 바쁨 표시·등록 칸·알림을 건드리지 않는다
+      departure += 1;
+      unsettled = null;
+      markBusy(null);
       el.input.disabled = false;
       el.registerButton.disabled = false;
       el.registerButton.textContent = '등록';

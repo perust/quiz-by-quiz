@@ -78,6 +78,12 @@ export const NICKNAME_MAX_LENGTH = 10;
 /** 보기 개수. 데이터 검증 기준으로도 쓴다 */
 export const CHOICE_COUNT = 4;
 
+/**
+ * 보기 넷이 모두 이 글자 수 이하(앞뒤 공백 제외)이면 좁은 화면에서도 2×2로 놓는다
+ * (`ui/choice-layout.ts`). 은행의 약 97%가 여기 든다. 하나라도 길면 한 줄에 하나다.
+ */
+export const SHORT_CHOICE_MAX_LENGTH = 12;
+
 /** 문제 JSON이 놓인 디렉터리. 상대 경로라서 하위 경로 배포에서도 동작한다 */
 export const DATA_DIR = 'data';
 

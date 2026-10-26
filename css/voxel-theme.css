@@ -703,8 +703,9 @@ textarea {
   vertical-align: 0.4em;
 }
 
+/* 넓은 화면에서 «4지선다 상식 퀴즈 · 혼자·친구와»가 한 줄에 든다. 더 좁으면 «·» 곁에서만 나뉜다 */
 .home-subtitle {
-  max-width: 200px;
+  max-width: 240px;
   color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
@@ -3184,6 +3185,8 @@ select.is-standing {
   .result-stats__item::before,
   .menu-card__edit,
   .home-note::before,
+  .home-room-note::before,
+  .category-card__best::before,
   .online-message::before,
   .ranking-scope::before,
   .online-note::before,
@@ -3198,6 +3201,7 @@ select.is-standing {
   .ranking-empty::before,
   #room-filter-toggle::before,
   .room-item__visibility--private::before,
+  .room-item__status::before,
   .setting-card::after,
   .waiting-ready::before,
   .online-match-status::before,

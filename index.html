@@ -87,7 +87,8 @@
         <header class="home-header">
           <div class="home-heading">
             <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
-            <p class="home-subtitle">4지선다 상식 퀴즈 · 혼자 또는 친구와</p>
+            <!-- 말 덩어리 안에서는 줄을 바꾸지 않는다. 좁아서 넘치면 «·» 곁에서만 나뉜다 -->
+            <p class="home-subtitle"><span class="home-subtitle__phrase">4지선다 상식 퀴즈</span> · <span class="home-subtitle__phrase">혼자·친구와</span></p>
           </div>
         </header>
 
@@ -688,7 +689,8 @@
       <ol class="ranking-list" id="ranking-list"></ol>
       <div class="ranking-empty" id="ranking-empty" hidden>
         <p class="ranking-empty__message" id="ranking-empty-message"></p>
-        <!-- 글자는 ranking.js 가 탭 이름으로 바꾼다 (예: 「과학 시작하기」). 누르면 그 탭의 판이 열린다 -->
+        <!-- 글자는 ranking.js 가 탭 이름으로 바꾼다 (예: 「과학 시작하기」). 누르면 그 탭의 판이 열린다.
+             문제를 불러오지 못해 그 판을 열 수 없으면 「홈으로」가 된다 -->
         <button type="button" class="button button--primary" id="ranking-empty-start">퀴즈 시작하기</button>
       </div>
 

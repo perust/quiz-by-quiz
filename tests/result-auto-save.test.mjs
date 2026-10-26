@@ -37,6 +37,7 @@ class FakeElement extends EventTarget {
     this.className = '';
     this.classList = new FakeClassList();
     this.dataset = {};
+    this.attributes = {};
     this.style = { setProperty() {}, removeProperty() {} };
     this.children = [];
     this.offsetWidth = 40;
@@ -48,7 +49,8 @@ class FakeElement extends EventTarget {
   remove() {}
   querySelector() { return null; }
   closest() { return null; }
-  setAttribute() {}
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  removeAttribute(name) { delete this.attributes[name]; }
   getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
   focus() { globalThis.document.activeElement = this; }
   blur() { globalThis.document.activeElement = globalThis.document.body; }
@@ -117,6 +119,8 @@ const REVIEW = [
 // 저장이 어떻게 끝날지는 판마다 `saveWith` 로 바꿔 끼운다.
 const calls = [];
 let saveWith = () => Promise.resolve({ rank: 2, kept: true, stored: true });
+/** 대기실로 옮기는 길. 네트워크를 기다리는 느린 이동을 흉내 낼 때 바꿔 끼운다 */
+let roomWith = () => Promise.resolve();
 const resultScreen = createResultScreen({
   onRegister(nickname) {
     calls.push(['register', nickname]);
@@ -124,21 +128,32 @@ const resultScreen = createResultScreen({
   },
   onRetry: async () => { calls.push(['retry']); },
   onHome: async () => { calls.push(['home']); },
-  onRoom: async () => { calls.push(['room']); },
+  onRoom: () => {
+    calls.push(['room']);
+    return roomWith();
+  },
   onRanking: async () => { calls.push(['ranking']); },
 });
 
-function showRound({ nickname = '퀴즈왕', review = [] } = {}) {
+function showRound({ nickname = '퀴즈왕', review = [], inRoom = false } = {}) {
   calls.length = 0;
   byId('announcer').textContent = '';
+  byId('result-room').textContent = '대기실로';
   resultScreen.show({
     summary: summary({ review }),
     modeLabel: '과학',
     bestScore: null,
     nickname,
     characterId: 'slime-blue',
-    inRoom: false,
+    inRoom,
   });
+}
+
+/** 끝나는 때를 테스트가 정하는 이동 */
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 test('자동 저장 이름: 칸이 규칙에 맞으면 그 이름, 아니면 저장된 이름, 그것도 아니면 기본 이름', () => {
@@ -249,6 +264,71 @@ test('결과 화면: 자동 저장이 실패해도 이동은 막지 않고, 옮�
   }
 });
 
+test('결과 화면: 「대기실로」가 오래 걸려도 다른 행동·«뒤로»는 막히지 않고, 나중에 누른 것이 이긴다', async () => {
+  const room = deferred();
+  try {
+    roomWith = () => room.promise;
+    showRound({ inRoom: true });
+    byId('result-room').click();
+    await tick();
+    assert.deepEqual(calls, [['register', '퀴즈왕'], ['room']]);
+    // 저장은 이미 끝났다. 기다리는 동안 「등록」이 살아 있는 것처럼 보이면 눌러도 아무 일이 없다
+    assert.equal(byId('nickname-input').disabled, true, '저장한 판은 기다리는 동안에도 잠겨 있다');
+    assert.equal(byId('register-button').textContent, '등록 완료');
+    // 무엇을 기다리는지 글자와 aria-busy 로 말한다
+    assert.equal(byId('result-room').attributes['aria-busy'], 'true');
+    assert.equal(byId('result-room').textContent, '연결 중…');
+    assert.equal(byId('result-room').disabled, false, '잠그지 않는다 — 다른 길로 갈아탈 수 있어야 한다');
+
+    // 같은 버튼을 다시 눌러도 이동을 겹쳐 보내지 않는다
+    byId('result-room').click();
+    await tick();
+    assert.deepEqual(calls, [['register', '퀴즈왕'], ['room']]);
+
+    // 「홈으로」(브라우저 «뒤로»도 이 버튼을 누른다)는 기다리지 않고 옮긴다. 다시 저장하지도 않는다
+    byId('result-home').click();
+    await tick();
+    assert.deepEqual(calls, [['register', '퀴즈왕'], ['room'], ['home']]);
+    assert.equal(byId('result-room').attributes['aria-busy'], undefined, '넘겨받았으니 바쁨 표시를 걷는다');
+    assert.equal(byId('result-room').textContent, '대기실로');
+    assert.equal(byId('register-message').textContent, '이 브라우저 기록 중 2위로 저장했어요.');
+
+    // 늦게 끝난 대기실 이동은 등록 칸도 알림도 다시 건드리지 않는다
+    byId('register-message').textContent = '';
+    room.resolve();
+    await tick();
+    assert.equal(byId('register-message').textContent, '');
+    assert.equal(byId('announcer').textContent, '');
+  } finally {
+    roomWith = () => Promise.resolve();
+  }
+});
+
+test('결과 화면: 느린 「대기실로」를 다른 행동이 넘겨받아도 저장 실패는 옮긴 화면에서 한 번만 알린다', async () => {
+  const room = deferred();
+  try {
+    saveWith = () => Promise.resolve({ rank: 1, kept: false, stored: false });
+    roomWith = () => room.promise;
+    showRound({ inRoom: true });
+    byId('result-room').click();
+    await tick();
+    assert.equal(byId('announcer').textContent, '', '아직 옮기지 않았으니 알리지 않는다');
+
+    byId('result-retry').click();
+    await tick();
+    assert.deepEqual(calls, [['register', '퀴즈왕'], ['room'], ['retry']]);
+    assert.equal(byId('announcer').textContent, '기록을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.');
+
+    byId('announcer').textContent = '';
+    room.resolve();
+    await tick();
+    assert.equal(byId('announcer').textContent, '', '늦게 끝난 이동이 같은 말을 또 하지 않는다');
+  } finally {
+    saveWith = () => Promise.resolve({ rank: 2, kept: true, stored: true });
+    roomWith = () => Promise.resolve();
+  }
+});
+
 // ── 화면 계약 ─────────────────────────────────────────────────────
 
 test('등록 칸 위에 «떠나면 저장»과 저장 범위를 함께 알리고, 칸의 설명으로 이어 둔다', async () => {
@@ -308,8 +388,10 @@ test('app: 직접 등록과 자동 저장은 같은 한 길로 저장하고, 문
   assert.match(app, /questionResults: summary\.questionResults,/);
   // 결과 화면을 떠나는 버튼은 모두 저장을 거친다
   for (const [button, callback] of [['retryButton', 'onRetry'], ['rankingButton', 'onRanking'], ['homeButton', 'onHome'], ['roomButton', 'onRoom']]) {
-    assert.ok(result.includes(`el.${button}.addEventListener('click', () => { void leave(${callback}); });`), button);
+    assert.ok(result.includes(`el.${button}.addEventListener('click', () => { void leave(${callback}, el.${button}`), button);
   }
+  // 떠나며 거는 잠금은 저장까지만이다. 옮기기를 기다리는 동안에는 다른 행동이 넘겨받는다
+  assert.match(result, /const settled = await commitIfNeeded\(\);\s*leaving = false;[\s\S]*?await next\(\);/);
   // 저장 실패가 이동을 막지 않는다 — 옮긴 뒤 한 번 알린다
   assert.match(result, /await next\(\);[\s\S]*?if \(failure\) announce\(failure\);/);
 });
