@@ -1515,9 +1515,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   display: none;
 }
 
-/* 문제·보기와 같은 문서 흐름에 둬 채팅이 답 버튼을 덮지 않는다. */
+/* 문제·보기와 같은 문서 흐름에 둬 채팅이 답 버튼을 덮지 않는다.
+   position 을 주지 않는다 — z-index 가 없어 DOM 순서가 곧 겹침 순서라, 위치를 가진 유리 표면이
+   앞에 오는 fixed 캐릭터(내 캐릭터·다른 참가자)를 덮는다. 대기실 채팅·공개 카드와 같다. */
 .online-quiz-chat {
-  position: relative;
   margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-3);
 }
@@ -1537,6 +1538,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 @media (pointer: coarse) {
   [data-screen='online-quiz'] .online-quiz-chat {
     margin-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 정답 공개 중에도 조작부는 떠 있다. scrollIntoView({ block: 'nearest' }) 가 이 여백까지 보이게
+     옮기므로 카드 끝(해설·«내 답» 줄)이 스틱·선택 버튼 위에 멈춘다. 같은 공용 크기를 쓴다. */
+  [data-screen='online-quiz'] .online-reveal {
+    scroll-margin-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 }
 

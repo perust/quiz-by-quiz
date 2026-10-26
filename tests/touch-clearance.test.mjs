@@ -200,3 +200,42 @@ test('대기실 라운지는 fixed walker의 좌표 기준을 바꾸는 backdrop
   const lounge = node('div.lounge#lounge', waiting);
   assert.equal(valueOf(rules, lounge, 'backdrop-filter', MOBILE), 'none');
 });
+
+test('온라인 정답 공개 카드: 자동 스크롤이 카드 끝을 고정 스틱·선택 버튼 위에 멈춘다 (css-responsive-01)', () => {
+  // 공개 중에도 조작부는 떠 있다(lockMovement: false). scrollIntoView({ block: 'nearest' }) 는
+  // scroll-margin 까지 보이게 옮기므로, 이 여백이 없으면 해설 아래 줄이 스틱과 선택 버튼 밑에 멈췄다
+  const onlineQuiz = node("section.screen.quiz--character[data-screen='online-quiz']", node('main.app', node('body')));
+  const reveal = node('section.online-reveal#online-reveal', onlineQuiz);
+  const chat = node('section.online-quiz-chat', onlineQuiz);
+
+  for (const env of [MOBILE, NARROW, SHORT_ZOOM, SHORT_LANDSCAPE]) {
+    const { root, confirm } = controlTree({ screen: 'online-quiz' });
+    const controlsTop = Math.max(
+      stickReserve(env, 'online-quiz'),
+      px(valueOf(rules, confirm, 'height', env), env) + px(valueOf(rules, root, '--walk-controls-bottom', env), env),
+    );
+    const margin = px(valueOf(rules, reveal, 'scroll-margin-bottom', env), env);
+    assert.ok(margin > controlsTop, `${env.width}×${env.height}: 공개 카드 아래 여백 ${margin}px ≤ 조작부 ${controlsTop}px`);
+    // 화면별 숫자를 따로 두지 않고 채팅 아래 비움과 같은 공용 크기를 쓴다
+    assert.equal(margin, px(valueOf(rules, chat, 'margin-bottom', env), env), `${env.width}×${env.height}`);
+  }
+  // 조작부가 없는 마우스 기기에서는 카드 끝에 그대로 맞춘다
+  assert.equal(px(valueOf(rules, reveal, 'scroll-margin-bottom', DESKTOP), DESKTOP), 0);
+});
+
+test('온라인 퀴즈: 걷는 캐릭터 뒤에 오는 표면(공개 카드·상태 줄·채팅)은 위치를 갖지 않는다 (css-responsive-02)', () => {
+  // z-index 가 없어 DOM 순서가 겹침 순서다. #online-remote-characters·#online-arena-character(fixed)
+  // 뒤에 오는 표면이 위치를 가지면 그 유리 바탕이 캐릭터와 말풍선을 덮는다
+  const onlineQuiz = node("section.screen.quiz--character[data-screen='online-quiz']", node('main.app', node('body')));
+  const surfaces = {
+    '공개 카드': node('section.online-reveal#online-reveal', onlineQuiz),
+    '상태 줄': node('p.online-match-status#online-match-status', onlineQuiz),
+    채팅: node('section.online-quiz-chat', onlineQuiz),
+  };
+  for (const env of [DESKTOP, MOBILE, NARROW]) {
+    for (const [label, surface] of Object.entries(surfaces)) {
+      const position = valueOf(rules, surface, 'position', env);
+      assert.ok(position === null || position === 'static', `${env.width}px ${label}: position ${position}`);
+    }
+  }
+});

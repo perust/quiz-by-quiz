@@ -49,7 +49,7 @@ test('퀴즈 HUD: 분야·문항 위치·진행률·조작법·나가기·타이
   }
 });
 
-test('퀴즈 HUD: 진행률은 접근 가능한 progressbar로, 타이머는 저절로 낭독하지 않는 채로 남는다', async () => {
+test('퀴즈 HUD: 진행률은 접근 가능한 progressbar다', async () => {
   const html = await source('index.html');
   for (const id of ['progress', 'online-progress']) {
     const progress = nodeFromHtml(html, id);
@@ -59,26 +59,26 @@ test('퀴즈 HUD: 진행률은 접근 가능한 progressbar로, 타이머는 저
       assert.ok(attr in progress.attrs, `#${id} 의 ${attr}`);
     }
   }
-  for (const id of ['online-timer']) {
-    assert.equal(nodeFromHtml(html, id).attrs['aria-hidden'], 'true', `#${id} 는 1초마다 낭독되면 안 된다`);
-  }
 });
 
-test('퀴즈 HUD: 로컬 남은 시간 글은 브라우즈 모드에서 찾아 읽히고, 막대·아이콘만 숨긴다', async () => {
+test('퀴즈 HUD: 로컬·온라인 남은 시간 글은 브라우즈 모드에서 찾아 읽히고, 막대·아이콘만 숨긴다 (U42)', async () => {
   const [html, quiz] = await Promise.all([source('index.html'), source('src/ui/quiz.ts')]);
 
-  // 조상의 aria-hidden 은 자손에서 풀 수 없다. 그래서 영역(#timer)이 아니라 그림 조각에만 단다
-  const text = nodeFromHtml(html, 'timer-text');
-  for (let element = text; element; element = element.parent) {
-    assert.notEqual(element.attrs['aria-hidden'], 'true', `#timer-text 의 조상 <${element.tag}${element.id ? `#${element.id}` : ''}> 이 글을 숨긴다`);
-    // 라이브 리전이 아니어야 1초마다 낭독되지 않는다
-    assert.equal(element.attrs['aria-live'], undefined, `<${element.tag}${element.id ? `#${element.id}` : ''}> 에 aria-live 를 달지 않는다`);
-    assert.ok(!['status', 'alert', 'log', 'timer', 'marquee'].includes(element.attrs.role), `<${element.tag}> 의 role=${element.attrs.role}`);
+  for (const prefix of ['', 'online-']) {
+    // 조상의 aria-hidden 은 자손에서 풀 수 없다. 그래서 영역(#timer)이 아니라 그림 조각에만 단다
+    const text = nodeFromHtml(html, `${prefix}timer-text`);
+    for (let element = text; element; element = element.parent) {
+      const name = `<${element.tag}${element.id ? `#${element.id}` : ''}>`;
+      assert.notEqual(element.attrs['aria-hidden'], 'true', `#${prefix}timer-text 의 조상 ${name} 이 글을 숨긴다`);
+      // 라이브 리전이 아니어야 1초마다 낭독되지 않는다
+      assert.equal(element.attrs['aria-live'], undefined, `${name} 에 aria-live 를 달지 않는다`);
+      assert.ok(!['status', 'alert', 'log', 'timer', 'marquee'].includes(element.attrs.role), `${name} 의 role=${element.attrs.role}`);
+    }
+    assert.equal(nodeFromHtml(html, `${prefix}timer-icon`).attrs['aria-hidden'], 'true', `#${prefix}timer-icon: 시계·경고 아이콘은 그림이다`);
+    const track = nodeFromHtml(html, `${prefix}timer-fill`).parent;
+    assert.ok(track.classes.includes('timer__track'));
+    assert.equal(track.attrs['aria-hidden'], 'true', `#${prefix}timer: 막대는 눈으로만 본다`);
   }
-  assert.equal(nodeFromHtml(html, 'timer-icon').attrs['aria-hidden'], 'true', '시계·경고 아이콘은 그림이다');
-  const track = nodeFromHtml(html, 'timer-fill').parent;
-  assert.ok(track.classes.includes('timer__track'));
-  assert.equal(track.attrs['aria-hidden'], 'true', '막대는 눈으로만 본다');
 
   // 남은 5초는 문항당 한 번만 알리고, 재촉하지 않는 말로 쓴다 (PRD 2.1, FR-3.9)
   assert.equal(quiz.match(/announce\(/g)?.length, 1, 'announce 는 5초 경고 한 곳뿐이다');

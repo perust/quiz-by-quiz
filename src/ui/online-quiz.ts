@@ -174,6 +174,26 @@ export function shouldAutoFocusOnlineQuestion(dialogOpen: boolean, chatFocused: 
   return !dialogOpen && !chatFocused;
 }
 
+/**
+ * 인페이지 대화상자가 하나라도 열려 있는가. 이 화면의 조작법·나가기 확인만이 아니라 앱 바의
+ * 설정처럼 화면 밖에서 연 대화상자도 센다 — 모두 `.dialog-backdrop` 이다 (로컬 퀴즈의 anyDialogOpen 과 같다).
+ */
+function anyDialogOpen(): boolean {
+  return document.querySelector('.dialog-backdrop:not([hidden])') !== null;
+}
+
+/**
+ * 길게 누른 Enter·Space의 자동 반복이 포커스된 버튼을 다시 누르려는가 (FR-4.4). 브라우저는 반복
+ * keydown마다 그 버튼을 누른다. 글자를 적는 칸과 빈자리(Space 스크롤)는 버튼이 아니라 그대로 둔다.
+ */
+export function isHeldButtonRepeat(
+  event: Pick<KeyboardEvent, 'key' | 'repeat'>,
+  focused: Pick<Element, 'closest'> | null,
+): boolean {
+  if (!event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return false;
+  return Boolean(focused?.closest('button'));
+}
+
 /** A room-bound chat accepts one non-empty request at a time. */
 export function canSendOnlineChat(active: boolean, pending: boolean, text: string): boolean {
   return active && !pending && Boolean(text.trim());
@@ -713,8 +733,8 @@ export function createOnlineQuizScreen(
     el.timer.classList.toggle('timer--warning', view.warning);
     setTextIfChanged(el.timerText, view.text);
 
-    // 타이머 영역은 aria-hidden이다. 1초마다 바뀌는 값은 낭독하지 않고,
-    // 남은 시간이 얼마 없다는 사실만 문항당 한 번 알린다 (로컬과 같은 규칙).
+    // 남은 시간 글은 라이브 리전이 아닌 정적 글이다(막대·아이콘만 aria-hidden). 1초마다 바뀌는 값은
+    // 낭독하지 않고, 남은 시간이 얼마 없다는 사실만 문항당 한 번 알린다 (로컬과 같은 규칙).
     const questionKey = `${current.matchId}:${current.question.position}`;
     if (view.warning && warnedQuestionKey !== questionKey) {
       warnedQuestionKey = questionKey;
@@ -965,9 +985,9 @@ export function createOnlineQuizScreen(
     if (questionKey !== lastQuestionKey) {
       lastQuestionKey = questionKey;
       // 서버 phase가 바뀌어도 쓰던 메시지와 caret을 빼앗지 않는다.
-      // 나가기 확인이 열려 있으면 그 안에 가둔 포커스를 밖으로 빼지 않는다.
+      // 대화상자(조작법·나가기 확인·앱 바의 설정)가 열려 있으면 그 안에 가둔 포커스를 밖으로 빼지 않는다.
       if (shouldAutoFocusOnlineQuestion(
-        arena.isDialogOpen() || !el.exitDialog.hidden,
+        anyDialogOpen(),
         document.activeElement === el.chatInput,
       )) {
         el.question.focus({ preventScroll: true });
@@ -1004,6 +1024,13 @@ export function createOnlineQuizScreen(
   el.exitCancel.addEventListener('click', closeExitDialog);
   el.exitConfirm.addEventListener('click', confirmExit);
   document.addEventListener('keydown', (event) => {
+    // **누르고 있는 Enter·Space의 자동 반복은 받지 않는다** (FR-4.4, 로컬 퀴즈·설정 대화상자와 같은
+    // 규칙). 「나가기」를 Enter로 연 채 누르고 있으면 반복이 곧바로 포커스가 간 「계속 풀기」를 눌러
+    // 확인창을 닫고, 다음 반복이 다시 연다. 조작법의 「닫기」도 같다. 기본 동작까지 막는다.
+    if (!el.screen.hidden && isHeldButtonRepeat(event, document.activeElement)) {
+      event.preventDefault();
+      return;
+    }
     // 나가기 확인이 열려 있으면 그 안에서만 움직인다. 숫자키·채팅 `/`가 뒤로 새지 않는다.
     if (!el.exitDialog.hidden) {
       if (event.key === 'Escape') {

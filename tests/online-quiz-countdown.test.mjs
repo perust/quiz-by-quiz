@@ -88,7 +88,7 @@ test('카운트다운은 수신 시각 + remainingMs로 다시 계산하는 rAF 
   assert.match(quiz, /const remaining = Math\.max\(countdownDeadline - performance\.now\(\), 0\);/);
   assert.match(quiz, /if \(remaining > 0\) countdownFrame = requestAnimationFrame\(tickCountdown\);/);
   assert.match(quiz, /el\.timer\.classList\.toggle\('timer--warning', view\.warning\);/);
-  // 경고 낭독은 문항당 한 번. 타이머 영역 자체는 aria-hidden 그대로다.
+  // 경고 낭독은 문항당 한 번. 남은 시간 글은 라이브 리전이 아니라 저절로 낭독되지 않는다.
   assert.match(
     quiz,
     /if \(view\.warning && warnedQuestionKey !== questionKey\) \{\s*warnedQuestionKey = questionKey;\s*announce\(/,
@@ -103,8 +103,10 @@ test('카운트다운은 수신 시각 + remainingMs로 다시 계산하는 rAF 
   // 남은 시간을 보내지 않는 구버전 서버에서는 안내 문구로 돌아간다.
   assert.match(quiz, /if \(remainingMs === undefined\) \{\s*renderTimeNotice\(\);/);
 
+  // 남은 시간 글은 로컬처럼 정적 글로 남고 막대·아이콘만 숨는다 (tests/quiz-hud.test.mjs 가 조상까지 본다)
   const html = await source('index.html');
-  assert.match(html, /<div class="timer" id="online-timer" aria-hidden="true">/);
+  assert.match(html, /<div class="timer" id="online-timer">/);
+  assert.doesNotMatch(html, /id="online-timer"[^>]*aria-(?:hidden|live)/);
 });
 
 test('구버전 서버 안내와 첫 문구에도 «서버» 같은 개발 용어를 쓰지 않는다', async () => {
