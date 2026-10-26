@@ -115,3 +115,18 @@ export const CATEGORIES: Category[] = [
   { id: 'general', name: '일반상식', icon: 'bulb', description: '알아두면 쓸모 있는 것들' },
   { id: 'art', name: '예술과문화', icon: 'music', description: '그림과 음악, 이야기의 결' },
 ];
+
+/**
+ * 이 게임의 GitHub 저장소. 풀이의 «이 문제 이상해요»가 여기에 새 이슈를 연다 (FR-5.8, `ui/report-link.ts`).
+ * 주소 끝에 `/` 를 붙이지 않는다 — 뒤에 `/issues/new` 를 잇는다.
+ */
+export const REPOSITORY_URL = 'https://github.com/perust/quiz-by-quiz';
+
+/** 신고 이슈의 템플릿 파일 이름. `.github/ISSUE_TEMPLATE/` 안에 있고, 미리 채운 본문이 그 칸을 따른다 */
+export const QUESTION_REPORT_TEMPLATE = 'question-report.md';
+
+/**
+ * 신고 주소 전체의 길이 한도(글자 수). 한글은 한 자가 `%XX%XX%XX` 아홉 자가 되어 주소가 금방 길어진다.
+ * 브라우저·GitHub 가 받는 길이에 넉넉히 못 미치게 잡고, 넘으면 질문·보기 부분만 잘라 낸다.
+ */
+export const QUESTION_REPORT_URL_MAX_LENGTH = 6000;

@@ -111,8 +111,14 @@ function summary({ review = [], mode = 'category' } = {}) {
 }
 
 const REVIEW = [
-  { question: '물의 끓는점은?', chosenChoice: '90도', correctChoice: '100도', explanation: '1기압에서 100도', timedOut: false },
-  { question: '빛의 삼원색이 아닌 것은?', chosenChoice: null, correctChoice: '노랑', explanation: '빨강·초록·파랑', timedOut: true },
+  {
+    id: 'science-901', category: 'science', question: '물의 끓는점은?', choices: ['90도', '100도', '80도', '120도'],
+    chosenChoice: '90도', correctChoice: '100도', explanation: '1기압에서 100도', timedOut: false,
+  },
+  {
+    id: 'science-902', category: 'science', question: '빛의 삼원색이 아닌 것은?', choices: ['빨강', '초록', '파랑', '노랑'],
+    chosenChoice: null, correctChoice: '노랑', explanation: '빨강·초록·파랑', timedOut: true,
+  },
 ];
 
 // 화면 모듈은 같은 DOM 요소에 리스너를 단다. 테스트마다 새로 띄우면 앞 화면의 리스너가 남아
@@ -242,11 +248,52 @@ test('결과 화면: 오답이 있으면 요약 칩 아래 링크가 개수를 �
   assert.equal(byId('result-review-jump').hidden, true, '틀린 문제가 없으면 링크도 없다');
 });
 
+test('결과 화면: 오답 풀이마다 «이 문제 이상해요»가 GitHub 새 이슈를 새 창으로 열고, 개인 정보는 싣지 않는다 (FR-5.8)', () => {
+  showRound({ nickname: '비밀닉네임', review: REVIEW });
+  const items = byId('result-review').children;
+  assert.equal(items.length, REVIEW.length);
+  for (const [index, entry] of items.entries()) {
+    const expected = REVIEW[index];
+    const report = entry.children.at(-1);
+    assert.equal(report.className, 'review__report', '풀이 맨 끝의 한 줄이다');
+    const [link] = report.children;
+    assert.equal(link.tagName, 'A', '진짜 링크라 워커가 밟고 누른다');
+    assert.equal(link.className, 'review__report-link');
+    assert.equal(link.textContent, '이 문제 이상해요');
+    assert.equal(link.target, '_blank');
+    assert.equal(link.rel, 'noopener noreferrer');
+    assert.equal(link.attributes['aria-label'], `이 문제 이상해요 · 「${expected.question}」 신고하기 — GitHub에서 새 창`);
+
+    const url = new URL(link.href);
+    assert.equal(`${url.origin}${url.pathname}`, 'https://github.com/perust/quiz-by-quiz/issues/new');
+    assert.equal(url.searchParams.get('template'), 'question-report.md');
+    assert.equal(url.searchParams.get('title'), `[문제 신고] ${expected.id}`);
+    const body = url.searchParams.get('body').split('\n');
+    assert.ok(body.includes('- 분야: 과학 (science)'));
+    assert.ok(body.includes(expected.question), '공개 은행의 문제라 질문을 싣는다');
+    for (const choice of expected.choices) assert.ok(body.includes(`- ${choice}`), `보기 «${choice}»`);
+    assert.equal(body[body.indexOf('### 저장된 정답') + 2], expected.correctChoice);
+    // 닉네임·점수·내 답은 싣지 않는다 — 시간 초과였다는 것도
+    const everything = [...url.searchParams.values()].join('\n');
+    for (const secret of ['비밀닉네임', '70', '내 답', '시간 초과']) {
+      assert.ok(!everything.includes(secret), `«${secret}» 가 주소에 실렸다`);
+    }
+  }
+
+  // 전체 도전의 묶음 안 풀이도 같은 링크를 단다
+  showRound({ review: [{ ...REVIEW[0], id: 'h9', category: 'history' }], mode: 'all' });
+  const [details] = byId('result-review').children[0].children;
+  const [item] = details.children[1].children;
+  assert.equal(item.children.at(-1).className, 'review__report');
+  assert.equal(new URL(item.children.at(-1).children[0].href).searchParams.get('title'), '[문제 신고] h9');
+});
+
 // ── 전체 도전의 오답 묶음 (N04) ──────────────────────────────────────
 // 25문제 판의 오답 풀이가 한 목록으로 다 펼쳐져 결과 화면이 끝없이 길었다. 분야별로 접어 묶는다.
 
 const wrong = (id, category) => ({
-  id, category, question: `${id}?`, chosenChoice: '가', correctChoice: '나', explanation: `${id} 해설`, timedOut: false,
+  id, category, question: `${id}?`, choices: ['가', '나', '다', '라'],
+  chosenChoice: '가', correctChoice: '나', explanation: `${id} 해설`, timedOut: false,
 });
 const ALL_REVIEW = [wrong('h1', 'history'), wrong('s1', 'science'), wrong('h2', 'history'), wrong('a1', 'art')];
 
@@ -294,6 +341,7 @@ test('결과 화면: 전체 도전의 오답은 분야 이름·개수를 단 접
   assert.deepEqual(items.children.map((entry) => entry.children[0].textContent), ['h1?', 'h2?']);
   assert.deepEqual(items.children[0].children.map((row) => row.className), [
     'review__question', 'review__row review__row--mine', 'review__row review__row--answer', 'review__explanation',
+    'review__report',
   ], '묶음 안의 한 문제는 분야 판과 같은 모양이다');
 
   // 한 분야만 틀렸으면 펼쳐 둔다 — 접을 이유가 없다

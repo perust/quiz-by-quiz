@@ -8,6 +8,12 @@ import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
 import { formatDuration, formatPercent } from './format.js';
 import { announce } from './screens.js';
+import {
+  createQuestionReportLink,
+  localQuestionReportUrl,
+  questionReportLabel,
+  questionReportSubject,
+} from './report-link.js';
 import type { CategoryId, ReviewItem, RoundSummary } from '../types.js';
 
 /** 전체 도전 오답 풀이의 한 묶음 (N04) */
@@ -285,7 +291,7 @@ export function createResultScreen(
     return row;
   }
 
-  /** 틀린 문제 하나: 질문 · 내 답 · 정답 · 해설 */
+  /** 틀린 문제 하나: 질문 · 내 답 · 정답 · 해설 · «이 문제 이상해요» */
   function createReviewItem(item: ReviewItem): HTMLLIElement {
     const entry = document.createElement('li');
     entry.className = 'review__item';
@@ -303,7 +309,18 @@ export function createResultScreen(
       // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
       createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
       createReviewRow('정답', item.correctChoice, 'answer'),
-      explanation
+      explanation,
+      // 공개 은행의 문제라 질문·보기·저장된 정답까지 싣는다 (FR-5.8). 내 답·점수·닉네임은 싣지 않는다
+      createQuestionReportLink(
+        localQuestionReportUrl({
+          id: item.id,
+          category: item.category,
+          question: item.question,
+          choices: item.choices,
+          answer: item.correctChoice,
+        }),
+        questionReportLabel(questionReportSubject(item.question)),
+      ),
     );
     return entry;
   }

@@ -164,7 +164,8 @@ test('«문제 다시 보기» 줄은 로컬 오답 복습과 같은 «내 답 /
     reviewItem(3, { choiceIndex: null, correct: false, timedOut: true }),
   ]);
 
-  assert.deepEqual(rows, [
+  // 신고 주소(reportUrl)는 tests/question-report.test.mjs 가 따로 본다
+  assert.deepEqual(rows.map(({ reportUrl, ...row }) => row), [
     { position: 1, question: '문제 1', result: 'correct', mine: null, answer: '나', explanation: '해설 1' },
     { position: 2, question: '문제 2', result: 'wrong', mine: '라', answer: '나', explanation: '해설 2' },
     { position: 3, question: '문제 3', result: 'timeout', mine: '시간 초과', answer: '나', explanation: '해설 3' },

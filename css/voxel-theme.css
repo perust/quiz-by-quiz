@@ -329,6 +329,7 @@
   --i-chat-off: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 2h16v2h-16zM2 4h2v2h-2zM20 4h2v2h-2zM0 6h2v2h-2zM8 6h2v2h-2zM14 6h2v2h-2zM22 6h2v2h-2zM0 8h2v2h-2zM10 8h4v2h-4zM22 8h2v2h-2zM0 10h2v2h-2zM10 10h4v2h-4zM22 10h2v2h-2zM0 12h2v2h-2zM8 12h2v2h-2zM14 12h2v2h-2zM22 12h2v2h-2zM2 14h2v2h-2zM20 14h2v2h-2zM4 16h16v2h-16zM6 18h4v2h-4zM6 20h2v2h-2z'/%3E%3C/svg%3E");
   --i-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 0h8v2h-8zM4 2h16v2h-16zM2 4h8v2h-8zM14 4h8v2h-8zM2 6h20v2h-20zM0 8h10v2h-10zM14 8h10v2h-10zM0 10h10v2h-10zM14 10h10v2h-10zM0 12h10v2h-10zM14 12h10v2h-10zM0 14h10v2h-10zM14 14h10v2h-10zM2 16h8v2h-8zM14 16h8v2h-8zM2 18h20v2h-20zM4 20h16v2h-16zM8 22h8v2h-8z'/%3E%3C/svg%3E");
   --i-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 8h4v2h-4zM16 8h4v2h-4zM4 10h6v2h-6zM14 10h6v2h-6zM6 12h12v2h-12zM8 14h8v2h-8zM10 16h4v2h-4z'/%3E%3C/svg%3E");
+  --i-external: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 0h14v2h-14zM10 2h14v2h-14zM0 4h8v2h-8zM16 4h8v2h-8zM0 6h8v2h-8zM14 6h4v2h-4zM20 6h4v2h-4zM0 8h4v2h-4zM12 8h4v2h-4zM20 8h4v2h-4zM0 10h4v2h-4zM10 10h4v2h-4zM20 10h4v2h-4zM0 12h4v2h-4zM8 12h4v2h-4zM20 12h4v2h-4zM0 14h4v2h-4zM16 14h4v2h-4zM0 16h4v2h-4zM16 16h4v2h-4zM0 18h4v2h-4zM16 18h4v2h-4zM0 20h20v2h-20zM0 22h20v2h-20z'/%3E%3C/svg%3E");
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23585d7b' d='M4 6h4v2h-4zM16 6h4v2h-4zM4 8h6v2h-6zM14 8h6v2h-6zM6 10h12v2h-12zM8 12h8v2h-8zM10 14h4v2h-4z'/%3E%3C/svg%3E");
   --i-check-inverse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M18 4h4v2h-4zM16 6h6v2h-6zM14 8h6v2h-6zM2 10h4v2h-4zM12 10h6v2h-6zM2 12h6v2h-6zM10 12h6v2h-6zM4 14h10v2h-10zM6 16h6v2h-6zM8 18h2v2h-2z'/%3E%3C/svg%3E");
   --i-cross-inverse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M4 4h4v2h-4zM16 4h4v2h-4zM4 6h6v2h-6zM14 6h6v2h-6zM6 8h12v2h-12zM8 10h8v2h-8zM8 12h8v2h-8zM6 14h12v2h-12zM4 16h6v2h-6zM14 16h6v2h-6zM4 18h4v2h-4zM16 18h4v2h-4z'/%3E%3C/svg%3E");
@@ -379,6 +380,7 @@
 [data-icon='info'] { --icon: var(--i-info); }
 [data-icon='chat'] { --icon: var(--i-chat); }
 [data-icon='chat-off'] { --icon: var(--i-chat-off); }
+[data-icon='external'] { --icon: var(--i-external); }
 
 /* 아이콘 칸: 옅은 바탕 위에 아이콘 하나. 칸 요소에 data-icon 을 달면 ::before 가 그린다 */
 .menu-card__figure::before,
@@ -1928,6 +1930,32 @@ select.room-form__input {
   line-height: var(--leading-normal);
 }
 
+/* «이 문제 이상해요» 신고 링크 (FR-5.8). 오답 풀이로 건너가는 링크와 같은 밑줄 보라 글자이고, 풀이 패널(유리 표면)
+   위라 바탕은 깔지 않는다. 새 창으로 열린다는 것은 글자 뒤의 «바깥으로» 아이콘이 보이고 이름(«GitHub에서 새 창»)이 말한다 */
+.review__report-link {
+  border-radius: var(--radius-md);
+  color: var(--accent-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-decoration: underline;
+}
+
+.review__report-link::after {
+  content: '';
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--i-external) center / contain no-repeat;
+  mask: var(--i-external) center / contain no-repeat;
+}
+
+/* 걸어서 올라선 표시는 다른 버튼과 같은 초점 고리다 (24절) */
+.review__report-link.is-standing {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 /* 전체 도전의 오답 묶음 (N04). 줄 사이는 1px 선, 개수는 오답과 같은 코랄 알약이다.
    펼침 상태는 색이 아니라 표식 방향(접히면 오른쪽, 펼치면 아래를 가리키는 아이콘)과 브라우저의 펼침 낭독이 말한다 */
 .review-group + .review-group {
@@ -3191,6 +3219,7 @@ select.is-standing {
   .result-best--new::before,
   .review__tag::before,
   .review-group__summary::after,
+  .review__report-link::after,
   .ranking-empty::before,
   #room-filter-toggle::before,
   .room-item__visibility--private::before,
