@@ -73,6 +73,8 @@ function collectReview(questions: Question[], answers: AnswerRecord[]): ReviewIt
       id: question.id,
       category: question.category,
       question: question.question,
+      // 신고 링크가 질문·보기·정답을 함께 싣는다 (FR-5.8). 원본 배열을 나눠 갖지 않게 복사한다
+      choices: [...question.choices],
       explanation: question.explanation,
       correctChoice: question.choices[question.answerIndex],
       // 시간 초과면 고른 보기가 없다.

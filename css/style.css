@@ -1448,6 +1448,19 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   word-break: keep-all;
 }
 
+/* 풀이 끝의 «이 문제 이상해요» 신고 링크 (FR-5.8). 한 줄에 홀로 서는 글자 링크라 손가락 목표는 44px이고,
+   새 창 아이콘(디자인 층)이 글자 뒤에 붙는다 */
+.review__report {
+  margin: var(--space-1) 0 0;
+}
+
+.review__report-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap);
+}
+
 /* 전체 도전의 오답 묶음 (N04). 분야 이름·개수를 단 펼침 줄(44px 목표) 아래에 그 분야의 풀이가 온다.
    브라우저의 기본 펼침 삼각형은 글리프라 거두고 디자인 층이 아이콘으로 그린다 */
 .review-group__summary {

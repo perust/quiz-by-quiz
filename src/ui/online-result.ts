@@ -5,6 +5,7 @@ import { playFinish } from '../audio.js';
 import { need } from '../dom.js';
 import type { OnlineFinishedMatch, OnlineReviewItem, OnlineScore } from '../online/adapter.js';
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
+import { createQuestionReportLink, onlineQuestionReportUrl, questionReportLabel } from './report-link.js';
 import { createBody } from './sprite.js';
 
 // 화면과 테스트가 이 이름으로 불러 왔다. 규칙은 공개 단계 점수판과 함께 online-standings.ts에 있다.
@@ -73,11 +74,17 @@ export interface OnlineReviewRow {
   mine: string | null;
   answer: string;
   explanation: string;
+  /**
+   * «이 문제 이상해요» 신고 주소 (FR-5.8). 온라인 은행은 비공개라 **문제 번호와 분야만** 싣는다 —
+   * 질문·보기·정답·해설은 이 화면에만 보이고 공개 이슈로 나가지 않는다
+   */
+  reportUrl: string;
 }
 
 /**
  * «문제 다시 보기» 한 줄씩 (U38). 로컬 결과의 오답 복습과 같은 «내 답 ✗ / 정답 ✓» 문법이고,
  * 맞힌 문제는 «내 답 · 정답» 한 줄이다. 판이 끝난 뒤에만 오는 서버 풀이가 없으면 아무것도 만들지 않는다.
+ * 맞힌 문제도 신고할 수 있다 — 정답이 틀린 문제는 오히려 «맞힌» 쪽에 숨는다.
  */
 export function onlineReviewRows(review: readonly OnlineReviewItem[] | undefined): OnlineReviewRow[] {
   return (review ?? []).map((item) => ({
@@ -89,6 +96,7 @@ export function onlineReviewRows(review: readonly OnlineReviewItem[] | undefined
       : item.choiceIndex === null ? '시간 초과' : item.choices[item.choiceIndex],
     answer: item.choices[item.answerIndex],
     explanation: item.explanation,
+    reportUrl: onlineQuestionReportUrl({ id: item.id, category: item.categoryId }),
   }));
 }
 
@@ -187,7 +195,9 @@ export function createOnlineResultScreen(
       const answerRows = row.mine === null
         ? [createReviewRow('내 답 · 정답', row.answer, 'mine-correct')]
         : [createReviewRow('내 답', row.mine, 'mine'), createReviewRow('정답', row.answer, 'answer')];
-      item.append(question, ...answerRows, explanation);
+      // 신고 주소에는 번호와 분야만 있다(reportUrl). 이름은 보이는 문항 번호로 어느 문제인지 말한다
+      const report = createQuestionReportLink(row.reportUrl, questionReportLabel(`${row.position}번 문제`));
+      item.append(question, ...answerRows, explanation, report);
       return item;
     }));
   }

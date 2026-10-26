@@ -372,6 +372,25 @@ arena 길이에 맞춰 늘어 왼쪽 사이를 벌리지 않는다). 온라인�
 `pickable`에 있어 걸어가 Enter·선택으로 누르면 진짜 `click()`이 여닫고, Tab·Enter·Space와 «펼침/접힘» 낭독은 브라우저가 맡는다.
 기본 펼침 삼각형은 글리프라 거두고 디자인 층이 `chevron` 아이콘의 방향으로 상태를 그린다. 묶는 근거인 분야는 `ReviewItem.category`다.
 
+**풀이의 문제마다 «이 문제 이상해요»가 GitHub 새 이슈를 연다** (FR-5.8, 소유자 결정, `ui/report-link.ts`). 로컬 오답 풀이와
+온라인 «문제 다시 보기»(맞힌 문제 포함) 줄 끝의 밑줄 글자 링크(`p.review__report > a.review__report-link`, 44px, 새 창 `external` 아이콘)가
+`REPOSITORY_URL`의 `issues/new?template=question-report.md&title=[문제 신고] <번호>&body=…`를 `target="_blank" rel="noopener noreferrer"`로
+연다. 진짜 `<a href>`라 워커가 밟고 누른다. 주소는 `URLSearchParams`로만 만든다 — 질문 속 `&`·`#`·`+`가 칸을 가르지 않는다.
+- **개인 정보를 싣지 않는다.** 주소를 만드는 함수는 문제만 받는다 — 닉네임·플레이어 ID·점수·방 코드·내 답이 들어갈 자리가 없다(초대
+  링크에 비밀번호 자리가 없는 것과 같다). 로컬은 공개 `data/`의 문제라 번호·분야·질문·보기(화면 순서, 섞인 뒤라 `ReviewItem.choices`)·
+  저장된 정답과 빈 «무엇이 이상한가요?» 칸을 싣는다
+- **온라인 문제는 번호와 분야뿐이다.** 온라인 은행은 정답을 공개하지 않으므로(`deploy/oracle/ONLINE_QUESTION_BANK.md`)
+  `onlineQuestionReportUrl`은 `{ id, category }`만 받고 본문이 «문제 번호만 보내요»라고 말한다. 공개 이슈에 질문·보기·정답을 옮기면 그 판의
+  답이 저장소에 쌓인다. `OnlineReviewRow.reportUrl`이 그 주소이고, 질문·보기는 이 화면에만 보인다
+- 주소는 `QUESTION_REPORT_URL_MAX_LENGTH`(6000자) 안이다. 넘으면 질문·보기 부분만 남길 수 있는 만큼 남기고 «…(주소가 길어…)»를 단다 —
+  번호와 빈 칸은 언제나 남는다. 번호도 80자에서 자른다(온라인 번호는 서버가 정한다)
+- 이름은 보이는 글자로 시작해 어느 문제인지와 새 창을 말한다 — «이 문제 이상해요 · 「질문 앞 20자」 신고하기 — GitHub에서 새 창», 온라인은
+  «3번 문제». 목록에서 Tab으로 다니면 «이 문제 이상해요»만 되풀이되기 때문이다(«목록 안의 버튼은 글자만으로 부족하다»)
+- 로컬 퀴즈의 피드백 패널에는 두지 않았다. 판이 도는 퀴즈 화면은 버튼이 아닌 초점에서의 Enter를 «다음 문제»로 받고(`quiz.ts`), 짧은 가로
+  화면은 패널 높이 계약이 있어 키·배치를 `tools/check-screens.js`로 함께 봐야 한다. 그래서 로컬은 결과의 오답 풀이에서만 신고한다
+- 본문의 칸은 `.github/ISSUE_TEMPLATE/question-report.md`와 같다(`tests/question-report.test.mjs`가 견준다). 받은 신고의 처리는
+  `docs/question-bank-maintenance.md`의 «받은 신고 처리»다
+
 **arena 수명주기는 화면 수명주기와 같다.** 로컬은 `quiz.start()`에서 켜고 모든 종료 경로에서 끈다. 온라인은 `online-*` element ID를 쓰는 별도 arena를 만들되 답은 반드시 기존 서버 권위 `onSubmit(position, choiceIndex)` 경로로만 보낸다. 로컬 피드백은 `showOutcome`의 기본 동작으로 캐릭터와 고정 조작부를 함께 잠그지만, **온라인은 답안 제출 대기·제출 완료·정답 공개 중에도 이동과 고정 조작부를 유지한다.** 대신 `setSelectionEnabled(false)`로 답 칸만 선택 대상에서 빼 `is-standing`이 결과 색을 덮거나 중복 답처럼 보이지 않게 한다. 실제 중복 답안은 제출 게이트와 비활성 보기 버튼이 함께 막는다.
 
 로컬에서 시간이 끝나면 `quiz.ts`의 `handleTimeout`이 `arena.standingIndex()`를 `session.submit`에 넘긴다. `choiceIndex`가 `null`이면 시간 초과 오답이라는 core 계약은 그대로다. 온라인 deadline 판정은 서버만 소유하며 client clock으로 제출 가능 여부를 닫지 않는다.

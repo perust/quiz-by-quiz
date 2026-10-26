@@ -154,6 +154,11 @@ export interface ReviewItem {
   /** 문항의 분야. 전체 도전 결과가 오답을 분야별로 묶을 때 쓴다 (N04) */
   category: CategoryId;
   question: string;
+  /**
+   * 화면에 나온 순서의 보기 넷. 풀이의 «이 문제 이상해요» 신고가 함께 싣는다 (FR-5.8).
+   * 섞인 뒤라 JSON 의 순서와 다르다 — 신고를 받는 쪽은 `id` 로 은행과 맞춰 본다
+   */
+  choices: string[];
   /** 시간 초과면 고른 보기가 없다 */
   chosenChoice: string | null;
   correctChoice: string;
