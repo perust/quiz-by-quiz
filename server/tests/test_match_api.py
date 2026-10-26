@@ -125,8 +125,15 @@ class MatchApiRepository:
         self.room = _room(ready=is_ready)
         return self.room
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup:
         assert actor_id == PLAYER_ID and code == self.room.code
+        assert absent_player_ids == frozenset()
         return MatchSetup(id=MATCH_ID, category_id="history", game_mode=True, total_questions=10)
 
     async def get_match(self, actor_id: UUID, code: str) -> MatchRead:

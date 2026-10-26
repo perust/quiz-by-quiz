@@ -4,37 +4,62 @@ import { readFile } from 'node:fs/promises';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
-function player(id, nickname, isReady) {
+function player(id, nickname, isReady, connected = true) {
   return {
     id,
     nickname,
     characterId: id === 'host' ? 'slime-green' : 'slime-blue',
     isReady,
+    connected,
   };
 }
 
-test('대기실 액자 모델은 참가자 전원과 방장·나·준비 상태를 구분한다', async () => {
+test('대기실 액자 모델은 참가자 전원과 방장·나·준비·연결 끊김을 구분한다', async () => {
   const { waitingRoomPortraits } = await import('../js/ui/waiting-room-portrait.js');
   const players = [
     player('host', '방장', false),
     player('me', '퀴즈왕', true),
     player('guest', '친구', false),
+    player('ghost', '유령', true, false),
   ];
 
+  // 방장은 시작 요청이 곧 준비라 «준비»로 보인다(U28). 오래 끊긴 사람은 준비했어도
+  // 시작 판정이 기다리지 않으므로 «연결 끊김»이 먼저다(U24).
   assert.deepEqual(waitingRoomPortraits(players, 'me'), [
     {
       id: 'host', nickname: '방장', characterId: 'slime-green',
-      isHost: true, isMe: false, isReady: false, statusLabel: '대기',
+      isHost: true, isMe: false, isReady: true, connected: true, statusLabel: '준비',
     },
     {
       id: 'me', nickname: '퀴즈왕', characterId: 'slime-blue',
-      isHost: false, isMe: true, isReady: true, statusLabel: '준비',
+      isHost: false, isMe: true, isReady: true, connected: true, statusLabel: '준비',
     },
     {
       id: 'guest', nickname: '친구', characterId: 'slime-blue',
-      isHost: false, isMe: false, isReady: false, statusLabel: '대기',
+      isHost: false, isMe: false, isReady: false, connected: true, statusLabel: '대기',
+    },
+    {
+      id: 'ghost', nickname: '유령', characterId: 'slime-blue',
+      isHost: false, isMe: false, isReady: false, connected: false, statusLabel: '연결 끊김',
     },
   ]);
+});
+
+test('연결 끊김 상태판은 색만이 아니라 경고 표식·점선·글자로 구분된다', async () => {
+  const [{ loadStyles, valueOf, node, MOBILE }, waiting] = await Promise.all([
+    import('./css-cascade.mjs'),
+    source('../src/ui/waiting-room.ts'),
+  ]);
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const env = MOBILE;
+  const offline = node('span.lounge__ready.lounge__ready--offline');
+
+  assert.match(valueOf(rules, node('span.lounge__ready.lounge__ready--offline::before'), 'mask', env) ?? '', /var\(--i-alert\)/);
+  assert.equal(valueOf(rules, node('span.lounge__ready.lounge__ready--offline::before'), 'border-radius', env), '0');
+  assert.equal(valueOf(rules, offline, 'border-style', env), 'dashed');
+  assert.match(waiting, /lounge__ready--offline/);
+  assert.match(waiting, /lounge__player--offline/);
+  assert.match(waiting, /if \(player\.isMe \|\| !player\.connected\) continue;/);
 });
 
 test('대기실 참가자 명단은 멈춘 전신 캐릭터 대신 벽걸이 액자를 그린다', async () => {

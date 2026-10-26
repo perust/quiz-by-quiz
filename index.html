@@ -496,7 +496,19 @@
         <button type="button" class="button button--ghost" id="waiting-leave">나가기</button>
       </header>
 
-      <p class="screen-lead" id="waiting-lead"></p>
+      <!-- 방 코드는 불러 주고 받아 적는 값이라 글과 떼어 칩으로 크게 보인다.
+           초대 링크에는 비밀번호를 싣지 않는다 (잠긴 방은 받은 사람이 따로 넣는다) -->
+      <div class="screen-lead waiting-invite">
+        <p class="waiting-invite__code">
+          <span class="waiting-invite__label">방 코드</span>
+          <strong class="waiting-invite__value" id="waiting-code"></strong>
+        </p>
+        <p class="waiting-invite__lead" id="waiting-lead"></p>
+        <button type="button" class="button button--ghost button--small waiting-invite__copy"
+                id="waiting-invite">초대 링크 복사</button>
+        <input class="waiting-invite__link" id="waiting-invite-link" type="text" readonly hidden
+               aria-label="초대 링크">
+      </div>
 
       <div class="waiting-settings">
         <button type="button" class="setting-card" id="setting-category">
@@ -511,7 +523,11 @@
       </div>
 
       <button type="button" class="button button--ghost waiting-ready" id="waiting-ready" aria-pressed="false">준비 완료</button>
-      <button type="button" class="button button--primary waiting-start" id="waiting-start" hidden>게임 시작</button>
+      <button type="button" class="button button--primary waiting-start" id="waiting-start"
+              aria-describedby="waiting-start-status" hidden>게임 시작</button>
+      <!-- 꺼진 「게임 시작」은 눌러도 아무 말이 없다. 왜 시작할 수 없는지·누구를 기다리는지를
+           버튼 밖에 늘 적어 두고, 준비 토글 같은 잦은 변화는 대화 로그 대신 여기서 낭독한다 -->
+      <p class="waiting-start-status" id="waiting-start-status" role="status"></p>
 
       <!-- 참가자는 벽걸이 액자로, 움직이는 캐릭터는 아래 바닥에서 서로 다른 역할로 보인다 -->
       <div class="lounge" id="lounge" aria-label="참가자 액자가 걸린 대기실">

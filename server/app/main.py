@@ -5,10 +5,11 @@ import hashlib
 import json
 import logging
 import math
+import time
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import count
 from typing import Annotated, Any
 from uuid import UUID
@@ -73,6 +74,12 @@ WAITING_ROOM_SEAT_CAPABILITY = "waiting-room-seat-v1"
 WAITING_ROOM_SEAT_IDS = frozenset(
     {"chair-left", "sofa-left", "sofa-right", "chair-right"}
 )
+# 소켓이 끊긴 뒤 이만큼 다시 붙지 않은 참가자는 시작 판정·판 참가·방장 자리에서 뺀다.
+# 새로고침·앱 전환처럼 잠깐 끊긴 사람은 그대로 기다린다. 멤버십과 30분 재입장 유예는
+# 이 값과 무관하다(CLAUDE.md «방이 아니라 참가자를 정리한다»).
+PRESENCE_GRACE_SECONDS = 60.0
+# 그보다 오래된 끊김 기록은 버린다. 30분 정리 sweep이 그 참가자를 이미 지웠을 때다.
+PRESENCE_RECORD_SECONDS = 3_600.0
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -213,11 +220,15 @@ class EventHub:
         max_room: int = 32,
         max_total: int = 256,
         send_timeout_seconds: float = 2.0,
+        presence_grace_seconds: float = PRESENCE_GRACE_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if min(max_actor_room, max_room, max_total) < 1:
             raise ValueError("event hub limits must be positive")
         if send_timeout_seconds <= 0:
             raise ValueError("event hub send timeout must be positive")
+        if presence_grace_seconds <= 0:
+            raise ValueError("event hub presence grace must be positive")
         self._max_actor_room = max_actor_room
         self._max_room = max_room
         self._max_total = max_total
@@ -228,6 +239,12 @@ class EventHub:
         self._actor_room_counts: dict[tuple[str, UUID], int] = defaultdict(int)
         self._closing: dict[WebSocket, asyncio.Task[bool]] = {}
         self._accepting = True
+        # 접속 상태(presence). 단일 worker 계약이라 메모리로 충분하다.
+        self._presence_grace_seconds = presence_grace_seconds
+        self._clock = clock
+        self._live_actor_counts: dict[tuple[str, UUID], int] = {}
+        self._absent_since: dict[tuple[str, UUID], float] = {}
+        self._announced_absent: set[tuple[str, UUID]] = set()
 
     def reserve(self, code: str, actor_id: UUID, websocket: WebSocket) -> bool:
         if not self._accepting:
@@ -254,7 +271,14 @@ class EventHub:
             or websocket in self._closing
         ):
             return False
-        self._rooms[code].add(websocket)
+        sockets = self._rooms[code]
+        if websocket not in sockets:
+            sockets.add(websocket)
+            actor_room = (code, actor_id)
+            self._live_actor_counts[actor_room] = (
+                self._live_actor_counts.get(actor_room, 0) + 1
+            )
+            self._absent_since.pop(actor_room, None)
         return True
 
     def connect(self, code: str, actor_id: UUID, websocket: WebSocket) -> bool:
@@ -271,10 +295,19 @@ class EventHub:
             return
         connected_code, actor_id = connection
         sockets = self._rooms.get(connected_code)
+        was_live = sockets is not None and websocket in sockets
         if sockets is not None:
             sockets.discard(websocket)
             if not sockets:
                 self._rooms.pop(connected_code, None)
+        if was_live:
+            live_room = (connected_code, actor_id)
+            live = self._live_actor_counts.get(live_room, 0)
+            if live > 1:
+                self._live_actor_counts[live_room] = live - 1
+            else:
+                self._live_actor_counts.pop(live_room, None)
+                self._absent_since[live_room] = self._clock()
         room_count = self._room_counts.get(connected_code, 0)
         if room_count > 1:
             self._room_counts[connected_code] = room_count - 1
@@ -425,6 +458,59 @@ class EventHub:
                 f"event hub did not close {len(self._connections)} connection(s)"
             )
 
+    def _is_absent(self, actor_room: tuple[str, UUID], now: float) -> bool:
+        since = self._absent_since.get(actor_room)
+        return (
+            since is not None
+            and actor_room not in self._live_actor_counts
+            and now - since >= self._presence_grace_seconds
+        )
+
+    def is_present(self, code: str, actor_id: UUID) -> bool:
+        """방 snapshot의 `connected`. 유예 안에 다시 붙으면 끊긴 적 없는 것으로 본다.
+
+        이 프로세스에서 소켓을 본 적 없는 참가자(서버 재시작 뒤의 유령, 막 들어와 아직
+        소켓을 열지 않은 사람)는 처음 물어본 지금부터 유예를 센다.
+        """
+        actor_room = (code, actor_id)
+        if actor_room in self._live_actor_counts:
+            return True
+        now = self._clock()
+        since = self._absent_since.setdefault(actor_room, now)
+        return now - since < self._presence_grace_seconds
+
+    def absent_actors(self, code: str) -> frozenset[UUID]:
+        """유예를 넘겨 끊긴 이 방의 참가자. 시작 판정과 방장 승계가 쓴다."""
+        now = self._clock()
+        return frozenset(
+            actor_id
+            for room_code, actor_id in tuple(self._absent_since)
+            if room_code == code and self._is_absent((room_code, actor_id), now)
+        )
+
+    def sweep_presence(self) -> frozenset[str]:
+        """끊김으로 바뀌었거나 다시 붙어 `connected`가 달라진 방들."""
+        now = self._clock()
+        for actor_room, since in tuple(self._absent_since.items()):
+            if now - since >= PRESENCE_RECORD_SECONDS:
+                # 정리 sweep이 이미 지운 참가자다. 되살아났다고 방송하지 않는다.
+                del self._absent_since[actor_room]
+                self._announced_absent.discard(actor_room)
+        absent = {
+            actor_room
+            for actor_room in self._absent_since
+            if self._is_absent(actor_room, now)
+        }
+        changed = frozenset(code for code, _ in absent ^ self._announced_absent)
+        self._announced_absent = absent
+        return changed
+
+    def forget_presence(self, code: str, actor_id: UUID) -> None:
+        """방을 나간 참가자의 끊김 기록을 지운다. 다음 sweep에서 방송할 일이 없다."""
+        actor_room = (code, actor_id)
+        self._absent_since.pop(actor_room, None)
+        self._announced_absent.discard(actor_room)
+
     @property
     def connection_count(self) -> int:
         return len(self._connections)
@@ -477,6 +563,7 @@ def _player_payload(player: PlayerView) -> dict[str, object]:
         "nickname": player.nickname,
         "characterId": player.character_id,
         "isReady": player.is_ready,
+        "connected": player.connected,
     }
 
 
@@ -587,12 +674,19 @@ def create_app(
     password_hasher: Any | None = None,
     tickets: WebSocketTickets | None = None,
     cleanup_interval_seconds: float = 60.0,
+    presence_interval_seconds: float = 5.0,
+    event_hub: EventHub | None = None,
 ) -> FastAPI:
     if (
         isinstance(cleanup_interval_seconds, bool)
         or cleanup_interval_seconds <= 0
     ):
         raise ValueError("cleanup_interval_seconds must be positive")
+    if (
+        isinstance(presence_interval_seconds, bool)
+        or presence_interval_seconds <= 0
+    ):
+        raise ValueError("presence_interval_seconds must be positive")
     active_settings = settings or Settings.from_env()
     if repository is None:
         if not active_settings.database_url:
@@ -615,7 +709,7 @@ def create_app(
 
     password_work = BoundedPasswordWork(hasher=password_hasher)
     ticket_store = tickets or WebSocketTickets()
-    hub = EventHub()
+    hub = event_hub or EventHub()
     ingress_limiter = AtomicMultiWindowLimiter()
     authenticated_ingress_limiter = AtomicMultiWindowLimiter()
     join_limiter = AtomicMultiWindowLimiter()
@@ -626,6 +720,18 @@ def create_app(
     websocket_inbound_limiter = AtomicMultiWindowLimiter()
     release_readiness_limiter = AtomicMultiWindowLimiter()
     movement_sequences = count(1)
+
+    def room_payload(room: RoomView) -> dict[str, object]:
+        """DB snapshot에 hub가 아는 접속 상태를 얹어 내보낸다."""
+        return _room_payload(
+            replace(
+                room,
+                players=tuple(
+                    replace(player, connected=hub.is_present(room.code, player.id))
+                    for player in room.players
+                ),
+            )
+        )
 
     def allow_actor_room(
         limiter: AtomicMultiWindowLimiter,
@@ -683,10 +789,42 @@ def create_app(
                     # Cleanup is best-effort per tick; a transient outage is retried.
                     logger.warning("resource cleanup sweep failed", exc_info=True)
 
+        async def sweep_presence() -> None:
+            # 유예를 넘겨 끊겼거나 다시 붙은 방만 다룬다. 끊긴 방장은 접속 중인 다음
+            # 참가자에게 넘기고, 남은 화면이 다시 읽도록 room-invalidated를 보낸다.
+            retry_transfer: set[str] = set()
+            while True:
+                await asyncio.sleep(presence_interval_seconds)
+                try:
+                    changed = hub.sweep_presence()
+                    pending, retry_transfer = changed | retry_transfer, set()
+                    for code in pending:
+                        transferred = False
+                        absent = hub.absent_actors(code)
+                        if absent:
+                            try:
+                                transferred = await repo.transfer_absent_host(code, absent)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception:
+                                logger.warning(
+                                    "absent host transfer failed for room %s",
+                                    code,
+                                    exc_info=True,
+                                )
+                                retry_transfer.add(code)
+                        if code in changed or transferred:
+                            await hub.broadcast(code, {"type": "room-invalidated"})
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("presence sweep failed", exc_info=True)
+
         try:
             sweep_tasks = [
                 asyncio.create_task(sweep_expired_matches()),
                 asyncio.create_task(sweep_expired_resources()),
+                asyncio.create_task(sweep_presence()),
             ]
             yield
         finally:
@@ -837,7 +975,7 @@ def create_app(
     async def list_rooms(
         actor_id: UUID = Depends(require_actor),
     ) -> list[dict[str, object]]:
-        return [_room_payload(room) for room in await repo.list_rooms(actor_id)]
+        return [room_payload(room) for room in await repo.list_rooms(actor_id)]
 
     @app.post("/v1/rooms", status_code=201)
     async def create_room(
@@ -890,7 +1028,7 @@ def create_app(
                     headers={"Retry-After": "1"},
                 ) from error
         room = await repo.create_room(actor_id, spec, password_hash)
-        return _room_payload(room)
+        return room_payload(room)
 
     @app.get("/v1/rooms/{raw_code}")
     async def get_room(
@@ -904,7 +1042,7 @@ def create_app(
         room = await repo.get_room(actor_id, code)
         if room is None:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.")
-        return _room_payload(room)
+        return room_payload(room)
 
     @app.post("/v1/rooms/{raw_code}/join")
     async def join_room(
@@ -993,7 +1131,7 @@ def create_app(
             ) from error
 
         await hub.broadcast(code, {"type": "room-invalidated"})
-        return _room_payload(room)
+        return room_payload(room)
 
     @app.delete("/v1/rooms/{raw_code}/members/me", status_code=204)
     async def leave_room(
@@ -1029,6 +1167,7 @@ def create_app(
                 "진행 중인 게임에서는 방을 나갈 수 없습니다.",
             ) from error
         await hub.disconnect_actor(code, actor_id)
+        hub.forget_presence(code, actor_id)
         if room is not None:
             await hub.broadcast(code, {"type": "room-invalidated"})
         return Response(status_code=204)
@@ -1085,7 +1224,7 @@ def create_app(
                 "진행 중에는 방 설정을 바꿀 수 없습니다.",
             ) from error
         await hub.broadcast(code, {"type": "room-invalidated"})
-        return _room_payload(room)
+        return room_payload(room)
 
     @app.put("/v1/rooms/{raw_code}/ready")
     async def set_ready(
@@ -1122,7 +1261,7 @@ def create_app(
                 "진행 중에는 준비 상태를 바꿀 수 없습니다.",
             ) from error
         await hub.broadcast(code, {"type": "room-invalidated"})
-        return _room_payload(room)
+        return room_payload(room)
 
     @app.post("/v1/rooms/{raw_code}/chat", status_code=202)
     async def send_chat(
@@ -1186,7 +1325,11 @@ def create_app(
                 "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
             )
         try:
-            match = await repo.start_game(actor_id, code)
+            match = await repo.start_game(
+                actor_id,
+                code,
+                absent_player_ids=hub.absent_actors(code),
+            )
         except RoomNotFound as error:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
         except NotHost as error:
@@ -1195,7 +1338,7 @@ def create_app(
             raise _error(
                 409,
                 "not-ready",
-                "참가자가 두 명 이상이고 모두 준비해야 시작할 수 있습니다.",
+                "연결된 참가자가 두 명 이상이고 방장 말고 모두 준비해야 시작할 수 있습니다.",
             ) from error
         except MatchInProgress as error:
             raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있습니다.") from error

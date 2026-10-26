@@ -65,8 +65,11 @@ excess closes with 4429. The browser coalesces movement to eight frames per seco
 and sends standing positions every two seconds for reconnect recovery. Broadcast
 sends run concurrently with a two-second per-socket deadline. Leaving a room closes
 that actor's sockets immediately, and the
-60-second cleanup sweep revalidates all admitted memberships. These bounds also
-depend on the single-worker deployment contract.
+60-second cleanup sweep revalidates all admitted memberships. The hub also keeps
+in-memory presence: a member whose last socket closed more than 60 seconds ago is
+reported as disconnected, skipped by game start, and loses the host seat to the
+earliest connected member during a 5-second presence sweep. Records older than an
+hour are dropped. These bounds also depend on the single-worker deployment contract.
 
 Persistent growth is bounded by a two-hour player lifetime, an independent
 60-second resource cleanup loop, and lobby materialization of no more than

@@ -57,6 +57,12 @@ export interface PublicPlayer {
   characterId: string;
   /** 이 참가자가 server-authoritative 시작 조건에 준비됐는가 */
   isReady: boolean;
+  /**
+   * 방에 연결돼 있는가. 소켓이 끊긴 뒤 유예(서버 60초)를 넘기면 false가 된다.
+   * false인 참가자는 시작 판정에서 기다리지 않고 판에도 넣지 않는다 — 멤버십과
+   * 재입장 유예는 그대로다. 로컬 방은 끊김을 알 길이 없어 언제나 true다.
+   */
+  connected: boolean;
 }
 
 /**
@@ -72,7 +78,10 @@ export interface PublicRoom {
   capacity: number;
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
-  /** 현재 방장이 첫 자리다. 나가면 가장 먼저 들어온 남은 참가자가 첫 자리로 승계한다. */
+  /**
+   * 현재 방장이 첫 자리다. 나가면 가장 먼저 들어온 남은 참가자가, 오래 끊기면 가장 먼저
+   * 들어온 접속 중인 참가자가 첫 자리로 승계한다.
+   */
   players: PublicPlayer[];
   isPublic: boolean;
   hasPassword: boolean;

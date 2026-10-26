@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+import time
 from dataclasses import replace
 from typing import Any
 from uuid import UUID
@@ -10,7 +12,7 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.main import create_app
+from app.main import EventHub, create_app
 from app.password_work import PasswordWorkBusy
 from app.repository import (
     AccessInfo,
@@ -21,6 +23,7 @@ from app.repository import (
 )
 
 PLAYER_ID = UUID("12345678-1234-5678-9234-567812345678")
+MATCH_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 PLAYER_TOKEN = "player-token-with-at-least-thirty-two-characters"  # noqa: S105
 HEADERS = {
     "Authorization": f"Bearer {PLAYER_TOKEN}",
@@ -68,6 +71,9 @@ class FakeRepository:
         self.authenticate_calls = 0
         self.current_schema_version = 10
         self.schema_version_calls = 0
+        self.start_absent_player_ids: frozenset[UUID] | None = None
+        self.transfer_calls: list[tuple[str, frozenset[UUID]]] = []
+        self.transfer_requested = threading.Event()
 
     async def open(self) -> None:
         return None
@@ -132,8 +138,29 @@ class FakeRepository:
     async def send_chat(self, actor_id: UUID, code: str, text: str) -> PlayerView:
         return self.room.players[0]
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
-        return MatchSetup(category_id=self.room.category_id, game_mode=self.room.game_mode)
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup:
+        self.start_absent_player_ids = absent_player_ids
+        return MatchSetup(
+            id=MATCH_ID,
+            category_id=self.room.category_id,
+            game_mode=self.room.game_mode,
+            total_questions=10,
+        )
+
+    async def transfer_absent_host(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        self.transfer_calls.append((code, absent_player_ids))
+        self.transfer_requested.set()
+        return True
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
         return self.member and code == self.room.code
@@ -1011,3 +1038,105 @@ def test_websocket_inbound_rate_limit_closes_a_flooding_connection() -> None:
                 websocket.receive_json()
 
     assert disconnected.value.code == 4429
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 5_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def wait_until(predicate: Any, message: str) -> None:
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError(message)
+
+
+OTHER_ID = UUID("87654321-4321-4765-8321-876543218765")
+
+
+def test_room_payload_marks_long_disconnected_members_and_start_skips_them() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    repository.room = room_view(
+        players=(
+            PlayerView(id=PLAYER_ID, nickname="퀴즈왕", character_id="slime-blue"),
+            PlayerView(
+                id=OTHER_ID,
+                nickname="친구",
+                character_id="slime-pink",
+                is_ready=True,
+            ),
+        ),
+    )
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=HEADERS,
+        ).json()["ticket"]
+        with client.websocket_connect(
+            f"/v1/rooms/{repository.room.code}/events",
+            subprotocols=ws_protocols(ticket),
+        ):
+            wait_until(lambda: hub.is_present("ABC234", PLAYER_ID), "socket was not activated")
+            fresh = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+            # 소켓을 아직 본 적 없는 친구도 처음 물어본 때부터 유예를 센다.
+            assert [player["connected"] for player in fresh["players"]] == [True, True]
+
+            clock.now += 61
+            stale = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+            assert [player["connected"] for player in stale["players"]] == [True, False]
+
+            started = client.post("/v1/rooms/ABC234/start", headers=HEADERS)
+
+    assert started.status_code == 201
+    assert repository.start_absent_player_ids == frozenset({OTHER_ID})
+
+
+def test_presence_sweep_transfers_an_absent_host_and_invalidates_remaining_screens() -> None:
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=repository,
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        stayer = register_rotating_identity(client, 30, "198.51.100.30")
+        leaver = register_rotating_identity(client, 31, "198.51.100.31")
+        leaver_id = UUID(leaver["X-Player-Id"])
+        tickets = [
+            client.post("/v1/rooms/ABC234/ws-ticket", headers=headers).json()["ticket"]
+            for headers in (stayer, leaver)
+        ]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(tickets[0]),
+        ) as stayer_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(tickets[1]),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            # 유예 안의 끊김은 방송하지도 방장을 넘기지도 않는다.
+            time.sleep(0.05)
+            assert repository.transfer_calls == []
+
+            clock.now += 61
+            assert repository.transfer_requested.wait(timeout=2)
+            event = stayer_socket.receive_json()
+
+    assert repository.transfer_calls[0] == ("ABC234", frozenset({leaver_id}))
+    assert event == {"type": "room-invalidated"}

@@ -110,6 +110,7 @@ ORDER BY
     r.updated_at DESC,
     r.created_at DESC,
     r.id ASC,
+    (member.player_id = r.host_player_id) DESC NULLS LAST,
     member.joined_at ASC,
     member.player_id ASC
 """
@@ -568,6 +569,57 @@ class PostgresRoomsRepository:
                     require_member=False,
                 )
 
+    async def transfer_absent_host(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        """유예를 넘겨 끊긴 방장 자리를 가장 먼저 들어온 접속 중인 참가자에게 넘긴다."""
+        if not absent_player_ids:
+            return False
+        async with self._pool.connection() as connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """
+                    SELECT id, host_player_id
+                    FROM quiz_online.rooms
+                    WHERE code = %s AND expires_at > now()
+                    FOR UPDATE
+                    """,
+                    (code,),
+                )
+                room = await cursor.fetchone()
+                if room is None or room["host_player_id"] not in absent_player_ids:
+                    return False
+                members_cursor = await connection.execute(
+                    """
+                    SELECT player_id
+                    FROM quiz_online.room_members
+                    WHERE room_id = %s
+                    ORDER BY joined_at ASC, player_id ASC
+                    """,
+                    (room["id"],),
+                )
+                successor = next(
+                    (
+                        member["player_id"]
+                        for member in await members_cursor.fetchall()
+                        if member["player_id"] not in absent_player_ids
+                    ),
+                    None,
+                )
+                if successor is None:
+                    return False
+                await connection.execute(
+                    """
+                    UPDATE quiz_online.rooms
+                    SET host_player_id = %s, updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (successor, room["id"]),
+                )
+                return True
+
     async def update_room(
         self,
         actor_id: UUID,
@@ -709,7 +761,13 @@ class PostgresRoomsRepository:
                     raise RepositoryFailure("ready room could not be read")
                 return room_view
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 cursor = await connection.execute(
@@ -747,8 +805,19 @@ class PostgresRoomsRepository:
                     """,
                     (room["id"],),
                 )
-                members = await members_cursor.fetchall()
-                if len(members) < 2 or any(not bool(member["is_ready"]) for member in members):
+                # 방장의 시작 요청이 곧 방장의 준비다. 유예를 넘겨 끊긴 참가자는
+                # 기다리지도, 판에 넣지도 않는다(멤버십과 재입장 유예는 그대로).
+                members = [
+                    member
+                    for member in await members_cursor.fetchall()
+                    if member["player_id"] == actor_id
+                    or member["player_id"] not in absent_player_ids
+                ]
+                if len(members) < 2 or any(
+                    not bool(member["is_ready"])
+                    for member in members
+                    if member["player_id"] != actor_id
+                ):
                     raise MatchNotReady
 
                 try:

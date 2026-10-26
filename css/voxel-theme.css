@@ -2291,6 +2291,49 @@ select.room-form__input {
   mask: var(--i-check) center / contain no-repeat;
 }
 
+/* 방 코드 칩. 불러 주고 받아 적는 값이라 크게, 글자 사이를 띄워 또박또박 읽힌다.
+   픽셀 글꼴 허용 목록(§3) 밖이라 시스템 글꼴의 굵은 글자로 그린다. */
+.waiting-invite__label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.waiting-invite__value {
+  padding: 0 var(--space-2);
+  border: var(--border-2) solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent-strong);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.waiting-invite__link {
+  border: var(--border-1) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+/* 시작 상태 줄. 월드 위에서도 읽히게 유리 표면에 본문 색으로 둔다 */
+.waiting-start-status {
+  border: var(--border-1) solid var(--world-floor-line);
+  border-radius: var(--radius-md);
+  background: var(--world-glass);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-snug);
+}
+
+.waiting-start-status:empty {
+  border: 0;
+}
+
 .chat__hint {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -3058,7 +3101,8 @@ select.is-standing {
   .waiting-ready::before,
   .online-match-status::before,
   .lounge__host,
-  .lounge__ready--on::before {
+  .lounge__ready--on::before,
+  .lounge__ready--offline::before {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
