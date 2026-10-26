@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { MOBILE, lengthOf, loadStyles, node, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -51,7 +52,7 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   const worldFirst = between(css, '/* ── 30. 월드 우선 화면 구성', '@media (max-height: 700px)');
   const narrowHome = between(
     css,
-    '@media (max-width: 420px) {\n  .category-card__name--full',
+    '@media (max-width: 420px) {\n  .home-header',
     '@media (max-width: 360px)',
   );
   assert.match(worldFirst, /\.home-menu \{[\s\S]*?display: contents/);
@@ -99,3 +100,49 @@ test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는
   assert.match(homeSource, /best\.textContent = String\(bestScore\)/, '분야 최고점은 dock 안에서 짧은 숫자로 보인다');
   assert.doesNotMatch(css, /\.challenge-card__desc,\s*\.challenge-card__meta\s*\{\s*display: none/);
 });
+
+test('dock 분야 이름은 폭 420px 이하에서만 12px 이고, 넓은 화면의 14px 이름도 다섯 칸 한 줄 안에 든다 (U53)', async () => {
+  const [constants, homeSource] = await Promise.all([source('../src/constants.ts'), source('../src/ui/home.ts')]);
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const fullNames = Object.fromEntries([...constants.matchAll(/id: '([a-z]+)', name: '([^']+)'/g)].map((match) => [match[1], match[2]]));
+  const compactBlock = homeSource.slice(homeSource.indexOf('COMPACT_CATEGORY_NAMES'), homeSource.indexOf('};', homeSource.indexOf('COMPACT_CATEGORY_NAMES')));
+  const compactNames = Object.fromEntries([...compactBlock.matchAll(/([a-z]+): '([^']+)'/g)].map((match) => [match[1], match[2]]));
+  assert.equal(Object.keys(fullNames).length, 5);
+  assert.deepEqual(compactNames, { general: '상식', art: '예술' });
+
+  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", node('main.app', body)));
+  const quests = node('div.home-quests#home-quests', stage);
+  const grid = node('div.category-grid#category-grid', quests);
+  const px = (element, property, env) => lengthOf(rules, valueOf(rules, element, property, env), env);
+
+  // 칸의 안쪽 폭을 실제 캐스케이드 값(dock 여백·칸 사이·칸 여백)으로 셈한다. dock 폭 공식·테두리·칸 배치가
+  // 바뀌면 그 단언들이 먼저 실패하므로 이 셈도 함께 고친다
+  for (const height of [844, 600]) {
+    for (const width of [320, 360, 390, 420, 421, 440, 458, 467, 480, 481, 500, 560, 599, 600, 768, 1280]) {
+      const env = { ...MOBILE, width, height };
+      const at = `${width}×${height}`;
+      assert.equal(valueOf(rules, quests, 'width', env), 'min(calc(100% - var(--space-6)), 700px)', at);
+      assert.equal(valueOf(rules, quests, 'border', env), 'var(--border-1) solid var(--border)', at);
+      assert.equal(valueOf(rules, grid, 'grid-template-columns', env), 'repeat(5, minmax(0, 1fr))', `${at}: 다섯 칸 한 줄`);
+      const dock = Math.min(width - 24, 700) - 2 * 1 - 2 * px(quests, 'padding', env);
+      const cell = (dock - 4 * px(grid, 'gap', env)) / 5;
+      for (const [id, fullName] of Object.entries(fullNames)) {
+        const card = node(`button.category-card[data-category='${id}']`, grid);
+        assert.match(valueOf(rules, card, 'border', env), /^var\(--border-2\) /, at);
+        assert.equal(valueOf(rules, card, 'grid-template-columns', env), '1fr', `${at}: 이름이 칸 폭을 다 쓴다`);
+        const inner = cell - 2 * px(card, 'padding', env) - 2 * 2;
+        const full = node('span.category-card__name.category-card__name--full', card);
+        const compact = node('span.category-card__name.category-card__name--compact', card);
+        const shown = valueOf(rules, full, 'display', env) === 'none' ? compact : full;
+        assert.notEqual(valueOf(rules, shown, 'display', env), 'none', `${at}: 이름 하나는 보인다`);
+        const size = px(shown, 'font-size', env);
+        assert.equal(size, width <= 420 ? 12 : 14, `${at}: 분야 이름 글자 크기`);
+        // 맑은 고딕의 한글은 한 자가 1em 이다 — 가장 넓은 시스템 글꼴로 잰다
+        const text = shown === full ? fullName : (compactNames[id] ?? fullName);
+        assert.ok(text.length * size <= inner, `${at}: 「${text}」 ${text.length * size}px 가 칸 안쪽 ${inner.toFixed(1)}px 를 넘는다`);
+      }
+    }
+  }
+});
+

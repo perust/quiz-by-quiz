@@ -47,6 +47,9 @@
 //      WASD로도 걷는다는 것을 알 길이 없었다 (U52) — 말한 키가 정말 캐릭터 몫인지 본다
 //   ⑭ 설정의 문항 시간 «제한 없음»(FR-3.7)은 시간 초과로 가는 길이 아예 없어야 한다. 25초를 앞당겨도
 //      판이 깨어나지 않는지, 설정 대화상자가 워커와 화면의 키(로비의 Esc)를 가두는지 함께 본다
+//   ⑮ 홈 dock 의 분야 이름을 넓은 화면에서 14px 로 키우면(U53) 「예술과문화」가 폭 421–467px 칸을
+//      넘친다(tests/home-interface.test.mjs 의 셈이 먼저 잡았다). 셈은 맑은 고딕의 1em 을 가정하므로
+//      실제 글꼴로 글자 크기·다섯 칸 한 줄·이름이 잘리지 않는지를 지금 창 폭에서 본다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -287,6 +290,33 @@
     });
     전체도전기록.hidden = 원래기록숨김;
     전체도전기록.textContent = 원래기록문구;
+
+    // ⑮ 분야 이름은 폭 420px 이하에서만 12px 이고 넓으면 14px 다 (U53). 키워도 다섯 칸이 한 줄에 남고
+    // 보이는 이름이 칸 안에서 잘리지 않아야 한다 — 「예술과문화」는 14px 에서 70px 라 폭 480px 까지는
+    // 짧은 라벨(「예술」)을 보인다. 창 폭을 421·450·481·600px 로 바꿔 가며 돌려 본다
+    const 분야칸 = [...document.querySelectorAll('#category-grid .category-card')];
+    const 보이는이름 = 분야칸.map((칸) => [...칸.querySelectorAll('.category-card__name')]
+      .find((이름) => getComputedStyle(이름).display !== 'none'));
+    const 바란크기 = window.innerWidth <= 420 ? 12 : 14;
+    const 이름크기 = 보이는이름.map((이름) => (이름 ? Number.parseFloat(getComputedStyle(이름).fontSize) : NaN));
+    결과.push({
+      자리: '홈', 이름: `분야 이름이 ${바란크기}px 이다 (폭 ${window.innerWidth}px)`,
+      통과: 이름크기.length === 5 && 이름크기.every((크기) => 크기 === 바란크기),
+      무엇: 이름크기.map((크기) => `${크기}px`).join(' · '),
+    });
+    const 칸줄 = new Set(분야칸.map((칸) => Math.round(칸.getBoundingClientRect().top)));
+    결과.push({
+      자리: '홈', 이름: '다섯 분야가 dock 한 줄에 있다',
+      통과: 분야칸.length === 5 && 칸줄.size === 1,
+      무엇: `${분야칸.length}칸 · ${칸줄.size}줄`,
+    });
+    const 잘린이름 = 보이는이름.filter((이름) => 이름 && 이름.scrollWidth > 이름.clientWidth)
+      .map((이름) => `${이름.textContent} ${이름.scrollWidth}/${이름.clientWidth}px`);
+    결과.push({
+      자리: '홈', 이름: '보이는 분야 이름이 칸 안에서 잘리지 않는다',
+      통과: 보이는이름.every(Boolean) && 잘린이름.length === 0,
+      무엇: 잘린이름.join(', ') || 보이는이름.map((이름) => 이름?.textContent ?? '(없음)').join(' · '),
+    });
 
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.

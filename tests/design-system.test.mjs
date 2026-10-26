@@ -506,6 +506,166 @@ test('결과: 320px 요약 칩은 네 글자 라벨과 값을 위한 가로 공�
   assert.equal(valueOf(rules, node('dd', chip), 'font-size', NARROW), 'var(--text-sm)');
 });
 
+test('주 행동 색: 골드 채움은 새 판을 여는 행동에만, 그 밖의 주 행동은 보라 채움이다 (U48)', () => {
+  // 골드(--primary-action*)를 칠하는 자리는 홈 「전체 도전」 카드와 결과 화면들의 행동 줄 주 행동뿐이다
+  const goldSpots = [];
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      if (isRoot(rule) || isDecor(rule)) continue;
+      const gold = rule.declarations.some((d) => /^background(?:-color)?$/.test(d.property) && /var\(--primary-action(?:-hover)?\)/.test(d.value));
+      if (gold) goldSpots.push(...rule.selectors);
+    }
+  }
+  assert.ok(goldSpots.length >= 4, `골드 규칙을 찾지 못했다: ${goldSpots}`);
+  const allowed = (selector) => (/\.challenge-card(?![\w-])/.test(selector) && !/challenge-card--online/.test(selector))
+    || /^\[data-screen='(?:result|online-result)'\] \.result-actions \.button--primary(?::|$)/.test(selector);
+  assert.deepEqual(goldSpots.filter((selector) => !allowed(selector)), [], '새 판을 여는 행동 밖에 골드 채움이 있다');
+
+  const withState = (element, ...states) => ({ ...element, states: [...element.states, ...states] });
+  // 결과 화면들의 행동 줄 주 행동을 마크업에서 찾는다 (로컬 「다시 하기」, 온라인 결과의 다음 판 행동)
+  const resultPrimaries = ['result', 'online-result'].flatMap((screen) => {
+    const start = html.indexOf(`data-screen="${screen}"`);
+    const section = html.slice(start, html.indexOf('<section', start));
+    const from = section.indexOf('class="result-actions"');
+    const actions = section.slice(from, section.indexOf('</div>', from));
+    return [...actions.matchAll(/class="button button--primary[^"]*" id="([\w-]+)"/g)].map((match) => match[1]);
+  });
+  assert.ok(resultPrimaries.includes('result-retry') && resultPrimaries.length >= 2, `결과 행동 줄 주 행동: ${resultPrimaries}`);
+  for (const env of [DESKTOP, MOBILE, NARROW]) {
+    // 새 판을 여는 행동: 골드 채움 + 진한 글자
+    for (const id of resultPrimaries) {
+      const button = nodeFromHtml(html, id);
+      assert.equal(valueOf(rules, button, 'background', env), 'var(--primary-action)', `#${id}`);
+      assert.equal(valueOf(rules, button, 'color', env), 'var(--on-primary-action)', `#${id}`);
+      assert.match(valueOf(rules, button, 'box-shadow', env), /var\(--press-edge\)/, `#${id} 두께`);
+      // 버튼 표의 눌림·꺼짐이 골드에도 있다 — 30절이 덮어 한때 눌러도 색이 그대로였고 꺼져도 채워져 있었다
+      assert.equal(valueOf(rules, withState(button, 'active'), 'background', env), 'var(--primary-action-hover)', `#${id}:active`);
+      assert.equal(valueOf(rules, withState(button, 'active'), 'box-shadow', env), 'none', `#${id}:active`);
+      assert.equal(valueOf(rules, withState(button, 'disabled'), 'background', env), 'var(--surface-subtle)', `#${id}:disabled`);
+      assert.equal(valueOf(rules, withState(button, 'disabled'), 'color', env), 'var(--text-disabled)', `#${id}:disabled`);
+    }
+    const startAll = nodeFromHtml(html, 'start-all');
+    assert.equal(valueOf(rules, startAll, 'background', env), 'var(--primary-action)');
+    assert.equal(valueOf(rules, startAll, 'color', env), 'var(--on-primary-action)');
+
+    // 온라인 진입과 판·방 안의 진행, 폼·대화상자 확정: 보라 채움 + 흰 글자
+    for (const id of ['next-button', 'waiting-start', 'create-submit', 'join-submit', 'room-empty-action', 'register-button', 'ranking-empty-start', 'help-close', 'settings-close']) {
+      const button = nodeFromHtml(html, id);
+      assert.equal(valueOf(rules, button, 'background', env), 'var(--accent)', `#${id} 는 보라 주 행동이다`);
+      assert.equal(valueOf(rules, button, 'color', env), 'var(--on-accent)', `#${id}`);
+    }
+    assert.equal(valueOf(rules, nodeFromHtml(html, 'open-online'), 'background', env), 'var(--accent)', '온라인 진입');
+    assert.equal(valueOf(rules, nodeFromHtml(html, 'walk-confirm'), 'background', env), 'var(--accent)', '손가락 「선택」');
+  }
+  // 마우스를 올리면 진한 골드다
+  for (const id of resultPrimaries) {
+    assert.equal(valueOf(rules, withState(nodeFromHtml(html, id), 'hover'), 'background', DESKTOP), 'var(--primary-action-hover)', `#${id}:hover`);
+  }
+  assert.equal(valueOf(rules, withState(nodeFromHtml(html, 'next-button'), 'hover'), 'background', DESKTOP), 'var(--accent-hover)');
+});
+
+test('월드 배경은 문서가 아니라 화면 크기로 맞춰 위에 붙이고, 흐림은 HUD 조각과 바닥 유리에만 둔다 (U50)', () => {
+  const homeBody = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  for (const [env, art] of [[MOBILE, 'mobile'], [NARROW, 'mobile'], [DESKTOP, 'desktop'], [{ ...MOBILE, width: 844, height: 390 }, 'desktop']]) {
+    const ratio = art === 'desktop' ? '1672 / 941' : '941 / 1672';
+    for (const body of [node('body'), homeBody]) {
+      const at = `${env.width}×${env.height} ${body.has.length ? '홈' : '읽기 화면'}`;
+      assert.match(valueOf(rules, body, 'background-image', env), new RegExp(`var\\(--world-art-${art}\\)`), at);
+      // cover 는 캔버스로 퍼진 body 배경에서 문서 전체 높이를 덮어, 긴 화면일수록 그림이 확대됐다
+      assert.equal(valueOf(rules, body, 'background-size', env), `100% 100%, max(100vw, calc(100lvh * ${ratio})) auto`, at);
+      assert.equal(valueOf(rules, body, 'background-position', env), 'center top', at);
+      assert.equal(valueOf(rules, body, 'background-repeat', env), 'no-repeat', at);
+      assert.equal(valueOf(rules, body, 'background-attachment', env), 'fixed', at);
+      assert.equal(valueOf(rules, body, 'background-color', env), 'var(--world-sky-2)', `${at}: 그림 아래는 하늘색으로 잇는다`);
+    }
+  }
+  // lvh 를 모르는 브라우저를 위한 vh 대체 선언이 같은 규칙에서 먼저 온다
+  for (const rule of files['css/voxel-theme.css']) {
+    const sizes = rule.declarations.filter((d) => d.property === 'background-size').map((d) => d.value);
+    if (!sizes.some((value) => value.includes('lvh'))) continue;
+    assert.equal(sizes.length, 2, rule.selectors.join(', '));
+    assert.equal(sizes[0], sizes[1].replace('100lvh', '100vh'), rule.selectors.join(', '));
+  }
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      for (const d of rule.declarations) {
+        if (/^background(?:-size)?$/.test(d.property) && rule.selectors.some((s) => /^body\b/.test(s))) {
+          assert.doesNotMatch(d.value, /\bcover\b/, `${rule.selectors.join(', ')} 는 cover 로 문서를 덮지 않는다`);
+        }
+      }
+    }
+  }
+
+  // 흐림은 어두운 HUD 조각과 월드가 그대로 비치는 22% 바닥 유리에만 남는다. 90% 유리 표면은
+  // 아래 그림이 거의 비치지 않아 흐림이 보이지 않는데, 화면마다 여러 장이 겹쳐 스크롤을 무겁게 했다
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body')));
+  const ranking = node("section.screen[data-screen='ranking']", node('main.app', node('body')));
+  const reading = [
+    ['질문', node('h1.question#question-text', quiz)],
+    ['보기', node('button.choice', node('li', node('ul.choices#choices', quiz)))],
+    ['피드백', nodeFromHtml(html, 'feedback')],
+    ['요약 칩', nodeFromHtml(html, 'result-correct').parent],
+    ['결과 블록', nodeFromHtml(html, 'register-form').parent],
+    ['결과 저장 안내', nodeFromHtml(html, 'register-scope')],
+    ['랭킹 안내', node('p.ranking-scope', ranking)],
+    ['랭킹 탭', nodeFromHtml(html, 'ranking-tabs')],
+    ['랭킹 목록', nodeFromHtml(html, 'ranking-list')],
+    ['빈 랭킹', nodeFromHtml(html, 'ranking-empty')],
+    ['로비 안내', nodeFromHtml(html, 'online-note')],
+    ['방 목록', nodeFromHtml(html, 'room-browser')],
+    ['코드 참가', nodeFromHtml(html, 'private-join-block')],
+    ['대기실 설정 칸', nodeFromHtml(html, 'setting-category')],
+    ['온라인 최종 요약', nodeFromHtml(html, 'online-final-summary')],
+    ['온라인 최종 순위', nodeFromHtml(html, 'online-final-ranking')],
+  ];
+  const hud = [
+    ['설정 버튼', nodeFromHtml(html, 'open-settings')],
+    ['홈 dock', nodeFromHtml(html, 'home-quests')],
+    ['닉네임 HUD', nodeFromHtml(html, 'open-nickname')],
+    ['퀴즈 HUD', node('div.quiz-hud', quiz)],
+    ['랭킹 머리말', node('header.ranking-header', ranking)],
+    ['로비 동작 바', node('nav.online-actions', node("section.screen[data-screen='online']", node('main.app', node('body'))))],
+  ];
+  for (const env of [MOBILE, DESKTOP]) {
+    for (const [label, element] of reading) {
+      const blur = valueOf(rules, element, 'backdrop-filter', env);
+      assert.ok(blur === null || blur === 'none', `${env.width}px ${label}: 읽는 표면에 흐림이 없다 (${blur})`);
+    }
+    for (const [label, element] of hud) {
+      assert.match(valueOf(rules, element, 'backdrop-filter', env) ?? '', /^blur\(/, `${env.width}px ${label}: HUD 조각은 흐림을 남긴다`);
+    }
+    assert.match(valueOf(rules, nodeFromHtml(html, 'arena-tiles'), 'backdrop-filter', env) ?? '', /^blur\(2px\)$/, '무대 바닥 유리');
+  }
+});
+
+test('글자 크기: 판정 알약과 로비 동작 이름은 폭 420px 이하에서만 12px 이고 그보다 넓으면 14px 다 (U53)', () => {
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body')));
+  const mark = (layout) => node('span.choice__mark', node('button.choice.choice--correct:disabled', node('li', node(`ul.choices#choices[data-layout='${layout}']`, quiz))));
+  const bar = node('nav.online-actions', node("section.screen[data-screen='online']", node('main.app', node('body'))));
+  const card = node('button.online-action-card#open-public-rooms', bar);
+  const label = node('strong', node('span.online-action-card__body', card));
+  const glyph = node('span.online-action-card__icon::before', card);
+  const px = (element, env) => lengthOf(rules, valueOf(rules, element, 'font-size', env), env);
+
+  const wide = [DESKTOP, { ...MOBILE, width: 421 }, { ...MOBILE, width: 500 }, { ...MOBILE, width: 599 }, { ...MOBILE, width: 844, height: 390 }, { ...MOBILE, width: 600, height: 360 }];
+  const narrow = [MOBILE, NARROW, { ...MOBILE, width: 420 }, { ...MOBILE, width: 420, height: 400 }];
+  for (const env of wide) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(px(mark('grid'), env), 14, `${at} 2×2 판정 알약`);
+    assert.equal(px(mark('list'), env), 14, `${at} 한 줄 판정 알약`);
+    assert.equal(px(label, env), 14, `${at} 로비 동작 이름`);
+  }
+  for (const env of narrow) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(px(mark('list'), env), 12, `${at} 한 줄 판정 알약`);
+    assert.equal(px(label, env), 12, `${at} 로비 동작 이름`);
+  }
+  // 높이만 짧은 가로 화면도 동작 바는 짧은 배치(작은 아이콘·한 줄 이름)를 그대로 쓴다
+  const shortLandscape = { ...MOBILE, width: 844, height: 390 };
+  assert.equal(valueOf(rules, glyph, 'width', shortLandscape), 'var(--icon-sm)');
+  assert.equal(valueOf(rules, label, 'white-space', shortLandscape), 'nowrap');
+});
+
 // ── 상태 언어 ───────────────────────────────────────────────────────
 
 test('상태: 보기의 정답·오답·제출 대기·캐릭터 위치는 색만이 아니라 표식과 모양으로도 다르다', () => {

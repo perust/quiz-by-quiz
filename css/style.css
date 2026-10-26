@@ -2395,8 +2395,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
     height: var(--icon-sm);
   }
 
+  /* 글자 크기는 디자인 층이 정한다 — 폭 420px 이하에서만 12px (U53) */
   .online-action-card__body strong {
-    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
@@ -3588,7 +3588,11 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
   }
 }
 
-@media (max-width: 420px) {
+/* 다섯 칸 dock 의 분야 이름은 폭 420px 을 넘으면 14px 다(U53, 디자인 층). 「예술과문화」는 14px 에서
+   70px(맑은 고딕)라 폭 467px 까지의 칸 안쪽(421px 에서 61px 남짓)을 넘친다. 그래서 폭 480px 까지는 짧은
+   시각 라벨을 보인다 — 버튼의 낭독 이름은 언제나 전체 이름이다 (home.ts 의 COMPACT_CATEGORY_NAMES).
+   폭마다의 셈은 tests/home-interface.test.mjs 가 한다 */
+@media (max-width: 480px) {
   .category-card__name--full {
     display: none;
   }
@@ -3596,7 +3600,9 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
   .category-card__name--compact {
     display: block;
   }
+}
 
+@media (max-width: 420px) {
   .home-header {
     top: calc(max(var(--space-3), env(safe-area-inset-top)) + 72px);
     width: 44vw;
@@ -3641,11 +3647,6 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
   .home-menu .menu-card {
     width: 60px;
     min-height: 60px;
-  }
-
-  .category-card__name,
-  .home-menu .menu-card__name {
-    font-size: var(--text-xs);
   }
 
   .quiz--character {

@@ -105,6 +105,9 @@ test('주 행동·위험·상태 글자는 제 바탕에서 작은 글자 AA(4.5
     ['--on-accent-muted', '--accent-hover'],
     ['--on-accent', '--wrong'],
     ['--on-accent', '--correct'],
+    // 새 판을 여는 골드 주 행동(U48): 쉬는·hover·눌림 모두 진한 글자
+    ['--on-primary-action', '--primary-action'],
+    ['--on-primary-action', '--primary-action-hover'],
     // 옅은 바탕 위 글자: 선택·정답·오답·경고(시간·제출 대기·신기록)
     ['--accent-ink', '--accent-soft'],
     ['--accent-ink', '--accent-subtle'],
@@ -184,6 +187,8 @@ test('어두운 HUD 위의 경고 글자·초점 고리는 HUD 가 가장 밝은
     ['--hud-text', '--hud-bg-soft', '#ffffff'],
   ], 4.5);
   assertOnSurface([['--focus-on-hud', '--hud-bg', '#ffffff']], 3);
+  // 홈 dock(어두운 HUD) 위의 골드 「전체 도전」 채움은 dock 바탕과 3:1 이상으로 갈린다 (U48)
+  assertOnSurface([['--primary-action', '--hud-bg', '#ffffff']], 3);
   // 경고 색은 코랄과 같은 색상이다 — 밝기만 다르고 뜻이 같은 색으로 읽힌다
   const hue = (value) => {
     const [r, g, b] = value.slice(1).match(/../g).map((part) => Number.parseInt(part, 16) / 255);
