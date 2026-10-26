@@ -134,7 +134,7 @@ async function main(): Promise<void> {
 
   // ── 설정 (U42·U54·U55) ─────────────────────────────────────────
   // 앱 바의 「설정」 대화상자. 고르는 순간 적용하고 저장한다.
-  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 서버의 20초다 */
+  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 방장이 방에 고른 20초·40초다 */
   let timeLimitMs = settings.timeLimitMs;
   setSoundEnabled(settings.soundEnabled);
   applyMotionPreference(settings.reduceMotion);

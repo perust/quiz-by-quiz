@@ -241,6 +241,55 @@ test('U24: 네트워크 저장소는 도는 판에 내 자리가 있는지 받�
   await assert.rejects(store.getRoom('ABC234'), /진행 상태/);
 });
 
+test('방장이 고른 문항 시간: 방 모습은 20초·40초만 믿고, 만들기·설정 바꾸기는 그 값을 보낸다', async () => {
+  const calls = [];
+  let snapshot = room({ questionTimeMs: 40_000 });
+  const fetchImpl = async (input, init = {}) => {
+    const url = String(input);
+    calls.push({ url, init });
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms') && init.method === 'POST') return json(snapshot, 201);
+    if (url.endsWith('/v1/rooms/ABC234')) return json(snapshot);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+
+  assert.equal((await store.getRoom('ABC234'))?.questionTimeMs, 40_000);
+  // 있는데 20초·40초가 아니면(제한 없음 포함) 다른 계약이라 믿지 않는다
+  for (const broken of [30_000, null, '40000', true, 0]) {
+    snapshot = room({ questionTimeMs: broken });
+    await assert.rejects(store.getRoom('ABC234'), /문항 시간/, String(broken));
+  }
+
+  snapshot = room({ questionTimeMs: 40_000 });
+  const created = await store.createRoom({
+    name: '긴 시간 방',
+    categoryId: null,
+    capacity: 4,
+    questionTimeMs: 40_000,
+    isPublic: true,
+    player: { nickname: '퀴즈왕', characterId: 'slime-blue' },
+  });
+  assert.equal(created.ok, true);
+  assert.equal(created.room.questionTimeMs, 40_000);
+  const createCall = calls.find(({ url, init }) => url.endsWith('/v1/rooms') && init.method === 'POST');
+  assert.equal(JSON.parse(createCall.init.body).questionTimeMs, 40_000);
+
+  snapshot = room({ questionTimeMs: 20_000 });
+  const updated = await store.updateRoom({ code: 'ABC234', patch: { questionTimeMs: 20_000 } });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.room.questionTimeMs, 20_000);
+  const patchCall = calls.find(({ init }) => init.method === 'PATCH');
+  assert.deepEqual(JSON.parse(patchCall.init.body), { questionTimeMs: 20_000 });
+});
+
 test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 보내고 새 방 snapshot을 받는다', async () => {
   const calls = [];
   const readyRoom = room({
@@ -271,11 +320,13 @@ test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 �
 
   // connected를 모르는 이전 서버의 snapshot은 끊김을 단정하지 않고 접속 중으로 읽는다.
   // inMatch를 모르는 이전 서버의 snapshot은 판에 내 자리가 없는 것으로 읽는다.
+  // 문항 시간을 모르는 이전 서버의 방은 모두 20초였다.
   assert.deepEqual(result, {
     ok: true,
     room: {
       ...readyRoom,
       inMatch: false,
+      questionTimeMs: 20_000,
       players: readyRoom.players.map((player) => ({ ...player, connected: true })),
     },
   });

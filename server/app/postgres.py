@@ -53,7 +53,9 @@ _ROOM_LIFETIME = "24 hours"
 _MEMBER_STALE_AFTER = "30 minutes"
 _PLAYER_LIFETIME = "2 hours"
 _MATCH_LIFETIME = "2 hours"
-_QUESTION_TIMEOUT = "20 seconds"
+# 문항 마감은 고정값이 아니다. 방장이 방마다 고른 문항 시간(20초·40초, migration 011)을 판을
+# 열 때 matches.question_time_ms에 옮겨 적고, 모든 문항 마감·시간 초과 기록이 그 판의 값을 쓴다.
+
 # 정답·해설을 실제로 읽을 시간. 공개 카드는 «다음 문제까지 N초»를 보여 준다.
 _REVEAL_DURATION = "8 seconds"
 
@@ -112,6 +114,7 @@ SELECT
     r.category_id,
     r.capacity,
     r.game_mode,
+    r.question_time_ms,
     r.is_public,
     (r.password_hash IS NOT NULL) AS has_password,
     (r.host_player_id = %(actor_id)s) AS is_mine,
@@ -401,10 +404,11 @@ class PostgresRoomsRepository:
                             """
                             INSERT INTO quiz_online.rooms (
                                 code, name, category_id, capacity, game_mode,
+                                question_time_ms,
                                 is_public, password_hash, host_player_id, expires_at
                             )
                             VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                 now() + %s::interval
                             )
                             RETURNING id
@@ -415,6 +419,7 @@ class PostgresRoomsRepository:
                                 spec.category_id,
                                 spec.capacity,
                                 spec.game_mode,
+                                spec.question_time_ms,
                                 spec.is_public,
                                 password_hash,
                                 actor_id,
@@ -807,7 +812,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, capacity, category_id
+                    SELECT id, host_player_id, capacity, category_id, question_time_ms
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -819,6 +824,8 @@ class PostgresRoomsRepository:
                     raise RoomNotFound
                 if room["host_player_id"] != actor_id:
                     raise NotHost
+                # 판이 도는 동안에는 어떤 설정도 바꾸지 않는다 — 문항 시간은 그 판의 마감이
+                # 이미 쓰고 있다
                 active_match = await connection.execute(
                     """
                     SELECT 1
@@ -840,14 +847,15 @@ class PostgresRoomsRepository:
                     raise RoomFull
 
                 category = patch.get("category_id", room["category_id"])
+                question_time = patch.get("question_time_ms", room["question_time_ms"])
                 await connection.execute(
                     """
                     UPDATE quiz_online.rooms
-                    SET category_id = %s, capacity = %s,
+                    SET category_id = %s, capacity = %s, question_time_ms = %s,
                         updated_at = now(), expires_at = now() + %s::interval
                     WHERE id = %s
                     """,
-                    (category, capacity, _ROOM_LIFETIME, room["id"]),
+                    (category, capacity, question_time, _ROOM_LIFETIME, room["id"]),
                 )
                 updated = await self._fetch_room(
                     connection,
@@ -947,7 +955,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, category_id, game_mode
+                    SELECT id, host_player_id, category_id, game_mode, question_time_ms
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -1012,15 +1020,18 @@ class PostgresRoomsRepository:
                 except CatalogError as error:
                     raise RepositoryFailure("static question catalog is unavailable") from error
 
+                # 방장이 고른 문항 시간을 판에 옮겨 적는다. 이 판의 모든 문항 마감이 이 값이다.
+                question_time_ms = int(room["question_time_ms"])
                 created = await connection.execute(
                     """
                     INSERT INTO quiz_online.matches (
                         room_id, category_id, game_mode, total_questions,
-                        deadline_at, expires_at
+                        question_time_ms, deadline_at, expires_at
                     )
                     VALUES (
                         %s, %s, %s, %s,
-                        now() + %s::interval,
+                        %s,
+                        now() + %s::integer * interval '1 millisecond',
                         now() + %s::interval
                     )
                     RETURNING id
@@ -1030,7 +1041,8 @@ class PostgresRoomsRepository:
                         room["category_id"],
                         True,
                         len(selected),
-                        _QUESTION_TIMEOUT,
+                        question_time_ms,
+                        question_time_ms,
                         _MATCH_LIFETIME,
                     ),
                 )
@@ -1089,6 +1101,7 @@ class PostgresRoomsRepository:
                     category_id=room["category_id"],
                     game_mode=True,
                     total_questions=len(selected),
+                    question_time_ms=question_time_ms,
                 )
 
     async def get_match(
@@ -1155,10 +1168,11 @@ class PostgresRoomsRepository:
                 if question is None:
                     raise RepositoryFailure("current match question is missing")
 
+                # 쓴 시간은 그 판의 문항 시간을 넘지 않는다 (시간 초과 기록과 같은 상한)
                 elapsed_cursor = await connection.execute(
                     """
                     SELECT LEAST(
-                        20000,
+                        question_time_ms,
                         GREATEST(
                             0,
                             floor(extract(epoch FROM now() - question_started_at) * 1000)::integer
@@ -1387,13 +1401,13 @@ class PostgresRoomsRepository:
                     SET state = 'running',
                         current_position = current_position + 1,
                         question_started_at = now(),
-                        deadline_at = now() + %s::interval
+                        deadline_at = now() + question_time_ms * interval '1 millisecond'
                     WHERE id = %s
                       AND state = 'revealing'
                       AND deadline_at <= now()
                     RETURNING id
                     """,
-                    (_QUESTION_TIMEOUT, match_id),
+                    (match_id,),
                 )
             return await completed.fetchone() is not None
 
@@ -1433,14 +1447,16 @@ class PostgresRoomsRepository:
             return False
 
         # 마감이 지났거나 끊긴 사람을 빼고 앞당겼으면, 답이 없는 참가자는 시간 초과로 채운다.
+        # 시간 초과는 그 판의 문항 시간(20초·40초)을 다 쓴 것으로 남는다.
         if expired or absent_player_ids:
             await connection.execute(
                 """
                 INSERT INTO quiz_online.match_answers (
                     match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
                 )
-                SELECT %s, %s, player.player_id, NULL, false, true, 20000
+                SELECT %s, %s, player.player_id, NULL, false, true, match.question_time_ms
                 FROM quiz_online.match_players player
+                JOIN quiz_online.matches match ON match.id = player.match_id
                 LEFT JOIN quiz_online.match_answers answer
                   ON answer.match_id = player.match_id
                  AND answer.position = %s
@@ -1471,7 +1487,8 @@ class PostgresRoomsRepository:
         cursor = await connection.execute(
             """
             SELECT match.id, match.state, match.category_id, match.game_mode,
-                   match.current_position, match.total_questions, match.deadline_at
+                   match.current_position, match.total_questions, match.deadline_at,
+                   match.question_time_ms
             FROM quiz_online.matches match
             JOIN quiz_online.match_players player ON player.match_id = match.id
             WHERE match.id = %s AND player.player_id = %s AND match.expires_at > now()
@@ -1541,6 +1558,7 @@ class PostgresRoomsRepository:
             own_answer=own_answer,
             scores=scores,
             review=review,
+            question_time_ms=int(match["question_time_ms"]),
         )
 
     async def _score_views(
@@ -1819,6 +1837,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 # join_room 이 MatchInProgress 를 내는 조건과 같은 판정이다
                 "status": "playing" if row["is_playing"] else "waiting",
                 "in_match": bool(row["in_match"]),
+                "question_time_ms": int(row["question_time_ms"]),
             }
             grouped[room_id] = item
         if row["player_id"] is not None:
@@ -1846,6 +1865,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
             created_at=item["created_at"],
             status=item["status"],
             in_match=item["in_match"],
+            question_time_ms=item["question_time_ms"],
         )
         for item in grouped.values()
     ]

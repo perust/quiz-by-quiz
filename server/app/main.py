@@ -34,10 +34,12 @@ from .config import Settings, is_public_pages_question_bank
 from .domain import (
     ALLOWED_CAPACITIES,
     ALLOWED_CATEGORIES,
+    DEFAULT_QUESTION_TIME_MS,
     DomainError,
     normalize_code,
     validate_chat,
     validate_player,
+    validate_question_time,
     validate_room,
 )
 from .password_work import BoundedPasswordWork, PasswordWorkBusy
@@ -70,6 +72,9 @@ from .repository import (
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
+# 이 API가 읽고 쓰는 마지막 migration. 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지
+# 못하므로 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
+RELEASE_SCHEMA_VERSION = 11
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
@@ -188,6 +193,8 @@ class CreateRoomBody(StrictBody):
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt
     game_mode: StrictBool = Field(default=True, alias="gameMode")
+    # 방장이 고르는 문항 시간(ms). 보내지 않는 구버전 client의 방은 20초다
+    question_time_ms: StrictInt = Field(default=DEFAULT_QUESTION_TIME_MS, alias="questionTimeMs")
     is_public: StrictBool = Field(alias="isPublic")
     password: str | None = None
 
@@ -200,6 +207,7 @@ class UpdateRoomBody(StrictBody):
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt | None = None
     game_mode: StrictBool | None = Field(default=None, alias="gameMode")
+    question_time_ms: StrictInt | None = Field(default=None, alias="questionTimeMs")
 
 
 class ChatBody(StrictBody):
@@ -663,6 +671,7 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         "categoryId": room.category_id,
         "capacity": room.capacity,
         "gameMode": room.game_mode,
+        "questionTimeMs": room.question_time_ms,
         "players": [_player_payload(player) for player in room.players],
         "isPublic": room.is_public,
         "hasPassword": room.has_password,
@@ -757,6 +766,8 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
         "gameMode": match.game_mode,
         "currentPosition": match.current_position,
         "totalQuestions": match.total_questions,
+        # 이 판의 문항 시간. 화면의 남은 시간 막대가 «가득»으로 쓴다 (마감 판정은 여전히 서버다)
+        "questionTimeMs": match.question_time_ms,
         "deadlineAt": match.deadline_at,
         "remainingMs": _remaining_ms(match, now or datetime.now(UTC)),
         "question": question,
@@ -789,6 +800,7 @@ def _match_start_payload(match: MatchSetup) -> dict[str, object]:
         "categoryId": match.category_id,
         "gameMode": match.game_mode,
         "totalQuestions": match.total_questions,
+        "questionTimeMs": match.question_time_ms,
     }
 
 
@@ -1087,11 +1099,11 @@ def create_app(
                 headers={"Retry-After": "60"},
             )
         version = await repo.schema_version()
-        if version != 10:
+        if version != RELEASE_SCHEMA_VERSION:
             raise _error(
                 503,
                 "migration-required",
-                "캐릭터 전용 데이터베이스 전환이 완료되지 않았습니다.",
+                "데이터베이스 전환이 완료되지 않았습니다.",
             )
         return {
             "status": "ready",
@@ -1181,6 +1193,7 @@ def create_app(
                 is_public=body.is_public,
                 password=body.password,
                 game_mode=body.game_mode,
+                question_time_ms=body.question_time_ms,
             )
         except DomainError as error:
             raise _error(400, error.code, str(error)) from error
@@ -1465,6 +1478,12 @@ def create_app(
                 raise _error(400, "invalid-category", "지원하지 않는 게임 형식입니다.")
         if "capacity" in patch and patch["capacity"] not in ALLOWED_CAPACITIES:
             raise _error(400, "invalid-capacity", "지원하지 않는 최대 인원입니다.")
+        if "question_time_ms" in patch:
+            # 20초·40초 둘뿐이다. 방장만, 판이 돌지 않을 때만 바뀐다(저장소가 판정한다)
+            try:
+                validate_question_time(patch["question_time_ms"])
+            except DomainError as error:
+                raise _error(400, error.code, str(error)) from error
 
         try:
             room = await repo.update_room(actor_id, code, patch)

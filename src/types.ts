@@ -167,11 +167,18 @@ export interface ReviewItem {
  */
 export type TimeLimitChoice = 20000 | 40000 | null;
 
+/**
+ * 온라인 방의 문항 시간 (밀리초). 방장이 방마다 20초(기본)나 40초를 고른다.
+ * **제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
+ * 고를 수 있는 값은 constants.ts 의 ONLINE_QUESTION_TIME_CHOICES 에 있다.
+ */
+export type OnlineQuestionTime = 20000 | 40000;
+
 /** 사용자 설정 (localStorage) */
 export interface Settings {
   soundEnabled: boolean;
   characterId: string | null;
-  /** 새로 여는 로컬 판의 문항 시간. 온라인 매치는 서버가 20초로 고정한다 */
+  /** 새로 여는 로컬 판의 문항 시간. 온라인 매치는 방장이 그 방에 고른 시간(20초·40초)을 쓴다 */
   timeLimitMs: TimeLimitChoice;
   /** 앱 안의 «움직임 줄이기» (U55). 기기의 prefers-reduced-motion 은 이것과 따로 늘 따른다 */
   reduceMotion: boolean;

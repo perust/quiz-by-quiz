@@ -2727,11 +2727,27 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 /* ── 대기실 ──
    방에 들어오면 오는 곳. 참가자가 바닥에 서 있고 내 캐릭터가 그 사이를 걷는다. */
+/* 분야·인원·문항 시간 세 칸. 좁은 화면에서는 두 칸씩이고 남는 문항 시간이 한 줄을 다 쓴다 —
+   세 칸으로 나누면 칸마다 ↻ 표식 자리를 빼고 «예술과문화»·«전체 도전»이 들지 않는다 */
 .waiting-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+
+.waiting-settings > .setting-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 480px) {
+  .waiting-settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .waiting-settings > .setting-card:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
 }
 
 /* 누르면 다음 값으로 도는 버튼. select 로 두면 캐릭터가 밟아도 목록이 열리지 않는다.

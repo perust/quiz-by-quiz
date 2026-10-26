@@ -15,7 +15,7 @@
 //   leaveRoom(spec)
 //   removeMember(spec)     연결이 끊긴 참가자 내보내기 (방장만, U24)
 //   getRoom(code)          방 하나
-//   updateRoom(spec)       방 설정 (방장만)
+//   updateRoom(spec)       방 설정 (방장만): 분야·인원·문항 시간(20초·40초)
 //   sendChat(spec)         한마디
 //   startGame(spec)        판 열기 (방장만)
 //   subscribe(code, fn)    방에서 일어나는 일. 그만 들으려면 되돌려 준 함수를 부른다
@@ -42,7 +42,7 @@
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
 import { safeStorage } from '../storage/safe-storage.js';
-import type { CategoryId } from '../types.js';
+import type { CategoryId, OnlineQuestionTime } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
   MovementViewport,
@@ -79,6 +79,11 @@ export interface PublicRoom {
   capacity: number;
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
+  /**
+   * 방장이 고른 문항 시간(20초·40초). 판을 열 때 그 판의 모든 문항 마감이 된다. 모두에게 보이고
+   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다.
+   */
+  questionTimeMs: OnlineQuestionTime;
   /**
    * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
    * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
@@ -136,6 +141,8 @@ export interface CreateRoomSpec {
   /** 「전체 도전」이면 null */
   categoryId: CategoryId | null;
   capacity: number;
+  /** 방장이 고르는 문항 시간. 만들기 폼의 기본은 20초다 */
+  questionTimeMs: OnlineQuestionTime;
   isPublic: boolean;
   /** 비공개 방일 때만 본다 */
   password?: string;
@@ -148,10 +155,11 @@ export interface JoinRoomSpec {
   player: PlayerInfo;
 }
 
-/** 방장만 바꿀 수 있다. 넘긴 것만 바뀐다 */
+/** 방장만 바꿀 수 있다. 넘긴 것만 바뀐다. 판이 도는 동안에는 서버가 거절한다 */
 export interface RoomPatch {
   categoryId?: CategoryId | null;
   capacity?: number;
+  questionTimeMs?: OnlineQuestionTime;
 }
 
 export type CreateRoomResult =
@@ -248,6 +256,11 @@ interface OnlineMatchBase {
   gameMode: true;
   currentPosition: number;
   totalQuestions: number;
+  /**
+   * 이 판의 문항 시간. 판을 열 때 방 설정에서 정해져 판 내내 같다. 남은 시간 막대의 «가득»으로만
+   * 쓴다 — 마감 판정은 서버가 한다. 구버전 서버는 보내지 않는다(그때 막대는 처음 받은 남은 시간을 가득으로 본다).
+   */
+  questionTimeMs?: OnlineQuestionTime;
 }
 
 /** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */

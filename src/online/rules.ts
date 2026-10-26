@@ -4,9 +4,12 @@
 // 서버 구현으로 갈아끼웠을 때 서버가 다른 기준으로 거절해 말이 어긋난다.
 
 import {
+  ONLINE_QUESTION_TIME_CHOICES,
   ROOM_CODE_LENGTH, ROOM_NAME_MAX_LENGTH,
   ROOM_PASSWORD_MAX_LENGTH, ROOM_PASSWORD_MIN_LENGTH,
+  TIME_LIMIT_MS,
 } from '../constants.js';
+import type { OnlineQuestionTime } from '../types.js';
 
 /**
  * 검사 결과.
@@ -123,6 +126,33 @@ export function checkPassword(password: string | null | undefined): CheckResult 
     return { ok: false, message: `비밀번호는 ${ROOM_PASSWORD_MAX_LENGTH}자까지 쓸 수 있어요.` };
   }
   return { ok: true, value };
+}
+
+/**
+ * 방장이 고를 수 있는 온라인 문항 시간인가 (20초·40초). 서버·DB와 같은 목록이다.
+ * 글자 `'40000'`이나 `true`처럼 모양만 비슷한 값은 받지 않는다.
+ */
+export function isOnlineQuestionTime(value: unknown): value is OnlineQuestionTime {
+  return ONLINE_QUESTION_TIME_CHOICES.some((choice) => choice === value);
+}
+
+/**
+ * 읽어 온 값을 문항 시간으로 좁힌다. 모르는 값이면 기본 20초 — 문항 시간을 모르던 때의 방은
+ * 모두 20초였다. 서버 응답처럼 «있는데 모르는 값»을 믿지 않아야 하는 자리는 `isOnlineQuestionTime`으로 따로 거른다.
+ */
+export function onlineQuestionTimeOrDefault(value: unknown): OnlineQuestionTime {
+  return isOnlineQuestionTime(value) ? value : TIME_LIMIT_MS;
+}
+
+/** 대기실 설정 칸이 누를 때마다 도는 다음 값 (20초 → 40초 → 20초) */
+export function nextOnlineQuestionTime(current: OnlineQuestionTime): OnlineQuestionTime {
+  const index = ONLINE_QUESTION_TIME_CHOICES.indexOf(current);
+  return ONLINE_QUESTION_TIME_CHOICES[(index + 1) % ONLINE_QUESTION_TIME_CHOICES.length];
+}
+
+/** 설정 칸·만들기 폼에 쓰는 짧은 이름: «20초» */
+export function onlineQuestionTimeLabel(value: OnlineQuestionTime): string {
+  return `${Math.round(value / 1000)}초`;
 }
 
 /**

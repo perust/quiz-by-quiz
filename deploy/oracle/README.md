@@ -130,27 +130,45 @@ rate-limit contract.
 
 ## Fail-closed staging order
 
-The compatibility boundary is **API → migration 010 → Pages**. Never run the
-constraint migration while a legacy API process can still write `false` or
-`NULL` values.
+The current compatibility boundary is **migration 011 → API → Pages**.
+Migration 011 stores the host-chosen online question time (20 or 40 seconds,
+default 20) on rooms, copies it onto each match, and widens the answer
+`elapsed_ms` range to 40 seconds. It only adds defaulted, constrained columns:
+the migration-010 API names its columns explicitly and never reads or writes
+them, so it keeps serving (at its fixed 20 seconds) while 011 runs and remains
+a valid rollback target afterwards. The candidate API reads and writes those
+columns, so it must not replace the 010 API before ledger version 011 exists.
+The candidate Pages client sends `questionTimeMs`, which the 010 API rejects as
+an unknown field, so Pages waits for the candidate API.
 
 1. Recompute and verify the source and private-bank hashes against the approved
    candidate; stop on any mismatch.
 2. Render the overlay with the platform base and inspect the result. Do not
    `up`, restart, reload, migrate, or expose anything at this step.
-3. Build and replace only `quiz-by-quiz-api` with the candidate while the
-   database is still at migration 009. Require internal `/readyz` and verify
-   that omitted characters and legacy `gameMode:false` requests are normalized.
-   The profiled `quiz-by-quiz-migrate` service must not start in this step.
-4. After the candidate API is the sole writer, run only the explicit
-   `quiz-by-quiz-migrate` service. Require ledger versions 001–010, all five
-   character-only constraints, and the exact public `/v1/release-readiness`
-   response `{status: ready, contract: character-only-v1, schemaVersion: 10}`.
+3. With the migration-010 API still serving, build and run only the explicit
+   `quiz-by-quiz-migrate` service from the candidate source. Require ledger
+   versions 001–011, the `rooms_question_time_check`,
+   `matches_question_time_check`, and `match_answers_elapsed_ms_range_check`
+   constraints, and `question_time_ms = 20000` on every pre-existing room and
+   match. The 010 API's public `/v1/release-readiness` now answers 503
+   `migration-required`; that is the expected fail-closed state, not an outage.
+4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
+   internal `/readyz`, verify that a room created without `questionTimeMs`
+   reports `questionTimeMs: 20000`, and require the exact public
+   `/v1/release-readiness` response
+   `{status: ready, contract: character-only-v1, schemaVersion: 11}`.
 5. Verify HTTPS and WSS through the existing Caddy route without changing any
    unrelated platform service or host-port exposure.
 6. Only after the production readiness response passes may the independent
    public Pages source be merged and published. The Pages workflow repeats this
    gate and fails closed before `deploy-pages`.
+
+The preceding boundary was **API → migration 010 → Pages**: never run the 010
+constraint migration while a legacy API process can still write `false` or
+`NULL` values. A database still at migration 009 must first complete that
+order with a migration-010 API (all five character-only constraints and
+readiness `schemaVersion: 10`) before step 3 above; the current candidate API
+does not run on a migration-009 database.
 
 If a stage fails, remove or stop only the task-owned release/service artifacts.
 Do not restart, reload, alter, or roll back unrelated n8n, BTC, Caddy,

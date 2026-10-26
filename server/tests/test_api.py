@@ -74,7 +74,7 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 10
+        self.current_schema_version = 11
         self.schema_version_calls = 0
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
@@ -298,7 +298,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_10() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_11() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -306,13 +306,15 @@ def test_release_readiness_requires_character_only_contract_and_migration_10() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 10,
+            "schemaVersion": 11,
         }
 
-        repository.current_schema_version = 9
-        blocked = client.get("/v1/release-readiness")
-        assert blocked.status_code == 503
-        assert blocked.json()["detail"]["code"] == "migration-required"
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이 없다. 이 API는 그 위에서 방을 읽지 못한다
+        for older in (9, 10):
+            repository.current_schema_version = older
+            blocked = client.get("/v1/release-readiness")
+            assert blocked.status_code == 503
+            assert blocked.json()["detail"]["code"] == "migration-required"
 
 
 def test_release_readiness_database_queries_are_rate_limited() -> None:
@@ -403,6 +405,101 @@ def test_room_update_treats_legacy_false_as_a_character_only_noop() -> None:
     assert response.json()["gameMode"] is True
     assert repository.update_calls == 1
     assert repository.updated_patch == {}
+
+
+def test_room_create_takes_the_hosts_question_time_and_defaults_to_20_seconds() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        chosen = client.post(
+            "/v1/rooms",
+            headers=HEADERS,
+            json={**public_room_body(0), "questionTimeMs": 40_000},
+        )
+        chosen_spec = repository.created_spec
+        legacy = client.post("/v1/rooms", headers=HEADERS, json=public_room_body(1))
+        legacy_spec = repository.created_spec
+        repository.room = room_view(question_time_ms=40_000)
+        listed = client.get("/v1/rooms", headers=HEADERS)
+
+    assert chosen.status_code == 201
+    assert chosen_spec is not None and chosen_spec.question_time_ms == 40_000
+    # 구버전 client는 이 필드를 모른다. 그 방은 예전처럼 20초다
+    assert legacy.status_code == 201
+    assert legacy_spec is not None and legacy_spec.question_time_ms == 20_000
+    # 방 모습은 저장소가 돌려준 값을 그대로 싣는다 (모두가 보는 대기실 설정 칸)
+    assert listed.json()[0]["questionTimeMs"] == 40_000
+
+
+def test_room_create_rejects_any_question_time_but_20_or_40_seconds() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        responses = {
+            value: client.post(
+                "/v1/rooms",
+                headers=HEADERS,
+                json={**public_room_body(index), "questionTimeMs": value},
+            )
+            for index, value in enumerate((30_000, 0, None, True, "40000", 40_000.5))
+        }
+
+    # 제한 없음(null)·다른 시간은 거절한다 — 한 사람이 답하지 않으면 방 전체가 멈춘다
+    assert responses[30_000].status_code == 400
+    assert responses[30_000].json()["detail"]["code"] == "invalid-question-time"
+    assert responses[0].status_code == 400
+    for value in (None, True, "40000", 40_000.5):
+        assert responses[value].status_code == 422, value
+    assert repository.create_calls == 0
+
+
+def test_room_update_passes_a_valid_question_time_and_rejects_the_rest() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        changed = client.patch(
+            "/v1/rooms/ABC234",
+            headers=HEADERS,
+            json={"questionTimeMs": 40_000},
+        )
+        changed_patch = repository.updated_patch
+        rejected = [
+            client.patch("/v1/rooms/ABC234", headers=HEADERS, json={"questionTimeMs": value})
+            for value in (30_000, None, False)
+        ]
+
+    assert changed.status_code == 200
+    assert changed_patch == {"question_time_ms": 40_000}
+    assert [response.status_code for response in rejected] == [400, 400, 422]
+    assert rejected[0].json()["detail"]["code"] == "invalid-question-time"
+    assert rejected[1].json()["detail"]["code"] == "invalid-question-time"
+    assert repository.update_calls == 1
+
+
+def test_room_update_keeps_host_and_running_match_refusals_for_question_time() -> None:
+    repository = FakeRepository()
+
+    async def not_host(actor_id: UUID, code: str, patch: Any) -> RoomView:
+        raise NotHost
+
+    async def busy(actor_id: UUID, code: str, patch: Any) -> RoomView:
+        raise MatchInProgress
+
+    with make_client(repository) as client:
+        register(client)
+        repository.update_room = not_host  # type: ignore[method-assign]
+        guest = client.patch("/v1/rooms/ABC234", headers=HEADERS, json={"questionTimeMs": 40_000})
+        repository.update_room = busy  # type: ignore[method-assign]
+        playing = client.patch(
+            "/v1/rooms/ABC234",
+            headers=HEADERS,
+            json={"questionTimeMs": 40_000},
+        )
+
+    assert guest.status_code == 403
+    assert guest.json()["detail"]["code"] == "not-host"
+    assert playing.status_code == 409
+    assert playing.json()["detail"]["code"] == "game-in-progress"
 
 
 def test_session_rejects_invalid_character_as_a_client_error() -> None:

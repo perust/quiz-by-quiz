@@ -15,7 +15,8 @@ import { ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import { isPersistent, safeStorage } from '../storage/safe-storage.js';
 import {
-  checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
+  checkPassword, checkRoomName, isOnlineQuestionTime, makeCode, normalizeCode,
+  onlineQuestionTimeOrDefault, uniqueNickname,
 } from './rules.js';
 import {
   isWaitingRoomSeatId,
@@ -28,7 +29,7 @@ import type {
   RemoveMemberResult, RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
   PlayerInfo, StartGameResult, Unsubscribe,
 } from './adapter.js';
-import type { CategoryId } from '../types.js';
+import type { CategoryId, OnlineQuestionTime } from '../types.js';
 
 const KEY = 'quiz.rooms';
 const ME_KEY = 'quiz.playerId';
@@ -59,6 +60,8 @@ interface Room {
   name: string;
   categoryId: CategoryId | null;
   capacity: number;
+  /** 방장이 고른 문항 시간. 이 값이 생기기 전에 저장된 방에는 없어 읽을 때 20초로 좁힌다 */
+  questionTimeMs?: OnlineQuestionTime;
   isPublic: boolean;
   gameMode: boolean;
   password: string;
@@ -160,6 +163,8 @@ function readAll(): Room[] {
     return prune(rooms).map((room) => ({
       ...room,
       gameMode: true,
+      // 저장 데이터는 믿지 않는다. 없거나 모르는 값이면 문항 시간이 생기기 전과 같은 20초다
+      questionTimeMs: onlineQuestionTimeOrDefault(room.questionTimeMs),
       players: room.players.map((player) => ({
         ...player,
         characterId: player.characterId || DEFAULT_CHARACTER_ID,
@@ -215,6 +220,7 @@ function toPublic(room: Room): PublicRoom {
     categoryId: room.categoryId,
     capacity: room.capacity,
     gameMode: true,
+    questionTimeMs: onlineQuestionTimeOrDefault(room.questionTimeMs),
     players: room.players.map(({ id, nickname, characterId, isReady }) => ({
       id,
       nickname,
@@ -269,7 +275,9 @@ export const localRooms = {
   /**
    * player는 {nickname, characterId}. 만든 사람이 곧 첫 참가자다.
    */
-  async createRoom({ name, categoryId, capacity, isPublic, password, player }: CreateRoomSpec): Promise<CreateRoomResult> {
+  async createRoom({
+    name, categoryId, capacity, questionTimeMs, isPublic, password, player,
+  }: CreateRoomSpec): Promise<CreateRoomResult> {
     const named = checkRoomName(name);
     if (!named.ok) return { ok: false, message: named.message };
 
@@ -292,6 +300,8 @@ export const localRooms = {
       name: named.value,
       categoryId: categoryId || null,
       capacity: size,
+      // 서버와 같은 목록만 받는다. 모르는 값(제한 없음 포함)은 기본 20초로 연다 — 인원과 같은 길이다
+      questionTimeMs: onlineQuestionTimeOrDefault(questionTimeMs),
       isPublic: Boolean(isPublic),
       gameMode: true,
       password: isPublic ? '' : String(password),
@@ -389,6 +399,11 @@ export const localRooms = {
       if (ROOM_CAPACITY_CHOICES.includes(size) && size >= room.players.length) {
         room.capacity = size;
       }
+    }
+
+    // 20초·40초만 받는다. 서버와 같은 목록이고 모르는 값은 그대로 둔다
+    if ('questionTimeMs' in patch && isOnlineQuestionTime(patch.questionTimeMs)) {
+      room.questionTimeMs = patch.questionTimeMs;
     }
 
     writeAll(rooms);

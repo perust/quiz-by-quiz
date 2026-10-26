@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from app.domain import DomainError, normalize_code, validate_chat, validate_player, validate_room
+from app.domain import (
+    ALLOWED_QUESTION_TIMES_MS,
+    DomainError,
+    normalize_code,
+    validate_chat,
+    validate_player,
+    validate_question_time,
+    validate_room,
+)
 
 
 def test_validate_room_normalizes_supported_public_room() -> None:
@@ -41,6 +49,39 @@ def test_validate_room_requires_private_password_and_rejects_unknown_capacity() 
             password=None,
         )
     assert capacity.value.code == "invalid-capacity"
+
+
+def test_validate_room_keeps_the_hosts_question_time_and_defaults_to_20_seconds() -> None:
+    def room(**changes: object) -> object:
+        return validate_room(
+            name="시간 방",
+            category_id=None,
+            capacity=4,
+            is_public=True,
+            password=None,
+            **changes,  # type: ignore[arg-type]
+        )
+
+    assert room().question_time_ms == 20_000
+    assert room(question_time_ms=40_000).question_time_ms == 40_000
+    assert ALLOWED_QUESTION_TIMES_MS == frozenset({20_000, 40_000})
+
+
+@pytest.mark.parametrize("value", [30_000, 0, -20_000, 60_000, True, 40_000.0, "40000", None])
+def test_validate_room_rejects_question_times_other_than_20_or_40_seconds(value: object) -> None:
+    # 온라인에는 제한 없음이 없다 — 한 사람이 답하지 않으면 방 전체가 멈춘다
+    with pytest.raises(DomainError, match="20초나 40초") as caught:
+        validate_room(
+            name="시간 방",
+            category_id=None,
+            capacity=4,
+            is_public=True,
+            password=None,
+            question_time_ms=value,  # type: ignore[arg-type]
+        )
+    assert caught.value.code == "invalid-question-time"
+    with pytest.raises(DomainError):
+        validate_question_time(value)
 
 
 @pytest.mark.parametrize("value", ["", "   ", "12345678901234567"])

@@ -1,7 +1,7 @@
 // 게임 전반에서 쓰는 상수를 이 파일 한 곳에 모은다.
 // 값 조정이 필요하면 다른 파일을 뒤지지 않고 여기만 고친다.
 
-import type { Category, TimeLimitChoice } from './types.js';
+import type { Category, OnlineQuestionTime, TimeLimitChoice } from './types.js';
 
 /** 한 판에 출제할 문항 수. 문제 은행 크기와 분리해 관리한다 (FR-1.2) */
 export const QUESTIONS_PER_ROUND = 10;
@@ -18,7 +18,7 @@ export const QUESTIONS_PER_ROUND = 10;
  */
 export const QUESTIONS_PER_CATEGORY_IN_ALL = 5;
 
-/** 문항당 제한 시간의 기본값 (밀리초, FR-3.7). 온라인 매치는 서버가 이 값으로 고정한다 */
+/** 문항당 제한 시간의 기본값 (밀리초, FR-3.7). 온라인 방의 기본 문항 시간이기도 하다 */
 export const TIME_LIMIT_MS = 20_000;
 
 /**
@@ -28,6 +28,13 @@ export const TIME_LIMIT_MS = 20_000;
  * 점수에 속도가 없으므로(FR-5.1, PRD 2.1) 고른 시간으로 랭킹을 나누지 않는다.
  */
 export const TIME_LIMIT_CHOICES: readonly TimeLimitChoice[] = [TIME_LIMIT_MS, 40_000, null];
+
+/**
+ * 온라인 방에서 방장이 고를 수 있는 문항 시간 (FR-3.7). 서버(`server/app/domain.py`)·DB(migration 011)와
+ * 같은 목록이다. 로컬 판과 달리 **제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
+ * 대기실 설정 칸은 이 순서로 돈다.
+ */
+export const ONLINE_QUESTION_TIME_CHOICES: readonly OnlineQuestionTime[] = [TIME_LIMIT_MS, 40_000];
 
 /** 남은 시간이 이 값 이하로 떨어지면 경고 상태로 전환한다 (FR-3.9) */
 export const WARNING_THRESHOLD_MS = 5_000;
