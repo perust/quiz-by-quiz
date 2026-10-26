@@ -142,6 +142,8 @@ function mediaMatches(query, env) {
         case 'min-width': return env.width >= px;
         case 'max-height': return env.height <= px;
         case 'min-height': return env.height >= px;
+        // CSS 처럼 높이가 폭보다 작을 때만 가로다(정사각은 세로)
+        case 'orientation': return (env.width > env.height ? 'landscape' : 'portrait') === raw;
         case 'pointer': return env.pointer === raw;
         case 'hover': return env.hover === raw;
         case 'prefers-reduced-motion': return (env.reducedMotion ? 'reduce' : 'no-preference') === raw;

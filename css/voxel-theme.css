@@ -3695,3 +3695,31 @@ body:has([data-screen='home']:not([hidden])) {
     right: 2px;
   }
 }
+
+/* 짧은 가로 홈(U07)은 dock을 한 줄로 낮추고(css/style.css section 30 끝) 브랜드를 위 가운데에 작게
+   되살린다. 넓은 화면의 dock 안쪽 여백(16px)과 마을 패널 높이(176px)는 이 줄에 맞지 않아 거둔다. */
+@media (max-height: 420px) and (min-width: 640px) {
+  .home-quests {
+    padding: var(--space-1);
+  }
+
+  .home-header {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .home-title {
+    font-size: var(--text-2xl);
+  }
+
+  .home-title span {
+    font-size: var(--text-xs);
+  }
+}
+
+/* 짧은 가로 touch 화면의 퀴즈(U15)는 질문이 왼쪽 열(300–460px)에 든다. 좁은 화면과 같이 한 단계 작게 쓴다 */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character .question {
+    font-size: var(--text-lg);
+  }
+}
