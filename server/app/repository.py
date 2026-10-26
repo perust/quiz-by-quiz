@@ -198,7 +198,11 @@ class MatchPositionMismatch(RepositoryFailure):
 
 
 class MemberConnected(RepositoryFailure):
-    """내보내려는 참가자가 아직 접속 중이다. 방장은 유예를 넘겨 끊긴 사람만 내보낸다 (U24)."""
+    """내보내려는 참가자가 아직 접속 중이다 (U24).
+
+    끊긴 자리를 비우는 내보내기는 유예를 넘겨 끊긴 사람만 뺀다. 접속 중인 사람은 방장이
+    그렇게 보고 확인한 내보내기(`allow_connected`)로만 뺀다.
+    """
 
 
 class RoomsRepository(Protocol):
@@ -244,9 +248,10 @@ class RoomsRepository(Protocol):
         absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> RoomView | None: ...
 
-    # 방장이 유예를 넘겨 끊긴 참가자(absent_player_ids 안의 사람)만 방에서 뺀다 (U24).
-    # 접속 중인 사람은 MemberConnected, 도는 판에 자리가 있는 사람은 MatchInProgress다.
-    # 다시 참가하는 것은 막지 않는다.
+    # 방장이 다른 참가자를 방에서 뺀다 (U24). 방장 자신은 MemberConnected(나가기로 떠난다),
+    # 도는 판에 자리가 있는 사람은 MatchInProgress다. allow_connected가 false면 유예를 넘겨
+    # 끊긴 참가자(absent_player_ids 안의 사람)만 빼고 접속 중인 사람은 MemberConnected다.
+    # 다시 참가를 잠시 막는 것은 API의 메모리 기록(RemovedMembers)이 맡는다.
     async def remove_member(
         self,
         actor_id: UUID,
@@ -254,6 +259,7 @@ class RoomsRepository(Protocol):
         player_id: UUID,
         *,
         absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
     ) -> RoomView: ...
 
     async def update_room(

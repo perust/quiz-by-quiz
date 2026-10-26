@@ -348,7 +348,10 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
   둘(오른쪽 ↻ 표식, 방장이 아니면 거둔다) → 준비 토글(참가자만) → 시작(방장만) → 시작 상태 줄(유리 표면,
   꺼진 시작의 이유·기다리는 사람) → 세계 방(벽 액자·바닥 가구, 세계 장식) → 채팅(채팅칸·안내·로그가 선과 모서리를 나눠 가진 유리 표면 하나).
   남의 액자 오른쪽 아래 귀퉁이에는 «말 숨기기» 배지(28px, 누르는 자리 44px — 명단을 늘리지 않는다)가 걸리고, 방장 화면의
-  끊긴 사람 상태판 아래에만 위험 보조 «내보내기»(흰 바탕 코랄 글자)가 한 줄 생긴다. 내보내기는 인페이지 확인을 거친다.
+  남의 액자마다 상태판 아래에 위험 보조 «내보내기»(흰 바탕 코랄 글자)가 한 줄 생긴다. 내보내기는 인페이지 확인을 거치고
+  확인창이 그 사람의 상태로 말을 고른다 — 접속 중이면 «○○ 님을 방에서 내보낼까요? / 잠시 다시 들어올 수 없어요», 1분 넘게
+  끊겼으면 «돌아오면 방 코드로 다시 참가할 수 있어요». 확정은 위험 채움(`button--danger`)이고 포커스는 «그대로 두기»에 먼저 선다.
+  내보내진 사람은 로비 알림 줄에서 «방장이 방에서 내보냈어요»를 듣는다(접속 중에 내보내졌으면 «잠시 뒤에 다시 들어올 수 있어요»).
 - **온라인 퀴즈** — 로컬 퀴즈와 같은 HUD·질문·보기·arena 뒤에 매치 상태 줄과 채팅이 각각 유리 표면에 얹힌다.
   공개 카드는 판정 → (틀렸으면) 정답 줄 → 해설 → 미니 점수판(1px 위선, «이번 문제 정답 n/m명» → 순위 칸·닉네임·«나»·✓ ✗·점수 한 줄씩,
   위 다섯 줄과 내 줄, 나머지는 «그 밖에 N명») 순서다. 원격 캐릭터 이름표 앞에는 같은 정오의 ✓ ✗가 붙는다.
@@ -437,7 +440,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/walker-keys.test.mjs`, `tests/walker-character-settle.test.mjs` | 워커가 받는 키와 브라우저에 남기는 키(빈자리 Space·Ctrl/Meta/Alt 단축키·길게 눌러 되풀이), 입력 중 조작부 숨김·대상 없음 흐림, 내 캐릭터 화면의 머물기·멈춤 적용 |
 | `tests/settings-dialog.test.mjs`, `tests/settings-time-limit.test.mjs`, `tests/quiz-time-limit.test.mjs` | 앱 바 설정 버튼의 자리·DOM 순서, 설정 대화상자 계약(패널 포커스·Esc·Tab 가두기·캡처 단계 키 차단·포커스 되돌리기), 고정된 토글 이름, 문항 시간 세 칸·저장·검증·기록 필드, 제한 없음 판의 시간 초과 없음, 앱의 움직임 줄이기 = `prefers-reduced-motion` 블록, 설정 글자 대비·비색 단서 |
 | `tests/online-reveal-standings.test.mjs`, `tests/online-final-review.test.mjs`, `tests/online-rematch-sounds.test.mjs` | 공개 단계 점수판(공개 중에만·공동 순위·지어내지 않는 정답자 수·낭독 범위·금은동·비색 단서), 원격 이름표 ✓ ✗, 최종 순위의 캐릭터·금은동·한 번뿐인 축하와 움직임 줄이기, 「한 판 더」, 끝난 판에만 오는 «문제 다시 보기», 온라인 효과음과 소리 설정 |
-| `tests/safety-teacher-ui.test.mjs`, `tests/waiting-room-safety.test.mjs`, `tests/records-export.test.mjs` | 대기실 액자의 말 숨기기·내보내기(44px, 비색 단서, 인페이지 확인, 포커스 되돌리기), 랭킹 기록 내보내기 패널(유리 표면, 파일·복사·펼친 글) |
+| `tests/safety-teacher-ui.test.mjs`, `tests/waiting-room-safety.test.mjs`, `tests/room-member-removal.test.mjs`, `tests/records-export.test.mjs` | 대기실 액자의 말 숨기기·내보내기(44px, 비색 단서, 인페이지 확인, 접속 중·끊김에 따라 다른 확인 문구, 포커스 되돌리기), 내보내진 사람의 로비 안내, 랭킹 기록 내보내기 패널(유리 표면, 파일·복사·펼친 글) |
 | `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음(두 퀴즈 HUD의 고리·남은 5초 색), 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |
 | `tests/home-first-visit.test.mjs`, `tests/first-visit-rules.test.mjs`, `tests/boot-screen.test.mjs`, `tests/result-auto-save.test.mjs` | 게임 방법 입구의 자리·44px·HUD 색과 대화상자 계약, 판 길이 글(상수에서, 은행 크기 금지), 처음 세 판의 규칙 줄, 문제 은행 알림의 닫기·다시 불러오기, 부팅 장면(느려요·실패·file:// 안내), 전체 도전 오답 묶음 |
 

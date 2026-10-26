@@ -150,3 +150,38 @@ test('최종 순위 화면은 아직 그 방에 있을 때만 소켓을 붙들�
   const closer = between(app, "    'online-result': () => {", '    ranking:');
   assert.match(closer, /resultKeepalive\.release\(\);/);
 });
+
+test('결과를 보는 사이 방장이 나를 내보내면 keepalive 가 그 이유를 넘기고, 놓은 뒤에는 버린다', async () => {
+  const { createRoomKeepalive } = await import('../js/online/room-keepalive.js');
+  const gateway = fakeGateway();
+  const keepalive = createRoomKeepalive(gateway);
+  const removed = [];
+  const started = [];
+  keepalive.hold('ABC234', (matchId) => started.push(matchId), (kind) => removed.push(kind));
+  const { handler } = gateway.subscriptions[0];
+
+  handler({ type: 'removed', kind: 'kicked' });
+  assert.deepEqual(removed, ['kicked']);
+  assert.deepEqual(started, [], '판이 열렸다고 읽지 않는다');
+
+  // 넘길 곳을 주지 않은 hold 도 이 이벤트에 넘어지지 않는다
+  keepalive.hold('XYZ789', () => undefined);
+  gateway.subscriptions[1].handler({ type: 'removed', kind: 'removed' });
+  keepalive.release();
+  handler({ type: 'removed', kind: 'removed' });
+  assert.deepEqual(removed, ['kicked'], '놓은 소켓의 늦은 이벤트는 버린다');
+});
+
+test('결과 화면에서 내보내지면 대기실과 같은 길로 방을 거두고 로비에서 이유를 말한다', async () => {
+  const app = await source('../src/app.ts');
+  const final = between(app, '  function showOnlineFinal(', '  function stopOnlineMatch(');
+  const onRemoved = final.slice(final.indexOf('}, (kind) => {'));
+  assert.notEqual(onRemoved, final, 'keepalive 에 내보내짐을 받을 자리를 넘긴다');
+  // 아직 그 결과 화면·그 방일 때만 움직인다 — 늦은 이벤트가 다른 화면을 옮기지 않는다
+  assert.match(onRemoved, /if \(currentScreen !== 'online-result' \|\| activeRoomCode !== code\) return;/);
+  assert.match(onRemoved, /activeRoomCode = null;\s*homeRoomNote\.leave\(code\);\s*void openOnline\(REMOVED_BY_HOST_MESSAGES\[kind\]\);/);
+
+  // 로비의 알림은 화면이 보인 뒤에 넣는다(숨은 role=status 는 낭독되지 않는다)
+  const openOnline = between(app, '  async function openOnline(', '  async function openWaitingRoom');
+  assert.match(openOnline, /goTo\('online'\);\s*(?:\/\/[^\n]*\n\s*)*onlineScreen\.activate\(\);/);
+});

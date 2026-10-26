@@ -37,7 +37,7 @@ import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
 import { readyForRematch } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
-import { normalizeCode } from './online/rules.js';
+import { normalizeCode, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
@@ -443,6 +443,13 @@ async function main(): Promise<void> {
         hasOpenMatch: () => onlineMatchRoomCode === code,
         openMatch: openOnlineMatch,
       });
+    }, (kind) => {
+      // 결과를 보는 사이 방장이 나를 내보냈다. 대기실에서 내보내진 것과 같은 길이다 — 홈의 줄과
+      // 부팅 흔적을 거두고 로비에서 이유를 말한다(「한 판 더」·「대기실로」는 이제 갈 곳이 없다)
+      if (currentScreen !== 'online-result' || activeRoomCode !== code) return;
+      activeRoomCode = null;
+      homeRoomNote.leave(code);
+      void openOnline(REMOVED_BY_HOST_MESSAGES[kind]);
     });
   }
 
@@ -852,6 +859,8 @@ async function main(): Promise<void> {
     }
     if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('online');
+    // 되돌아온 이유(«방장이 방에서 내보냈어요» 등)는 화면이 보인 뒤에 넣어야 낭독된다
+    onlineScreen.activate();
     // 화면이 보인 뒤에 넘긴다. 포커스를 비밀번호 칸으로 옮길 수 있어야 한다 (U27)
     if (invite) onlineScreen.acceptInvite(invite);
   }

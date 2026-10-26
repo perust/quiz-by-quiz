@@ -43,8 +43,10 @@ import {
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
+  removalKind,
   RemovedFromRoom,
   type JoinFailReason,
+  type RemovalKind,
   type RemoveMemberFailReason,
 } from './rules.js';
 
@@ -59,6 +61,8 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   // 409·429. 연결 실패로 던지면 화면이 «네트워크를 확인하라»고 잘못 말한다 (U33)
   'game-in-progress',
   'rate-limited',
+  // 403. 접속 중에 방장이 내보내 잠시 다시 들어갈 수 없다
+  'kicked',
 ]);
 /** 내보내기 거절 가운데 화면이 이유를 말할 것. 그 밖(요청 한도 등)은 오류로 던진다 */
 const REMOVE_MEMBER_FAILURES = new Set<RemoveMemberFailReason>([
@@ -832,8 +836,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         requestGeneration,
       };
     } catch (error) {
-      // 끊긴 사이 방장이 나를 내보냈다. «없는 방»과 다른 말을 해야 해서 따로 던진다 (U24)
-      if (error instanceof ApiFailure && error.code === 'removed') throw new RemovedFromRoom();
+      // 방장이 나를 내보냈다. «없는 방»과 다른 말을 해야 해서 따로 던진다 (U24)
+      const kind = error instanceof ApiFailure ? removalKind(error.code) : null;
+      if (kind) throw new RemovedFromRoom(kind);
       if (error instanceof ApiFailure && error.status === 404) {
         return { room: null, requestGeneration };
       }
@@ -847,15 +852,23 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     return (await fetchRoomSnapshot(code)).room;
   }
 
-  /** 방장의 «내보내기» (U24). 연결이 끊긴 참가자만 서버가 받아 준다 */
-  async function removeMember(spec: { code: string; playerId: string }): Promise<RemoveMemberResult> {
+  /**
+   * 방장의 «내보내기» (U24). 접속 중인 사람은 방장이 그렇게 보고 확인했을 때만(`connected`) 보낸다 —
+   * 서버는 그 사람을 잠시 다시 들이지 않는다. 없으면 끊긴 자리를 비우는 요청이다(구버전과 같다).
+   */
+  async function removeMember(spec: {
+    code: string;
+    playerId: string;
+    connected?: boolean;
+  }): Promise<RemoveMemberResult> {
     const code = normalizeCode(spec.code);
     if (!CODE_PATTERN.test(code)) return { ok: false, reason: 'not-found' };
     if (!UUID_PATTERN.test(spec.playerId)) return { ok: false, reason: 'not-member' };
     const requestGeneration = beginRoomSnapshotRequest();
     try {
+      const path = `/v1/rooms/${encodeURIComponent(code)}/members/${encodeURIComponent(spec.playerId)}`;
       const room = parseRoom(await request(
-        `/v1/rooms/${encodeURIComponent(code)}/members/${encodeURIComponent(spec.playerId)}`,
+        spec.connected === true ? `${path}?connected=true` : path,
         { method: 'DELETE' },
       ));
       commitRoomMutation(code, requestGeneration);
@@ -1023,6 +1036,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
     const mutationState = retainRoomMutationState(code);
     let stopped = false;
+    /** 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 재연결을 멈춘다 (U24) */
+    let halted = false;
     let socket: WebSocketLike | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -1048,18 +1063,23 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     }
 
     function scheduleReconnect(): void {
-      if (stopped || reconnectTimer !== null) return;
+      if (stopped || halted || reconnectTimer !== null) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         void connect();
       }, RECONNECT_DELAY_MS);
     }
 
-    /** 끊긴 사이 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 그만 붙고 화면에 알린다 (U24) */
-    function removedFromRoom(connectionGeneration: number): void {
-      if (stopped || connectionGeneration !== generation) return;
+    /**
+     * 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 그만 붙고 화면에 **한 번만** 알린다 (U24).
+     * 열린 소켓으로 먼저 들었으면 서버가 곧 그 소켓을 닫는다 — 닫혀도 다시 붙지 않는다.
+     */
+    function removedFromRoom(connectionGeneration: number, kind: RemovalKind): void {
+      if (stopped || halted || connectionGeneration !== generation) return;
+      halted = true;
       clearTimers();
-      handler({ type: 'removed' });
+      socket?.close();
+      handler({ type: 'removed', kind });
     }
 
     async function refreshRoom(connectionGeneration: number): Promise<void> {
@@ -1068,7 +1088,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         snapshot = await fetchRoomSnapshot(code);
       } catch (error) {
         if (error instanceof RemovedFromRoom) {
-          removedFromRoom(connectionGeneration);
+          removedFromRoom(connectionGeneration, error.kind);
           return;
         }
         throw error;
@@ -1125,6 +1145,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }
       if (value.type === 'room-invalidated') {
         requestRoomRefresh();
+        return;
+      }
+      if (value.type === 'removed') {
+        // 서버는 내보낸 그 사람의 소켓에만 보낸다. 이유를 모르면 끊긴 자리를 비운 쪽으로 읽는다
+        removedFromRoom(connectionGeneration, removalKind(value.reason) ?? 'removed');
         return;
       }
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
@@ -1259,8 +1284,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         connected.addEventListener('error', () => connected.close());
       } catch (error) {
         // 서버가 «방장이 내보냈다»고 했다. 같은 티켓 요청을 되풀이하지 않는다 (U24)
-        if (error instanceof ApiFailure && error.code === 'removed') {
-          removedFromRoom(connectionGeneration);
+        const kind = error instanceof ApiFailure ? removalKind(error.code) : null;
+        if (kind) {
+          removedFromRoom(connectionGeneration, kind);
           return;
         }
         scheduleReconnect();
