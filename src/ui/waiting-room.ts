@@ -45,8 +45,15 @@ import { createBody } from './sprite.js';
 import type {
   MatchSetup, PlayerInfo, PublicRoom, RoomEvent, RoomPatch, RoomStore,
 } from '../online/adapter.js';
-import { LEAVE_MESSAGES, LeaveRoomRejected } from '../online/rules.js';
+import { LEAVE_MESSAGES, LeaveRoomRejected, onlineErrorText } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
+
+/**
+ * 방 작업이 실패했는데 이유를 플레이어의 말로 모를 때 덧붙이는 말 (U40). 요청 한도(429)·응답 시간
+ * 초과·서버가 4xx로 알려 준 거절은 `onlineErrorText`가 그 이유를 대신 쓴다 — «연결을 확인하라»는
+ * 와이파이를 의심하게 만든다.
+ */
+const RETRY_HINT = '연결을 확인한 뒤 다시 시도해 주세요.';
 
 /** 말풍선이 떠 있는 시간. 짧으면 못 읽고 길면 얼굴을 가린다 */
 const BUBBLE_MS = 3200;
@@ -552,9 +559,15 @@ export function createWaitingRoom(
     noticeRoomNickname();
   }
 
-  /** 서버가 겹친 이름 뒤에 숫자를 붙였으면 그 방에서 한 번 알린다 (U02) */
+  /**
+   * 서버가 겹친 이름 뒤에 숫자를 붙였으면 그 방에서 한 번 알린다 (U02).
+   *
+   * **화면이 보인 뒤에만 넣는다** (a11y-ux-01). 대화 로그는 `role="log"` 라이브 리전인데, 숨은
+   * 대기실(앱이 판 복구를 묻는 동안 `show()` 뒤에도 숨어 있다)에 넣으면 낭독되지 않고 한 번뿐인
+   * 알림이 그대로 소진됐다. 숨어 있으면 표시도 남기지 않고 돌아가 `activate()`가 다시 부른다.
+   */
   function noticeRoomNickname(): void {
-    if (!room) return;
+    if (!room || el.screen.hidden) return;
     const me = room.players.find((player) => player.id === roomStore.me());
     if (!me) return;
     const key = `${room.code}
@@ -653,9 +666,9 @@ ${me.nickname}`;
       notice(result.reason === 'not-host'
         ? '방장만 방 설정을 바꿀 수 있어요.'
         : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
-    } catch {
+    } catch (error) {
       if (!ownsAction(action)) return;
-      notice('방 설정을 바꾸지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      notice(`방 설정을 바꾸지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
     }
   }
 
@@ -698,9 +711,9 @@ ${me.nickname}`;
         : result.reason === 'not-member'
           ? '먼저 이 방에 참가해 주세요.'
           : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
-    } catch {
+    } catch (error) {
       if (!ownsAction(action)) return;
-      notice('준비 상태를 바꾸지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      notice(`준비 상태를 바꾸지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
     }
   });
 
@@ -727,20 +740,34 @@ ${me.nickname}`;
             ? '이미 게임이 진행 중이에요.'
             : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
       }
-    } catch {
+    } catch (error) {
       if (!ownsAction(action)) return;
-      notice('판을 시작하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      notice(`판을 시작하지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
     }
   });
 
-  /** 거절당한 시작 뒤 서버가 본 방을 다시 읽는다. 그사이 화면이 바뀌었으면 버린다. */
+  /**
+   * 거절당한 시작 뒤 서버가 본 방을 다시 읽는다. 그사이 새 snapshot이 왔거나 화면이 바뀌었으면
+   * 그쪽이 이미 상태 줄을 다시 그렸으므로 버린다.
+   *
+   * **읽지 못했을 때도 «다시 확인하는 중…»에 멈춰 두지 않는다** (online-client-5). 그 줄은
+   * 「게임 시작」의 설명(`aria-describedby`)이라, 아무것도 돌지 않는데 확인 중이라고 계속
+   * 말하게 된다. 요청 한도에 걸렸을 때는 room-invalidated 재조회도 함께 실패해 바로잡아 줄
+   * 다음 snapshot이 오지 않는다. 다음 snapshot이 오면 render가 이 줄을 다시 쓴다.
+   */
   async function reloadRoom(action: WaitingRoomActionOwnership): Promise<void> {
     try {
       const fresh = await roomStore.getRoom(action.code);
-      if (fresh && ownsAction(action)) applyRoom(fresh);
+      if (!ownsAction(action)) return;
+      if (fresh) {
+        applyRoom(fresh);
+        return;
+      }
+      notice('그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
     } catch {
-      // 다음 room-invalidated나 재연결이 다시 맞춘다.
+      if (!ownsAction(action)) return;
     }
+    setStartStatus('준비 상태를 다시 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.');
   }
 
   // ── 초대 (U27) ─────────────────────────────────────────────────
@@ -823,7 +850,7 @@ ${me.nickname}`;
       // 로비의 「나가기」와 같은 말로 언제 되는지를 말한다 (U32)
       notice(error instanceof LeaveRoomRejected
         ? LEAVE_MESSAGES[error.reason]
-        : '방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+        : `방에서 나오지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
     }
   });
 
@@ -841,7 +868,7 @@ ${me.nickname}`;
       const result = await roomStore.sendChat({ code: action.code, text, player: getPlayer() });
       if (!ownsAction(action, false)) return;
       if (!result.ok) {
-        notice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+        notice(`메시지를 보내지 못했어요. ${RETRY_HINT}`);
         return;
       }
       if (el.chatInput.value === text) {
@@ -849,9 +876,9 @@ ${me.nickname}`;
         // 보내고 나면 곧바로 다시 걸어 다닐 수 있게 손을 뗀다
         el.chatInput.blur();
       }
-    } catch {
+    } catch (error) {
       if (!ownsAction(action, false)) return;
-      notice('메시지를 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      notice(`메시지를 보내지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
     } finally {
       if (ownsAction(action, false)) {
         chatSendPending = false;
@@ -929,7 +956,7 @@ ${me.nickname}`;
       el.chatLog.replaceChildren();
       el.chatSubmit.disabled = false;
       render();
-      noticeRoomNickname();
+      // 겹친 이름 알림은 여기서 넣지 않는다 — 아직 숨은 화면이다. activate()가 펼친 뒤에 넣는다
       walker.show(characterId);
       // 곧바로 화면이 열리는 경로를 먼저 맞춘다. match 복구로 늦게 열리면 activate()가
       // 보이는 DOM을 기준으로 local/remote 좌표를 다시 확정한다.
@@ -942,6 +969,8 @@ ${me.nickname}`;
       const point = waitingRoomStartPoint();
       if (point) walker.placeAt(point);
       alignSeatedWalkers();
+      // 먼저 펼치고 넣는다. 화면이 보인 지금 로그에 넣어야 낭독된다 (U02, a11y-ux-01)
+      noticeRoomNickname();
     },
 
     hide() {

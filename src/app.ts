@@ -29,6 +29,7 @@ import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
+import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
@@ -154,6 +155,8 @@ async function main(): Promise<void> {
   // 저장된 이름이 없으면 기본 이름을 한 번 저장해 둔다. 홈 HUD·결과 등록 칸·온라인 프로필이
   // 모두 같은 값을 읽는다 — 전에는 홈에 «퀴즈왕»이 보이는데 등록 칸은 비어 있었다 (FR-6.11)
   if (!storedNickname) await preferences.setNickname(savedNickname);
+  /** 마지막으로 들어간 온라인 방. 부팅 때 홈의 «아직 방에 있어요»를 물어볼지 정한다 (server-5) */
+  const lastRoomCode = await preferences.getLastRoomCode();
 
   /** 다시 하기가 되풀이할 판 종류 */
   let lastRound: Round | null = null;
@@ -195,6 +198,17 @@ async function main(): Promise<void> {
     },
   });
 
+  // 홈의 «「방」 방에 아직 있어요» 줄 (U35). 언제 묻는지는 online/home-room-note.ts 가 정한다
+  const homeRoomNote = createHomeRoomNote({
+    isNetworked: roomStore.isNetworked,
+    lastRoomCode,
+    saveLastRoomCode: (code) => { void preferences.setLastRoomCode(code); },
+    myRooms: () => roomStore.myRooms(),
+    activeRoomCode: () => activeRoomCode,
+    navigation: () => waitingRoomEntryGeneration,
+    show: (room) => homeScreen.setRoomNote(room),
+  });
+
   // 온라인 로비. 방을 어디에 두는지는 어댑터가 정하고 화면은 모른다
   const onlineScreen = createOnlineScreen({
     roomStore,
@@ -218,8 +232,8 @@ async function main(): Promise<void> {
       })) return;
       stopOnlineMatch();
       activeRoomCode = null;
-      // 스스로 나왔으면 홈의 «아직 방에 있어요» 줄도 거둔다 (U35)
-      if (!reason) homeScreen.setRoomNote(null);
+      // 스스로 나왔든 방이 사라졌든 그 방은 이제 돌아갈 곳이 아니다. 홈의 줄과 부팅 흔적을 거둔다 (U35)
+      homeRoomNote.leave(code);
       // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
       void openOnline(reason);
     },
@@ -577,11 +591,19 @@ async function main(): Promise<void> {
   }
 
   async function goHome(): Promise<void> {
+    if (!(await showHome())) return;
+    // 아직 들어가 있는 방을 묻는다 (U35). goTo('home')이 화면 세대를 올린 **뒤에** 불러야 한다 —
+    // 그 전의 세대를 쥐면 답이 늘 «지난 화면»으로 읽혀 줄이 한 번도 뜨지 않았다 (online-client-1)
+    void homeRoomNote.refresh();
+  }
+
+  /** 홈을 그려 연다. 그리는 사이 다른 화면으로 옮겼으면 false */
+  async function showHome(): Promise<boolean> {
     const navigationGeneration = invalidateWaitingRoomEntry();
     // 홈으로 가도 방에서 나가지는 않는다. 다만 매치 socket은 닫아 재접속 경계를 분명히 한다.
     stopOnlineMatch();
     const bestScores = await loadBestScores();
-    if (!isCurrentNavigation(navigationGeneration)) return;
+    if (!isCurrentNavigation(navigationGeneration)) return false;
     homeScreen.render({
       categories: CATEGORIES,
       banks,
@@ -591,33 +613,7 @@ async function main(): Promise<void> {
       nickname: savedNickname,
     });
     goTo('home');
-    void refreshHomeRoomNote(navigationGeneration);
-  }
-
-  /**
-   * 홈으로 와도 방에서 나간 것은 아니다. 새로고침했거나 매치에서 빠져나온 사람이 돌아갈
-   * 방을 잃지 않게, 아직 들어가 있는 방을 묻는다 (U35). 누르면 대기실로 가고, 판이 돌고
-   * 있으면 대기실의 복구 경로가 그 판을 연다.
-   *
-   * **주기적으로 묻지 않는다** — 같은 와이파이의 여럿이 IP당 요청 한도를 나눠 쓴다 (N01).
-   * 부팅 직후와 온라인 화면을 다녀온 뒤에만 한 번 묻고, 그 사이에는 마지막 답을 둔다.
-   * 서버 권위 방이 없는 로컬 구현에서는 묻지 않는다.
-   */
-  let roomNoteStale = true;
-  async function refreshHomeRoomNote(navigationGeneration: number): Promise<void> {
-    if (!roomStore.isNetworked || !roomNoteStale) return;
-    roomNoteStale = false;
-    try {
-      const rooms = await roomStore.myRooms();
-      if (!isCurrentNavigation(navigationGeneration)) {
-        roomNoteStale = true;
-        return;
-      }
-      const room = rooms.find(({ code }) => code === activeRoomCode) ?? rooms[0] ?? null;
-      homeScreen.setRoomNote(room ? { code: room.code, name: room.name } : null);
-    } catch {
-      // 안내일 뿐이다. 서버가 안 되면 홈은 그대로 돌고, 온라인을 다녀오면 다시 묻는다
-    }
+    return true;
   }
 
   /** 빈 로비의 「혼자 연습하기」 (U29). 홈으로 가서 분야 dock에 선다 */
@@ -777,7 +773,7 @@ async function main(): Promise<void> {
 
   async function openOnline(notice?: string, invite?: string): Promise<void> {
     const navigationGeneration = invalidateWaitingRoomEntry();
-    roomNoteStale = true;
+    homeRoomNote.visitOnline();
     // 로비는 목록을 받아 그린 뒤에 연다(내용을 그린 뒤 goTo). 그동안 홈의 입구가 아무
     // 반응이 없어 보이지 않게 바로 바쁨 표시를 단다 (U34)
     homeScreen.setOnlineBusy(true);
@@ -794,7 +790,8 @@ async function main(): Promise<void> {
 
   async function openWaitingRoom(code: string): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
-    roomNoteStale = true;
+    // 방에 들어간다는 흔적을 남긴다. 새로고침한 뒤의 홈이 이것을 보고 돌아갈 방을 묻는다 (server-5)
+    homeRoomNote.enter(code);
     if (onlineMatchRoomCode) stopOnlineMatch();
     activeRoomCode = code;
     try {
@@ -866,10 +863,15 @@ async function main(): Promise<void> {
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));
 
-  await goHome();
-  // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27).
-  // 홈의 온라인 입구가 «연결 중…»으로 그 사이를 알린다
-  if (inviteCode) await openOnline(undefined, inviteCode);
+  if (inviteCode) {
+    // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27). 홈의 온라인 입구가
+    // «연결 중…»으로 그 사이를 알린다. «아직 방에 있어요»는 여기서 묻지 않는다 — 곧 로비가
+    // 목록을 읽고, 로비를 다녀온 뒤의 홈이 다시 묻는다 (server-5)
+    await showHome();
+    await openOnline(undefined, inviteCode);
+  } else {
+    await goHome();
+  }
 }
 
 main().catch((error: unknown) => {

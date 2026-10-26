@@ -46,7 +46,7 @@ test('openWaitingRoom rechecks entry ownership after each await before it routes
   );
   assert.match(
     home,
-    /const navigationGeneration = invalidateWaitingRoomEntry\(\);[\s\S]*?if \(!isCurrentNavigation\(navigationGeneration\)\) return;[\s\S]*?goTo\('home'\);/,
+    /const navigationGeneration = invalidateWaitingRoomEntry\(\);[\s\S]*?if \(!isCurrentNavigation\(navigationGeneration\)\) return false;[\s\S]*?goTo\('home'\);/,
   );
 });
 

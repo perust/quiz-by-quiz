@@ -7,7 +7,7 @@
 //
 // 저장 데이터가 깨져도 앱을 죽이지 않고 빈 값으로 되돌린다 (PRD 8).
 
-import { RANKING_TOP_N, TIME_LIMIT_CHOICES, TIME_LIMIT_MS } from '../constants.js';
+import { RANKING_TOP_N, ROOM_CODE_LENGTH, TIME_LIMIT_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { safeStorage } from './safe-storage.js';
 import { bestScore, placeRecord, selectRanking, isSameRanking } from '../core/ranking.js';
 import type {
@@ -21,8 +21,12 @@ const KEYS = {
   settings: 'quiz.settings',
   nickname: 'quiz.nickname',
   recentQuestionIds: 'quiz.recentQuestionIds',
+  lastRoomCode: 'quiz.lastRoomCode',
   schemaVersion: 'quiz.schemaVersion',
 };
+
+/** 저장된 방 코드의 꼴. 손으로 고쳤거나 깨진 값은 흔적으로 치지 않는다 */
+const ROOM_CODE_PATTERN = new RegExp(`^[A-Z0-9]{${ROOM_CODE_LENGTH}}$`);
 
 /**
  * 사용자 설정 기본값. 저장된 값이 없거나 깨졌을 때 이걸로 되돌린다.
@@ -355,6 +359,25 @@ export function createLocalPreferences(): Preferences {
 
     async setRecentQuestionIds(ids: string[]): Promise<void> {
       writeJson(KEYS.recentQuestionIds, ids);
+    },
+
+    /** 마지막으로 들어간 온라인 방 (U35, server-5). 부팅 때 서버에 물어볼지만 정한다 */
+    async getLastRoomCode(): Promise<string | null> {
+      const value = readJson(KEYS.lastRoomCode, null);
+      return typeof value === 'string' && ROOM_CODE_PATTERN.test(value) ? value : null;
+    },
+
+    async setLastRoomCode(code: string | null): Promise<void> {
+      if (code !== null) {
+        writeJson(KEYS.lastRoomCode, code);
+        return;
+      }
+      try {
+        safeStorage.removeItem(KEYS.lastRoomCode);
+      } catch (error) {
+        // 못 지워도 다음 부팅에 한 번 더 물어볼 뿐이다 (저장소가 던지는 것은 DOMException 이다)
+        console.warn(`[저장소] ${KEYS.lastRoomCode} 지우기 실패: ${(error as Error).message}`);
+      }
     },
   };
 }

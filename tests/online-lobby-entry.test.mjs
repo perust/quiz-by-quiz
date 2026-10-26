@@ -257,7 +257,11 @@ test('초대 링크는 부팅 때 한 번 읽어 주소에서 지우고, 로비�
   assert.match(take, /url\.searchParams\.delete\('room'\);[\s\S]*?history\.replaceState\(/);
   assert.doesNotMatch(app, /location\.hash|hashchange/);
   assert.match(app, /async function main\(\): Promise<void> \{\s*markBooted\(\);\s*const inviteCode = takeInviteCode\(\);/);
-  assert.match(app, /await goHome\(\);[\s\S]*?if \(inviteCode\) await openOnline\(undefined, inviteCode\);/);
+  // 초대로 왔으면 홈을 그리기만 하고 «아직 방에 있어요»는 묻지 않는다 — 곧 로비가 목록을 읽는다 (server-5)
+  assert.match(
+    app,
+    /if \(inviteCode\) \{[\s\S]*?await showHome\(\);\s*await openOnline\(undefined, inviteCode\);\s*\} else \{\s*await goHome\(\);\s*\}/,
+  );
   // «내용을 그린 뒤 goTo». 포커스를 옮기는 초대 처리는 화면이 보인 뒤에 한다
   assert.match(openOnline, /await onlineScreen\.show\(characterId, notice\);[\s\S]*?goTo\('online'\);\s*[\s\S]*?if \(invite\) onlineScreen\.acceptInvite\(invite\);/);
   assert.match(accept, /if \(room\?\.joined\) \{\s*enterRoom\(code\);/);
@@ -362,6 +366,27 @@ test('방 만들기는 «{닉네임}의 방»으로 채워 두고, 인원은 «�
   assert.match(online, /const name = checkRoomName\(el\.createName\.value\);/);
 });
 
+test('인원 도움말은 입력칸과 같은 선에서 시작한다 — 라벨이 위로 올라가는 좁은 화면에서는 들이지 않는다 (U41)', async () => {
+  const html = await source('../index.html');
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const { lengthOf } = await import('./css-cascade.mjs');
+  const help = nodeFromHtml(html, 'create-capacity-help');
+  // 라벨에는 id 가 없다. 같은 줄(.room-form__row)에 있는 인원 칸의 조상 사슬을 빌려 라벨을 만든다
+  const select = nodeFromHtml(html, 'create-capacity');
+  const labelNode = { ...select, tag: 'label', id: null, classes: ['room-form__label'], attrs: { for: 'create-capacity' } };
+  const indent = (env) => lengthOf(rules, valueOf(rules, help, 'padding-left', env), env);
+  const labelWidth = (env) => valueOf(rules, labelNode, 'width', env);
+
+  // 라벨이 옆에 서는 폭: 라벨 칸(72px)과 줄 간격(12px)만큼 들여 입력칸 왼쪽 끝과 맞춘다
+  for (const env of [DESKTOP, MOBILE]) {
+    assert.equal(labelWidth(env), '72px');
+    assert.equal(indent(env), 84);
+  }
+  // 380px 이하는 라벨이 위로 올라가 입력칸이 줄 왼쪽 끝에서 시작한다. 84px 밀면 떠도는 글처럼 보였다
+  assert.equal(labelWidth(NARROW), 'auto');
+  assert.equal(indent(NARROW), 0);
+});
+
 test('홈으로 와도 들어가 있는 방이 있으면 dock 맨 위에 복귀 줄을 띄운다 — 주기적으로 묻지 않는다 (U35)', async () => {
   const [html, home, app] = await Promise.all([
     source('../index.html'),
@@ -370,15 +395,27 @@ test('홈으로 와도 들어가 있는 방이 있으면 dock 맨 위에 복귀 
   ]);
   const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
   const dock = between(html, 'class="home-quests"', 'id="category-grid"');
-  const goHome = between(app, '  async function goHome(): Promise<void>', '  // ── 퀴즈');
-  const refresh = between(goHome, '  async function refreshHomeRoomNote', '  /** 빈 로비');
+  const goHome = between(app, '  async function goHome(): Promise<void>', '  /** 홈을 그려 연다.');
+  const showHome = between(app, '  async function showHome(): Promise<boolean>', '  /** 빈 로비');
+  const openOnline = between(app, '  async function openOnline(', '  async function openWaitingRoom');
+  const openWaitingRoom = between(app, '  async function openWaitingRoom(code: string)', '  // ── 내 캐릭터');
+  const onLeave = between(app, '    onLeave: (code, entryGeneration, reason) => {', '    onStart:');
 
   assert.match(dock, /<button type="button" class="home-room-note" id="home-room-note" hidden>/);
   assert.equal(valueOf(rules, nodeFromHtml(html, 'home-room-note'), 'display', MOBILE), 'none');
-  assert.match(goHome, /goTo\('home'\);\s*void refreshHomeRoomNote\(navigationGeneration\);/);
-  assert.match(refresh, /if \(!roomStore\.isNetworked \|\| !roomNoteStale\) return;/);
-  assert.match(refresh, /await roomStore\.myRooms\(\);/);
-  assert.match(refresh, /if \(!isCurrentNavigation\(navigationGeneration\)\)/);
+  // 홈을 연 **뒤에** 묻는다. 세대는 refresh가 스스로 쥔다 — 한때 goTo 전의 세대를 넘겨 답이 늘
+  // «지난 화면»으로 버려졌고 줄은 한 번도 뜨지 않았다 (online-client-1, tests/home-room-note.test.mjs)
+  assert.match(goHome, /if \(!\(await showHome\(\)\)\) return;[\s\S]*?void homeRoomNote\.refresh\(\);/);
+  assert.doesNotMatch(goHome + showHome, /refresh\(navigationGeneration\)/);
+  assert.match(showHome, /goTo\('home'\);\s*return true;/);
+  assert.match(app, /navigation: \(\) => waitingRoomEntryGeneration,/);
+  // 언제 다시 묻는지: 로비를 다녀오거나 방에 들어간 뒤. 나왔거나 사라진 방은 줄과 흔적을 거둔다
+  assert.match(openOnline, /homeRoomNote\.visitOnline\(\);/);
+  assert.match(openWaitingRoom, /homeRoomNote\.enter\(code\);/);
+  assert.match(onLeave, /homeRoomNote\.leave\(code\);/);
+  // 부팅 흔적은 preferences 로만 읽고 쓴다 (localStorage 는 safe-storage.ts 한 곳)
+  assert.match(app, /const lastRoomCode = await preferences\.getLastRoomCode\(\);/);
+  assert.match(app, /saveLastRoomCode: \(code\) => \{ void preferences\.setLastRoomCode\(code\); \},/);
   assert.doesNotMatch(app, /setInterval/);
   assert.match(home, /el\.roomNoteText\.textContent = room \? `「\$\{room\.name\}」 방에 아직 있어요` : '';/);
   assert.match(app, /onReturnToRoom: \(code\) => \{ void openWaitingRoom\(code\); \}/);

@@ -62,6 +62,36 @@ test('연결 끊김 상태판은 색만이 아니라 경고 표식·점선·글�
   assert.match(waiting, /if \(player\.isMe \|\| !player\.connected\) continue;/);
 });
 
+test('상태판 «연결 끊김»은 데스크톱에서도 320px에서도 80px 액자 칸 안에 한 줄로 든다', async () => {
+  const { loadStyles, valueOf, lengthOf, shorthandParts, node, DESKTOP, NARROW } = await import('./css-cascade.mjs');
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const pill = node('span.lounge__ready.lounge__ready--offline');
+  const icon = node('span.lounge__ready.lounge__ready--offline::before');
+
+  for (const env of [DESKTOP, NARROW]) {
+    // 글자 안에서 줄을 바꾸지 않는다 — 한때 «연결 끊 / 김»으로 갈라졌다
+    assert.equal(valueOf(rules, pill, 'white-space', env), 'nowrap');
+    assert.equal(valueOf(rules, pill, 'word-break', env), 'keep-all');
+
+    const px = (value) => lengthOf(rules, value, env);
+    const column = px(valueOf(rules, node('li.lounge__player'), 'width', env));
+    const border = px(shorthandParts(valueOf(rules, pill, 'border', env))[0]);
+    const padding = shorthandParts(valueOf(rules, pill, 'padding', env));
+    const paddingInline = px(padding[1] ?? padding[0]);
+    const mark = px(valueOf(rules, icon, 'width', env));
+    const gap = px(valueOf(rules, pill, 'gap', env));
+    const fontSize = px(valueOf(rules, pill, 'font-size', env));
+    // 가장 넓은 한글 시스템 글꼴인 맑은 고딕은 한글 한 자가 1em, 띄어쓰기가 0.352em 이다
+    // (malgunbd.ttf 의 advance width). 네 자 + 한 칸
+    const label = fontSize * (4 + 0.352);
+    const width = border * 2 + paddingInline * 2 + mark + gap + label;
+
+    assert.equal(column, 80);
+    assert.ok(Number.isFinite(width), '토큰을 모두 풀어 길이로 계산할 수 있어야 한다');
+    assert.ok(width <= column, `상태판 ${width.toFixed(1)}px 이 ${column}px 칸을 넘는다 (${env.width}px 화면)`);
+  }
+});
+
 test('대기실 참가자 명단은 멈춘 전신 캐릭터 대신 벽걸이 액자를 그린다', async () => {
   const [waiting, css, html] = await Promise.all([
     source('../src/ui/waiting-room.ts'),

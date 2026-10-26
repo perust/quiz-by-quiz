@@ -1153,3 +1153,42 @@ test('서버가 비밀번호 필드를 잘못 돌려주면 응답을 신뢰하�
 
   await assert.rejects(() => store.listRooms(), /비밀번호 필드/);
 });
+
+test('채팅 요청 한도(429)는 이유 없는 실패로 삼키지 않고 플레이어의 말을 가진 오류로 던진다 (U40)', async () => {
+  let status = 429;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234/chat')) {
+      if (status === 204) return json(null, 204);
+      return json({
+        detail: status === 429
+          ? { code: 'rate-limited', message: '채팅은 잠시 뒤 다시 보낼 수 있습니다.' }
+          : { code: 'not-member', message: '먼저 이 방에 참가해 주세요.' },
+      }, status);
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const [{ createNetworkRoomStore }, { OnlinePlayerError, onlineErrorText }] = await Promise.all([
+    import('../js/online/network-rooms.js'),
+    import('../js/online/rules.js'),
+  ]);
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const send = () => store.sendChat({ code: 'ABC234', text: '안녕', player: { nickname: '퀴즈왕', characterId: 'slime-blue' } });
+
+  const error = await send().then(() => null, (failure) => failure);
+  assert.ok(error instanceof OnlinePlayerError, '«연결을 확인하라»가 아니라 «잠시 뒤에»를 말할 수 있어야 한다');
+  assert.equal(onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.'), '채팅은 잠시 뒤 다시 보낼 수 있습니다.');
+
+  // 그 밖의 4xx 는 지금처럼 {ok: false} 다
+  status = 403;
+  assert.deepEqual(await send(), { ok: false });
+  status = 204;
+  assert.deepEqual(await send(), { ok: true });
+});

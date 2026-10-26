@@ -60,7 +60,7 @@ test('대기실 화면을 실제로 연 뒤 walker와 좌석을 다시 배치한
   assert.match(waiting, /export interface WaitingRoom \{[\s\S]*?activate\(\): void;/);
   assert.match(
     waiting,
-    /activate\(\) \{\s*if \(el\.screen\.hidden\) return;\s*const point = waitingRoomStartPoint\(\);\s*if \(point\) walker\.placeAt\(point\);\s*alignSeatedWalkers\(\);\s*\}/,
+    /activate\(\) \{\s*if \(el\.screen\.hidden\) return;\s*const point = waitingRoomStartPoint\(\);\s*if \(point\) walker\.placeAt\(point\);\s*alignSeatedWalkers\(\);[\s\S]*?noticeRoomNickname\(\);\s*\}/,
   );
   assert.match(
     app,
