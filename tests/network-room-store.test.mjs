@@ -214,6 +214,33 @@ test('네트워크 저장소는 참가자 접속 상태를 그대로 받고 잘�
   await assert.rejects(store.getRoom('ABC234'), /접속 상태/);
 });
 
+test('U24: 네트워크 저장소는 도는 판에 내 자리가 있는지 받고 잘못된 값은 거부한다', async () => {
+  let snapshot = room({ status: 'playing', inMatch: false });
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234')) return json(snapshot);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+
+  const leftOut = await store.getRoom('ABC234');
+  assert.deepEqual([leftOut?.status, leftOut?.inMatch], ['playing', false]);
+  snapshot = room({ status: 'playing', inMatch: true });
+  const seated = await store.getRoom('ABC234');
+  assert.deepEqual([seated?.status, seated?.inMatch], ['playing', true]);
+
+  snapshot = room({ status: 'playing', inMatch: 'yes' });
+  await assert.rejects(store.getRoom('ABC234'), /진행 상태/);
+});
+
 test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 보내고 새 방 snapshot을 받는다', async () => {
   const calls = [];
   const readyRoom = room({
@@ -243,10 +270,12 @@ test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 �
   const result = await store.setReady({ code: 'ABC234', isReady: true });
 
   // connected를 모르는 이전 서버의 snapshot은 끊김을 단정하지 않고 접속 중으로 읽는다.
+  // inMatch를 모르는 이전 서버의 snapshot은 판에 내 자리가 없는 것으로 읽는다.
   assert.deepEqual(result, {
     ok: true,
     room: {
       ...readyRoom,
+      inMatch: false,
       players: readyRoom.players.map((player) => ({ ...player, connected: true })),
     },
   });

@@ -78,8 +78,8 @@ export interface PublicRoom {
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
   /**
-   * 현재 방장이 첫 자리다. 나가면 가장 먼저 들어온 남은 참가자가, 오래 끊기면 가장 먼저
-   * 들어온 접속 중인 참가자가 첫 자리로 승계한다.
+   * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
+   * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
    */
   players: PublicPlayer[];
   isPublic: boolean;
@@ -94,6 +94,11 @@ export interface PublicRoom {
    * 「게임 중」으로 알린다. 서버 권위 판이 없는 로컬 구현은 언제나 `waiting`이다.
    */
   status: RoomStatus;
+  /**
+   * 그 도는 판에 내 자리가 있는가 (U24). `playing`인데 false면 끊겨서 판에서 빠진 멤버다 —
+   * 판이 도는 동안에도 나가거나 다음 판을 준비할 수 있다. 로컬 구현은 언제나 false다.
+   */
+  inMatch: boolean;
 }
 
 /** 방이 사람을 기다리는지, 판이 도는지 */

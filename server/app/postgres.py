@@ -14,7 +14,9 @@ from psycopg_pool import AsyncConnectionPool
 from .domain import DEFAULT_CHARACTER_ID, ValidatedPlayer, ValidatedRoom
 from .question_catalog import CatalogError, QuestionCatalog, SelectedQuestion
 from .repository import (
+    AbsentHostSweep,
     AccessInfo,
+    ExpiredMatchAdvance,
     MatchAnswerView,
     MatchInProgress,
     MatchNotFound,
@@ -62,7 +64,15 @@ WITH selected_rooms AS MATERIALIZED (
             FROM quiz_online.matches active_match
             WHERE active_match.room_id = candidate.id
               AND active_match.state IN ('running', 'revealing')
-        ) AS is_playing
+        ) AS is_playing,
+        EXISTS (
+            SELECT 1
+            FROM quiz_online.matches my_match
+            JOIN quiz_online.match_players my_player ON my_player.match_id = my_match.id
+            WHERE my_match.room_id = candidate.id
+              AND my_match.state IN ('running', 'revealing')
+              AND my_player.player_id = %(actor_id)s
+        ) AS in_match
     FROM quiz_online.rooms candidate
     WHERE candidate.expires_at > now()
       AND (
@@ -97,6 +107,7 @@ SELECT
     (r.host_player_id = %(actor_id)s) AS is_mine,
     selected.joined,
     selected.is_playing,
+    selected.in_match,
     r.created_at,
     member.player_id,
     member.nickname,
@@ -114,6 +125,28 @@ ORDER BY
     (member.player_id = r.host_player_id) DESC NULLS LAST,
     member.joined_at ASC,
     member.player_id ASC
+"""
+
+# 이 사람이 진행 중인 판의 참가자인가. 나가기·준비는 방 전체가 아니라 이것으로 막는다 —
+# 끊겨서 판에서 빠진 멤버(U24)까지 막으면 판이 끝날 때까지 방에 갇힌다.
+_PLAYS_ACTIVE_MATCH_SQL = """
+SELECT 1
+FROM quiz_online.matches active_match
+JOIN quiz_online.match_players player ON player.match_id = active_match.id
+WHERE active_match.room_id = %s
+  AND active_match.state IN ('running', 'revealing')
+  AND player.player_id = %s
+"""
+
+# presence sweep이 끊긴 사람이 있는 방들의 방장과 참가자를 한 번에 읽는다. 잠그지 않는다 —
+# 넘길 방만 transfer_absent_host가 잠그고 다시 확인한다. is_member와 같이 만료된 방은 없는 방이다.
+_ABSENT_HOST_ROOMS_SQL = """
+SELECT room.code::text AS code, room.host_player_id, member.player_id
+FROM quiz_online.rooms room
+LEFT JOIN quiz_online.room_members member ON member.room_id = room.id
+WHERE room.code = ANY(%s::char(6)[])
+  AND room.expires_at > now()
+ORDER BY room.code ASC, member.joined_at ASC, member.player_id ASC
 """
 
 _DELETE_EXPIRED_ROOMS_SQL = """
@@ -498,7 +531,13 @@ class PostgresRoomsRepository:
                     raise RepositoryFailure("joined room could not be read")
                 return joined
 
-    async def leave_room(self, actor_id: UUID, code: str) -> RoomView | None:
+    async def leave_room(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> RoomView | None:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 cursor = await connection.execute(
@@ -513,15 +552,13 @@ class PostgresRoomsRepository:
                 room = await cursor.fetchone()
                 if room is None:
                     raise RoomNotFound
-                active_match = await connection.execute(
-                    """
-                    SELECT 1
-                    FROM quiz_online.matches
-                    WHERE room_id = %s AND state IN ('running', 'revealing')
-                    """,
-                    (room["id"],),
+                # 판이 도는 동안 나갈 수 없는 것은 그 판의 참가자뿐이다. 끊겨서 판에서 빠진
+                # 멤버(U24)는 판이 끝날 때까지 기다리지 않고 나간다.
+                playing = await connection.execute(
+                    _PLAYS_ACTIVE_MATCH_SQL,
+                    (room["id"], actor_id),
                 )
-                if await active_match.fetchone() is not None:
+                if await playing.fetchone() is not None:
                     raise MatchInProgress
 
                 deleted = await connection.execute(
@@ -535,15 +572,17 @@ class PostgresRoomsRepository:
                 if await deleted.fetchone() is None:
                     raise NotMember
 
+                # 나가는 방장의 자리는 가장 먼저 들어온 **접속 중인** 사람이 받는다. 모두 끊겼으면
+                # 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 presence sweep이 넘긴다.
                 next_cursor = await connection.execute(
                     """
                     SELECT player_id
                     FROM quiz_online.room_members
                     WHERE room_id = %s
-                    ORDER BY joined_at ASC, player_id ASC
+                    ORDER BY (player_id = ANY(%s)) ASC, joined_at ASC, player_id ASC
                     LIMIT 1
                     """,
-                    (room["id"],),
+                    (room["id"], list(absent_player_ids)),
                 )
                 next_member = await next_cursor.fetchone()
                 if next_member is None:
@@ -570,12 +609,56 @@ class PostgresRoomsRepository:
                     require_member=False,
                 )
 
+    async def transfer_absent_hosts(
+        self,
+        absent_by_room: Mapping[str, frozenset[UUID]],
+    ) -> AbsentHostSweep:
+        """끊긴 사람이 있는 방들을 한 번에 읽고, 끊긴 방장은 접속 중인 참가자에게 넘긴다.
+
+        presence sweep이 5초마다 부른다. 끊긴 사람의 집합이 바뀔 때만 보면 놓친다 — 넘길
+        사람이 없던 방에 나중에 누가 들어오거나, 나가기 승계·30분 정리가 끊긴 사람에게 방장을
+        넘겨도 그 집합은 그대로다. 그래서 집합과 무관하게 «방장이 끊겼고 접속 중인 사람이
+        있다»만 본다. 참가자 목록을 함께 돌려줘 멤버십이 끝난 사람의 접속 기록을 hub가 버린다.
+        """
+        if not absent_by_room:
+            return AbsentHostSweep(transferred=frozenset(), members={})
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                _ABSENT_HOST_ROOMS_SQL,
+                (list(absent_by_room),),
+            )
+            rows = await cursor.fetchall()
+        hosts: dict[str, UUID] = {}
+        members: dict[str, list[UUID]] = {}
+        for row in rows:
+            room_code = str(row["code"])
+            hosts[room_code] = row["host_player_id"]
+            joined = members.setdefault(room_code, [])
+            if row["player_id"] is not None:
+                joined.append(row["player_id"])
+        transferred: set[str] = set()
+        for room_code, host_id in hosts.items():
+            absent = absent_by_room.get(room_code, frozenset())
+            if host_id not in absent:
+                continue
+            if all(player_id in absent for player_id in members[room_code]):
+                continue
+            if await self.transfer_absent_host(room_code, absent):
+                transferred.add(room_code)
+        return AbsentHostSweep(
+            transferred=frozenset(transferred),
+            members={room_code: frozenset(ids) for room_code, ids in members.items()},
+        )
+
     async def transfer_absent_host(
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
     ) -> bool:
-        """유예를 넘겨 끊긴 방장 자리를 가장 먼저 들어온 접속 중인 참가자에게 넘긴다."""
+        """유예를 넘겨 끊긴 방장 자리를 가장 먼저 들어온 접속 중인 참가자에게 넘긴다.
+
+        방을 잠그고 다시 확인한다 — 읽은 뒤에 방장이 바뀌었거나 넘길 사람이 나갔을 수 있다.
+        """
         if not absent_player_ids:
             return False
         async with self._pool.connection() as connection:
@@ -731,15 +814,13 @@ class PostgresRoomsRepository:
                 room = await cursor.fetchone()
                 if room is None:
                     raise RoomNotFound
-                active_match = await connection.execute(
-                    """
-                    SELECT 1
-                    FROM quiz_online.matches
-                    WHERE room_id = %s AND state IN ('running', 'revealing')
-                    """,
-                    (room["id"],),
+                # 판의 참가자만 판이 끝날 때까지 기다린다. 판에서 빠진 멤버(U24)는 다음 판을
+                # 미리 준비해 둔다 — 시작이 모두의 준비를 되돌리므로 도는 판에는 영향이 없다.
+                playing = await connection.execute(
+                    _PLAYS_ACTIVE_MATCH_SQL,
+                    (room["id"], actor_id),
                 )
-                if await active_match.fetchone() is not None:
+                if await playing.fetchone() is not None:
                     raise MatchInProgress
                 updated_member = await connection.execute(
                     """
@@ -1035,7 +1116,7 @@ class PostgresRoomsRepository:
                     raise RepositoryFailure("match answer view could not be read")
                 return MatchSubmission(match=view, answer=feedback, advanced=advanced)
 
-    async def advance_expired_matches(self) -> list[str]:
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 cursor = await connection.execute(
@@ -1051,11 +1132,19 @@ class PostgresRoomsRepository:
                     """
                 )
                 matches = await cursor.fetchall()
-                advanced_codes: list[str] = []
+                advanced: list[ExpiredMatchAdvance] = []
                 for match in matches:
+                    # 마지막 문항의 공개가 끝나면 판이 닫혀 방의 status가 바뀐다. API가
+                    # room-invalidated도 보내 판에서 빠진 멤버의 대기실이 다시 읽게 한다.
+                    finishing = (
+                        match["state"] == "revealing"
+                        and int(match["current_position"]) >= int(match["total_questions"])
+                    )
                     if await self._advance_locked_match(connection, match):
-                        advanced_codes.append(str(match["code"]))
-                return advanced_codes
+                        advanced.append(
+                            ExpiredMatchAdvance(code=str(match["code"]), finished=finishing)
+                        )
+                return advanced
 
     async def advance_past_absent_players(
         self,
@@ -1536,6 +1625,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 "created_at": str(created_at),
                 # join_room 이 MatchInProgress 를 내는 조건과 같은 판정이다
                 "status": "playing" if row["is_playing"] else "waiting",
+                "in_match": bool(row["in_match"]),
             }
             grouped[room_id] = item
         if row["player_id"] is not None:
@@ -1562,6 +1652,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
             joined=item["joined"],
             created_at=item["created_at"],
             status=item["status"],
+            in_match=item["in_match"],
         )
         for item in grouped.values()
     ]

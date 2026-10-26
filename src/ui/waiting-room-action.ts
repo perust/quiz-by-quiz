@@ -42,10 +42,14 @@ function startRoster(room: PublicRoom, hostId: string): {
 /** 역할과 server 시작 조건을 그대로 반영한 대기실 CTA 상태. */
 export function waitingRoomControls(room: PublicRoom, playerId: string): WaitingRoomControls {
   const me = room.players.find((player) => player.id === playerId) ?? null;
-  const readyDisabled = !room.joined || me === null;
+  const joined = room.joined && me !== null;
+  // 판이 도는 동안 준비를 못 바꾸는 것은 그 판의 참가자뿐이다(서버 set_ready와 같다).
+  // 끊겨서 판에서 빠진 멤버(U24)는 다음 판을 미리 준비해 둔다. 시작은 판이 끝나야 된다.
+  const readyDisabled = !joined || (room.status === 'playing' && room.inMatch);
   const roster = startRoster(room, playerId);
   const canStart = room.isMine
-    && !readyDisabled
+    && joined
+    && room.status !== 'playing'
     && roster.counted.length >= 2
     && roster.waiting.length === 0;
 
@@ -80,6 +84,16 @@ export function waitingRoomStartStatus(
 ): string {
   const me = room.players.find((player) => player.id === playerId) ?? null;
   if (!room.joined || me === null) return '';
+
+  // 판이 도는 동안에는 시작 조건이 아니라 «언제 함께할 수 있는지»를 말한다 (U24). 판에서
+  // 빠진 멤버가 이 화면에 남는다 — 판의 참가자는 복구 경로가 판 화면으로 데려간다.
+  if (room.status === 'playing') {
+    if (room.inMatch) return '진행 중인 판에 내 자리가 있어요. 곧 판 화면으로 이어져요.';
+    if (room.isMine) return '지금 진행 중인 판이 끝나면 다음 판을 시작할 수 있어요.';
+    return me.isReady
+      ? '준비 완료! 지금 진행 중인 판이 끝나면 다음 판에 함께해요.'
+      : '지금 진행 중인 판이 끝나면 다음 판에 함께할 수 있어요. 준비는 미리 해 둘 수 있어요.';
+  }
 
   if (!room.isMine) {
     const host = room.players[0];

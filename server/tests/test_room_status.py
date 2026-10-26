@@ -27,6 +27,38 @@ def test_room_payload_reports_waiting_by_default_and_playing_during_a_match() ->
     assert single.json()["status"] == "playing"
 
 
+def test_room_payload_tells_a_member_whether_the_running_match_is_theirs() -> None:
+    # U24: 끊겨서 판에서 빠진 멤버는 status가 playing인데 inMatch가 false다. 대기실이 이것으로
+    # «다음 판에 함께할 수 있어요»와 「준비 완료」를 그린다.
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        waiting = client.get(f"/v1/rooms/{repository.room.code}", headers=HEADERS)
+        repository.room = room_view(status="playing", in_match=False)
+        left_out = client.get(f"/v1/rooms/{repository.room.code}", headers=HEADERS)
+        repository.room = room_view(status="playing", in_match=True)
+        playing = client.get(f"/v1/rooms/{repository.room.code}", headers=HEADERS)
+
+    assert waiting.json()["inMatch"] is False
+    assert (left_out.json()["status"], left_out.json()["inMatch"]) == ("playing", False)
+    assert (playing.json()["status"], playing.json()["inMatch"]) == ("playing", True)
+
+
+def test_room_rows_compute_the_actor_match_seat_once_per_room() -> None:
+    normalized = " ".join(_ROOM_ROWS_SQL.lower().split())
+    seat = (
+        "exists ( select 1 from quiz_online.matches my_match"
+        " join quiz_online.match_players my_player on my_player.match_id = my_match.id"
+        " where my_match.room_id = candidate.id"
+        " and my_match.state in ('running', 'revealing')"
+        " and my_player.player_id = %(actor_id)s ) as in_match"
+    )
+
+    assert seat in normalized
+    assert normalized.index(seat) < normalized.index("limit %(room_limit)s")
+    assert "selected.in_match" in normalized
+
+
 def test_join_and_leave_during_a_match_keep_the_game_in_progress_code() -> None:
     """브라우저는 이 code 로 «연결 문제»와 «끝나면 된다»를 가른다."""
     repository = FakeRepository()
@@ -34,7 +66,12 @@ def test_join_and_leave_during_a_match_keep_the_game_in_progress_code() -> None:
     async def busy_join(actor_id: UUID, code: str) -> RoomView:
         raise MatchInProgress
 
-    async def busy_leave(actor_id: UUID, code: str) -> RoomView | None:
+    async def busy_leave(
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> RoomView | None:
         raise MatchInProgress
 
     repository.join_room = busy_join  # type: ignore[method-assign]
@@ -85,6 +122,7 @@ def test_room_views_map_active_match_to_playing_status() -> None:
             "is_mine": False,
             "joined": False,
             "is_playing": is_playing,
+            "in_match": is_playing,
             "created_at": created_at,
             "player_id": PLAYER_ID,
             "nickname": "퀴즈왕",
@@ -94,7 +132,7 @@ def test_room_views_map_active_match_to_playing_status() -> None:
 
     views = _build_room_views([row("WAIT23", is_playing=False), row("PLAY23", is_playing=True)])
 
-    assert [(view.code, view.status) for view in views] == [
-        ("WAIT23", "waiting"),
-        ("PLAY23", "playing"),
+    assert [(view.code, view.status, view.in_match) for view in views] == [
+        ("WAIT23", "waiting", False),
+        ("PLAY23", "playing", True),
     ]

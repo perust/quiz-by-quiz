@@ -63,6 +63,38 @@ test('U28: 방장의 시작 상태 줄은 꺼진 「게임 시작」의 이유�
   );
 });
 
+test('U24: 판에서 빠진 멤버에게는 «준비 완료를 눌러 주세요» 대신 다음 판을 말한다', async () => {
+  const { waitingRoomStartStatus } = await action();
+  const host = player('host', '방장');
+  const me = player('me', '나');
+  const playing = { status: 'playing', inMatch: false };
+
+  // 거절될 「준비 완료」를 권하지 않는다. 판이 도는 동안에도 다음 판을 준비해 둘 수 있다.
+  assert.equal(
+    waitingRoomStartStatus(room([host, me], playing), 'me'),
+    '지금 진행 중인 판이 끝나면 다음 판에 함께할 수 있어요. 준비는 미리 해 둘 수 있어요.',
+  );
+  assert.equal(
+    waitingRoomStartStatus(room([host, player('me', '나', { isReady: true })], playing), 'me'),
+    '준비 완료! 지금 진행 중인 판이 끝나면 다음 판에 함께해요.',
+  );
+  // 방장이 끊겨 판 밖의 내가 방장을 넘겨받았어도 지금은 시작할 수 없다.
+  assert.equal(
+    waitingRoomStartStatus(room([me, host], { ...playing, isMine: true }), 'me'),
+    '지금 진행 중인 판이 끝나면 다음 판을 시작할 수 있어요.',
+  );
+  // 판에 내 자리가 있으면 복구 경로가 판 화면으로 데려간다.
+  assert.equal(
+    waitingRoomStartStatus(room([host, me], { status: 'playing', inMatch: true }), 'me'),
+    '진행 중인 판에 내 자리가 있어요. 곧 판 화면으로 이어져요.',
+  );
+  // 판이 끝나 방이 다시 기다리면 원래 안내로 돌아온다.
+  assert.equal(
+    waitingRoomStartStatus(room([host, me], { status: 'waiting', inMatch: false }), 'me'),
+    '준비 완료를 눌러 주세요. 방장이 시작하면 바로 출발해요.',
+  );
+});
+
 test('U24: 오래 끊긴 사람은 기다리지 않고, 상태 줄이 빠진다는 사실을 알린다', async () => {
   const { waitingRoomStartStatus } = await action();
   const host = player('host', '방장');

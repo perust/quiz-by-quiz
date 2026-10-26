@@ -307,6 +307,60 @@ def test_event_hub_presence_forgets_members_who_left_and_old_records() -> None:
     assert hub.is_present("ABC234", ACTOR_B)
 
 
+def test_event_hub_lists_absent_members_per_room_for_the_sweep() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    first = FakeWebSocket()
+    second = FakeWebSocket()
+    assert hub.connect("ABC234", ACTOR_A, first)
+    assert hub.connect("XYZ789", ACTOR_B, second)
+    hub.disconnect("ABC234", first)
+    hub.disconnect("XYZ789", second)
+    assert hub.absent_by_room() == {}
+
+    clock.now += 60
+    assert hub.absent_by_room() == {
+        "ABC234": frozenset({ACTOR_A}),
+        "XYZ789": frozenset({ACTOR_B}),
+    }
+    # sweep이 집합 변화를 알린 뒤에도 끊긴 사람이 있는 방은 계속 보인다 (server-1).
+    assert hub.sweep_presence() == frozenset({"ABC234", "XYZ789"})
+    assert hub.sweep_presence() == frozenset()
+    assert set(hub.absent_by_room()) == {"ABC234", "XYZ789"}
+
+
+def test_event_hub_retains_presence_only_for_current_members() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    for actor_id in (ACTOR_A, ACTOR_B):
+        socket = FakeWebSocket()
+        assert hub.connect("ABC234", actor_id, socket)
+        hub.disconnect("ABC234", socket)
+    other = FakeWebSocket()
+    assert hub.connect("XYZ789", ACTOR_A, other)
+    hub.disconnect("XYZ789", other)
+    clock.now += 61
+    assert hub.sweep_presence() == frozenset({"ABC234", "XYZ789"})
+
+    # 30분 정리가 B를 뺐다. 남은 A의 기록과 다른 방의 기록은 그대로다.
+    assert hub.retain_presence("ABC234", frozenset({ACTOR_A})) is True
+    assert hub.absent_actors("ABC234") == frozenset({ACTOR_A})
+    assert hub.retain_presence("ABC234", frozenset({ACTOR_A})) is False
+    # 버린 기록은 다시 붙은 것으로 방송하지 않는다.
+    assert hub.sweep_presence() == frozenset()
+
+    # 방이 사라졌으면 그 방의 기록을 모두 버린다.
+    assert hub.retain_presence("XYZ789", None) is True
+    assert hub.absent_by_room() == {"ABC234": frozenset({ACTOR_A})}
+    assert hub.sweep_presence() == frozenset()
+
+    # 다시 들어온 사람은 처음 본 사람처럼 새 유예로 센다.
+    assert hub.is_present("ABC234", ACTOR_B)
+    hub.forget_presence("ABC234", ACTOR_A)
+    assert hub.is_present("ABC234", ACTOR_A)
+    assert hub.absent_by_room() == {}
+
+
 def test_event_hub_rejects_a_non_positive_presence_grace() -> None:
     with pytest.raises(ValueError, match="presence grace"):
         EventHub(presence_grace_seconds=0)

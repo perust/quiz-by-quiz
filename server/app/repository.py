@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
@@ -32,6 +33,9 @@ class RoomView:
     created_at: str
     # 진행 중인(running·revealing) 매치가 있으면 playing. 그동안 새 참가는 거절된다.
     status: Literal["waiting", "playing"] = "waiting"
+    # 묻는 사람이 그 진행 중인 판의 참가자인가. playing인데 false면 판에서 빠진 멤버다(U24) —
+    # 그 사람은 판이 도는 동안에도 나가거나 다음 판을 준비할 수 있다.
+    in_match: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,24 @@ class MatchSubmission:
     advanced: bool
 
 
+@dataclass(frozen=True)
+class ExpiredMatchAdvance:
+    """마감 sweep이 넘긴 판 하나. 마지막 공개가 끝나 닫혔으면 방이 다시 기다리는 방이 된다."""
+
+    code: str
+    finished: bool
+
+
+@dataclass(frozen=True)
+class AbsentHostSweep:
+    """presence sweep이 끊긴 사람이 있는 방들을 한 번에 다시 본 결과."""
+
+    # 끊긴 방장을 접속 중인 참가자에게 넘긴 방
+    transferred: frozenset[str]
+    # 지금 있는 방마다 참가자. 물어본 방이 여기 없으면 사라졌거나 만료됐다.
+    members: Mapping[str, frozenset[UUID]]
+
+
 class RepositoryFailure(RuntimeError):
     """Base class for expected persistence-boundary failures."""
 
@@ -185,7 +207,14 @@ class RoomsRepository(Protocol):
 
     async def join_room(self, actor_id: UUID, code: str) -> RoomView: ...
 
-    async def leave_room(self, actor_id: UUID, code: str) -> RoomView | None: ...
+    # absent_player_ids: 유예를 넘겨 끊긴 참가자. 나가는 방장의 자리는 접속 중인 사람이 먼저 받는다.
+    async def leave_room(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> RoomView | None: ...
 
     async def update_room(
         self,
@@ -212,6 +241,13 @@ class RoomsRepository(Protocol):
         absent_player_ids: frozenset[UUID],
     ) -> bool: ...
 
+    # presence sweep이 5초마다 끊긴 사람이 있는 방 전부를 한 번에 다시 본다. 방장이 어떤 길로
+    # 끊긴 사람이 됐는지(끊김·나가기 승계·30분 정리), 접속 중인 사람이 언제 들어왔는지 묻지 않는다.
+    async def transfer_absent_hosts(
+        self,
+        absent_by_room: Mapping[str, frozenset[UUID]],
+    ) -> AbsentHostSweep: ...
+
     # absent_player_ids: 유예를 넘겨 끊긴 참가자. «모두 답했다»의 분모에서 빠진다 (U32).
     # 부르는 쪽(API)이 지금 요청한 사람은 넣지 않는다 — 요청하는 사람은 끊긴 사람이 아니다.
     async def get_match(
@@ -234,7 +270,7 @@ class RoomsRepository(Protocol):
 
     async def cleanup_expired_resources(self) -> None: ...
 
-    async def advance_expired_matches(self) -> list[str]: ...
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]: ...
 
     async def advance_past_absent_players(
         self,
