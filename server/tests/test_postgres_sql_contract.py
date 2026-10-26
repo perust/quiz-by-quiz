@@ -9,7 +9,6 @@ from app.postgres import (
     _DELETE_STALE_MEMBERS_SQL,
     _LOBBY_ROOM_LIMIT,
     _PLAYER_LIFETIME,
-    _QUESTION_TIMEOUT,
     _REVEAL_DURATION,
     _ROOM_ROWS_SQL,
     PostgresRoomsRepository,
@@ -18,11 +17,46 @@ from app.postgres import (
 
 def test_reveal_window_leaves_time_to_read_the_answer_and_explanation() -> None:
     # 공개 3초로는 해설을 다 읽기 전에 다음 문제로 넘어갔다. 소유자 결정으로 8초다.
-    assert _QUESTION_TIMEOUT == "20 seconds"
     assert _REVEAL_DURATION == "8 seconds"
     advance_source = inspect.getsource(PostgresRoomsRepository._advance_locked_match)
     assert "SET state = 'revealing', deadline_at = now() + %s::interval" in advance_source
     assert "(_REVEAL_DURATION, match_id)" in advance_source
+
+
+def test_every_question_deadline_uses_the_matchs_own_question_time() -> None:
+    # 방장이 방마다 20초·40초를 고른다. 고정 20초가 남은 자리가 있으면 40초 방의 어느 문항은
+    # 20초에 닫히거나, 시간 초과·쓴 시간이 20초로 잘못 남는다.
+    start = " ".join(inspect.getsource(PostgresRoomsRepository.start_game).split())
+    assert "SELECT id, host_player_id, category_id, game_mode, question_time_ms" in start
+    assert "question_time_ms, deadline_at, expires_at" in start
+    assert "now() + %s::integer * interval '1 millisecond'" in start
+    assert "question_time_ms, question_time_ms, _MATCH_LIFETIME" in start
+
+    advance = " ".join(
+        inspect.getsource(PostgresRoomsRepository._advance_locked_match).split()
+    )
+    assert "deadline_at = now() + question_time_ms * interval '1 millisecond'" in advance
+    assert "true, match.question_time_ms" in advance
+
+    submit = " ".join(inspect.getsource(PostgresRoomsRepository.submit_answer).split())
+    assert "SELECT LEAST( question_time_ms, GREATEST(" in submit
+
+    for name in ("start_game", "_advance_locked_match", "submit_answer"):
+        source = inspect.getsource(getattr(PostgresRoomsRepository, name))
+        assert "20000" not in source, name
+        assert "20 seconds" not in source, name
+
+
+def test_room_reads_and_writes_carry_the_hosts_question_time() -> None:
+    assert "r.question_time_ms," in _ROOM_ROWS_SQL
+    create = " ".join(inspect.getsource(PostgresRoomsRepository.create_room).split())
+    assert "question_time_ms, is_public, password_hash, host_player_id, expires_at" in create
+    assert "spec.question_time_ms," in create
+    update = " ".join(inspect.getsource(PostgresRoomsRepository.update_room).split())
+    assert 'patch.get("question_time_ms", room["question_time_ms"])' in update
+    assert "question_time_ms = %s" in update
+    # 판이 도는 동안에는 문항 시간도 바꾸지 않는다 — 판정이 쓰기보다 먼저다
+    assert update.index("raise MatchInProgress") < update.index("UPDATE quiz_online.rooms")
 
 
 def test_optional_room_code_is_explicitly_typed_for_postgres() -> None:

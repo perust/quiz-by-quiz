@@ -79,6 +79,49 @@ test('정답 공개 중에는 다음 문제(마지막 문제면 최종 순위)�
   assert.equal(onlineCountdownView('revealing', 1_000, 8_000, { submitted: false, lastQuestion: false }).warning, false);
 });
 
+test('문항 막대의 «가득»은 방장이 고른 문항 시간이다 — 늦게 받은 첫 남은 시간이 아니다', async () => {
+  const { onlineCountdownSpan, onlineCountdownView } = await import('../js/ui/online-quiz.js');
+  const open = { submitted: false, lastQuestion: false };
+
+  // 40초 방에 20초가 남았을 때 들어온 사람: 막대는 반이다 (가득 찬 막대로 보이지 않는다)
+  const span = onlineCountdownSpan('running', 40_000, 20_000, 0);
+  assert.equal(span, 40_000);
+  assert.equal(onlineCountdownView('running', 20_000, span, open).fraction, 0.5);
+  // 같은 남은 시간이라도 20초 방은 가득이다
+  assert.equal(onlineCountdownSpan('running', 20_000, 20_000, 0), 20_000);
+  // 같은 phase의 다음 응답도 문항 시간을 그대로 쓴다
+  assert.equal(onlineCountdownSpan('running', 40_000, 12_000, 40_000), 40_000);
+
+  // 공개 중에는 다음 문제까지의 시간이 가득이다 (문항 시간과 무관)
+  assert.equal(onlineCountdownSpan('revealing', 40_000, 8_000, 0), 8_000);
+  assert.equal(onlineCountdownSpan('revealing', 40_000, 6_000, 8_000), 8_000);
+  // 문항 시간을 보내지 않는 구버전 서버: 지금까지처럼 받은 가장 긴 남은 시간
+  assert.equal(onlineCountdownSpan('running', undefined, 18_000, 0), 18_000);
+  assert.equal(onlineCountdownSpan('running', undefined, 12_000, 18_000), 18_000);
+});
+
+test('네트워크 어댑터는 판의 문항 시간을 20초·40초일 때만 넘기고, 모르는 값 하나로 매치를 거절하지 않는다', async () => {
+  const forty = await (await storeReturning(runningMatch({ remainingMs: 39_000, questionTimeMs: 40_000 }))).getMatch('ABC234');
+  assert.equal(forty.questionTimeMs, 40_000);
+
+  const legacy = await (await storeReturning(runningMatch({ remainingMs: 19_000 }))).getMatch('ABC234');
+  assert.equal(Object.hasOwn(legacy, 'questionTimeMs'), false);
+
+  for (const broken of [30_000, null, '40000', true]) {
+    const match = await (await storeReturning(runningMatch({ questionTimeMs: broken }))).getMatch('ABC234');
+    assert.equal(match.state, 'running');
+    assert.equal(Object.hasOwn(match, 'questionTimeMs'), false, String(broken));
+  }
+});
+
+test('카운트다운 표시 루프는 막대 «가득»을 판의 문항 시간으로 잡는다', async () => {
+  const quiz = await source('src/ui/online-quiz.ts');
+  const sync = quiz.slice(quiz.indexOf('function syncCountdown'), quiz.indexOf('function tickCountdown'));
+  assert.match(sync, /countdownSpan = onlineCountdownSpan\(active\.state, active\.questionTimeMs, remainingMs, 0\);/);
+  assert.match(sync, /countdownSpan = onlineCountdownSpan\(\s*active\.state,\s*active\.questionTimeMs,\s*remainingMs,\s*countdownSpan,\s*\);/);
+  assert.doesNotMatch(sync, /countdownSpan = remainingMs;/);
+});
+
 test('카운트다운은 수신 시각 + remainingMs로 다시 계산하는 rAF 표시 루프이고 화면을 떠나면 멈춘다', async () => {
   const quiz = await source('src/ui/online-quiz.ts');
 

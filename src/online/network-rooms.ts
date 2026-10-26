@@ -1,4 +1,4 @@
-import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { CATEGORIES, ROOM_CAPACITY_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import type { KeyValueStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
@@ -40,6 +40,7 @@ import {
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
 import {
+  isOnlineQuestionTime,
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
@@ -285,6 +286,12 @@ function parseRoom(value: unknown): PublicRoom {
   if (typeof inMatch !== 'boolean') {
     throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
   }
+  // 문항 시간을 모르는 이전 API의 방은 모두 20초였다. 있는데 20초·40초가 아니면 다른 계약이다 —
+  // null(로컬 설정의 «제한 없음»)도 20초로 바꿔 읽지 않는다.
+  const questionTimeMs = value.questionTimeMs === undefined ? TIME_LIMIT_MS : value.questionTimeMs;
+  if (!isOnlineQuestionTime(questionTimeMs)) {
+    throw new Error('서버 방 문항 시간이 올바르지 않습니다.');
+  }
 
   return {
     code: value.code,
@@ -292,6 +299,7 @@ function parseRoom(value: unknown): PublicRoom {
     categoryId: categoryId as CategoryId | null,
     capacity,
     gameMode: true,
+    questionTimeMs,
     players: players.map(parsePlayer),
     isPublic: value.isPublic,
     hasPassword: value.hasPassword,
@@ -482,12 +490,16 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
   const totalQuestions = parseInteger(value.totalQuestions, '매치 문제 수', 1);
   const currentPosition = parseInteger(value.currentPosition, '매치 문제 순서', 1);
   if (currentPosition > totalQuestions) throw new Error('서버 매치 진행 상태가 올바르지 않습니다.');
+  // 이 판의 문항 시간은 남은 시간 막대의 «가득»에만 쓴다. remainingMs처럼 표시용이라 없거나 모르는
+  // 값이면 빼고(막대는 처음 받은 남은 시간을 가득으로 본다) 매치 전체를 거절하지 않는다.
+  const questionTimeMs = value.questionTimeMs;
   const base = {
     matchId,
     categoryId,
     gameMode: true as const,
     currentPosition,
     totalQuestions,
+    ...(isOnlineQuestionTime(questionTimeMs) ? { questionTimeMs } : {}),
   };
   const activeDeadlineAt = (): string => {
     const deadlineAt = value.deadlineAt;
@@ -787,6 +799,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           name: spec.name,
           categoryId: spec.categoryId,
           capacity: spec.capacity,
+          questionTimeMs: spec.questionTimeMs,
           isPublic: spec.isPublic,
           ...(spec.isPublic ? {} : { password: spec.password ?? '' }),
         }),

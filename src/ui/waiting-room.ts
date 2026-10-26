@@ -4,7 +4,7 @@
 // 원격 캐릭터는 그 아래 공간을 걸어 다닌다. 한마디 적으면 캐릭터 위에 말풍선이 뜬다.
 //
 // **설정은 «누르면 다음 값으로 도는» 버튼이다.** `select`로 두면 캐릭터가 밟아도
-// 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. 분야·인원·시작·나가기가
+// 목록이 열리지 않아 «걸어가서 고른다»가 성립하지 않는다. 분야·인원·문항 시간·시작·나가기가
 // 모두 그냥 버튼이라 캐릭터를 겹치고 Enter만 누르면 된다.
 //
 // **방이 어디에 있는지 이 파일은 모른다.** `roomStore`만 부르고, 무슨 일이 있었는지는
@@ -58,7 +58,9 @@ import type {
 import {
   LEAVE_MESSAGES,
   LeaveRoomRejected,
+  nextOnlineQuestionTime,
   onlineErrorText,
+  onlineQuestionTimeLabel,
   REMOVE_MEMBER_MESSAGES,
   REMOVED_BY_HOST_MESSAGE,
   RemovedFromRoom,
@@ -139,6 +141,8 @@ export function createWaitingRoom(
     categoryValue: need('setting-category-value'),
     capacity: need<HTMLButtonElement>('setting-capacity'),
     capacityValue: need('setting-capacity-value'),
+    questionTime: need<HTMLButtonElement>('setting-question-time'),
+    questionTimeValue: need('setting-question-time-value'),
     lounge: need('lounge'),
     players: need('lounge-players'),
     furniture: need('waiting-furniture'),
@@ -392,6 +396,7 @@ export function createWaitingRoom(
     const category = categories.find((item) => item.id === room!.categoryId) ?? ALL_CATEGORY;
     el.categoryValue.textContent = category.name;
     el.capacityValue.textContent = `${room.capacity}명`;
+    el.questionTimeValue.textContent = onlineQuestionTimeLabel(room.questionTimeMs);
 
     const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
     const controls = waitingRoomControls(room, roomStore.me());
@@ -408,9 +413,10 @@ export function createWaitingRoom(
       canInvite: roomStore.isNetworked,
     }));
 
-    // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
-    for (const button of [el.category, el.capacity]) {
-      button.disabled = !room.isMine;
+    // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다. 판이 도는 동안에는
+    // 방장도 바꿀 수 없다(서버가 game-in-progress로 거절한다 — 문항 시간은 그 판의 마감이 쓰고 있다)
+    for (const button of [el.category, el.capacity, el.questionTime]) {
+      button.disabled = !room.isMine || room.status === 'playing';
     }
 
     const remotePlayers = room.players.filter((player) => player.id !== roomStore.me());
@@ -891,6 +897,12 @@ ${me.nickname}`;
     }
     const index = usable.indexOf(room.capacity);
     patch({ capacity: usable[(index + 1) % usable.length] });
+  });
+
+  // 20초 ↔ 40초. 제한 없음은 없다 — 한 사람이 답하지 않으면 모두가 마감까지 기다린다
+  el.questionTime.addEventListener('click', () => {
+    if (!room) return;
+    patch({ questionTimeMs: nextOnlineQuestionTime(room.questionTimeMs) });
   });
 
 

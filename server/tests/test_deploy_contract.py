@@ -56,7 +56,16 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     api_service = compose.split("  quiz-by-quiz-api:", 1)[1]
     assert "service_completed_successfully" not in api_service
     guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
-    assert "API → migration 010 → Pages" in guide
+    normalized_guide = " ".join(guide.split())
+    # 011(방장이 고르는 문항 시간)은 더하기만 해서 010의 API가 도는 동안 먼저 올린다
+    assert "migration 011 → API → Pages" in normalized_guide
+    assert "API → migration 010 → Pages" in normalized_guide
+    assert normalized_guide.index("migration 011 → API → Pages") < normalized_guide.index(
+        "API → migration 010 → Pages"
+    )
+    assert "schemaVersion: 11" in normalized_guide
+    assert "rooms_question_time_check" in normalized_guide
+    assert "match_answers_elapsed_ms_range_check" in normalized_guide
 
 
 def test_api_resource_envelope_and_single_worker_contract_are_explicit() -> None:
@@ -147,7 +156,9 @@ def test_pages_workflow_verifies_client_server_and_container_before_deploy() -> 
     assert "/v1/release-readiness" in workflow
     assert "jq -e '. == {" in workflow
     assert '"contract": "character-only-v1"' in workflow
-    assert '"schemaVersion": 10' in workflow
+    # 이 client는 questionTimeMs를 보낸다. 010의 API는 모르는 필드를 거절하므로 011 API를 기다린다
+    assert '"schemaVersion": 11' in workflow
+    assert '"schemaVersion": 10' not in workflow
 
 
 def test_pages_workflow_executes_migrations_and_postgres_integration() -> None:

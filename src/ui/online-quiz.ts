@@ -260,6 +260,25 @@ export function onlineCountdownView(
   };
 }
 
+/**
+ * 남은 시간 막대의 «가득»이 가리키는 시간 (표시 전용).
+ *
+ * 문항(running)은 그 판의 문항 시간 — 방장이 방에 고른 20초·40초다. 문항 도중에 들어오거나
+ * 새로고침한 사람이 처음 받은 남은 시간을 가득으로 두면 반쯤 지난 문항이 가득 찬 막대로 보이고,
+ * 40초 방과 20초 방의 막대가 같은 속도로 줄어 보이지 않는다. 공개 중이거나 문항 시간을 보내지 않는
+ * 구버전 서버면 지금까지처럼 이 phase에서 받은 가장 긴 남은 시간이다.
+ */
+export function onlineCountdownSpan(
+  phase: OnlineActiveMatch['state'],
+  questionTimeMs: number | undefined,
+  remainingMs: number,
+  previousSpanMs: number,
+): number {
+  const remaining = Math.max(remainingMs, 0);
+  if (phase === 'running' && questionTimeMs !== undefined) return Math.max(questionTimeMs, remaining);
+  return Math.max(previousSpanMs, remaining);
+}
+
 export interface OnlineRevealAnswerText {
   correct: string;
   mine: string;
@@ -829,12 +848,17 @@ export function createOnlineQuizScreen(
     if (key !== countdownKey) {
       countdownKey = key;
       countdownDeadline = deadline;
-      countdownSpan = remainingMs;
+      countdownSpan = onlineCountdownSpan(active.state, active.questionTimeMs, remainingMs, 0);
     } else {
       // 같은 phase의 응답은 같은 마감을 가리킨다. 늦게 도착한 응답일수록 마감이 뒤로 밀려
       // 보이므로 가장 이른 추정을 쓴다. 같은 snapshot을 다시 그려도 마감이 늘지 않는다.
       countdownDeadline = Math.min(countdownDeadline, deadline);
-      countdownSpan = Math.max(countdownSpan, remainingMs);
+      countdownSpan = onlineCountdownSpan(
+        active.state,
+        active.questionTimeMs,
+        remainingMs,
+        countdownSpan,
+      );
     }
     if (countdownFrame !== null) cancelAnimationFrame(countdownFrame);
     countdownFrame = null;

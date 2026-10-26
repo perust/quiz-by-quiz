@@ -285,6 +285,7 @@ def test_match_routes_hide_answer_feedback_and_scores_until_reveal() -> None:
         "categoryId": "history",
         "gameMode": True,
         "totalQuestions": 10,
+        "questionTimeMs": 20_000,
     }
     assert initial.status_code == 200
     initial_payload = initial.json()
@@ -550,6 +551,31 @@ def test_active_match_payload_reports_remaining_time_measured_at_response() -> N
     # 공개 phase의 deadline은 다음 문제로 넘어가는 시각이다.
     assert revealing["remainingMs"] == 15_500
     assert finished["remainingMs"] is None
+
+
+def test_match_payload_carries_the_question_time_the_host_chose_for_the_room() -> None:
+    # 남은 시간 막대의 «가득»이 방장이 고른 시간이다. 늦게 받은 첫 응답의 남은 시간이 아니다.
+    repository = MatchApiRepository()
+    now = datetime(2026, 9, 18, 0, 0, 12, 500_000, tzinfo=UTC)
+    forty = replace(repository.match, question_time_ms=40_000)
+
+    for state, deadline, question in (
+        ("running", "2026-09-18T00:00:40+00:00", forty.question),
+        ("revealing", "2026-09-18T00:00:48+00:00", forty.question),
+        ("finished", None, None),
+    ):
+        payload = _match_payload(
+            replace(forty, state=state, deadline_at=deadline, question=question),
+            now,
+        )
+        assert payload["questionTimeMs"] == 40_000, state
+    assert _match_payload(repository.match, now)["questionTimeMs"] == 20_000
+
+    repository.match = forty
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["questionTimeMs"] == 40_000
 
 
 def test_remaining_time_never_goes_negative_after_the_deadline() -> None:

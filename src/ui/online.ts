@@ -11,7 +11,9 @@
 // **비밀번호가 맞는지도 여기서 견주지 않는다.** 입력한 값을 그대로 넘기고 결과만
 // 받는다 — 서버 구현이 되면 그 검사가 자연히 서버에서 일어난다.
 
-import { CATEGORIES, ROOM_CAPACITY_CHOICES, ROOM_NAME_MAX_LENGTH } from '../constants.js';
+import {
+  CATEGORIES, ONLINE_QUESTION_TIME_CHOICES, ROOM_CAPACITY_CHOICES, ROOM_NAME_MAX_LENGTH, TIME_LIMIT_MS,
+} from '../constants.js';
 import { need, needOne } from '../dom.js';
 import type { PlayerInfo, PublicRoom, RoomStore } from '../online/adapter.js';
 import {
@@ -35,6 +37,8 @@ import {
   isValidCode,
   normalizeCode,
   onlineErrorText,
+  onlineQuestionTimeLabel,
+  onlineQuestionTimeOrDefault,
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
@@ -110,6 +114,7 @@ export function createOnlineScreen(
     createName: need<HTMLInputElement>('create-name'),
     createCategory: need<HTMLSelectElement>('create-category'),
     createCapacity: need<HTMLSelectElement>('create-capacity'),
+    createQuestionTime: need<HTMLSelectElement>('create-question-time'),
     createPrivate: need<HTMLInputElement>('create-private'),
     createPasswordRow: need('create-password-row'),
     createPassword: need<HTMLInputElement>('create-password'),
@@ -255,6 +260,13 @@ export function createOnlineScreen(
     // 가장 큰 값으로 연다. 좁게 열어 두면 친구를 더 부르려 할 때 방을 다시
     // 만들어야 하지만, 넓게 열어 둔 것은 대기실에서 언제든 줄일 수 있다
     el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
+
+    // 방장이 고르는 문항 시간 (20초 기본 · 40초). 대기실 설정 칸에서도 바꿀 수 있다
+    el.createQuestionTime.replaceChildren();
+    for (const time of ONLINE_QUESTION_TIME_CHOICES) {
+      appendOption(el.createQuestionTime, String(time), onlineQuestionTimeLabel(time));
+    }
+    el.createQuestionTime.value = String(TIME_LIMIT_MS);
 
     el.categoryFilter.replaceChildren();
     appendOption(el.categoryFilter, 'any', '전체 형식');
@@ -726,6 +738,7 @@ export function createOnlineScreen(
         name: name.value,
         categoryId: selected ? selected.id : null,
         capacity: Number(el.createCapacity.value),
+        questionTimeMs: onlineQuestionTimeOrDefault(Number(el.createQuestionTime.value)),
         isPublic,
         password: el.createPassword.value,
         player: getPlayer(),
@@ -739,6 +752,7 @@ export function createOnlineScreen(
 
       el.createForm.reset();
       el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
+      el.createQuestionTime.value = String(TIME_LIMIT_MS);
       syncPrivatePassword();
       suggestRoomName();
       // 만들자마자 대기실로 들어간다. 목록으로 돌아가 다시 찾을 이유가 없다
