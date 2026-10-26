@@ -35,9 +35,12 @@
 //      줄어들거나 머리말 버튼 폭이 바뀌어도 글 끝과 캐릭터 왼쪽 사이를 직접 확인한다
 //   ⑨ 홈에서 온라인이 작은 보조 HUD로 밀려 주요 게임 진입점처럼 보이지 않았다. 온라인과
 //      전체 도전의 실제 크기가 같은지, 닉네임 라벨이 값 위에 남는지 직접 확인한다
+//   ⑩ 결과에서 「등록」을 누르지 않고 「다시 하기」를 누르면 기록이 조용히 사라졌다. 홈에는
+//      «퀴즈왕»이 보이는데 결과의 등록 칸은 비어 있었다
+//   ⑪ 시스템 「뒤로」가 앱 밖으로 나가 풀던 판이 확인도 없이 사라졌다
 //
-// **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
-// 랭킹·설정·닉네임은 만지지 않는다.
+// **localStorage 의 방 목록과 랭킹을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
+// ⑩을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. 설정은 만지지 않는다.
 
 (async () => {
   const 결과 = [];
@@ -193,6 +196,7 @@
   // ── 검사 ──────────────────────────────────────────────────────
 
   const 방백업 = localStorage.getItem('quiz.rooms');
+  const 랭킹백업 = localStorage.getItem('quiz.rankings');
   console.log('%c화면 점검을 시작합니다', 'font-weight:bold');
 
   try {
@@ -224,6 +228,13 @@
     const 닉네임값 = document.getElementById('nickname-value');
     const 닉네임라벨상자 = 닉네임라벨.getBoundingClientRect();
     const 닉네임값상자 = 닉네임값.getBoundingClientRect();
+    // ⑩ 처음 띄울 때 기본 이름을 저장해 두므로 홈·결과·온라인이 같은 값을 읽는다
+    const 저장된닉네임 = JSON.parse(localStorage.getItem('quiz.nickname') ?? 'null');
+    결과.push({
+      자리: '홈', 이름: '홈 닉네임이 저장된 이름과 같다',
+      통과: typeof 저장된닉네임 === 'string' && 저장된닉네임 === 닉네임값.textContent.trim(),
+      무엇: `홈 ${닉네임값.textContent.trim()} · 저장 ${저장된닉네임 ?? '(없음)'}`,
+    });
     결과.push({
       자리: '홈', 이름: '작은 닉네임 라벨이 현재 값 위에 있다',
       통과: 닉네임라벨.textContent.trim() === '닉네임'
@@ -318,7 +329,8 @@
     결과.push({
       자리: '랭킹', 이름: '위험 행동이 양쪽 고정 조작부와 겹치지 않는다',
       통과: 조작부겹침 === 0,
-      무엇: `겹친 넓이 ${조작부겹침}px²`,
+      // 어느 탭에도 기록이 없으면 지울 것이 없어 버튼째 숨는다
+      무엇: document.getElementById('ranking-footer').hidden ? '기록이 없어 숨김' : `겹친 넓이 ${조작부겹침}px²`,
     });
     잠든퀴즈를깨워본다('랭킹');
     await 눌러('ranking-home');
@@ -361,6 +373,8 @@
 
     // 퀴즈를 끝까지 풀어 결과로 간 뒤, 「다시 하기」로 되돌아온다.
     // 결과 화면의 조작부가 따라오면 여기서 걸린다 (#65)
+    // ⑩ 「등록」 없이 떠나도 저장되는지 세려고 랭킹을 비워 둔다 (끝나면 되돌린다)
+    localStorage.setItem('quiz.rankings', '[]');
     document.querySelector('.category-card').click();
     await 잠깐(800);
     for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
@@ -397,11 +411,63 @@
         ? `행동 ${결과행동.getBoundingClientRect().top}px · 오답 풀이 ${오답풀이.getBoundingClientRect().top}px`
         : '요소 없음',
     });
+    결과.push({
+      자리: '결과', 이름: '등록 칸이 홈 닉네임으로 채워져 있다',
+      통과: document.getElementById('nickname-input').value === 닉네임값.textContent.trim(),
+      무엇: `칸 ${document.getElementById('nickname-input').value || '(비어 있음)'} · 홈 ${닉네임값.textContent.trim()}`,
+    });
     await 눌러('result-retry', 800);
     살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', true);
+    const 자동저장 = JSON.parse(localStorage.getItem('quiz.rankings') ?? '[]');
+    결과.push({
+      자리: '결과', 이름: '「등록」 없이 「다시 하기」를 눌러도 기록이 남는다',
+      통과: Array.isArray(자동저장) && 자동저장.length === 1,
+      무엇: `저장된 기록 ${Array.isArray(자동저장) ? 자동저장.length : '(깨짐)'}개`,
+    });
     await 눌러('quiz-exit', 300);
     await 눌러('exit-confirm', 700);
     살펴본곳.push('결과 → 다시 하기');
+
+    // ⑪ 시스템 「뒤로」. 앱 밖으로 나가지 않고 그 화면의 뒤로·나가기 버튼과 같이 움직인다
+    await 눌러('open-ranking', 700);
+    // 방금 자동 저장된 분야 기록 하나뿐이라 전체 도전 탭은 비어 있다
+    document.querySelector('[data-screen="ranking"] .ranking-tab').click();
+    await 잠깐(300);
+    결과.push({
+      자리: '랭킹', 이름: '빈 탭의 행동은 그 탭의 판을 연다',
+      통과: document.getElementById('ranking-empty-start').textContent.trim() === '전체 도전 시작하기',
+      무엇: document.getElementById('ranking-empty-start').textContent.trim(),
+    });
+    결과.push({
+      자리: '랭킹', 이름: '다른 탭에 기록이 있으면 「모든 기록 지우기」가 남는다',
+      통과: !document.getElementById('ranking-footer').hidden,
+      무엇: document.getElementById('ranking-footer').hidden ? '!! 숨김' : '보임',
+    });
+    history.back();
+    await 화면기다리기('home');
+    살펴본다('랭킹에서 「뒤로」', 'home', true);
+
+    document.querySelector('.category-card').click();
+    await 잠깐(800);
+    history.back();
+    await 잠깐(400);
+    결과.push({
+      자리: '퀴즈', 이름: '「뒤로」는 판을 버리지 않고 나가기 확인을 연다',
+      통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
+      무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
+    });
+    await 눌러('exit-cancel', 300);
+    history.back();
+    await 잠깐(400);
+    결과.push({
+      자리: '퀴즈', 이름: '확인을 무른 뒤 다시 「뒤로」를 눌러도 앱 안에 남는다',
+      통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
+      무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
+    });
+    await 눌러('exit-confirm', 700);
+    살펴본다('퀴즈에서 「뒤로」로 나온 홈', 'home', true);
+    잠든퀴즈를깨워본다('퀴즈에서 「뒤로」로 나온 홈');
+    살펴본곳.push('뒤로 가기');
 
     // 로비와 대기실. 방을 하나 만들어 오간다
     await 눌러('open-online', 0);
@@ -514,6 +580,8 @@
     되돌리기();
     if (방백업 === null) localStorage.removeItem('quiz.rooms');
     else localStorage.setItem('quiz.rooms', 방백업);
+    if (랭킹백업 === null) localStorage.removeItem('quiz.rankings');
+    else localStorage.setItem('quiz.rankings', 랭킹백업);
   }
 
   // ── 보고 ──────────────────────────────────────────────────────
@@ -531,6 +599,6 @@
     console.log('%c실패한 것', 'font-weight:bold');
     for (const r of 실패) console.log(`  [${r.자리}] ${r.이름} — ${r.무엇}`);
   }
-  console.log('방 목록은 되돌려 놓았습니다. 랭킹·설정·닉네임은 건드리지 않았습니다.');
+  console.log('방 목록과 랭킹은 되돌려 놓았습니다. 설정은 건드리지 않았습니다.');
   return { 검사: 결과.length, 실패: 실패.length };
 })();

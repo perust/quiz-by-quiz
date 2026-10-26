@@ -31,7 +31,7 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.equal((shortcuts.match(/class="menu-card"/g) ?? []).length, 2);
   // 아이콘은 글리프가 아니라 디자인 시스템 아이콘이다. 낭독은 버튼의 aria-label 이 맡는다
   assert.match(shortcuts, /id="open-characters"[^>]*aria-label="캐릭터 모습 바꾸기"[\s\S]*?<span class="menu-card__figure" data-icon="palette" aria-hidden="true"><\/span>[\s\S]*?<span class="menu-card__name">캐릭터<\/span>/);
-  assert.match(shortcuts, /id="open-ranking"[^>]*aria-label="랭킹에서 최고 기록 보기"[\s\S]*?data-icon="trophy"[\s\S]*?<span class="menu-card__name">랭킹<\/span>/);
+  assert.match(shortcuts, /id="open-ranking"[^>]*aria-label="랭킹: 이 브라우저의 최고 기록 보기"[\s\S]*?data-icon="trophy"[\s\S]*?<span class="menu-card__name">랭킹<\/span>/);
   assert.doesNotMatch(shortcuts, /id="open-online"/);
   assert.match(quests, /id="home-quests" role="group" aria-label="게임 선택"/);
   assert.match(quests, /class="home-primary-actions"[\s\S]*?class="challenge-card challenge-card--online" id="open-online"[\s\S]*?data-icon="users"[\s\S]*?<span class="challenge-card__name">온라인<\/span>[\s\S]*?class="challenge-card challenge-card--all" id="start-all"/);

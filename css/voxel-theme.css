@@ -1604,6 +1604,23 @@ select.room-form__input {
   line-height: var(--leading-tight);
 }
 
+/* 오답 풀이로 건너가는 글자 링크. 버튼처럼 채우지 않고 밑줄로 «페이지 안 이동»임을 알린다.
+   월드 위에 바로 놓이므로 글자가 읽히게 유리 바탕만 깐다 */
+.result-review-link {
+  border-radius: var(--radius-md);
+  background: var(--world-glass);
+  color: var(--accent-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-decoration: underline;
+}
+
+/* 걸어서 올라선 표시는 다른 버튼과 같은 초점 고리다 (24절) */
+.result-review-link.is-standing {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 .result-block__title {
   font-size: var(--text-md);
   font-weight: var(--weight-heavy);
