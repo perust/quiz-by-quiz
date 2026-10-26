@@ -45,13 +45,45 @@ test('매치 나가기 확인은 포커스를 가두고 Esc로 닫으며 연 자
     quiz,
     /if \(!el\.exitDialog\.hidden\) \{\s*if \(event\.key === 'Escape'\) \{\s*event\.preventDefault\(\);\s*closeExitDialog\(\);\s*\} else if \(event\.key === 'Tab'\) \{\s*trapFocus\(el\.exitDialog, event\);\s*\}\s*return;\s*\}\s*if \(arena\.handleDialogKey\(event\)\) return;/,
   );
-  // 새 문제가 와도 다이얼로그 밖으로 포커스를 빼지 않는다.
+  // 새 문제가 와도 다이얼로그 밖으로 포커스를 빼지 않는다. 이 화면의 조작법·나가기 확인만이 아니라
+  // 앱 바의 설정(#settings-dialog)도 센다 — 셋 모두 .dialog-backdrop 이라 한 번에 본다 (g7)
+  assert.match(quiz, /shouldAutoFocusOnlineQuestion\(\s*anyDialogOpen\(\),/);
   assert.match(
     quiz,
-    /shouldAutoFocusOnlineQuestion\(\s*arena\.isDialogOpen\(\) \|\| !el\.exitDialog\.hidden,/,
+    /function anyDialogOpen\(\): boolean \{\s*return document\.querySelector\('\.dialog-backdrop:not\(\[hidden\]\)'\) !== null;/,
   );
+  const html = await source('index.html');
+  for (const id of ['online-help-dialog', 'online-exit-dialog', 'settings-dialog']) {
+    assert.match(html, new RegExp(`<div class="dialog-backdrop" id="${id}" hidden>`), `#${id} 도 센다`);
+  }
   // 매치가 끝나거나 화면을 떠나면 열린 확인을 닫는다 — <main> 밖이라 다음 화면 위에 남는다.
   assert.match(quiz, /function stopPresence\(\)[\s\S]*el\.exitDialog\.hidden = true;/);
+});
+
+test('길게 누른 Enter·Space의 반복은 나가기 확인을 열었다 닫았다 하지 않는다 (online-client-3, a11y-ux-05)', async () => {
+  const { isHeldButtonRepeat } = await import('../js/ui/online-quiz.js');
+  const button = { closest: (selector) => (selector === 'button' ? {} : null) };
+  const body = { closest: () => null };
+
+  // 브라우저는 반복 keydown마다 포커스된 버튼을 다시 누른다 — 「계속 풀기」·「나가기」·조작법 「닫기」
+  assert.equal(isHeldButtonRepeat({ key: 'Enter', repeat: true }, button), true);
+  assert.equal(isHeldButtonRepeat({ key: ' ', repeat: true }, button), true);
+  // 처음 누른 것은 그대로 누른다
+  assert.equal(isHeldButtonRepeat({ key: 'Enter', repeat: false }, button), false);
+  // 빈자리의 Space(스크롤)·채팅칸·Esc·Tab·방향키는 이 가드 밖이다
+  assert.equal(isHeldButtonRepeat({ key: ' ', repeat: true }, body), false);
+  assert.equal(isHeldButtonRepeat({ key: 'Enter', repeat: true }, null), false);
+  for (const key of ['Escape', 'Tab', 'ArrowLeft', '1']) {
+    assert.equal(isHeldButtonRepeat({ key, repeat: true }, button), false, key);
+  }
+
+  // 키 처리 맨 앞, 나가기 확인 분기보다 먼저 기본 동작까지 막는다 (로컬 퀴즈 quiz.ts 와 같은 자리)
+  const quiz = await source('src/ui/online-quiz.ts');
+  const listener = quiz.slice(quiz.indexOf("document.addEventListener('keydown'"));
+  assert.match(
+    listener,
+    /^document\.addEventListener\('keydown', \(event\) => \{[\s\S]*?if \(!el\.screen\.hidden && isHeldButtonRepeat\(event, document\.activeElement\)\) \{\s*event\.preventDefault\(\);\s*return;\s*\}\s*(?:\/\/[^\n]*\n\s*)*if \(!el\.exitDialog\.hidden\) \{/,
+  );
 });
 
 test('온라인 조작법은 지금의 제출 규칙과 순위 규칙을 말한다 (U13)', async () => {

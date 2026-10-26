@@ -231,11 +231,11 @@
         </header>
 
         <!-- 서버가 보낸 남은 시간(remainingMs)의 표시일 뿐 timeout·채점·다음 문제 전환은 server가 한다.
-             로컬과 달리 아직 영역째 aria-hidden이다(로컬은 막대·아이콘만 숨기고 #timer-text를 정적
-             글로 남긴다). 남은 5초 경고만 문항당 한 번 announce()로 알린다. -->
-        <div class="timer" id="online-timer" aria-hidden="true">
-          <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
-          <p class="timer__label"><span class="timer__icon" id="online-timer-icon"></span>
+             로컬 #timer 와 같이 막대와 아이콘만 눈으로 본다. 남은 시간 글은 브라우즈 모드에서 찾아 읽을
+             수 있게 남기되 aria-live 는 달지 않는다. 남은 5초 경고만 문항당 한 번 announce()로 알린다. -->
+        <div class="timer" id="online-timer">
+          <div class="timer__track" aria-hidden="true"><div class="timer__fill" id="online-timer-fill"></div></div>
+          <p class="timer__label"><span class="timer__icon" id="online-timer-icon" aria-hidden="true"></span>
             <span id="online-timer-text">남은 시간을 확인하는 중이에요</span></p>
         </div>
       </div>

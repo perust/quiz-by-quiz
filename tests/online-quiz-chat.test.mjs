@@ -38,8 +38,9 @@ test('online quiz chat is a normal-flow control with an accessible recent-messag
   assert.match(quizMarkup, /id="online-chat-input"[^>]*maxlength="60"/);
   assert.match(quizMarkup, /id="online-chat-submit"[^>]*disabled/);
   assert.match(quizMarkup, /id="online-chat-log"[^>]*role="log"[^>]*aria-live="polite"/);
-  assert.match(css, /\.online-quiz-chat\s*{[^}]*position:\s*relative/s);
-  assert.doesNotMatch(css, /\.online-quiz-chat\s*{[^}]*position:\s*(?:fixed|absolute)/s);
+  // 위치를 주지 않는다. z-index 가 없어 DOM 순서가 겹침 순서라, 위치를 가진 유리 표면은 앞에 오는
+  // fixed 캐릭터(내 캐릭터·다른 참가자)를 덮는다 (css-responsive-02)
+  assert.doesNotMatch(css, /\.online-quiz-chat\s*{[^}]*position:/s);
   assert.match(
     css,
     /@media \(pointer: coarse\)[\s\S]*\[data-screen='online-quiz'\] \.online-quiz-chat\s*{[^}]*margin-bottom:\s*calc\(var\(--walk-stick-size\) \+ var\(--space-4\) \+ var\(--space-2\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
