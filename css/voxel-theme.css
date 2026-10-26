@@ -326,6 +326,7 @@
   --i-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 0h8v2h-8zM4 2h4v2h-4zM16 2h4v2h-4zM2 4h2v2h-2zM20 4h2v2h-2zM2 6h2v2h-2zM8 6h8v2h-8zM20 6h2v2h-2zM0 8h2v2h-2zM6 8h2v2h-2zM16 8h2v2h-2zM22 8h2v2h-2zM0 10h2v2h-2zM6 10h2v2h-2zM10 10h4v2h-4zM16 10h2v2h-2zM22 10h2v2h-2zM0 12h2v2h-2zM6 12h2v2h-2zM10 12h4v2h-4zM16 12h2v2h-2zM22 12h2v2h-2zM0 14h2v2h-2zM6 14h2v2h-2zM16 14h2v2h-2zM22 14h2v2h-2zM2 16h2v2h-2zM8 16h8v2h-8zM20 16h2v2h-2zM2 18h2v2h-2zM20 18h2v2h-2zM4 20h4v2h-4zM16 20h4v2h-4zM8 22h8v2h-8z'/%3E%3C/svg%3E");
   --i-hourglass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 2h20v2h-20zM4 4h2v2h-2zM18 4h2v2h-2zM4 6h2v2h-2zM18 6h2v2h-2zM6 8h2v2h-2zM10 8h4v2h-4zM16 8h2v2h-2zM8 10h8v2h-8zM8 12h2v2h-2zM14 12h2v2h-2zM6 14h2v2h-2zM16 14h2v2h-2zM4 16h2v2h-2zM10 16h4v2h-4zM18 16h2v2h-2zM4 18h2v2h-2zM8 18h8v2h-8zM18 18h2v2h-2zM2 20h20v2h-20z'/%3E%3C/svg%3E");
   --i-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 0h8v2h-8zM4 2h16v2h-16zM2 4h8v2h-8zM14 4h8v2h-8zM2 6h20v2h-20zM0 8h10v2h-10zM14 8h10v2h-10zM0 10h10v2h-10zM14 10h10v2h-10zM0 12h10v2h-10zM14 12h10v2h-10zM0 14h10v2h-10zM14 14h10v2h-10zM2 16h8v2h-8zM14 16h8v2h-8zM2 18h20v2h-20zM4 20h16v2h-16zM8 22h8v2h-8z'/%3E%3C/svg%3E");
+  --i-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 8h4v2h-4zM16 8h4v2h-4zM4 10h6v2h-6zM14 10h6v2h-6zM6 12h12v2h-12zM8 14h8v2h-8zM10 16h4v2h-4z'/%3E%3C/svg%3E");
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23585d7b' d='M4 6h4v2h-4zM16 6h4v2h-4zM4 8h6v2h-6zM14 8h6v2h-6zM6 10h12v2h-12zM8 12h8v2h-8zM10 14h4v2h-4z'/%3E%3C/svg%3E");
   --i-check-inverse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M18 4h4v2h-4zM16 6h6v2h-6zM14 8h6v2h-6zM2 10h4v2h-4zM12 10h6v2h-6zM2 12h6v2h-6zM10 12h6v2h-6zM4 14h10v2h-10zM6 16h6v2h-6zM8 18h2v2h-2z'/%3E%3C/svg%3E");
   --i-cross-inverse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M4 4h4v2h-4zM16 4h4v2h-4zM4 6h6v2h-6zM14 6h6v2h-6zM6 8h12v2h-12zM8 10h8v2h-8zM8 12h8v2h-8zM6 14h12v2h-12zM4 16h6v2h-6zM14 16h6v2h-6zM4 18h4v2h-4zM16 18h4v2h-4z'/%3E%3C/svg%3E");
@@ -372,6 +373,7 @@
 [data-icon='star'] { --icon: var(--i-star); }
 [data-icon='target'] { --icon: var(--i-target); }
 [data-icon='hourglass'] { --icon: var(--i-hourglass); }
+[data-icon='chevron'] { --icon: var(--i-chevron); }
 [data-icon='info'] { --icon: var(--i-info); }
 
 /* 아이콘 칸: 옅은 바탕 위에 아이콘 하나. 칸 요소에 data-icon 을 달면 ::before 가 그린다 */
@@ -887,6 +889,11 @@ textarea {
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: var(--leading-snug);
+}
+
+/* 규칙 줄은 조작 줄보다 무겁게 읽힌다 (U01) */
+.arena__hint-rule {
+  font-weight: var(--weight-bold);
 }
 
 /* ── 8. 알림 줄 (오류·안내) ─────────────────────────────────────
@@ -1917,6 +1924,49 @@ select.room-form__input {
   line-height: var(--leading-normal);
 }
 
+/* 전체 도전의 오답 묶음 (N04). 줄 사이는 1px 선, 개수는 오답과 같은 코랄 알약이다.
+   펼침 상태는 색이 아니라 표식 방향(접히면 오른쪽, 펼치면 아래를 가리키는 아이콘)과 브라우저의 펼침 낭독이 말한다 */
+.review-group + .review-group {
+  border-top: var(--border-1) solid var(--border);
+}
+
+.review-group__summary {
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+}
+
+.review-group__summary::after {
+  content: '';
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--i-chevron) center / contain no-repeat;
+  mask: var(--i-chevron) center / contain no-repeat;
+  rotate: -90deg;
+}
+
+.review-group__details[open] > .review-group__summary::after {
+  rotate: none;
+}
+
+.review-group__count {
+  border-radius: var(--radius-full);
+  background: var(--wrong-soft);
+  color: var(--wrong-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heavy);
+  line-height: 24px;
+}
+
+/* 걸어서 올라선 표시는 다른 버튼과 같은 초점 고리다 (24절) */
+.review-group__summary.is-standing {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 /* ── 17. 랭킹 ──────────────────────────────────────────────────── */
 /* 탭은 한 묶음의 분절 버튼이다. 고른 탭은 흰 표면으로 «들려» 있다 — 색만이 아니라 높이로 */
 .ranking-tabs {
@@ -2922,6 +2972,7 @@ select.is-standing {
   .arena-tile--wrong .arena-tile__mark,
   .result-best--new::before,
   .review__tag::before,
+  .review-group__summary::after,
   .ranking-empty::before,
   #room-filter-toggle::before,
   .room-item__visibility--private::before,
@@ -3096,6 +3147,30 @@ body:has([data-screen='home']:not([hidden])) {
   /* 설정 버튼과 같은 edge HUD 조각이다. 고리를 안쪽 어두운 바탕 위에 그린다 */
   outline-color: var(--focus-on-hud);
   outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* 「게임 방법」 (U01) — 바로 위 설정 버튼과 같은 어두운 HUD 원. 일반 아이콘 버튼의 밝은 hover 를
+   이겨야 흰 아이콘이 남는다(같은 명시도로 뒤에 둔다) */
+.home-menu .home-rules {
+  border-color: var(--hud-line);
+  background: var(--hud-bg);
+  color: var(--hud-text);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(8px);
+}
+
+.home-menu .home-rules:focus-visible,
+.home-menu .home-rules.is-standing {
+  outline-color: var(--focus-on-hud);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* 분야 dock 위의 «분야 골라 10문제» (U04). 어두운 dock 바탕 위의 보조 글자다 */
+.home-quests__caption {
+  color: var(--hud-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
 }
 
 .home-title,

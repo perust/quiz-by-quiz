@@ -256,11 +256,11 @@ test('초대 링크는 부팅 때 한 번 읽어 주소에서 지우고, 로비�
   assert.match(take, /url\.searchParams\.get\('room'\)/);
   assert.match(take, /url\.searchParams\.delete\('room'\);[\s\S]*?history\.replaceState\(/);
   assert.doesNotMatch(app, /location\.hash|hashchange/);
-  assert.match(app, /async function main\(\): Promise<void> \{\s*markBooted\(\);\s*const inviteCode = takeInviteCode\(\);/);
+  assert.match(app, /async function main\(\): Promise<void> \{\s*const inviteCode = takeInviteCode\(\);/);
   // 초대로 왔으면 홈을 그리기만 하고 «아직 방에 있어요»는 묻지 않는다 — 곧 로비가 목록을 읽는다 (server-5)
   assert.match(
     app,
-    /if \(inviteCode\) \{[\s\S]*?await showHome\(\);\s*await openOnline\(undefined, inviteCode\);\s*\} else \{\s*await goHome\(\);\s*\}/,
+    /markBooted\(\);\s*if \(inviteCode\) \{[\s\S]*?await showHome\(\);\s*await openOnline\(undefined, inviteCode\);\s*\} else \{\s*await goHome\(\);\s*\}/,
   );
   // «내용을 그린 뒤 goTo». 포커스를 옮기는 초대 처리는 화면이 보인 뒤에 한다
   assert.match(openOnline, /await onlineScreen\.show\(characterId, notice\);[\s\S]*?goTo\('online'\);\s*[\s\S]*?if \(invite\) onlineScreen\.acceptInvite\(invite\);/);

@@ -79,24 +79,39 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(css, /body:has\(\.home-note:not\(\[hidden\]\)\) #home-character \{\s*display: none/);
 });
 
-test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는다', async () => {
-  const [html, css, homeSource] = await Promise.all([
+test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는다 — 판 길이는 상수에서 말한다 (U04)', async () => {
+  const [html, css, homeSource, rulesSource] = await Promise.all([
     source('../index.html'),
     source('../css/style.css'),
     source('../src/ui/home.ts'),
+    source('../src/ui/round-rules.ts'),
   ]);
 
-  assert.doesNotMatch(homeSource, /\$\{count\}문제|\$\{allCount\}문제/);
+  // #94 의 금지는 그대로다: «과학 120문제»처럼 **은행 크기**를 보이면 판마다 그만큼 푸는 줄 안다.
+  // 좁힌 것은 그것뿐이다 — 은행과 분리된 상수에서 온 한 판의 길이(분야 10문제·전체 도전 25문제)는 보인다
+  assert.doesNotMatch(homeSource, /\$\{count\}\s*문제|\.length\}\s*문제/, '분야 은행 크기를 문구로 쓰지 않는다');
+  assert.doesNotMatch(rulesSource, /banks?|Question/, '판 길이 글은 은행을 보지 않는다 — 상수만 읽는다');
+  assert.match(rulesSource, /`분야 골라 \$\{QUESTIONS_PER_ROUND\}문제`/);
+  assert.match(rulesSource, /ALL_ROUND_QUESTIONS = QUESTIONS_PER_CATEGORY_IN_ALL \* CATEGORIES\.length/);
+  assert.match(homeSource, /el\.caption\.textContent = categoryDockCaption\(\);/);
+  assert.match(homeSource, /const length = allRoundLength\(allCount\);/, '전체 도전 길이는 실제로 나갈 문항 수다');
   assert.doesNotMatch(homeSource, /category-card__count/);
   assert.doesNotMatch(css, /category-card__count/);
   assert.match(html, /id="start-all-meta" hidden/);
+
+  // 분야 dock 위 캡션이 분야 칸 묶음의 이름이다
+  const quests = html.slice(html.indexOf('id="home-quests"'), html.indexOf('class="home-primary-actions"'));
+  assert.match(quests, /<p class="home-quests__caption" id="category-caption"><\/p>\s*<div class="category-grid" id="category-grid" role="group" aria-labelledby="category-caption"><\/div>/);
+  assert.ok(quests.indexOf('id="home-room-note"') < quests.indexOf('id="category-caption"'), '복귀 줄은 여전히 dock 맨 위다');
 
   // 문제 유무에 따른 선택 가능 여부와 최고 점수 표시는 그대로 유지한다.
   assert.match(homeSource, /card\.disabled = count === 0/);
   assert.match(homeSource, /el\.startAll\.disabled = allCount === 0/);
   assert.match(homeSource, /최고 \$\{bestScore\}점/);
   assert.match(homeSource, /최고 \$\{best\}점/);
-  assert.match(homeSource, /best === null \|\| best === undefined \? '전체 도전' : `전체 도전, 최고 \$\{best\}점`/);
+  // 기록이 없으면 «25문제», 있으면 «최고 N점» — 접근 가능한 이름도 같다
+  assert.match(homeSource, /el\.startAllMeta\.textContent = hasBest \? `최고 \$\{best\}점` : length;/);
+  assert.match(homeSource, /hasBest \? `전체 도전, 최고 \$\{best\}점` : `전체 도전, \$\{length\}`/);
   assert.match(homeSource, /best\.textContent = String\(bestScore\)/, '분야 최고점은 dock 안에서 짧은 숫자로 보인다');
   assert.doesNotMatch(css, /\.challenge-card__desc,\s*\.challenge-card__meta\s*\{\s*display: none/);
 });

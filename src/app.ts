@@ -7,6 +7,7 @@ import {
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
   RECENT_QUESTION_MEMORY,
+  RULE_HINT_ROUNDS,
   TIME_LIMIT_MS,
 } from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
@@ -42,6 +43,7 @@ import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
 import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
+import { createRulesDialog } from './ui/rules-dialog.js';
 import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
 import type { CategoryId, RankingTarget, RoundMode, RoundSummary } from './types.js';
 
@@ -64,31 +66,34 @@ interface PendingResult {
 }
 
 /**
- * index.html의 인라인 스크립트가 걸어둔 타이머를 끈다.
- * 이 함수가 불리지 못하면(모듈 로드 실패) 화면에 안내가 뜬다.
+ * index.html의 인라인 스크립트가 걸어둔 타이머를 끄고 앱을 보인다.
+ * **문제를 받고 홈을 그리기 직전에 부른다** (U05) — 일찍 보이면 문제를 받는 동안 빈 dock과
+ * 눌러도 아무 일 없는 버튼이 보였다. 그동안은 부팅 화면의 «불러오는 중…»이 자리를 지킨다.
+ * 이 함수가 불리지 못하면(모듈 로드 실패·느린 망) 인라인 스크립트의 안내가 뜬다.
  */
 function markBooted(): void {
   clearTimeout(window.__bootTimer);
+  document.body.classList.remove('is-boot-slow');
   document.body.classList.add('is-booted');
 }
 
-/** 앱을 띄울 수 없을 때. 콘솔에만 남기지 않고 화면으로 알린다 */
-function showFatalError(message: string): void {
+/**
+ * 앱을 띄울 수 없을 때. 콘솔에만 남기지 않고 화면으로 알린다 (U05).
+ *
+ * **플레이어의 말로 쓴다.** 예전에는 «data 폴더의 JSON 파일»과 오류 message를 그대로 보였다 —
+ * 개발 상세는 콘솔에만 남긴다. 부팅 화면의 실패 카드(`.boot__error--net`)가 「다시 시도」를 이미
+ * 갖고 있어 제목과 이유만 고쳐 쓴다. file:// 의 개발자 안내는 인라인 스크립트만 띄운다.
+ */
+function showFatalError(title: string, message: string): void {
   clearTimeout(window.__bootTimer);
-  document.body.classList.remove('is-booted');
-  document.body.classList.add('is-boot-failed');
-
-  const box = document.querySelector('.boot__error');
-  if (box) {
-    box.replaceChildren();
-    const title = document.createElement('h1');
-    title.className = 'boot__title';
-    title.textContent = '게임을 시작할 수 없습니다';
-    const body = document.createElement('p');
-    body.className = 'boot__body';
-    body.textContent = message;
-    box.append(title, body);
-  }
+  const body = document.body.classList;
+  body.remove('is-booted', 'is-boot-slow', 'is-boot-file');
+  // 먼저 펼치고 넣는다 — 숨긴 채로 채운 role="alert" 는 낭독되지 않는다
+  body.add('is-boot-failed');
+  const heading = document.getElementById('boot-error-title');
+  const reason = document.getElementById('boot-error-body');
+  if (heading) heading.textContent = title;
+  if (reason) reason.textContent = message;
 }
 
 /**
@@ -110,15 +115,15 @@ function takeInviteCode(): string | null {
 }
 
 async function main(): Promise<void> {
-  markBooted();
   const inviteCode = takeInviteCode();
 
+  // 이 동안은 부팅 화면이 보인다. 앱은 홈을 그리기 직전에 연다(markBooted, U05)
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
 
-  // 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다
+  // 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다 (상세는 loader 가 콘솔에 남겼다)
   if (CATEGORIES.every((category) => (banks[category.id] ?? []).length === 0)) {
-    showFatalError('문제 데이터를 하나도 불러오지 못했습니다. data 폴더의 JSON 파일과 네트워크 상태를 확인해 주세요.');
+    showFatalError('문제를 불러오지 못했어요', '연결을 확인하고 다시 시도해 주세요.');
     return;
   }
 
@@ -146,8 +151,13 @@ async function main(): Promise<void> {
   });
   settingsDialog.set(settings);
 
+  // 「게임 방법」 (U01). 홈에서 판을 열기 전에 읽는다 — 시간이 흐르지 않는다. 문항 시간은 지금 고른 값이다
+  const rulesDialog = createRulesDialog({ getTimeLimit: () => timeLimitMs });
+
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
+  /** 무대 아래 규칙 줄을 접지 않고 보인 로컬 판 수 (U01). 처음 RULE_HINT_ROUNDS 판만 짧은 화면에서도 남긴다 */
+  let ruleHintRounds = await preferences.getRuleHintRounds();
 
   // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
   const storedNickname = await preferences.getNickname();
@@ -196,6 +206,8 @@ async function main(): Promise<void> {
       syncRoomPlayer();
       preferences.setNickname(value);
     },
+    // 문제 은행 알림의 「다시 불러오기」 (U06). 분야 하나만 다시 받는 길은 두지 않는다 — 새로 읽는다
+    onReload: () => window.location.reload(),
   });
 
   // 홈의 «「방」 방에 아직 있어요» 줄 (U35). 언제 묻는지는 online/home-room-note.ts 가 정한다
@@ -503,8 +515,10 @@ async function main(): Promise<void> {
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
-    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다
+    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다.
+    // 「게임 방법」은 홈에서만 열리지만 같은 이유로 접는다
     settingsDialog.dismiss();
+    rulesDialog.dismiss();
     showScreen(name);
     currentScreen = name;
     // 브라우저 «뒤로»가 앱 밖으로 나가지 않게 히스토리 상태만 남긴다. 주소는 그대로다
@@ -682,8 +696,16 @@ async function main(): Promise<void> {
       timeLimitMs,
     });
 
+    // 처음 몇 판은 무대 아래 규칙 한 줄을 짧은 화면에서도 접지 않는다 (U01). 판을 여는 순간 센다 —
+    // 저장이 막혀도 이 세션 안에서는 세어 둔 값으로 접는다
+    const pinRules = ruleHintRounds < RULE_HINT_ROUNDS;
+    if (pinRules) {
+      ruleHintRounds += 1;
+      void preferences.setRuleHintRounds(ruleHintRounds);
+    }
+
     goTo('quiz');
-    quizScreen.start(session, { categoryLabel: labelFor(round) });
+    quizScreen.start(session, { categoryLabel: labelFor(round), pinRules });
   }
 
   function labelFor({ mode, categoryId }: Round): string {
@@ -867,6 +889,10 @@ async function main(): Promise<void> {
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));
 
+  // 문제를 받았고 화면이 모두 준비됐다. 여기서 앱을 보인다 (U05) — 아래 홈 그리기는 같은 태스크
+  // 안에서 끝나 빈 dock이 한 번도 칠해지지 않는다. 보인 뒤에 그려야 홈 워커가 시작 자리를 잰다
+  markBooted();
+
   if (inviteCode) {
     // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27). 홈의 온라인 입구가
     // «연결 중…»으로 그 사이를 알린다. «아직 방에 있어요»는 여기서 묻지 않는다 — 곧 로비가
@@ -879,7 +905,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  // 상세는 콘솔에만 남긴다. 화면은 플레이어의 말로 다시 시도를 권한다 (U05)
   console.error('[앱 시작 실패]', error);
-  const message = error instanceof Error ? error.message : String(error);
-  showFatalError(`예상치 못한 오류로 게임을 시작하지 못했습니다: ${message}`);
+  showFatalError('게임을 시작하지 못했어요', '잠시 뒤 다시 시도해 주세요.');
 });

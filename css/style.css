@@ -71,8 +71,8 @@ button,
 }
 
 /* ── 부팅 상태 ──
-   스크립트가 실행되지 못하면 .is-booted가 붙지 않아 앱이 계속 숨겨진다.
-   3초 뒤 인라인 스크립트가 .is-boot-failed를 붙여 이유를 알린다. */
+   app.ts 가 문제를 받기 전에는 .is-booted가 붙지 않아 앱이 계속 숨겨진다 (빈 dock이 보이지 않는다).
+   인라인 스크립트가 3초 뒤 .is-boot-slow(file:// 이면 곧바로 실패)를, 15초 뒤 .is-boot-failed를 붙인다. */
 .app {
   display: none;
   max-width: var(--content-max);
@@ -102,17 +102,44 @@ body.is-booted .boot {
   text-align: center;
 }
 
+/* 느린 망 안내(3초)와 두 실패 카드는 인라인 스크립트가 body 클래스로 고른다 (U05).
+   개발자 안내(로컬 서버)는 file:// 로 열었을 때(is-boot-file)만 — http(s)에서는 플레이어의 말만 보인다 */
+.boot__slow,
 .boot__error {
   display: none;
+}
+
+.boot__slow {
+  justify-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.boot__slow .boot__body {
+  margin: 0;
+}
+
+.boot__error {
   padding: var(--space-5);
 }
 
-body.is-boot-failed .boot__loading {
+body.is-boot-slow .boot__slow {
+  display: grid;
+}
+
+body.is-boot-slow .boot__loading,
+body.is-boot-failed .boot__loading,
+body.is-boot-failed .boot__slow {
   display: none;
 }
 
-body.is-boot-failed .boot__error {
+body.is-boot-failed .boot__error--net,
+body.is-boot-file .boot__error--file {
   display: block;
+}
+
+body.is-boot-file .boot__error--net {
+  display: none;
 }
 
 .boot__title {
@@ -454,12 +481,44 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   cursor: progress;
 }
 
+/* 알림 줄: 경고 아이콘 · 글, 그 아래 「다시 불러오기」·「닫기」 (U06) */
 .home-note {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-2);
   margin: var(--space-4) 0 0;
   padding: var(--space-3);
+}
+
+.home-note__text {
+  margin: 0;
+  word-break: keep-all;
+}
+
+.home-note__actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 분야 dock 위의 한 판 길이 «분야 골라 10문제» (U04) */
+.home-quests__caption {
+  margin: 0;
+}
+
+/* 짧은 가로 화면(높이 480px 이하)은 dock 세로를 아끼려고 캡션을 눈에서만 접는다. 분야 칸 묶음의
+   이름(aria-labelledby)으로는 그대로 읽히고, 같은 말이 「게임 방법」에 있다 */
+@media (max-height: 480px) {
+  .home-quests__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* 아직 들어가 있는 방으로 돌아가는 줄 (U35). dock 안의 첫 줄이라 dock 높이를 재는
@@ -1292,6 +1351,35 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   word-break: keep-all;
 }
 
+/* 전체 도전의 오답 묶음 (N04). 분야 이름·개수를 단 펼침 줄(44px 목표) 아래에 그 분야의 풀이가 온다.
+   브라우저의 기본 펼침 삼각형은 글리프라 거두고 디자인 층이 아이콘으로 그린다 */
+.review-group__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  list-style: none;
+  cursor: pointer;
+}
+
+.review-group__summary::-webkit-details-marker {
+  display: none;
+}
+
+.review-group__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-group__count {
+  flex: none;
+  padding: 0 var(--space-2);
+}
+
+.review-group__list {
+  padding: var(--space-2) 0 var(--space-4);
+}
+
 /* 랭킹 등록 (FR-6.1) */
 .register__row {
   display: grid;
@@ -1564,6 +1652,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 .home-hint {
   margin-top: var(--space-3);
+}
+
+/* 무엇이 답이 되는가(규칙)는 제 줄에, 조작은 그 아래 줄에 (U01) */
+.arena__hint-rule {
+  display: block;
 }
 
 .arena__hint-touch,
@@ -3284,6 +3377,16 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
   right: max(var(--space-3), env(safe-area-inset-right));
 }
 
+/* 「게임 방법」 (U01). 앱 바의 설정 버튼(같은 44px 원) 바로 아래에 선다. 홈 화면 안에 있어
+   다른 화면의 머리말과 겹칠 일이 없고, z-index 없이 DOM 순서대로 월드 위에 그려진다 */
+.home-rules {
+  position: absolute;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + var(--tap) + var(--space-2));
+  right: max(var(--space-3), env(safe-area-inset-right));
+  width: var(--tap);
+  padding: 0;
+}
+
 .home-header {
   position: absolute;
   top: calc(max(var(--space-3), env(safe-area-inset-top)) + 68px);
@@ -3975,6 +4078,23 @@ body:has(.home-note:not([hidden])) #home-character {
   }
 
   .home-subtitle {
+/* 처음 세 판은 규칙 한 줄을 짧은 touch·좁은 화면에서도 남긴다 (U01, quiz.ts 가 data-pinned 를 단다).
+   위 두 접기(420px 이하·짧은 touch)보다 구체적이라 이긴다. 스틱이 이미 말하는 조작 줄은 그대로 접고,
+   세 판이 지나면 data-pinned 가 false 라 예전처럼 줄째 접힌다 */
+[data-screen='quiz']:not([hidden]) .arena__hint[data-pinned='true'] {
+  display: block;
+}
+
+@media (max-width: 420px) {
+  .arena__hint[data-pinned='true'] .arena__hint-key,
+  .arena__hint[data-pinned='true'] .arena__hint-touch {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 772px) {
+  .arena__hint[data-pinned='true'] .arena__hint-key,
+  .arena__hint[data-pinned='true'] .arena__hint-touch {
     display: none;
   }
 }

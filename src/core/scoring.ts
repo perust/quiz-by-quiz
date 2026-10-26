@@ -71,6 +71,7 @@ function collectReview(questions: Question[], answers: AnswerRecord[]): ReviewIt
     .filter(({ answer, question }) => question && !answer.correct)
     .map(({ answer, question }) => ({
       id: question.id,
+      category: question.category,
       question: question.question,
       explanation: question.explanation,
       correctChoice: question.choices[question.answerIndex],

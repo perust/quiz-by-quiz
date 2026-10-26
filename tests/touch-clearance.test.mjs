@@ -122,8 +122,10 @@ test('홈 오류 문구가 보이면 숨은 캐릭터의 조작부도 꺼서 문
   assert.match(homeSource, /walker\.setEnabled\(!noteVisible\)/);
   assert.match(
     homeSource,
-    /setNote\(message\)[\s\S]*?noteVisible = Boolean\(message\)[\s\S]*?if \(noteVisible\) \{\s*walker\.setEnabled\(false\)/,
+    /function setNote\(message[^)]*\): void \{[\s\S]*?noteVisible = Boolean\(message\)[\s\S]*?if \(noteVisible\) \{\s*walker\.setEnabled\(false\)/,
   );
+  // 닫으면 다시 걷는다 (U06) — 예전에는 닫을 길이 없어 세션 내내 조작부가 꺼져 있었다
+  assert.match(homeSource, /el\.noteClose\.addEventListener\('click', \(\) => \{[\s\S]*?setNote\(null\);/);
 });
 
 test('손가락 목표: 「비공개로 만들기」의 라벨은 44px 높이와 남은 폭을 채운다', () => {

@@ -141,7 +141,7 @@ function question(id) {
   };
 }
 
-function startRound(timeLimitMs) {
+function startRound(timeLimitMs, view = {}) {
   frames.clear();
   clock = 0;
   byId('feedback').hidden = true;
@@ -149,7 +149,7 @@ function startRound(timeLimitMs) {
     questions: [question('q1'), question('q2')],
     ...(timeLimitMs === undefined ? {} : { timeLimitMs }),
   });
-  quizScreen.start(session, { categoryLabel: '과학' });
+  quizScreen.start(session, { categoryLabel: '과학', ...view });
   return session;
 }
 
@@ -230,6 +230,22 @@ test('다음 판이 20초로 돌아오면 막대와 규칙도 돌아온다', () 
   assert.equal(byId('timer').classList.contains('timer--unlimited'), false);
   assert.equal(byId('help-rule-timed').hidden, false);
   assert.equal(byId('timer-text').textContent, '남은 시간 20초');
+  quizScreen.hide();
+});
+
+test('무대 아래 규칙 줄은 판의 문항 시간을 말하고, 처음 몇 판만 짧은 화면에서도 접지 않는다 (U01)', () => {
+  startRound(20_000, { pinRules: true });
+  assert.equal(byId('arena-hint-rule').textContent, '보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답');
+  assert.equal(byId('arena-hint').dataset.pinned, 'true', '세는 것은 app.ts 이고 화면은 받은 대로 단다');
+  quizScreen.hide();
+
+  startRound(null, { pinRules: true });
+  assert.equal(byId('arena-hint-rule').textContent, '보기를 누르면 바로 답 · 칸 위에서 선택하면 답', '제한 없음에는 «시간이 끝나면»이 없다');
+  quizScreen.hide();
+
+  startRound(40_000);
+  assert.equal(byId('arena-hint').dataset.pinned, 'false', '넘기지 않으면 예전처럼 접는다');
+  assert.equal(byId('arena-hint-rule').textContent, '보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답');
   quizScreen.hide();
 });
 
