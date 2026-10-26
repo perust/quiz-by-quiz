@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from itertools import count
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -91,8 +91,12 @@ PRESENCE_GRACE_SECONDS = 60.0
 # 참가자 목록을 보고 먼저 버리므로(`retain_presence`) 이것은 마지막 안전망이다.
 PRESENCE_RECORD_SECONDS = 3_600.0
 # 방장이 내보낸 참가자를 기억하는 시간과 개수 (U24). 그 사람이 돌아와 방을 읽으면 «없는 방»이 아니라
-# «방장이 내보냈다»를 듣는다. 차단 목록이 아니다 — 다시 참가하면 지운다.
+# «방장이 내보냈다»를 듣는다. 끊긴 자리를 비운 것은 차단이 아니다 — 다시 참가하면 지운다.
 REMOVED_RECORD_SECONDS = 3_600.0
+# 접속 중에 내보낸 사람은 이만큼 그 방에 다시 들어오지 못한다. 내보내자마자 같은 코드로
+# 되돌아오면 내보내기가 아무 뜻이 없다. presence 처럼 메모리에만 있어 단일 worker 계약에 기대고,
+# 재시작하면 풀린다.
+KICK_BLOCK_SECONDS = 600.0
 MAX_REMOVED_RECORDS = 4_096
 
 
@@ -462,6 +466,16 @@ class EventHub:
             )
         )
 
+    async def send_actor(self, code: str, actor_id: UUID, event: dict[str, object]) -> None:
+        """이 방에 열린 한 사람의 소켓에만 보낸다. 내보내진 사람의 화면에 이유를 먼저 알린다."""
+        await asyncio.gather(
+            *(
+                self._send_one(code, websocket, event)
+                for websocket in tuple(self._rooms.get(code, ()))
+                if self._connections.get(websocket) == (code, actor_id)
+            )
+        )
+
     async def close_all(self) -> None:
         self._accepting = False
         await asyncio.gather(
@@ -565,48 +579,66 @@ class EventHub:
         return websocket in self._connections
 
 
+RemovalReason = Literal["removed", "kicked"]
+
+
 class RemovedMembers:
     """방장이 내보낸 (방, 참가자). 단일 worker 계약이라 presence 처럼 메모리로 충분하다.
 
-    알리는 데만 쓴다. 다시 참가하는 것은 막지 않는다 — 끊긴 자리를 비운 것이지 쫓아낸 것이 아니다.
+    두 가지다. 유예를 넘겨 끊긴 자리를 비운 것(`removed`)은 알리는 데만 쓰고 다시 참가하는 것을
+    막지 않는다. 접속 중에 내보낸 것(`kicked`)은 `block_seconds` 동안 같은 방 참가를 거절하고,
+    그 뒤로는 `removed` 처럼 알리기만 한다. 막는 시간은 기록보다 길 수 없다 — 기록이 사라지면
+    막을 근거도 없다. 기록 수는 `max_records` 로 묶는다. 넘치면 가장 오래된 것부터 버리므로
+    극단적으로 몰리면 막힌 기록도 일찍 풀릴 수 있다(메모리를 키우지 않는 쪽을 골랐다).
     """
 
     def __init__(
         self,
         *,
         record_seconds: float = REMOVED_RECORD_SECONDS,
+        block_seconds: float = KICK_BLOCK_SECONDS,
         max_records: int = MAX_REMOVED_RECORDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        if record_seconds <= 0 or max_records < 1:
+        if record_seconds <= 0 or block_seconds <= 0 or max_records < 1:
             raise ValueError("removed member records must be positive")
         self._record_seconds = record_seconds
+        self._block_seconds = min(block_seconds, record_seconds)
         self._max_records = max_records
         self._clock = clock
-        # 넣은 순서가 곧 시각 순서다. 가득 차면 가장 오래된 것부터 버린다.
-        self._records: dict[tuple[str, UUID], float] = {}
+        # 넣은 순서가 곧 시각 순서다. 가득 차면 가장 오래된 것부터 버린다. 값은 (시각, 막는가).
+        self._records: dict[tuple[str, UUID], tuple[float, bool]] = {}
 
-    def mark(self, code: str, player_id: UUID) -> None:
+    def mark(self, code: str, player_id: UUID, *, blocked: bool = False) -> None:
         now = self._clock()
-        for key, at in tuple(self._records.items()):
+        for key, (at, _) in tuple(self._records.items()):
             if now - at < self._record_seconds:
                 break
             del self._records[key]
         key = (code, player_id)
         self._records.pop(key, None)
-        self._records[key] = now
+        self._records[key] = (now, blocked)
         while len(self._records) > self._max_records:
             del self._records[next(iter(self._records))]
 
-    def was_removed(self, code: str, player_id: UUID) -> bool:
+    def reason(self, code: str, player_id: UUID) -> RemovalReason | None:
+        """그 사람이 이 방에서 내보내졌는가. 아직 막혀 있으면 `kicked`, 알리기만 하면 `removed`."""
         key = (code, player_id)
-        at = self._records.get(key)
-        if at is None:
-            return False
-        if self._clock() - at >= self._record_seconds:
+        record = self._records.get(key)
+        if record is None:
+            return None
+        at, blocked = record
+        age = self._clock() - at
+        if age >= self._record_seconds:
             del self._records[key]
-            return False
-        return True
+            return None
+        return "kicked" if blocked and age < self._block_seconds else "removed"
+
+    def was_removed(self, code: str, player_id: UUID) -> bool:
+        return self.reason(code, player_id) is not None
+
+    def is_blocked(self, code: str, player_id: UUID) -> bool:
+        return self.reason(code, player_id) == "kicked"
 
     def forget(self, code: str, player_id: UUID) -> None:
         self._records.pop((code, player_id), None)
@@ -627,6 +659,21 @@ def _error(
         status_code=status,
         detail={"code": code, "message": message},
         headers=headers,
+    )
+
+
+def _removed_error(status: int, reason: RemovalReason) -> HTTPException:
+    """내보내진 사람이 방을 읽거나 다시 붙으려 할 때. «없는 방»과 다른 말을 한다 (U24)."""
+    if reason == "kicked":
+        return _error(
+            status,
+            "kicked",
+            "방장이 내보낸 방이에요. 잠시 뒤에 다시 들어올 수 있어요.",
+        )
+    return _error(
+        status,
+        "removed",
+        "방장이 방에서 내보냈습니다. 방 코드로 다시 참가할 수 있습니다.",
     )
 
 
@@ -1223,13 +1270,10 @@ def create_app(
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
         room = await repo.get_room(actor_id, code)
         if room is None:
-            if removed.was_removed(code, actor_id):
-                # 끊긴 사이 방장이 내보냈다. «없는 방»으로 돌려보내면 방이 사라진 줄 안다 (U24)
-                raise _error(
-                    404,
-                    "removed",
-                    "방장이 방에서 내보냈습니다. 방 코드로 다시 참가할 수 있습니다.",
-                )
+            removal = removed.reason(code, actor_id)
+            if removal is not None:
+                # 방장이 나를 내보냈다. «없는 방»으로 돌려보내면 방이 사라진 줄 안다 (U24)
+                raise _removed_error(404, removal)
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.")
         return room_payload(room)
 
@@ -1258,6 +1302,10 @@ def create_app(
                 "rate-limited",
                 "참가 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
             )
+        if removed.is_blocked(code, actor_id):
+            # 접속 중에 방장이 내보낸 사람이다. KICK_BLOCK_SECONDS 동안 같은 방에 들이지 않는다.
+            # 비밀번호를 견주기 전에 거절한다 — 막힌 사람에게 비밀번호 확인을 내주지 않는다.
+            raise _removed_error(403, "kicked")
 
         already_joined = await repo.is_member(actor_id, code)
         if not already_joined:
@@ -1379,12 +1427,19 @@ def create_app(
     async def remove_member(
         raw_code: str,
         raw_player_id: str,
+        connected: bool = False,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
-        """방장의 «내보내기» (U24). 유예를 넘겨 끊긴 참가자만 뺀다.
+        """방장의 «내보내기» (U24). 방장만, 남만, 도는 판의 참가자는 판이 끝난 뒤에 뺀다.
 
-        접속 중인 사람은 내보낼 수 없다 — 괴롭힘의 수단이 되지 않게, 탭을 닫고 떠난 자리를
-        비우는 데만 쓴다. 같은 모양의 `members/me`(나가기)가 먼저 등록돼 그 경로를 가져간다.
+        `connected` 는 방장이 확인창에서 본 그 사람의 상태다.
+
+        - 없거나 false: 탭을 닫고 떠난 자리를 비운다. 유예를 넘겨 끊긴 사람만 빼고(그 사이 다시
+          붙었으면 `member-connected`), 돌아오면 다시 참가할 수 있다. 구버전 화면도 이 길이다
+        - true: 접속 중인 사람을 내보낸다. «잠시 다시 들어올 수 없어요»를 보고 확인한 것이므로
+          KICK_BLOCK_SECONDS 동안 같은 방 참가를 거절한다(`kicked`)
+
+        같은 모양의 `members/me`(나가기)가 먼저 등록돼 그 경로를 가져간다.
         """
         try:
             code = normalize_code(raw_code)
@@ -1416,6 +1471,7 @@ def create_app(
                 code,
                 player_id,
                 absent_player_ids=hub.absent_actors(code),
+                allow_connected=connected,
             )
         except RoomNotFound as error:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
@@ -1424,10 +1480,12 @@ def create_app(
         except NotMember as error:
             raise _error(404, "not-member", "그 참가자는 이 방에 없습니다.") from error
         except MemberConnected as error:
+            # 끊긴 자리를 비우려던 사이 그 사람이 다시 붙었다. 막히는 내보내기는 방장이 그
+            # 말을 보고 다시 골라야 한다 — 확인창이 말하지 않은 차단을 걸지 않는다.
             raise _error(
                 409,
                 "member-connected",
-                "연결이 끊긴 참가자만 내보낼 수 있습니다.",
+                "그 참가자가 다시 연결됐어요. 확인한 뒤 다시 내보내 주세요.",
             ) from error
         except MatchInProgress as error:
             raise _error(
@@ -1435,10 +1493,14 @@ def create_app(
                 "game-in-progress",
                 "진행 중인 판의 참가자는 판이 끝난 뒤에 내보낼 수 있습니다.",
             ) from error
-        # 막 다시 붙은 소켓이 있었다면 닫는다. 그 화면은 다시 붙으려다 «내보냈다»를 듣는다.
+        # 소켓을 닫기 전에 기록한다. 닫힌 화면이 다시 붙으려다 같은 이유를 듣는다.
+        removed.mark(code, player_id, blocked=connected)
+        reason: RemovalReason = "kicked" if connected else "removed"
+        # 열린 화면에는 먼저 이유를 알려 곧바로 로비로 돌려보낸다. 이 이벤트를 모르는 구버전
+        # 화면도 소켓이 닫히면 다시 붙으려다 ws-ticket 에서 같은 이유를 듣는다.
+        await hub.send_actor(code, player_id, {"type": "removed", "reason": reason})
         await hub.disconnect_actor(code, player_id)
         hub.forget_presence(code, player_id)
-        removed.mark(code, player_id)
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
 
@@ -1721,14 +1783,10 @@ def create_app(
                 "연결 준비 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
             )
         if not await repo.is_member(actor_id, code):
-            if removed.was_removed(code, actor_id):
-                # 끊긴 사이 내보내진 화면이 다시 붙으려 한다. 같은 말로 알려
-                # 재시도를 멈추게 한다 (U24)
-                raise _error(
-                    403,
-                    "removed",
-                    "방장이 방에서 내보냈습니다. 방 코드로 다시 참가할 수 있습니다.",
-                )
+            removal = removed.reason(code, actor_id)
+            if removal is not None:
+                # 내보내진 화면이 다시 붙으려 한다. 같은 말로 알려 재시도를 멈추게 한다 (U24)
+                raise _removed_error(403, removal)
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.")
         return {
             "ticket": ticket_store.issue(actor_id, code),

@@ -88,6 +88,8 @@ class FakeRepository:
         # 방에서 빠진 사람. 이 사람에게는 방이 없고(get_room None) 소켓 티켓도 나오지 않는다.
         self.non_member_ids: set[UUID] = set()
         self.remove_calls: list[tuple[UUID, str, UUID, frozenset[UUID]]] = []
+        # 각 내보내기 요청이 접속 중인 사람까지 허락했는가 (remove_calls 와 같은 순서)
+        self.remove_allow_connected: list[bool] = []
         self.remove_error: Exception | None = None
 
     async def open(self) -> None:
@@ -162,11 +164,13 @@ class FakeRepository:
         player_id: UUID,
         *,
         absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
     ) -> RoomView:
         self.remove_calls.append((actor_id, code, player_id, absent_player_ids))
+        self.remove_allow_connected.append(allow_connected)
         if self.remove_error is not None:
             raise self.remove_error
-        if player_id not in absent_player_ids:
+        if not allow_connected and player_id not in absent_player_ids:
             raise MemberConnected
         self.non_member_ids.add(player_id)
         self.room = replace(
@@ -1561,6 +1565,120 @@ def test_member_removal_rejects_self_bad_ids_and_maps_repository_refusals() -> N
         assert client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS).status_code == 204
     assert repository.remove_calls[0][3] == frozenset({OTHER_ID})
     assert len(repository.remove_calls) == 3
+
+
+def test_host_kicks_a_connected_member_who_is_told_at_once_and_kept_out_for_a_while() -> None:
+    # 소유자 결정: 방장은 확인창을 거쳐 접속 중인 사람도 내보낸다. 그 사람의 열린 화면은 곧바로
+    # 이유를 듣고 소켓이 닫히며, 잠시(KICK_BLOCK_SECONDS) 같은 방에 다시 들어오지 못한다.
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.password_hash = "stored-hash"  # noqa: S105 - 막힌 사람은 비밀번호 확인까지 가지 않는다
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    records = RemovedMembers(record_seconds=3_600, block_seconds=600, clock=clock)
+    app = create_app(repository=repository, event_hub=hub, removed_members=records)
+    with TestClient(app) as client:
+        host = register_rotating_identity(client, 70, "198.51.100.70")
+        guest = register_rotating_identity(client, 71, "198.51.100.71")
+        host_id = UUID(host["X-Player-Id"])
+        guest_id = UUID(guest["X-Player-Id"])
+        repository.room = _two_member_room(host_id, guest_id)
+        host_ticket, guest_ticket = _issue_tickets(client, host, guest)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(host_ticket),
+        ) as host_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(guest_ticket),
+            ) as guest_socket:
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+
+                # 끊긴 자리를 비우는 내보내기(구버전 화면의 길)는 접속 중인 사람을 빼지 않는다.
+                seat_only = client.delete(f"/v1/rooms/ABC234/members/{guest_id}", headers=host)
+                assert seat_only.status_code == 409
+                assert seat_only.json()["detail"]["code"] == "member-connected"
+
+                # 판에 자리가 있으면 판이 끝난 뒤에 뺀다. 거절된 내보내기는 아무도 막지 않는다.
+                repository.remove_error = MatchInProgress()
+                playing = client.delete(
+                    f"/v1/rooms/ABC234/members/{guest_id}?connected=true",
+                    headers=host,
+                )
+                assert playing.status_code == 409
+                assert playing.json()["detail"]["code"] == "game-in-progress"
+                assert records.reason("ABC234", guest_id) is None
+                repository.remove_error = None
+
+                kicked = client.delete(
+                    f"/v1/rooms/ABC234/members/{guest_id}?connected=true",
+                    headers=host,
+                )
+                assert kicked.status_code == 200
+                assert [player["id"] for player in kicked.json()["players"]] == [str(host_id)]
+                # 내보내진 화면은 다시 붙기를 기다리지 않고 이유를 먼저 듣고, 소켓이 닫힌다.
+                assert guest_socket.receive_json() == {"type": "removed", "reason": "kicked"}
+                with pytest.raises(WebSocketDisconnect) as closed:
+                    guest_socket.receive_json()
+                assert closed.value.code == 4403
+            assert host_socket.receive_json() == {"type": "room-invalidated"}
+
+        assert repository.remove_allow_connected == [False, True, True]
+        assert repository.remove_calls[-1][:3] == (host_id, "ABC234", guest_id)
+        assert hub.absent_actors("ABC234") == frozenset()
+
+        returned = client.get("/v1/rooms/ABC234", headers=guest)
+        assert returned.status_code == 404
+        assert returned.json()["detail"]["code"] == "kicked"
+        reconnect = client.post("/v1/rooms/ABC234/ws-ticket", headers=guest)
+        assert reconnect.status_code == 403
+        assert reconnect.json()["detail"]["code"] == "kicked"
+        joins_before = repository.join_calls
+        refused = client.post("/v1/rooms/ABC234/join", headers=guest, json={"password": "guess"})
+        assert refused.status_code == 403
+        assert refused.json()["detail"]["code"] == "kicked"
+        assert refused.json()["detail"]["message"] == (
+            "방장이 내보낸 방이에요. 잠시 뒤에 다시 들어올 수 있어요."
+        )
+        assert repository.join_calls == joins_before, "막힌 사람의 참가는 저장소에 닿지 않는다"
+
+        # 막는 시간이 지나면 다시 들어온다. 그동안은 «내보냈다»로만 알린다.
+        clock.now += 601
+        assert client.get("/v1/rooms/ABC234", headers=guest).json()["detail"]["code"] == "removed"
+        repository.password_hash = None
+        rejoined = client.post("/v1/rooms/ABC234/join", headers=guest, json={})
+        assert rejoined.status_code == 200
+        assert records.reason("ABC234", guest_id) is None
+
+
+def test_kick_block_is_per_room_and_ends_with_the_room() -> None:
+    clock = FakeClock()
+    records = RemovedMembers(record_seconds=3_600, block_seconds=600, clock=clock)
+    records.mark("ABC234", PLAYER_ID, blocked=True)
+    assert records.is_blocked("ABC234", PLAYER_ID)
+    assert not records.is_blocked("XYZ789", PLAYER_ID), "다른 방은 막지 않는다"
+    assert not records.is_blocked("ABC234", OTHER_ID)
+    records.mark("ABC234", OTHER_ID)
+    assert records.reason("ABC234", OTHER_ID) == "removed", "끊긴 자리를 비운 것은 막지 않는다"
+    # 마지막 사람이 나가 방이 사라지면 그 코드의 기록도 버린다.
+    records.forget_room("ABC234")
+    assert records.reason("ABC234", PLAYER_ID) is None
+
+    records.mark("ABC234", PLAYER_ID, blocked=True)
+    clock.now += 599
+    assert records.reason("ABC234", PLAYER_ID) == "kicked"
+    clock.now += 1
+    assert records.reason("ABC234", PLAYER_ID) == "removed"
+    clock.now += 3_000
+    assert records.reason("ABC234", PLAYER_ID) is None
+
+    # 막는 시간은 기록보다 길 수 없다 — 기록이 사라지면 막을 근거도 없다.
+    short = RemovedMembers(record_seconds=60, block_seconds=600, clock=clock)
+    short.mark("ABC234", PLAYER_ID, blocked=True)
+    clock.now += 60
+    assert short.reason("ABC234", PLAYER_ID) is None
+    with pytest.raises(ValueError):
+        RemovedMembers(block_seconds=0)
 
 
 def test_removed_member_records_expire_and_stay_bounded() -> None:

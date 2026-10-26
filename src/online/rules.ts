@@ -30,14 +30,17 @@ export type JoinFailReason =
   | 'save-failed'
   // 서버만 낸다 (U33). 연결 문제가 아니므로 «네트워크를 확인하라»로 뭉뚱그리지 않는다
   | 'game-in-progress'
-  | 'rate-limited';
+  | 'rate-limited'
+  // 접속 중에 방장이 나를 내보냈다. 잠시 그 방에 다시 들어갈 수 없다 (서버만 낸다)
+  | 'kicked';
 
 /** 방에서 나가기가 거절될 수 있는 사연. LEAVE_MESSAGES가 이 목록을 빠짐없이 옮긴다 */
 export type LeaveFailReason = 'game-in-progress';
 
 /**
  * 방장의 «내보내기»가 거절될 수 있는 사연 (U24). REMOVE_MEMBER_MESSAGES가 빠짐없이 옮긴다.
- * `member-connected`는 그 사이 다시 붙은 사람이다 — 접속 중인 사람은 내보낼 수 없다.
+ * `member-connected`는 끊긴 자리를 비우려던 사이 다시 붙은 사람이다 — 확인창이 말하지 않은
+ * «잠시 다시 들어올 수 없어요»를 걸지 않으려고 서버가 거절한다. 방장이 다시 고르면 된다.
  */
 export type RemoveMemberFailReason =
   | 'not-found'
@@ -188,6 +191,7 @@ export const JOIN_MESSAGES: Record<JoinFailReason, string> = {
   // 진행 중인 판에는 새로 들어갈 수 없다. 언제 되는지까지 말해 준다 (U33)
   'game-in-progress': '지금 게임 중이에요. 끝나면 들어갈 수 있어요.',
   'rate-limited': '요청이 많아요. 잠시 후 다시 시도해 주세요.',
+  kicked: '방장이 내보낸 방이에요. 잠시 뒤에 다시 들어올 수 있어요.',
 };
 
 /** 나가기가 거절된 이유를 화면에 띄울 말로 옮긴다 */
@@ -201,16 +205,33 @@ export const REMOVE_MEMBER_MESSAGES: Record<RemoveMemberFailReason, (nickname: s
   'not-found': () => '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.',
   'not-host': () => '방장만 참가자를 내보낼 수 있어요.',
   'not-member': (nickname) => `${nickname} 님은 이미 방에 없어요.`,
-  // 확인창을 보는 사이 다시 붙었다. 연결된 사람은 내보내지 않는다
-  'member-connected': (nickname) => `${nickname} 님이 다시 연결됐어요. 연결이 끊긴 참가자만 내보낼 수 있어요.`,
+  // 끊긴 자리를 비우려던 사이 다시 붙었다. 잠시 막히는 내보내기는 방장이 그 확인창을 보고 다시 고른다
+  'member-connected': (nickname) => `${nickname} 님이 다시 연결됐어요. 그래도 내보내려면 다시 눌러 주세요.`,
   'game-in-progress': (nickname) => `${nickname} 님은 진행 중인 판에 자리가 있어요. 판이 끝난 뒤에 내보낼 수 있어요.`,
 };
+
+/**
+ * 방장이 나를 방에서 뺀 방식 (U24). `removed`는 끊긴 사이 자리를 비운 것이라 같은 코드로 다시
+ * 참가할 수 있고, `kicked`는 접속 중에 내보낸 것이라 잠시(서버가 정한 시간) 다시 들어갈 수 없다.
+ */
+export type RemovalKind = 'removed' | 'kicked';
 
 /**
  * 끊긴 사이 방장이 나를 방에서 내보냈다 (U24). «그 방은 이미 사라졌어요»로 돌려보내면 방이
  * 없어진 줄 안다. 막은 것은 아니다 — 같은 코드로 다시 참가할 수 있다.
  */
 export const REMOVED_BY_HOST_MESSAGE = '방장이 방에서 내보냈어요. 방 코드로 다시 참가할 수 있어요.';
+
+/** 내보내진 사람이 로비로 돌아가며 듣는 말. 접속 중에 내보내졌으면 잠시 다시 들어올 수 없다고 말한다 */
+export const REMOVED_BY_HOST_MESSAGES: Record<RemovalKind, string> = {
+  removed: REMOVED_BY_HOST_MESSAGE,
+  kicked: '방장이 방에서 내보냈어요. 잠시 뒤에 다시 들어올 수 있어요.',
+};
+
+/** 서버가 알려 준 이유 코드를 내보내진 방식으로 옮긴다. 그 밖의 코드는 null */
+export function removalKind(code: unknown): RemovalKind | null {
+  return code === 'kicked' || code === 'removed' ? code : null;
+}
 
 /**
  * **플레이어에게 그대로 보여도 되는 말**을 가진 온라인 오류 (U40).
@@ -256,8 +277,8 @@ export class LeaveRoomRejected extends OnlinePlayerError {
  * 것은 «없는 방»과 다른 말을 해야 해서 이 오류로 던진다. 대기실이 받아 로비로 돌려보내며 이 말을 띄운다.
  */
 export class RemovedFromRoom extends OnlinePlayerError {
-  constructor() {
-    super(REMOVED_BY_HOST_MESSAGE);
+  constructor(readonly kind: RemovalKind = 'removed') {
+    super(REMOVED_BY_HOST_MESSAGES[kind]);
     this.name = 'RemovedFromRoom';
   }
 }

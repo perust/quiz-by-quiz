@@ -516,17 +516,30 @@ export const localRooms = {
   },
 
   /**
-   * 방장의 «내보내기» (U24). 서버와 같은 규칙으로 판정한다 — 방장만, 남만, 방에 있는 사람만,
-   * 그리고 **연결이 끊긴 사람만**. 이 브라우저 안의 방은 끊김을 알 길이 없어 모두 `connected: true`
-   * 이므로 마지막 조건에서 언제나 거절한다. 화면도 끊긴 사람에게만 버튼을 그려 여기 올 일이 없다.
+   * 방장의 «내보내기» (U24). 서버와 같은 규칙으로 판정한다 — 방장만, 남만, 방에 있는 사람만.
+   * 끊긴 자리를 비우는 요청(`connected` 없음)은 끊긴 사람만 빼는데, 이 브라우저 안의 방은 끊김을
+   * 알 길이 없어 모두 `connected: true`라 언제나 `member-connected`로 거절한다. 방장이 접속 중인
+   * 사람으로 보고 확인한 요청(`connected: true`)은 뺀다. 서버 권위 판이 없어 판 때문에 막을 일도 없다.
+   * **다시 들어오는 것을 막는 기록은 두지 않는다** — 이 방에 들어오는 것은 이 브라우저의 나뿐이고,
+   * 나는 나를 내보낼 수 없다(막을 상대가 없다).
    */
-  async removeMember({ code, playerId }: { code: string; playerId: string }): Promise<RemoveMemberResult> {
-    const room = readAll().find((item) => item.code === normalizeCode(code));
+  async removeMember(
+    { code, playerId, connected = false }: { code: string; playerId: string; connected?: boolean },
+  ): Promise<RemoveMemberResult> {
+    const rooms = readAll();
+    const room = rooms.find((item) => item.code === normalizeCode(code));
     if (!room) return { ok: false, reason: 'not-found' };
     if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
     if (playerId === meId) return { ok: false, reason: 'member-connected' };
     if (!room.players.some((player) => player.id === playerId)) return { ok: false, reason: 'not-member' };
-    return { ok: false, reason: 'member-connected' };
+    if (!connected) return { ok: false, reason: 'member-connected' };
+
+    room.players = room.players.filter((player) => player.id !== playerId);
+    // 설정 바꾸기처럼 쓰기 실패는 넘어간다 — 화면은 돌려준 방으로 그대로 돈다
+    writeAll(rooms);
+    const publicRoom = toPublic(room);
+    emit(room.code, { type: 'room', room: publicRoom });
+    return { ok: true, room: publicRoom };
   },
 
   /** local room에는 server-authoritative match가 없으므로 snapshot을 꾸며 내지 않는다. */

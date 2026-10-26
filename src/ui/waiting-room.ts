@@ -38,6 +38,7 @@ import {
   waitingRoomMuteLabel,
   waitingRoomPortraitActions,
   waitingRoomPortraits,
+  waitingRoomRemoveDialogText,
   waitingRoomRemoveLabel,
   type WaitingRoomPortrait,
 } from './waiting-room-portrait.js';
@@ -62,7 +63,7 @@ import {
   onlineErrorText,
   onlineQuestionTimeLabel,
   REMOVE_MEMBER_MESSAGES,
-  REMOVED_BY_HOST_MESSAGE,
+  REMOVED_BY_HOST_MESSAGES,
   RemovedFromRoom,
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
@@ -155,6 +156,7 @@ export function createWaitingRoom(
     chatLog: need('chat-log'),
     removeDialog: need('remove-member-dialog'),
     removeTitle: need('remove-member-title'),
+    removeBody: need('remove-member-body'),
     removeCancel: need<HTMLButtonElement>('remove-member-cancel'),
     removeConfirm: need<HTMLButtonElement>('remove-member-confirm'),
   };
@@ -230,8 +232,16 @@ export function createWaitingRoom(
    * 있던 포커스를 새 버튼으로 옮겨 줄 때 찾는다 — 아니면 준비 토글 하나에 키보드 자리가 `<body>`로 떨어진다.
    */
   const portraitButtons = new Map<string, HTMLButtonElement>();
-  /** 내보내기 확인을 연 액자와 그때의 방. 확인창이 닫혀 있으면 null */
-  let removeTarget: { playerId: string; nickname: string; action: WaitingRoomActionOwnership } | null = null;
+  /**
+   * 내보내기 확인을 연 액자와 그때의 방. 확인창이 닫혀 있으면 null. `connected`는 확인창이 말한
+   * 그 사람의 상태이고 그대로 요청에 실린다 — 서버는 그 말과 다른 일을 하지 않는다.
+   */
+  let removeTarget: {
+    playerId: string;
+    nickname: string;
+    connected: boolean;
+    action: WaitingRoomActionOwnership;
+  } | null = null;
   let removePending = false;
   /** 정적 HTML의 좌석 버튼. 테이블은 장식이라 이 목록에 들어오지 않는다. */
   const seatButtons = new Map<WaitingRoomSeatId, HTMLButtonElement>();
@@ -584,14 +594,14 @@ export function createWaitingRoom(
     return button;
   }
 
-  /** 방장에게만, 연결이 끊긴 지 유예를 넘긴 사람의 액자에만 그린다. 누르면 인페이지 확인을 연다 */
+  /** 방장에게만, 내 액자 말고 모든 액자에 그린다. 누르면 그 사람의 지금 상태로 인페이지 확인을 연다 */
   function removeButton(player: WaitingRoomPortrait): HTMLButtonElement {
     const button = portraitButton(player, 'remove');
     button.className = 'button button--ghost button--small lounge__remove';
     button.textContent = '내보내기';
     button.setAttribute('aria-label', waitingRoomRemoveLabel(player.nickname));
     button.setAttribute('aria-haspopup', 'dialog');
-    button.addEventListener('click', () => openRemoveDialog(player.id, player.nickname));
+    button.addEventListener('click', () => openRemoveDialog(player.id, player.nickname, player.connected));
     return button;
   }
 
@@ -609,11 +619,14 @@ export function createWaitingRoom(
     notice(chatMuteNotice(nickname, muted));
   }
 
-  function openRemoveDialog(playerId: string, nickname: string): void {
+  function openRemoveDialog(playerId: string, nickname: string, connected: boolean): void {
     const action = captureAction();
     if (!action || removePending) return;
-    removeTarget = { playerId, nickname, action };
-    el.removeTitle.textContent = `${nickname} 님을 내보낼까요?`;
+    removeTarget = { playerId, nickname, connected, action };
+    // 접속 중이면 «잠시 다시 들어올 수 없어요», 끊겼으면 «돌아오면 다시 참가할 수 있어요»
+    const text = waitingRoomRemoveDialogText(nickname, connected);
+    el.removeTitle.textContent = text.title;
+    el.removeBody.textContent = text.body;
     setRemovePending(false);
     el.removeDialog.hidden = false;
     // 되돌릴 수 없는 쪽이 아니라 «그대로 두기»에 먼저 선다
@@ -651,6 +664,7 @@ export function createWaitingRoom(
       const result = await roomStore.removeMember({
         code: target.action.code,
         playerId: target.playerId,
+        connected: target.connected,
       });
       if (!ownsAction(target.action, false)) return;
       if (result.ok) {
@@ -659,6 +673,9 @@ export function createWaitingRoom(
         notice(`${target.nickname} 님을 내보냈어요.`);
       } else {
         notice(REMOVE_MEMBER_MESSAGES[result.reason](target.nickname));
+        // 그 사이 다시 붙었다. 액자가 «연결 끊김»으로 남아 있으면 다시 눌러도 같은 확인창이 열리므로
+        // presence sweep을 기다리지 않고 방을 다시 읽어 «잠시 다시 들어올 수 없어요» 확인창이 열리게 한다
+        if (result.reason === 'member-connected') void refreshAfterRemoval(target.action);
       }
     } catch (error) {
       if (!ownsAction(target.action, false)) return;
@@ -667,6 +684,19 @@ export function createWaitingRoom(
       // 화면을 떠났으면 hide()가 이미 닫았다. 아직 이 확인창이면 닫고 갈 곳으로 포커스를 옮긴다
       setRemovePending(false);
       if (removeTarget === target) closeRemoveDialog();
+    }
+  }
+
+  /**
+   * 내보내기가 거절된 뒤 서버가 본 방으로 액자를 맞춘다. 그사이 더 새 snapshot이 왔으면 그쪽이 이미
+   * 맞췄으므로 버린다(`reloadRoom`과 같다). 읽지 못하면 다음 snapshot이 맞춘다
+   */
+  async function refreshAfterRemoval(action: WaitingRoomActionOwnership): Promise<void> {
+    try {
+      const fresh = await roomStore.getRoom(action.code);
+      if (fresh && ownsAction(action)) applyRoom(fresh);
+    } catch {
+      // 연결이 흔들렸다. room-invalidated 재조회가 다시 맞춘다
     }
   }
 
@@ -790,8 +820,9 @@ ${me.nickname}`;
       return;
     }
     if (event.type === 'removed') {
-      // 끊긴 사이 방장이 나를 내보냈다. «방이 사라졌다»가 아니라 그 이유로 돌려보낸다 (U24)
-      onLeave(owner.code, owner.entryGeneration, REMOVED_BY_HOST_MESSAGE);
+      // 방장이 나를 내보냈다. «방이 사라졌다»가 아니라 그 이유로 돌려보낸다 (U24). 접속 중에
+      // 내보내졌으면 잠시 다시 들어올 수 없다는 것까지 말한다
+      onLeave(owner.code, owner.entryGeneration, REMOVED_BY_HOST_MESSAGES[event.kind]);
       return;
     }
     if (event.type === 'movement') {
@@ -1176,7 +1207,7 @@ ${me.nickname}`;
         loadedRoom = await roomStore.getRoom(code);
       } catch (error) {
         if (!showGuard.isCurrent(request)) return;
-        // 끊긴 사이 방장이 나를 내보냈다. «방이 사라졌다»가 아니라 그 이유를 말한다 (U24)
+        // 방장이 나를 내보냈다. «방이 사라졌다»가 아니라 그 이유를 말한다 (U24)
         if (error instanceof RemovedFromRoom) {
           onLeave(code, entryGeneration, error.message);
           return;

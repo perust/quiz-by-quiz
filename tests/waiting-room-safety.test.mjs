@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 // 대기실의 «이 사람 말 숨기기»(N06)와 방장의 «내보내기»(U24)를 가짜 DOM 위에 실제로 띄워 확인한다.
 // - 말 숨기기는 내 화면에서만: 그 사람의 대화 줄·말풍선을 그리지 않고, 켜고 끌 때 조용한 한 줄을 남긴다.
 //   이름은 고정이고 상태는 aria-pressed 다. 방 snapshot 이 명단을 다시 만들어도 상태와 포커스가 남는다
-// - 내보내기는 방장 화면의 끊긴 사람 액자에만 있고, 인페이지 확인을 거친다. 내보낸 사람은 «나갔어요»가
-//   아니라 «내보냈어요» 한 줄로 남고, 닫으면 갈 곳으로 포커스를 옮긴다
+// - 내보내기는 방장 화면의 남의 액자마다 있고, 인페이지 확인을 거친다. 확인창은 접속 중인 사람(잠시 다시
+//   들어올 수 없다)과 끊긴 사람(돌아오면 다시 참가할 수 있다)을 다르게 말하고, 확인한 상태를 그대로 보낸다.
+//   내보낸 사람은 «나갔어요»가 아니라 «내보냈어요» 한 줄로 남고, 닫으면 갈 곳으로 포커스를 옮긴다
 // - 내보내진 사람이 돌아오면 «방이 사라졌다»가 아니라 «방장이 내보냈다»를 듣는다
 // 모듈은 불러오는 순간 document·window 에 리스너를 단다. 그 전에 필요한 만큼만 흉내 낸다.
 
@@ -107,7 +108,7 @@ console.warn = () => {};
 
 const { createWaitingRoom } = await import('../js/ui/waiting-room.js');
 const { createChatMutes } = await import('../js/ui/chat-mutes.js');
-const { RemovedFromRoom, REMOVED_BY_HOST_MESSAGE } = await import('../js/online/rules.js');
+const { RemovedFromRoom, REMOVED_BY_HOST_MESSAGE, REMOVED_BY_HOST_MESSAGES } = await import('../js/online/rules.js');
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 async function settle() {
@@ -140,11 +141,15 @@ function snapshot(players, changes = {}) {
 let roomEvents = null;
 const behaviour = {};
 const removeCalls = [];
+let getRoomCalls = 0;
 const roomStore = {
   isNetworked: true,
   isPersistent: true,
   me: () => ME,
-  getRoom: (code) => behaviour.getRoom(code),
+  getRoom: (code) => {
+    getRoomCalls += 1;
+    return behaviour.getRoom(code);
+  },
   subscribe: (code, handler) => {
     roomEvents = handler;
     return () => { if (roomEvents === handler) roomEvents = null; };
@@ -249,24 +254,28 @@ test('방 snapshot 이 명단을 다시 만들어도 액자 버튼의 키보드 
   waiting.hide();
 });
 
-test('내보내기는 방장 화면의 끊긴 사람 액자에만 있다 (U24)', async () => {
+test('내보내기는 방장 화면의 남의 액자마다 있다 (U24, 소유자 결정)', async () => {
   const players = [player(ME, '퀴즈왕'), player('guest', '민수'), player('ghost', '유령', { connected: false })];
   await enter(snapshot(players));
-  assert.equal(portraitButton('guest', 'remove'), undefined, '접속 중인 사람은 내보낼 수 없다');
-  const remove = portraitButton('ghost', 'remove');
-  assert.ok(remove);
-  assert.equal(remove.textContent, '내보내기');
-  assert.equal(remove.getAttribute('aria-label'), '유령 님 내보내기', '보이는 글자를 이름에 품는다');
+  for (const [id, nickname] of [['guest', '민수'], ['ghost', '유령']]) {
+    const remove = portraitButton(id, 'remove');
+    assert.ok(remove, `${nickname} 님 액자에 내보내기가 있다`);
+    assert.equal(remove.tagName, 'BUTTON', '걸어가 밟고 누를 수 있는 진짜 버튼이다');
+    assert.equal(remove.textContent, '내보내기');
+    assert.equal(remove.getAttribute('aria-label'), `${nickname} 님 내보내기`, '보이는 글자를 이름에 품는다');
+    assert.equal(remove.getAttribute('aria-haspopup'), 'dialog');
+  }
   assert.equal(portraitButton(ME, 'remove'), undefined);
   waiting.hide();
 
   await enter(snapshot([player('host', '방장'), player(ME, '퀴즈왕'), player('ghost', '유령', { connected: false })], { isMine: false }));
-  assert.equal(portraitButton('ghost', 'remove'), undefined, '방장이 아니면 내보낼 수 없다');
+  assert.equal(portraitButton('host', 'remove'), undefined, '방장이 아니면 내보낼 수 없다');
+  assert.equal(portraitButton('ghost', 'remove'), undefined);
   assert.ok(portraitButton('ghost', 'mute'), '말 숨기기는 누구나 쓴다');
   waiting.hide();
 });
 
-test('내보내기는 인페이지 확인을 거치고, 내보낸 사람은 «내보냈어요» 한 줄로만 남는다 (U24)', async () => {
+test('끊긴 사람의 내보내기는 인페이지 확인을 거치고, 내보낸 사람은 «내보냈어요» 한 줄로만 남는다 (U24)', async () => {
   removeCalls.length = 0;
   const players = [player(ME, '퀴즈왕'), player('ghost', '유령', { connected: false })];
   await enter(snapshot(players));
@@ -277,6 +286,7 @@ test('내보내기는 인페이지 확인을 거치고, 내보낸 사람은 «�
   portraitButton('ghost', 'remove').click();
   assert.equal(dialog.hidden, false);
   assert.equal(byId('remove-member-title').textContent, '유령 님을 내보낼까요?');
+  assert.match(byId('remove-member-body').textContent, /돌아오면 방 코드로 다시 참가할 수 있어요/);
   assert.equal(globalThis.document.activeElement, byId('remove-member-cancel'), '되돌릴 수 없는 쪽에 먼저 서지 않는다');
   byId('remove-member-cancel').click();
   assert.equal(dialog.hidden, true);
@@ -290,7 +300,7 @@ test('내보내기는 인페이지 확인을 거치고, 내보낸 사람은 «�
   await tick();
   assert.equal(byId('remove-member-confirm').disabled, true, '보내는 동안 겹쳐 누를 수 없다');
   assert.equal(byId('remove-member-confirm').textContent, '내보내는 중…');
-  assert.deepEqual(removeCalls, [{ code: 'SAF234', playerId: 'ghost' }]);
+  assert.deepEqual(removeCalls, [{ code: 'SAF234', playerId: 'ghost', connected: false }], '확인창이 말한 상태를 그대로 보낸다');
 
   resolve({ ok: true, room: snapshot([player(ME, '퀴즈왕')]) });
   await settle();
@@ -303,18 +313,57 @@ test('내보내기는 인페이지 확인을 거치고, 내보낸 사람은 «�
   waiting.hide();
 });
 
-test('그 사이 다시 붙어 거절되면 이유를 말하고 확인창을 닫는다', async () => {
+test('접속 중인 사람의 내보내기는 «잠시 다시 들어올 수 없어요»를 보이고 그 뜻을 실어 보낸다', async () => {
+  removeCalls.length = 0;
+  await enter(snapshot([player(ME, '퀴즈왕'), player('guest', '민수'), player('friend', '지수')]));
+  const dialog = byId('remove-member-dialog');
+  dialog.hidden = true;
+
+  portraitButton('guest', 'remove').click();
+  assert.equal(dialog.hidden, false);
+  assert.equal(byId('remove-member-title').textContent, '민수 님을 방에서 내보낼까요?');
+  assert.match(byId('remove-member-body').textContent, /^잠시 다시 들어올 수 없어요\./);
+  assert.equal(globalThis.document.activeElement, byId('remove-member-cancel'));
+
+  behaviour.removeMember = async () => ({ ok: true, room: snapshot([player(ME, '퀴즈왕'), player('friend', '지수')]) });
+  byId('remove-member-confirm').click();
+  await settle();
+  assert.deepEqual(removeCalls, [{ code: 'SAF234', playerId: 'guest', connected: true }]);
+  assert.equal(dialog.hidden, true);
+  assert.equal(chatLines().at(-1), '민수 님을 내보냈어요.');
+  assert.ok(!chatLines().some((line) => line.includes('나갔어요')));
+  assert.equal(portraitButton('guest', 'remove'), undefined);
+  assert.ok(portraitButton('friend', 'remove'), '남은 사람의 버튼은 그대로다');
+  assert.notEqual(globalThis.document.activeElement, globalThis.document.body, '포커스를 잃지 않는다');
+
+  // 끊긴 사람으로 열었던 확인창 다음에도 상태를 다시 읽어 맞는 말을 한다
+  roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('friend', '지수', { connected: false })]) });
+  portraitButton('friend', 'remove').click();
+  assert.equal(byId('remove-member-title').textContent, '지수 님을 내보낼까요?');
+  assert.match(byId('remove-member-body').textContent, /다시 참가할 수 있어요/);
+  byId('remove-member-cancel').click();
+  waiting.hide();
+});
+
+test('끊긴 자리를 비우려던 사이 다시 붙어 거절되면 이유를 말하고 방을 다시 읽는다', async () => {
   await enter(snapshot([player(ME, '퀴즈왕'), player('ghost', '유령', { connected: false })]));
   behaviour.removeMember = async () => ({ ok: false, reason: 'member-connected' });
+  // 서버가 본 방: 그 사람은 다시 접속 중이다
+  behaviour.getRoom = async () => snapshot([player(ME, '퀴즈왕'), player('ghost', '유령')]);
+  const readsBefore = getRoomCalls;
   portraitButton('ghost', 'remove').click();
   byId('remove-member-confirm').click();
   await settle();
   assert.equal(byId('remove-member-dialog').hidden, true);
-  assert.equal(chatLines().at(-1), '유령 님이 다시 연결됐어요. 연결이 끊긴 참가자만 내보낼 수 있어요.');
-  assert.equal(globalThis.document.activeElement, portraitButton('ghost', 'remove'));
+  assert.equal(chatLines().at(-1), '유령 님이 다시 연결됐어요. 그래도 내보내려면 다시 눌러 주세요.');
+  assert.equal(getRoomCalls, readsBefore + 1, 'presence sweep 을 기다리지 않고 방을 다시 읽는다');
+  assert.equal(globalThis.document.activeElement, portraitButton('ghost', 'remove'), '새로 그린 같은 버튼으로 돌아간다');
+
+  // 다시 누르면 접속 중인 사람의 확인창이 열린다 — 확인창이 말하지 않은 차단은 걸리지 않는다
+  portraitButton('ghost', 'remove').click();
+  assert.equal(byId('remove-member-title').textContent, '유령 님을 방에서 내보낼까요?');
 
   // 화면을 떠나면 확인창도 접는다 — <main> 밖이라 다음 화면 위에 남는다
-  portraitButton('ghost', 'remove').click();
   waiting.hide();
   assert.equal(byId('remove-member-dialog').hidden, true);
 });
@@ -326,11 +375,25 @@ test('내보내진 사람이 돌아오면 «방이 사라졌다»가 아니라 �
   await waiting.show('SAF234', 'slime-blue', 1);
   assert.deepEqual(left, [{ code: 'SAF234', reason: REMOVED_BY_HOST_MESSAGE }]);
 
+  // 접속 중에 내보내져 아직 막혀 있으면 잠시 뒤에 들어올 수 있다고 말한다
+  left.length = 0;
+  behaviour.getRoom = async () => { throw new RemovedFromRoom('kicked'); };
+  screen.hidden = true;
+  await waiting.show('SAF234', 'slime-blue', 1);
+  assert.deepEqual(left, [{ code: 'SAF234', reason: REMOVED_BY_HOST_MESSAGES.kicked }]);
+
   // 대기실을 연 채 끊겨 있다가 다시 붙으려는 순간 들은 경우도 같다
   left.length = 0;
   await enter(snapshot([player('host', '방장'), player(ME, '퀴즈왕')], { isMine: false }));
-  roomEvents({ type: 'removed' });
+  roomEvents({ type: 'removed', kind: 'removed' });
   assert.deepEqual(left, [{ code: 'SAF234', reason: REMOVED_BY_HOST_MESSAGE }]);
   assert.match(REMOVED_BY_HOST_MESSAGE, /방장이 방에서 내보냈어요/);
+  waiting.hide();
+
+  // 대기실에 있는 동안 방장이 나를 내보냈다 — 열린 소켓으로 곧바로 듣고 로비로 간다
+  left.length = 0;
+  await enter(snapshot([player('host', '방장'), player(ME, '퀴즈왕')], { isMine: false }));
+  roomEvents({ type: 'removed', kind: 'kicked' });
+  assert.deepEqual(left, [{ code: 'SAF234', reason: '방장이 방에서 내보냈어요. 잠시 뒤에 다시 들어올 수 있어요.' }]);
   waiting.hide();
 });

@@ -644,13 +644,15 @@ class PostgresRoomsRepository:
         player_id: UUID,
         *,
         absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
     ) -> RoomView:
-        """방장이 유예를 넘겨 끊긴 참가자를 방에서 뺀다 (U24).
+        """방장이 다른 참가자를 방에서 뺀다 (U24).
 
-        **끊긴 사람만이다.** 접속 중인 사람을 내보내는 길을 두면 방장이 남을 쫓는 수단이 된다 —
-        이것은 탭을 닫고 떠난 자리를 비우는 일이다. 방장 자신은 나가기로 떠난다. 도는 판에 자리가
-        있는 사람은 판이 끝난 뒤에 뺀다(판에서 빠진 멤버는 판이 도는 동안에도 뺄 수 있다). 다시
-        참가하는 것은 막지 않는다. 방을 잠그고 그 안에서 모두 다시 확인한다.
+        방장만, 남만(방장 자신은 나가기로 떠난다), 방에 있는 사람만 뺀다. 도는 판에 자리가 있는
+        사람은 판이 끝난 뒤에 뺀다(판에서 빠진 멤버는 판이 도는 동안에도 뺄 수 있다).
+        `allow_connected` 가 없으면 탭을 닫고 떠난 자리를 비우는 일이라 유예를 넘겨 끊긴 사람만
+        뺀다. 접속 중인 사람은 방장이 그렇게 보고 확인했을 때만 뺀다 — 잠시 다시 들어오지 못하게
+        막는 것은 API의 메모리 기록이 맡고 DB는 모른다. 방을 잠그고 그 안에서 모두 다시 확인한다.
         """
         async with self._pool.connection() as connection:
             async with connection.transaction():
@@ -682,7 +684,7 @@ class PostgresRoomsRepository:
                 )
                 if await member.fetchone() is None:
                     raise NotMember
-                if player_id not in absent_player_ids:
+                if not allow_connected and player_id not in absent_player_ids:
                     raise MemberConnected
                 playing = await connection.execute(
                     _PLAYS_ACTIVE_MATCH_SQL,

@@ -65,8 +65,13 @@ export interface OnlineScreenDeps {
 }
 
 export interface OnlineScreen {
-  /** notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다 */
+  /**
+   * notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다. 글은 `activate`가
+   * 화면이 보인 뒤에 넣는다 — 숨은 화면의 role=status 문단은 바뀌어도 낭독되지 않는다
+   */
   show(characterId: string, notice?: string): Promise<void>;
+  /** app이 로비를 실제로 연 직후 부른다. `show`가 받아 둔 알림을 그때 넣는다(먼저 펼치고 넣는다) */
+  activate(): void;
   /**
    * 초대 링크로 들어왔을 때 (U27). `show` 다음, 화면이 보인 뒤에 부른다 — 포커스를
    * 옮겨야 하기 때문이다. 공개방이면 바로 들어가고, 잠긴 방이면 비밀번호 칸에 선다.
@@ -135,6 +140,8 @@ export function createOnlineScreen(
   /** 늦은 lobby fetch/action이 새 화면 navigation을 덮지 못하게 하는 화면 owner. */
   const screenGuard = createLatestRequestGuard();
   let visibleRequest: number | null = null;
+  /** show가 받아 두고 activate가 화면이 보인 뒤에 넣는 알림. 숨은 role=status는 낭독되지 않는다 */
+  let pendingNotice: string | null = null;
   /** join/create/direct-enter/home 중 가장 최근 navigation intent만 commit한다. */
   let navigationActionGeneration = 0;
   /** 겹친 목록 조회는 가장 늦게 시작한 결과만 그린다. */
@@ -164,6 +171,7 @@ export function createOnlineScreen(
     visibleRequest = null;
     navigationActionGeneration += 1;
     listRequestGeneration += 1;
+    pendingNotice = null;
   }
 
   function commitEnterRoom(code: string, owner: OnlineScreenActionOwnership): void {
@@ -853,7 +861,9 @@ export function createOnlineScreen(
       listRequestGeneration += 1;
       say(el.joinMessage, '');
       say(el.createMessage, '');
-      say(el.message, notice ?? '', notice ? 'bad' : undefined);
+      // 화면이 아직 숨어 있다. 지금 넣으면 낭독되지 않으므로 activate()가 보인 뒤에 넣는다
+      say(el.message, '');
+      pendingNotice = notice ?? null;
       suggestRoomName();
       // 이전 방문에서 코드 참가/공개방 찾기가 바꾼 필터를 새 진입까지 끌고 오면
       // '방 찾기'가 선택됐는데 잠긴 방만 보이는 모순이 생긴다. 로비는 매번 기본 목록으로 연다.
@@ -862,6 +872,13 @@ export function createOnlineScreen(
       await loadRooms(request);
       if (!ownsScreen(request)) return;
       walker.show(characterId);
+    },
+
+    activate() {
+      const notice = pendingNotice;
+      pendingNotice = null;
+      if (visibleRequest === null || !ownsScreen(visibleRequest) || !notice) return;
+      say(el.message, notice, 'bad');
     },
 
     acceptInvite(rawCode) {

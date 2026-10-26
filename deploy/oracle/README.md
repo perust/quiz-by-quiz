@@ -75,6 +75,16 @@ absent member's missing answer is stored as a timeout, and a returning member is
 counted again. The presence sweep re-checks the current question when someone
 crosses the grace period. Records older than an hour are dropped. These bounds also depend on the single-worker deployment contract.
 
+The host's member removal keeps a second in-process record. A removed
+(room, player) pair is remembered for one hour so the player hears "removed by
+the host" instead of "room not found", bounded at 4,096 records with the oldest
+dropped first. When the host removed a member who was still connected
+(`?connected=true`, confirmed in the waiting-room dialog), that player's join,
+room read and WebSocket ticket for the same room are refused with `kicked` for
+10 minutes; the database is not changed. The block ends early on an API restart
+or when the room is deleted, and it relies on the same single-worker contract —
+a second worker would not see it.
+
 Persistent growth is bounded by a two-hour player lifetime, an independent
 60-second resource cleanup loop, and lobby materialization of no more than
 100 complete rooms. Parent rooms are selected before member expansion so a

@@ -73,17 +73,40 @@ test('기록 내보내기는 랭킹 목록 아래 유리 표면이고, 탭마다
   assert.equal(valueOf(rules, textarea, 'font-size', MOBILE), 'var(--text-md)', '입력칸은 16px — iOS 확대를 막는다');
 });
 
-test('누구 액자에 무엇이 붙는가: 말 숨기기는 남에게만, 내보내기는 방장이 끊긴 남에게만', async () => {
+test('누구 액자에 무엇이 붙는가: 말 숨기기는 남에게만, 내보내기는 방장 화면의 남에게만', async () => {
   const { waitingRoomPortraitActions, waitingRoomMuteLabel, waitingRoomRemoveLabel } = await import('../js/ui/waiting-room-portrait.js');
   const other = { isMe: false, connected: true };
   const ghost = { isMe: false, connected: false };
   const me = { isMe: true, connected: true };
-  assert.deepEqual(waitingRoomPortraitActions(other, { isHost: true, muted: false }), { mute: true, muted: false, remove: false });
+  // 소유자 결정: 방장은 접속 중인 사람도 확인창을 거쳐 내보낸다
+  assert.deepEqual(waitingRoomPortraitActions(other, { isHost: true, muted: false }), { mute: true, muted: false, remove: true });
   assert.deepEqual(waitingRoomPortraitActions(ghost, { isHost: true, muted: true }), { mute: true, muted: true, remove: true });
+  assert.deepEqual(waitingRoomPortraitActions(other, { isHost: false, muted: false }), { mute: true, muted: false, remove: false });
   assert.deepEqual(waitingRoomPortraitActions(ghost, { isHost: false, muted: false }), { mute: true, muted: false, remove: false });
   assert.deepEqual(waitingRoomPortraitActions(me, { isHost: true, muted: true }), { mute: false, muted: false, remove: false });
   assert.equal(waitingRoomMuteLabel('민수'), '민수 님 말 숨기기');
   assert.equal(waitingRoomRemoveLabel('민수'), '민수 님 내보내기');
+});
+
+test('내보내기 확인창은 접속 중인 사람과 끊긴 사람에게 일어날 일을 다르게 말한다', async () => {
+  const { waitingRoomRemoveDialogText } = await import('../js/ui/waiting-room-portrait.js');
+  const connected = waitingRoomRemoveDialogText('민수', true);
+  assert.equal(connected.title, '민수 님을 방에서 내보낼까요?');
+  assert.match(connected.body, /^잠시 다시 들어올 수 없어요\./);
+  assert.doesNotMatch(connected.body, /다시 참가할 수 있어요/, '막히는 사람에게 다시 들어올 수 있다고 하지 않는다');
+
+  const ghost = waitingRoomRemoveDialogText('유령', false);
+  assert.equal(ghost.title, '유령 님을 내보낼까요?');
+  assert.match(ghost.body, /연결이 끊긴 지 1분이 넘었어요/);
+  assert.match(ghost.body, /방 코드로 다시 참가할 수 있어요/);
+
+  // 새로 쓴 문장은 해요체다
+  for (const text of [connected.title, connected.body, ghost.title, ghost.body]) {
+    assert.doesNotMatch(text, /니다[.?]?$|니까\?$/);
+  }
+  // 정적 HTML 의 기본 설명은 끊긴 사람 쪽 문장과 같다(스크립트가 상태마다 바꾼다)
+  const html = await source('index.html');
+  assert.ok(html.includes(`id="remove-member-body">${ghost.body}</p>`));
 });
 
 test('말 숨기기 목록은 방마다 따로이고 서버로 가지 않는다', async () => {
@@ -121,4 +144,19 @@ test('내보내기 거절 이유는 빠짐없이 플레이어의 말로 옮긴�
   for (const message of Object.values(REMOVE_MEMBER_MESSAGES)) {
     assert.doesNotMatch(message('민수'), /서버|snapshot|API/, '화면 문구에 개발 용어를 쓰지 않는다 (U40)');
   }
+  // 끊긴 자리를 비우려던 사이 다시 붙었다 — 이제는 막힌 내보내기를 다시 고를 수 있다고 말한다
+  assert.equal(REMOVE_MEMBER_MESSAGES['member-connected']('민수'), '민수 님이 다시 연결됐어요. 그래도 내보내려면 다시 눌러 주세요.');
+});
+
+test('내보내진 사람이 듣는 말은 다시 들어올 수 있는지를 방식마다 맞게 말한다', async () => {
+  const { REMOVED_BY_HOST_MESSAGES, REMOVED_BY_HOST_MESSAGE, removalKind, RemovedFromRoom } = await import('../js/online/rules.js');
+  assert.deepEqual(Object.keys(REMOVED_BY_HOST_MESSAGES).sort(), ['kicked', 'removed']);
+  assert.equal(REMOVED_BY_HOST_MESSAGES.removed, REMOVED_BY_HOST_MESSAGE);
+  for (const message of Object.values(REMOVED_BY_HOST_MESSAGES)) assert.match(message, /^방장이 방에서 내보냈어요\./);
+  assert.match(REMOVED_BY_HOST_MESSAGES.kicked, /잠시 뒤에 다시 들어올 수 있어요/);
+  assert.equal(removalKind('kicked'), 'kicked');
+  assert.equal(removalKind('removed'), 'removed');
+  assert.equal(removalKind('not-found'), null);
+  assert.equal(new RemovedFromRoom().kind, 'removed', '구버전 서버의 removed 와 같다');
+  assert.equal(new RemovedFromRoom('kicked').message, REMOVED_BY_HOST_MESSAGES.kicked);
 });

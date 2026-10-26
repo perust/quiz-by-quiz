@@ -1100,10 +1100,33 @@
       무엇: `${숨긴뒤?.getAttribute('aria-pressed')} · ${로그끝 || '(로그 없음)'}`,
     });
     숨긴뒤?.click();
+    // 방장은 접속 중인 사람도 확인창을 거쳐 내보낸다(소유자 결정). 확인창만 열어 보고 «그대로 두기»로 닫는다
+    const [내보내기] = 액자버튼('remove');
+    const 내보내기상자 = 내보내기?.getBoundingClientRect();
     결과.push({
-      자리: '대기실', 이름: '로컬 방에는 끊김이 없어 내보내기가 그려지지 않는다',
-      통과: 액자버튼('remove').length === 0 && document.getElementById('remove-member-dialog').hidden,
-      무엇: `내보내기 ${액자버튼('remove').length}`,
+      자리: '대기실', 이름: '방장 화면의 남의 액자에는 44px 내보내기 버튼이 있다',
+      통과: Boolean(내보내기) && 내보내기상자.height >= 44
+        && 내보내기.getAttribute('aria-label') === '점검손님 님 내보내기',
+      무엇: 내보내기 ? `${Math.round(내보내기상자.width)}×${Math.round(내보내기상자.height)}` : '!! 버튼 없음',
+    });
+    내보내기?.click();
+    await 잠깐(100);
+    const 확인창 = document.getElementById('remove-member-dialog');
+    const 확인설명 = document.getElementById('remove-member-body').textContent ?? '';
+    결과.push({
+      자리: '대기실', 이름: '접속 중인 사람의 내보내기는 «잠시 다시 들어올 수 없어요» 확인창을 거친다',
+      통과: !확인창.hidden
+        && document.getElementById('remove-member-title').textContent === '점검손님 님을 방에서 내보낼까요?'
+        && 확인설명.startsWith('잠시 다시 들어올 수 없어요')
+        && document.activeElement === document.getElementById('remove-member-cancel'),
+      무엇: `${확인창.hidden ? '닫힘' : '열림'} · ${확인설명 || '(설명 없음)'} · 포커스 ${document.activeElement?.id || document.activeElement?.tagName}`,
+    });
+    document.getElementById('remove-member-cancel').click();
+    await 잠깐(100);
+    결과.push({
+      자리: '대기실', 이름: '그대로 두기는 확인창을 닫고 연 내보내기 버튼으로 포커스를 돌려준다',
+      통과: 확인창.hidden && document.activeElement === 액자버튼('remove')[0],
+      무엇: `${확인창.hidden ? '닫힘' : '열림'} · 포커스 ${document.activeElement?.getAttribute?.('aria-label') || document.activeElement?.tagName}`,
     });
     if (점검방) {
       const 되돌린방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
