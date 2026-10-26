@@ -7,10 +7,12 @@ test('opening an authoritative online match presents snapshot loading as a notic
 
   assert.match(
     source,
-    /onlineQuizScreen\.setNotice\('서버 매치 상태를 불러오는 중입니다\.'\)/,
+    /onlineQuizScreen\.setNotice\('매치를 불러오는 중이에요\.'\)/,
   );
   assert.doesNotMatch(
     source,
-    /onlineQuizScreen\.setError\('서버 매치 상태를 불러오는 중입니다\.'\)/,
+    /onlineQuizScreen\.setError\('매치를 불러오는 중이에요\.'\)/,
   );
+  // 플레이어에게 의미 없는 개발 용어(«서버»)를 안내 문구에 쓰지 않는다 (U40)
+  assert.doesNotMatch(source, /setNotice\('[^']*서버/);
 });

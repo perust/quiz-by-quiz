@@ -243,7 +243,14 @@ test('닫은 controller는 늦게 끝난 snapshot을 화면에 반영하지 않�
   assert.deepEqual(snapshots, []);
 });
 
-test('newer refresh가 실패해도 먼저 성공한 overlap snapshot은 버리지 않는다', async () => {
+/** 이벤트가 처리될 틈을 몇 번 준다. 그동안 GET이 더 나가지 않았음을 확인할 때 쓴다. */
+async function settle(turns = 5) {
+  for (let turn = 0; turn < turns; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+test('후속 refresh가 실패해도 먼저 성공한 snapshot은 버리지 않는다', async () => {
   const snapshots = [];
   const errors = [];
   const pending = [];
@@ -274,16 +281,126 @@ test('newer refresh가 실패해도 먼저 성공한 overlap snapshot은 버리�
   await controller.open('ABC234');
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
-  await waitFor(() => pending.length === 2, 'overlapping refreshes did not start');
+  await waitFor(() => pending.length === 1, 'first refresh did not start');
+  await settle();
+  assert.equal(pending.length, 1, '두 번째 무효화는 날아가는 GET 뒤로 합쳐진다');
 
   pending[0].resolve(revealingMatch());
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => pending.length === 2, 'coalesced follow-up refresh did not start');
+  assert.equal(snapshots.at(-1).state, 'revealing');
   pending[1].reject(new Error('newer refresh failed'));
   await waitFor(() => errors.length === 1, 'newer refresh failure was not reported');
 
   assert.equal(snapshots.at(-1).state, 'revealing');
   assert.equal(snapshots.at(-1).reveal.explanation, '서버 해설');
   assert.deepEqual(errors, ['newer refresh failed']);
+  controller.close();
+});
+
+test('무효화 6번이 몰려도 GET은 최대 2번이고 마지막 화면은 최신 snapshot이다', async () => {
+  const snapshots = [];
+  const pending = [];
+  let eventHandler;
+  let reads = 0;
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const gateway = {
+    subscribe(_code, handler) {
+      eventHandler = handler;
+      return () => undefined;
+    },
+    getMatch() {
+      reads += 1;
+      if (reads === 1) return Promise.resolve(runningMatch());
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      return new Promise((resolve) => pending.push((value) => {
+        inFlight -= 1;
+        resolve(value);
+      }));
+    },
+    async submitMatchAnswer() {
+      throw new Error('not used');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => assert.fail(message),
+  });
+
+  await controller.open('ABC234');
+  // 여섯 명이 거의 동시에 답을 내면 서버는 무효화를 여섯 번 방송한다.
+  for (let count = 0; count < 6; count += 1) {
+    eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+  }
+  await waitFor(() => pending.length === 1, 'first refresh did not start');
+  await settle();
+  assert.equal(pending.length, 1, '날아가는 GET이 있으면 새 GET을 보내지 않는다');
+
+  // 첫 GET은 무효화 전에 출발했을 수 있다 — 아직 제출 전 상태를 돌려준다.
+  pending[0](runningMatch({ ownSubmission: { position: 1, choiceIndex: 2, timedOut: false } }));
+  await waitFor(() => pending.length === 2, 'follow-up refresh did not start');
+  await settle();
+  assert.equal(pending.length, 2, '합쳐진 무효화는 후속 GET 하나만 만든다');
+
+  pending[1](revealingMatch());
+  await waitFor(() => snapshots.at(-1)?.state === 'revealing', 'fresh snapshot was not delivered');
+  await settle();
+
+  assert.equal(reads - 1, 2, '무효화 6번에 GET은 2번');
+  assert.equal(maxInFlight, 1, '한 번에 GET은 하나만 날아간다');
+  assert.deepEqual(snapshots.map(({ state }) => state), ['running', 'running', 'revealing']);
+  controller.close();
+});
+
+test('후속 GET이 예약된 채 닫으면 보내지 않고, 다음 매치의 첫 읽기를 늦은 GET이 막지 않는다', async () => {
+  const snapshots = [];
+  const pending = [];
+  const handlers = [];
+  let reads = 0;
+  const gateway = {
+    subscribe(_code, handler) {
+      handlers.push(handler);
+      return () => undefined;
+    },
+    getMatch(code) {
+      reads += 1;
+      if (reads === 1) return Promise.resolve(runningMatch());
+      return new Promise((resolve) => pending.push({ code, resolve }));
+    },
+    async submitMatchAnswer() {
+      throw new Error('not used');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => assert.fail(message),
+  });
+
+  await controller.open('ABC234');
+  handlers[0]({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+  handlers[0]({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+  await waitFor(() => pending.length === 1, 'first refresh did not start');
+
+  const reopening = controller.open('XYZ234');
+  await waitFor(() => pending.length === 2, 'new lifecycle waited for the old in-flight GET');
+  assert.equal(pending[1].code, 'XYZ234');
+
+  pending[0].resolve(revealingMatch());
+  await settle();
+  assert.equal(pending.length, 2, '닫힌 lifecycle의 후속 GET은 보내지 않는다');
+  assert.equal(snapshots.length, 1, '닫힌 lifecycle의 늦은 응답은 그리지 않는다');
+
+  const replacement = runningMatch({ matchId: '42345678-1234-5678-9234-567812345678' });
+  pending[1].resolve(replacement);
+  await reopening;
+  assert.equal(snapshots.at(-1).matchId, replacement.matchId);
   controller.close();
 });
 
@@ -322,10 +439,12 @@ test('성공한 answer mutation은 그 이전에 시작된 refresh 응답을 inv
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
   await waitFor(() => pendingReads.length === 1, 'pre-mutation refresh did not start');
   const submitting = controller.submit(submitSpec());
-  await waitFor(() => pendingReads.length === 2, 'post-mutation refresh did not start');
+  await settle();
+  // 제출 뒤 다시 읽기는 날아가는 GET 뒤로 합쳐진다. 그 GET이 끝나야 출발한다.
+  assert.equal(pendingReads.length, 1);
 
   pendingReads[0](runningMatch({ question: { ...runningMatch().question, question: 'stale snapshot' } }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => pendingReads.length === 2, 'post-mutation refresh did not start');
   assert.equal(snapshots.length, 1);
 
   pendingReads[1](revealingMatch());
@@ -334,7 +453,7 @@ test('성공한 answer mutation은 그 이전에 시작된 refresh 응답을 inv
   controller.close();
 });
 
-test('newer refresh 성공 뒤 늦은 older snapshot은 화면을 rollback하지 않는다', async () => {
+test('후속 GET이 더 오래된 진행 상태를 돌려줘도 화면을 rollback하지 않는다', async () => {
   const snapshots = [];
   const pending = [];
   let eventHandler;
@@ -364,12 +483,14 @@ test('newer refresh 성공 뒤 늦은 older snapshot은 화면을 rollback하지
   await controller.open('ABC234');
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
-  await waitFor(() => pending.length === 2, 'overlapping refreshes did not start');
+  await waitFor(() => pending.length === 1, 'first refresh did not start');
 
-  pending[1](revealingMatch());
+  pending[0](revealingMatch());
   await waitFor(() => snapshots.length === 2, 'newer snapshot was not delivered');
-  pending[0](runningMatch({ question: { ...runningMatch().question, question: 'older stale snapshot' } }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => pending.length === 2, 'coalesced follow-up refresh did not start');
+  // 서버 진행은 되돌아가지 않는다. 늦게 도착한 «더 이른 phase»는 응답 순서가 어떻든 버린다.
+  pending[1](runningMatch({ question: { ...runningMatch().question, question: 'older stale snapshot' } }));
+  await settle();
 
   assert.equal(snapshots.length, 2);
   assert.equal(snapshots.at(-1).state, 'revealing');
@@ -461,7 +582,7 @@ test('controller errors는 background refresh와 answer submit ownership을 구�
   controller.close();
 });
 
-test('newer refresh가 pending이면 older null은 match missing navigation을 commit하지 않는다', async () => {
+test('후속 refresh가 예약돼 있으면 먼저 온 null은 match missing navigation을 commit하지 않는다', async () => {
   const snapshots = [];
   let missing = 0;
   const pending = [];
@@ -490,10 +611,10 @@ test('newer refresh가 pending이면 older null은 match missing navigation을 c
   await controller.open('ABC234');
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
-  await waitFor(() => pending.length === 2, 'overlapping refreshes were not started');
+  await waitFor(() => pending.length === 1, 'first refresh was not started');
 
   pending[0].resolve(null);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => pending.length === 2, 'coalesced follow-up refresh was not started');
   assert.equal(missing, 0);
 
   const initial = runningMatch();
@@ -541,12 +662,14 @@ test('POST 응답 전에 시작한 더 최신 question refresh는 fallback submi
 
   const acknowledged = runningMatch({ ownSubmission: { position: 1, choiceIndex: 2, timedOut: false } });
   resolveSubmit({ match: acknowledged, accepted: true });
-  await waitFor(() => pendingRefreshes.length === 2, 'post-submit refresh did not start');
+  await settle();
+  // 제출 뒤 다시 읽기는 이미 날아가는 이벤트 GET 뒤로 합쳐진다.
+  assert.equal(pendingRefreshes.length, 1);
 
   const initial = runningMatch();
   const nextQuestion = { ...initial, currentPosition: 2, question: { ...initial.question, position: 2 } };
   pendingRefreshes[0].resolve(nextQuestion);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => pendingRefreshes.length === 2, 'post-submit refresh did not start');
   pendingRefreshes[1].reject(new Error('post-submit refresh failed'));
   await submitting;
 

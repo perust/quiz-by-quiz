@@ -410,6 +410,14 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     }
     return deadlineAt;
   };
+  // 표시용 남은 시간이다. 구버전 서버처럼 없거나 쓸 수 없는 값이면 빼고, 화면은 예전 안내로
+  // 돌아간다 — 카운트다운 힌트 하나 때문에 매치 전체를 거절하지 않는다.
+  const activeRemainingMs = (): { remainingMs?: number } => {
+    const remainingMs = value.remainingMs;
+    return typeof remainingMs === 'number' && Number.isFinite(remainingMs) && remainingMs >= 0
+      ? { remainingMs }
+      : {};
+  };
   if (value.state === 'running') {
     if (value.reveal !== null || !Array.isArray(value.scores) || value.scores.length !== 0) {
       throw new Error('running 응답에 정답 또는 점수 정보가 섞였습니다.');
@@ -429,6 +437,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     return {
       ...base,
       deadlineAt: activeDeadlineAt(),
+      ...activeRemainingMs(),
       state: 'running',
       question,
       ownSubmission,
@@ -443,6 +452,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     return {
       ...base,
       deadlineAt: activeDeadlineAt(),
+      ...activeRemainingMs(),
       state: 'revealing',
       question,
       ownSubmission: null,

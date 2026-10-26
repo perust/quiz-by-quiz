@@ -2430,7 +2430,8 @@ select.room-form__input {
   line-height: 1;
 }
 
-.online-final-ranking__item:nth-child(1) .online-final-ranking__place {
+/* 줄 순서가 아니라 표시 순위로 칠한다 — 공동 1위는 모두 금색이다 */
+.online-final-ranking__place[data-place='1'] {
   background: var(--medal-gold);
 }
 

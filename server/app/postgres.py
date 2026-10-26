@@ -42,7 +42,8 @@ _MEMBER_STALE_AFTER = "30 minutes"
 _PLAYER_LIFETIME = "2 hours"
 _MATCH_LIFETIME = "2 hours"
 _QUESTION_TIMEOUT = "20 seconds"
-_REVEAL_DURATION = "3 seconds"
+# 정답·해설을 실제로 읽을 시간. 공개 카드는 «다음 문제까지 N초»를 보여 준다.
+_REVEAL_DURATION = "8 seconds"
 
 _LOBBY_ROOM_LIMIT = 100
 

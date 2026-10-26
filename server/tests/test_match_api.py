@@ -5,13 +5,14 @@ import hashlib
 import logging
 import threading
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.main import _match_payload, create_app
 from app.repository import (
     MatchAnswerView,
     MatchQuestionView,
@@ -359,6 +360,47 @@ def test_revealing_match_is_the_only_snapshot_that_contains_feedback_and_scores(
             "answeredCount": 0,
         }
     ]
+
+
+def test_active_match_payload_reports_remaining_time_measured_at_response() -> None:
+    repository = MatchApiRepository()
+    now = datetime(2026, 9, 18, 0, 0, 12, 500_000, tzinfo=UTC)
+
+    running = _match_payload(repository.match, now)
+    revealing = _match_payload(
+        replace(
+            repository.match,
+            state="revealing",
+            deadline_at="2026-09-18T00:00:28+00:00",
+            own_answer=repository.answer,
+        ),
+        now,
+    )
+    finished = _match_payload(
+        replace(repository.match, state="finished", deadline_at=None, question=None),
+        now,
+    )
+
+    # 마감 시각과 함께 «응답 시점의 남은 양»을 보낸다. 브라우저 시계가 틀려도 표시가 맞는다.
+    assert running["deadlineAt"] == "2026-09-18T00:00:20+00:00"
+    assert running["remainingMs"] == 7_500
+    # 공개 phase의 deadline은 다음 문제로 넘어가는 시각이다.
+    assert revealing["remainingMs"] == 15_500
+    assert finished["remainingMs"] is None
+
+
+def test_remaining_time_never_goes_negative_after_the_deadline() -> None:
+    repository = MatchApiRepository()
+    late = datetime(2026, 9, 18, 0, 1, 0, tzinfo=UTC)
+
+    assert _match_payload(repository.match, late)["remainingMs"] == 0
+
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+    assert response.status_code == 200
+    # 고정된 테스트 마감은 이미 지났다. 판정은 서버가 하고 표시는 0에서 멈춘다.
+    assert response.json()["remainingMs"] == 0
 
 
 def test_answer_submission_is_rate_limited_per_player_and_room() -> None:

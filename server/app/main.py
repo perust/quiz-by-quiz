@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from itertools import count
 from typing import Annotated, Any
 from uuid import UUID
@@ -604,7 +605,22 @@ def _own_submission_payload(answer: MatchAnswerView) -> dict[str, object]:
     }
 
 
-def _match_payload(match: MatchView) -> dict[str, object]:
+def _remaining_ms(match: MatchView, now: datetime) -> int | None:
+    """응답 시점까지 남은 활성 phase 시간. 브라우저는 표시용 카운트다운에만 쓴다.
+
+    running이면 제출 마감까지, revealing이면 다음 문제(또는 최종 순위)까지의 시간이다.
+    브라우저 시계 오차와 무관하도록 절대 시각이 아니라 남은 양으로 보낸다. 마감 판정은
+    언제나 서버(PostgreSQL deadline)가 한다.
+    """
+    if match.state not in {"running", "revealing"} or match.deadline_at is None:
+        return None
+    deadline = datetime.fromisoformat(match.deadline_at)
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    return max(0, math.floor((deadline - now).total_seconds() * 1000))
+
+
+def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, object]:
     question = None
     if match.question is not None:
         question = {
@@ -623,6 +639,7 @@ def _match_payload(match: MatchView) -> dict[str, object]:
         "currentPosition": match.current_position,
         "totalQuestions": match.total_questions,
         "deadlineAt": match.deadline_at,
+        "remainingMs": _remaining_ms(match, now or datetime.now(UTC)),
         "question": question,
         "ownSubmission": (
             _own_submission_payload(match.own_answer)

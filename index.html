@@ -227,11 +227,12 @@
           <button type="button" class="button button--ghost button--small" id="online-quiz-exit">나가기</button>
         </header>
 
-        <!-- server deadline의 시각적 안내일 뿐 timeout·채점·다음 문제 전환은 server가 한다. -->
+        <!-- 서버가 보낸 남은 시간(remainingMs)의 표시일 뿐 timeout·채점·다음 문제 전환은 server가 한다.
+             로컬처럼 aria-hidden이고, 남은 5초 경고만 문항당 한 번 announce()로 알린다. -->
         <div class="timer" id="online-timer" aria-hidden="true">
           <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
           <p class="timer__label"><span class="timer__icon" id="online-timer-icon"></span>
-            <span id="online-timer-text">서버 시간을 확인하는 중입니다</span></p>
+            <span id="online-timer-text">남은 시간을 확인하는 중이에요</span></p>
         </div>
       </div>
 
@@ -252,6 +253,14 @@
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 제출하세요</span>
         </p>
       </div>
+      <!-- 로컬 피드백처럼 무대 바로 뒤의 문서 흐름에 둔다. 채팅 아래 맨 끝에 있으면 휴대폰에서는
+           공개 시간 안에 화면에 들어오지 않았다. 무대 위에 겹쳐 띄우지 않는다 — 칸의 결과 표시를 가린다. -->
+      <section class="online-reveal" id="online-reveal" aria-live="polite" hidden>
+        <h2 class="online-reveal__verdict" id="online-reveal-verdict"></h2>
+        <!-- 틀렸을 때만 «정답 / 내 답» 줄을 채운다. 로컬 피드백과 같은 공유 마크업이다 -->
+        <div class="feedback__answer" id="online-reveal-answer" hidden></div>
+        <p class="online-reveal__explanation" id="online-reveal-explanation"></p>
+      </section>
       <p class="online-match-status" id="online-match-status" role="status"></p>
       <section class="online-quiz-chat" aria-labelledby="online-chat-title">
         <h2 class="sr-only" id="online-chat-title">문제 풀이 중 대화</h2>
@@ -266,10 +275,6 @@
         <ul class="chat-log online-quiz-chat__log" id="online-chat-log"
             role="log" aria-live="polite"></ul>
       </section>
-      <section class="online-reveal" id="online-reveal" aria-live="polite" hidden>
-        <h2 class="online-reveal__verdict" id="online-reveal-verdict"></h2>
-        <p class="online-reveal__explanation" id="online-reveal-explanation"></p>
-      </section>
     </section>
 
     <!-- ─────────── 서버 권위 온라인 최종 순위 ─────────── -->
@@ -278,7 +283,7 @@
         <h1 class="screen-title" id="online-final-title">온라인 매치 결과</h1>
       </header>
       <p class="online-final__summary" id="online-final-summary" role="status"></p>
-      <ol class="online-final-ranking" id="online-final-ranking" aria-label="서버 최종 순위"></ol>
+      <ol class="online-final-ranking" id="online-final-ranking" aria-label="최종 순위"></ol>
       <div class="result-actions">
         <button type="button" class="button button--primary" id="online-final-room">대기실로</button>
         <button type="button" class="button button--ghost" id="online-final-home">홈으로</button>
@@ -780,9 +785,11 @@
   <div class="dialog-backdrop" id="online-help-dialog" hidden>
     <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="online-help-dialog-title">
       <h2 class="dialog__title" id="online-help-dialog-title">온라인 캐릭터 퀴즈 조작법</h2>
+      <!-- 혼자 하는 퀴즈와 규칙이 다르다: 온라인에서는 칸에 서 있기만 하면 답이 나가지 않는다 -->
       <p class="dialog__body">
-        캐릭터를 답 칸으로 움직인 뒤 <strong>Enter · Space 또는 선택 버튼으로 제출</strong>합니다.
-        바닥을 직접 눌러도 그 칸으로 이동해 제출합니다. 제한 시간과 채점은 서버가 관리합니다.
+        캐릭터를 답 칸으로 움직인 뒤 <strong>선택 버튼이나 Enter · Space를 눌러야 제출</strong>돼요.
+        칸 위에 서 있기만 하면 제출되지 않아요. 바닥 칸이나 위의 보기를 직접 눌러도 바로 제출돼요.
+        순위는 맞힌 개수로만 정해요. 빨리 답해도 점수는 같아요.
       </p>
       <dl class="help-list">
         <dt>움직이기</dt>
@@ -790,12 +797,25 @@
         <dt>대각선</dt>
         <dd>두 방향을 함께 누릅니다</dd>
         <dt>제출</dt>
-        <dd><kbd>Enter</kbd> · <kbd>Space</kbd> 또는 오른쪽 <strong>선택</strong> 버튼을 누릅니다</dd>
+        <dd>칸 위에서 <kbd>Enter</kbd> · <kbd>Space</kbd> 또는 오른쪽 <strong>선택</strong> 버튼을 누릅니다</dd>
         <dt>번호로</dt>
         <dd><kbd>1</kbd> ~ <kbd>4</kbd> 로도 답을 바로 고를 수 있습니다</dd>
       </dl>
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="online-help-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 온라인 매치 나가기 확인. 매치는 서버에서 계속되고 방에서 나간 것도 아니다 -->
+  <div class="dialog-backdrop" id="online-exit-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="online-exit-dialog-title"
+         aria-describedby="online-exit-dialog-body">
+      <h2 class="dialog__title" id="online-exit-dialog-title">매치를 떠날까요?</h2>
+      <p class="dialog__body" id="online-exit-dialog-body">목록의 「들어가기」로 다시 돌아올 수 있어요.</p>
+      <div class="dialog__actions">
+        <button type="button" class="button button--ghost" id="online-exit-cancel">계속 풀기</button>
+        <button type="button" class="button button--danger" id="online-exit-confirm">나가기</button>
       </div>
     </div>
   </div>

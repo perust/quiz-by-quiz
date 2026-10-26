@@ -358,7 +358,7 @@ async function main(): Promise<void> {
     onExit: () => {
       stopOnlineMatch();
       onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
-      void openOnline('매치는 서버에서 계속 진행됩니다. 방에 다시 들어가 이어서 풀 수 있어요.');
+      void openOnline('매치는 계속 진행돼요. 목록의 「들어가기」로 다시 돌아올 수 있어요.');
     },
     onFinished: showOnlineFinal,
   });
@@ -436,7 +436,7 @@ async function main(): Promise<void> {
     stopOnlineMatch();
     onlineMatchRoomCode = code;
     onlineQuizScreen.startPresence();
-    onlineQuizScreen.setNotice('서버 매치 상태를 불러오는 중입니다.');
+    onlineQuizScreen.setNotice('매치를 불러오는 중이에요.');
     goTo('online-quiz');
     onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
     await onlineMatchController?.open(code);
