@@ -13,6 +13,7 @@
 //   createRoom(spec)       {ok, room} | {ok:false, message}
 //   joinRoom(spec)         {ok, room} | {ok:false, reason}
 //   leaveRoom(spec)
+//   removeMember(spec)     연결이 끊긴 참가자 내보내기 (방장만, U24)
 //   getRoom(code)          방 하나
 //   updateRoom(spec)       방 설정 (방장만)
 //   sendChat(spec)         한마디
@@ -23,6 +24,7 @@
 //   {type: 'room',  room}                     방 설정이 바뀌었다
 //   {type: 'chat',  playerId, nickname, text} 누가 한마디 했다
 //   {type: 'match', phase: 'started', setup}  판이 열렸다
+//   {type: 'removed'}                         끊긴 사이 방장이 나를 내보냈다 (U24)
 //
 // **여는 사람이 판을 직접 시작하지 않는다.** `startGame`은 «시작됐다»는 이벤트를
 // 보낼 뿐이고 화면은 그 이벤트를 보고 움직인다. 서버 구현에서는 같은 이벤트가 방에
@@ -47,7 +49,7 @@ import type {
   WaitingRoomSeatId,
 } from './movement-contract.js';
 import { createNetworkRoomStore } from './network-rooms.js';
-import type { JoinFailReason } from './rules.js';
+import type { JoinFailReason, RemoveMemberFailReason } from './rules.js';
 
 /** 방에 서 있는 사람. **밖으로 나가는 모습이라 `seenAt` 같은 속사정은 없다** */
 export interface PublicPlayer {
@@ -169,6 +171,14 @@ export type RoomActionResult =
 export type ReadyResult =
   | { ok: true; room: PublicRoom }
   | { ok: false; reason: 'not-found' | 'not-member' | 'game-in-progress' };
+
+/**
+ * 방장의 «내보내기» (U24). **유예를 넘겨 끊긴 사람만** 내보낸다 — 판정은 구현체가 한다.
+ * 화면에서만 막으면 서버 구현에서 그대로 뚫린다.
+ */
+export type RemoveMemberResult =
+  | { ok: true; room: PublicRoom }
+  | { ok: false; reason: RemoveMemberFailReason };
 
 export type StartGameResult =
   | { ok: true; setup: MatchSetup }
@@ -315,7 +325,12 @@ export type RoomEvent =
     connectionGeneration: number;
   }
   | { type: 'match'; phase: 'started'; matchId: string | null; setup: MatchSetup }
-  | { type: 'match'; phase: 'invalidated'; matchId: string | null };
+  | { type: 'match'; phase: 'invalidated'; matchId: string | null }
+  /**
+   * 끊긴 사이 방장이 나를 이 방에서 내보냈다 (U24). 다시 붙으려다 서버가 알려 준다.
+   * 대기실은 로비로 돌아가며 그 말을 띄운다. 같은 코드로 다시 참가할 수는 있다.
+   */
+  | { type: 'removed' };
 
 export type RoomEventHandler = (event: RoomEvent) => void;
 
@@ -345,7 +360,15 @@ export interface RoomStore {
   createRoom(spec: CreateRoomSpec): Promise<CreateRoomResult>;
   joinRoom(spec: JoinRoomSpec): Promise<JoinRoomResult>;
   leaveRoom(spec: { code: string }): Promise<{ ok: true }>;
-  /** 방 하나. 없으면 null */
+  /**
+   * 방장이 연결이 끊긴 참가자를 내보낸다 (U24). 접속 중인 사람은 `member-connected`로 거절한다.
+   * 로컬 방은 끊김을 알 길이 없어(모두 `connected: true`) 언제나 그렇게 거절한다.
+   */
+  removeMember(spec: { code: string; playerId: string }): Promise<RemoveMemberResult>;
+  /**
+   * 방 하나. 없으면 null. **끊긴 사이 방장이 나를 내보냈으면 `RemovedFromRoom`을 던진다** —
+   * «없는 방»과 다른 말을 해야 한다 (U24)
+   */
   getRoom(code: string): Promise<PublicRoom | null>;
   updateRoom(spec: { code: string; patch: RoomPatch }): Promise<RoomActionResult>;
   /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */

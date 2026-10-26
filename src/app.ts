@@ -14,6 +14,7 @@ import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession, type QuizSession } from './core/session.js';
 import { summarizeRound } from './core/scoring.js';
+import { buildRecordsExport, recordsExportFileName } from './core/records-export.js';
 import { preferences, rankingStore } from './storage/adapter.js';
 import { playToggleOn, setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen, type ScreenName } from './ui/screens.js';
@@ -29,6 +30,7 @@ import {
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
+import { createChatMutes } from './ui/chat-mutes.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
@@ -231,9 +233,14 @@ async function main(): Promise<void> {
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
 
+  // «이 사람 말 숨기기» (N06). 대기실과 그 방의 온라인 퀴즈가 같은 목록을 본다. 이 페이지의
+  // 메모리에만 있고 서버에도 저장소에도 가지 않는다
+  const chatMutes = createChatMutes();
+
   // 대기실. server-authoritative event로 시작을 알리고, 독립 개발 문서에서는
   // 동일한 adapter contract를 따르는 local implementation이 한 판을 연다.
   const waitingRoom = createWaitingRoom({
+    chatMutes,
     roomStore,
     onLeave: (code, entryGeneration, reason) => {
       if (!isCurrentWaitingRoomEntry({
@@ -324,6 +331,19 @@ async function main(): Promise<void> {
       : (target.category ? banks[target.category]?.length ?? 0 : 0) > 0),
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
+    // 선생님께 낼 기록 파일 (N02). 저장소는 여기서만 부른다 — 화면은 받은 파일을 내려받기만 한다
+    exportRecords: async () => {
+      const targets: RankingTarget[] = [
+        { mode: 'all', category: null },
+        ...CATEGORIES.map((category) => ({ mode: 'category' as const, category: category.id })),
+      ];
+      const lists = await Promise.all(targets.map((target) => rankingStore.getRankings(target)));
+      const now = new Date();
+      return {
+        fileName: recordsExportFileName(savedNickname, now),
+        data: buildRecordsExport({ records: lists.flat(), nickname: savedNickname, now }),
+      };
+    },
   });
 
   // ── 서버 권위 온라인 매치 ──────────────────────────────────────
@@ -352,6 +372,9 @@ async function main(): Promise<void> {
       return result;
     },
     getPlayerId: () => roomStore.me(),
+    // 대기실에서 숨긴 사람의 말은 매치 중에도 그리지 않는다 (N06)
+    isChatHidden: (playerId) => onlineMatchRoomCode !== null
+      && chatMutes.isMuted(onlineMatchRoomCode, playerId),
     onExit: () => {
       stopOnlineMatch();
       onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');

@@ -197,6 +197,10 @@ class MatchPositionMismatch(RepositoryFailure):
     pass
 
 
+class MemberConnected(RepositoryFailure):
+    """내보내려는 참가자가 아직 접속 중이다. 방장은 유예를 넘겨 끊긴 사람만 내보낸다 (U24)."""
+
+
 class RoomsRepository(Protocol):
     async def open(self) -> None: ...
 
@@ -239,6 +243,18 @@ class RoomsRepository(Protocol):
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> RoomView | None: ...
+
+    # 방장이 유예를 넘겨 끊긴 참가자(absent_player_ids 안의 사람)만 방에서 뺀다 (U24).
+    # 접속 중인 사람은 MemberConnected, 도는 판에 자리가 있는 사람은 MatchInProgress다.
+    # 다시 참가하는 것은 막지 않는다.
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+    ) -> RoomView: ...
 
     async def update_room(
         self,

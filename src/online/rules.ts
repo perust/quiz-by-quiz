@@ -33,6 +33,17 @@ export type JoinFailReason =
 export type LeaveFailReason = 'game-in-progress';
 
 /**
+ * 방장의 «내보내기»가 거절될 수 있는 사연 (U24). REMOVE_MEMBER_MESSAGES가 빠짐없이 옮긴다.
+ * `member-connected`는 그 사이 다시 붙은 사람이다 — 접속 중인 사람은 내보낼 수 없다.
+ */
+export type RemoveMemberFailReason =
+  | 'not-found'
+  | 'not-host'
+  | 'not-member'
+  | 'member-connected'
+  | 'game-in-progress';
+
+/**
  * 방 코드에 쓰는 글자.
  * 0·O·1·I·L 처럼 눈으로 헷갈리는 것은 뺐다 — 코드는 사람이 불러 주고 받아 적는다.
  */
@@ -155,6 +166,22 @@ export const LEAVE_MESSAGES: Record<LeaveFailReason, string> = {
   'game-in-progress': '게임이 끝나면 나갈 수 있어요.',
 };
 
+/** 내보내기가 거절된 이유를 대기실 대화 로그에 남길 말로 옮긴다 (U24) */
+export const REMOVE_MEMBER_MESSAGES: Record<RemoveMemberFailReason, (nickname: string) => string> = {
+  'not-found': () => '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.',
+  'not-host': () => '방장만 참가자를 내보낼 수 있어요.',
+  'not-member': (nickname) => `${nickname} 님은 이미 방에 없어요.`,
+  // 확인창을 보는 사이 다시 붙었다. 연결된 사람은 내보내지 않는다
+  'member-connected': (nickname) => `${nickname} 님이 다시 연결됐어요. 연결이 끊긴 참가자만 내보낼 수 있어요.`,
+  'game-in-progress': (nickname) => `${nickname} 님은 진행 중인 판에 자리가 있어요. 판이 끝난 뒤에 내보낼 수 있어요.`,
+};
+
+/**
+ * 끊긴 사이 방장이 나를 방에서 내보냈다 (U24). «그 방은 이미 사라졌어요»로 돌려보내면 방이
+ * 없어진 줄 안다. 막은 것은 아니다 — 같은 코드로 다시 참가할 수 있다.
+ */
+export const REMOVED_BY_HOST_MESSAGE = '방장이 방에서 내보냈어요. 방 코드로 다시 참가할 수 있어요.';
+
 /**
  * **플레이어에게 그대로 보여도 되는 말**을 가진 온라인 오류 (U40).
  *
@@ -191,5 +218,16 @@ export class LeaveRoomRejected extends OnlinePlayerError {
   constructor(readonly reason: LeaveFailReason) {
     super(LEAVE_MESSAGES[reason]);
     this.name = 'LeaveRoomRejected';
+  }
+}
+
+/**
+ * 방을 읽어 보니 방장이 나를 내보냈다는 표시 (U24). `getRoom`은 «없으면 null»인데, 내보내진
+ * 것은 «없는 방»과 다른 말을 해야 해서 이 오류로 던진다. 대기실이 받아 로비로 돌려보내며 이 말을 띄운다.
+ */
+export class RemovedFromRoom extends OnlinePlayerError {
+  constructor() {
+    super(REMOVED_BY_HOST_MESSAGE);
+    this.name = 'RemovedFromRoom';
   }
 }

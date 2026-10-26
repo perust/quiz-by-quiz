@@ -325,6 +325,8 @@
   --i-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 0h4v2h-4zM10 2h4v2h-4zM8 4h8v2h-8zM0 6h24v2h-24zM2 8h20v2h-20zM4 10h16v2h-16zM6 12h12v2h-12zM4 14h16v2h-16zM4 16h6v2h-6zM14 16h6v2h-6zM2 18h4v2h-4zM18 18h4v2h-4zM2 20h2v2h-2zM20 20h2v2h-2z'/%3E%3C/svg%3E");
   --i-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 0h8v2h-8zM4 2h4v2h-4zM16 2h4v2h-4zM2 4h2v2h-2zM20 4h2v2h-2zM2 6h2v2h-2zM8 6h8v2h-8zM20 6h2v2h-2zM0 8h2v2h-2zM6 8h2v2h-2zM16 8h2v2h-2zM22 8h2v2h-2zM0 10h2v2h-2zM6 10h2v2h-2zM10 10h4v2h-4zM16 10h2v2h-2zM22 10h2v2h-2zM0 12h2v2h-2zM6 12h2v2h-2zM10 12h4v2h-4zM16 12h2v2h-2zM22 12h2v2h-2zM0 14h2v2h-2zM6 14h2v2h-2zM16 14h2v2h-2zM22 14h2v2h-2zM2 16h2v2h-2zM8 16h8v2h-8zM20 16h2v2h-2zM2 18h2v2h-2zM20 18h2v2h-2zM4 20h4v2h-4zM16 20h4v2h-4zM8 22h8v2h-8z'/%3E%3C/svg%3E");
   --i-hourglass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 2h20v2h-20zM4 4h2v2h-2zM18 4h2v2h-2zM4 6h2v2h-2zM18 6h2v2h-2zM6 8h2v2h-2zM10 8h4v2h-4zM16 8h2v2h-2zM8 10h8v2h-8zM8 12h2v2h-2zM14 12h2v2h-2zM6 14h2v2h-2zM16 14h2v2h-2zM4 16h2v2h-2zM10 16h4v2h-4zM18 16h2v2h-2zM4 18h2v2h-2zM8 18h8v2h-8zM18 18h2v2h-2zM2 20h20v2h-20z'/%3E%3C/svg%3E");
+  --i-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 2h16v2h-16zM2 4h2v2h-2zM20 4h2v2h-2zM0 6h2v2h-2zM22 6h2v2h-2zM0 8h2v2h-2zM6 8h12v2h-12zM22 8h2v2h-2zM0 10h2v2h-2zM22 10h2v2h-2zM0 12h2v2h-2zM6 12h8v2h-8zM22 12h2v2h-2zM2 14h2v2h-2zM20 14h2v2h-2zM4 16h16v2h-16zM6 18h4v2h-4zM6 20h2v2h-2z'/%3E%3C/svg%3E");
+  --i-chat-off: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 2h16v2h-16zM2 4h2v2h-2zM20 4h2v2h-2zM0 6h2v2h-2zM8 6h2v2h-2zM14 6h2v2h-2zM22 6h2v2h-2zM0 8h2v2h-2zM10 8h4v2h-4zM22 8h2v2h-2zM0 10h2v2h-2zM10 10h4v2h-4zM22 10h2v2h-2zM0 12h2v2h-2zM8 12h2v2h-2zM14 12h2v2h-2zM22 12h2v2h-2zM2 14h2v2h-2zM20 14h2v2h-2zM4 16h16v2h-16zM6 18h4v2h-4zM6 20h2v2h-2z'/%3E%3C/svg%3E");
   --i-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 0h8v2h-8zM4 2h16v2h-16zM2 4h8v2h-8zM14 4h8v2h-8zM2 6h20v2h-20zM0 8h10v2h-10zM14 8h10v2h-10zM0 10h10v2h-10zM14 10h10v2h-10zM0 12h10v2h-10zM14 12h10v2h-10zM0 14h10v2h-10zM14 14h10v2h-10zM2 16h8v2h-8zM14 16h8v2h-8zM2 18h20v2h-20zM4 20h16v2h-16zM8 22h8v2h-8z'/%3E%3C/svg%3E");
   --i-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 8h4v2h-4zM16 8h4v2h-4zM4 10h6v2h-6zM14 10h6v2h-6zM6 12h12v2h-12zM8 14h8v2h-8zM10 16h4v2h-4z'/%3E%3C/svg%3E");
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23585d7b' d='M4 6h4v2h-4zM16 6h4v2h-4zM4 8h6v2h-6zM14 8h6v2h-6zM6 10h12v2h-12zM8 12h8v2h-8zM10 14h4v2h-4z'/%3E%3C/svg%3E");
@@ -375,6 +377,8 @@
 [data-icon='hourglass'] { --icon: var(--i-hourglass); }
 [data-icon='chevron'] { --icon: var(--i-chevron); }
 [data-icon='info'] { --icon: var(--i-info); }
+[data-icon='chat'] { --icon: var(--i-chat); }
+[data-icon='chat-off'] { --icon: var(--i-chat-off); }
 
 /* 아이콘 칸: 옅은 바탕 위에 아이콘 하나. 칸 요소에 data-icon 을 달면 ::before 가 그린다 */
 .menu-card__figure::before,
@@ -2920,6 +2924,7 @@ select.room-form__input {
    보는 쪽에서는 둘 다 「지금 여기서 Enter」라 표시를 나눌 이유가 없다. */
 .button.is-standing,
 .icon-button.is-standing,
+.lounge__mute.is-standing,
 .ranking-tab.is-standing,
 .character-card.is-standing,
 .arena__help.is-standing,
@@ -2988,6 +2993,61 @@ select.is-standing {
   .character-card.is-standing:not(:focus-visible):not(.character-card--on) {
   border-color: var(--world-floor-line);
   background: var(--world-floor-glass);
+}
+
+/* 액자의 말 숨기기 (N06). 44px 목표 안의 둥근 배지 — 쉬는 때는 흰 바탕에 말풍선, 숨기면 보라로
+   채워지고 «말풍선 ×»로 바뀐다. 색만이 아니라 채움과 모양으로 상태를 말한다(디자인 시스템 §6).
+   이름은 aria-label 로 고정이고 숨김 여부는 aria-pressed 가 낭독한다. 고리는 44px 목표를 따른다 */
+.lounge__mute {
+  --icon: var(--i-chat);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--accent-ink);
+}
+
+.lounge__mute[aria-pressed='true'] {
+  --icon: var(--i-chat-off);
+  color: var(--on-accent);
+}
+
+.lounge__mute-badge {
+  border: var(--border-1) solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: var(--elevation-1);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.lounge__mute[aria-pressed='true'] .lounge__mute-badge {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+@media (hover: hover) {
+  .lounge__mute:hover .lounge__mute-badge {
+    border-color: var(--accent-line);
+  }
+}
+
+.lounge__mute:active .lounge__mute-badge {
+  translate: 0 1px;
+  box-shadow: none;
+}
+
+/* 방장의 내보내기는 위험 보조 버튼(랭킹 초기화와 같은 흰 바탕 코랄 글자)이다 */
+.lounge__remove.button--ghost {
+  color: var(--wrong-ink);
+}
+
+@media (hover: hover) {
+  .lounge__remove.button--ghost:hover:not(:disabled) {
+    border-color: var(--wrong);
+    background: var(--wrong-soft);
+    color: var(--wrong-ink);
+  }
 }
 
 /* 앉아 있는 좌석의 민트 고리는 올라섬이 아니라 «앉음» 상태다 (css/style.css 대기실 좌석) */
@@ -3750,6 +3810,40 @@ body:has([data-screen='home']:not([hidden])) {
   background: var(--world-glass);
   color: var(--text);
   box-shadow: var(--elevation-1);
+}
+
+/* 기록 내보내기 (N02). 세계 위의 작은 글자라 빈 상태와 같은 유리 표면에 둔다 */
+.ranking-export {
+  border: var(--border-1) solid var(--world-floor-line);
+  border-radius: var(--radius-lg);
+  background: var(--world-glass);
+  color: var(--text);
+  box-shadow: var(--elevation-1);
+  backdrop-filter: blur(8px);
+}
+
+.ranking-export__note {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.ranking-export__status {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-snug);
+}
+
+.ranking-export__text {
+  border: var(--border-1) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  /* 입력칸은 16px 아래로 내리지 않는다 — iOS 가 포커스할 때 화면을 확대한다 */
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
 }
 
 .character-stage {

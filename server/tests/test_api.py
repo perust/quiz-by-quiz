@@ -13,12 +13,15 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.main import EventHub, create_app
+from app.main import EventHub, RemovedMembers, create_app
 from app.password_work import PasswordWorkBusy
 from app.repository import (
     AbsentHostSweep,
     AccessInfo,
+    MatchInProgress,
     MatchSetup,
+    MemberConnected,
+    NotHost,
     PlayerView,
     RoomFull,
     RoomView,
@@ -82,6 +85,10 @@ class FakeRepository:
         # None이면 끊긴 사람도 모두 아직 참가자다. 값이 있으면 그 사람들만 참가자다.
         self.member_ids: frozenset[UUID] | None = None
         self.leave_absent_player_ids: frozenset[UUID] | None = None
+        # 방에서 빠진 사람. 이 사람에게는 방이 없고(get_room None) 소켓 티켓도 나오지 않는다.
+        self.non_member_ids: set[UUID] = set()
+        self.remove_calls: list[tuple[UUID, str, UUID, frozenset[UUID]]] = []
+        self.remove_error: Exception | None = None
 
     async def open(self) -> None:
         return None
@@ -124,6 +131,8 @@ class FakeRepository:
         return self.room
 
     async def get_room(self, actor_id: UUID, code: str) -> RoomView | None:
+        if actor_id in self.non_member_ids:
+            return None
         return self.room if code == self.room.code else None
 
     async def get_access(self, code: str) -> AccessInfo | None:
@@ -133,6 +142,7 @@ class FakeRepository:
 
     async def join_room(self, actor_id: UUID, code: str) -> RoomView:
         self.join_calls += 1
+        self.non_member_ids.discard(actor_id)
         return self.room
 
     async def leave_room(
@@ -144,6 +154,26 @@ class FakeRepository:
     ) -> RoomView | None:
         self.leave_absent_player_ids = absent_player_ids
         return None
+
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+    ) -> RoomView:
+        self.remove_calls.append((actor_id, code, player_id, absent_player_ids))
+        if self.remove_error is not None:
+            raise self.remove_error
+        if player_id not in absent_player_ids:
+            raise MemberConnected
+        self.non_member_ids.add(player_id)
+        self.room = replace(
+            self.room,
+            players=tuple(player for player in self.room.players if player.id != player_id),
+        )
+        return self.room
 
     async def update_room(self, actor_id: UUID, code: str, patch: Any) -> RoomView:
         self.update_calls += 1
@@ -205,7 +235,7 @@ class FakeRepository:
         return False
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
-        return self.member and code == self.room.code
+        return self.member and code == self.room.code and actor_id not in self.non_member_ids
 
     async def touch_member(self, actor_id: UUID, code: str) -> None:
         self.touch_calls += 1
@@ -1336,3 +1366,120 @@ def test_leave_hands_the_host_to_a_connected_member_and_forgets_a_deleted_room()
     assert repository.leave_absent_player_ids == frozenset({OTHER_ID})
     # 이 가짜 방은 마지막 사람이 나가 사라졌다. 같은 코드의 기록이 남지 않는다.
     assert hub.absent_actors("ABC234") == frozenset()
+
+
+def _two_member_room(host_id: UUID, ghost_id: UUID) -> RoomView:
+    return room_view(
+        players=(
+            PlayerView(id=host_id, nickname="방장", character_id="slime-blue"),
+            PlayerView(id=ghost_id, nickname="유령", character_id="slime-pink"),
+        ),
+    )
+
+
+def test_host_removes_a_long_disconnected_member_and_they_hear_why_when_they_return() -> None:
+    # U24: 탭을 닫고 떠난 자리를 방장이 비운다. 돌아온 사람은 «없는 방»이 아니라 이유를 듣고,
+    # 다시 들어오는 것은 막지 않는다(차단이 아니다).
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.password_hash = None
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(repository=repository, event_hub=hub)
+    with TestClient(app) as client:
+        host = register_rotating_identity(client, 60, "198.51.100.60")
+        ghost = register_rotating_identity(client, 61, "198.51.100.61")
+        host_id = UUID(host["X-Player-Id"])
+        ghost_id = UUID(ghost["X-Player-Id"])
+        repository.room = _two_member_room(host_id, ghost_id)
+        host_ticket, ghost_ticket = _issue_tickets(client, host, ghost)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(host_ticket),
+        ) as host_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(ghost_ticket),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            # 유예 안에서는 내보낼 수 없다 — 잠깐 끊긴 사람은 곧 돌아온다.
+            early = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
+            assert early.status_code == 409
+            assert early.json()["detail"]["code"] == "member-connected"
+
+            clock.now += 61
+            removed = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
+            assert removed.status_code == 200
+            assert [player["id"] for player in removed.json()["players"]] == [str(host_id)]
+            assert host_socket.receive_json() == {"type": "room-invalidated"}
+
+        assert repository.remove_calls[-1] == (host_id, "ABC234", ghost_id, frozenset({ghost_id}))
+        # 끊김 기록은 멤버십과 함께 끝난다.
+        assert hub.absent_actors("ABC234") == frozenset()
+
+        returned = client.get("/v1/rooms/ABC234", headers=ghost)
+        assert returned.status_code == 404
+        assert returned.json()["detail"]["code"] == "removed"
+        reconnect = client.post("/v1/rooms/ABC234/ws-ticket", headers=ghost)
+        assert reconnect.status_code == 403
+        assert reconnect.json()["detail"]["code"] == "removed"
+
+        # 다시 참가할 수 있고, 그 뒤에 빠지면 더는 «내보냈다»가 아니다.
+        rejoined = client.post("/v1/rooms/ABC234/join", headers=ghost, json={})
+        assert rejoined.status_code == 200
+        repository.non_member_ids.add(ghost_id)
+        later = client.get("/v1/rooms/ABC234", headers=ghost)
+        assert later.json()["detail"]["code"] == "not-found"
+
+
+def test_member_removal_rejects_self_bad_ids_and_maps_repository_refusals() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        own = client.delete(f"/v1/rooms/ABC234/members/{PLAYER_ID}", headers=HEADERS)
+        assert own.status_code == 400
+        assert own.json()["detail"]["code"] == "invalid-target"
+        malformed = client.delete("/v1/rooms/ABC234/members/not-a-uuid", headers=HEADERS)
+        assert malformed.status_code == 404
+        assert malformed.json()["detail"]["code"] == "not-member"
+        assert repository.remove_calls == []
+
+        assert hub.is_present("ABC234", OTHER_ID)
+        clock.now += 61
+        refusals = (
+            (NotHost(), 403, "not-host"),
+            (MatchInProgress(), 409, "game-in-progress"),
+            (MemberConnected(), 409, "member-connected"),
+        )
+        for error, status, code in refusals:
+            repository.remove_error = error
+            response = client.delete(f"/v1/rooms/ABC234/members/{OTHER_ID}", headers=HEADERS)
+            assert (response.status_code, response.json()["detail"]["code"]) == (status, code)
+        # 나가기 경로는 그대로 나가기다.
+        assert client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS).status_code == 204
+    assert repository.remove_calls[0][3] == frozenset({OTHER_ID})
+    assert len(repository.remove_calls) == 3
+
+
+def test_removed_member_records_expire_and_stay_bounded() -> None:
+    clock = FakeClock()
+    records = RemovedMembers(record_seconds=60, max_records=2, clock=clock)
+    records.mark("ABC234", PLAYER_ID)
+    assert records.was_removed("ABC234", PLAYER_ID)
+    assert not records.was_removed("XYZ789", PLAYER_ID)
+    clock.now += 61
+    assert not records.was_removed("ABC234", PLAYER_ID)
+
+    for index in range(3):
+        records.mark("ABC234", UUID(int=index + 1))
+    assert not records.was_removed("ABC234", UUID(int=1))
+    assert records.was_removed("ABC234", UUID(int=3))
+    records.forget("ABC234", UUID(int=3))
+    assert not records.was_removed("ABC234", UUID(int=3))
+    records.forget_room("ABC234")
+    assert not records.was_removed("ABC234", UUID(int=2))
