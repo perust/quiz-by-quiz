@@ -361,6 +361,11 @@ export interface OnlineQuizScreenDeps {
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
   getPlayerId: () => string;
+  /**
+   * 대기실에서 «말 숨기기»를 켠 사람인가 (N06). 그 사람의 말풍선과 대화 줄을 내 화면에 그리지 않는다.
+   * 이 화면은 방 코드를 모르므로 app.ts가 지금 매치의 방으로 묻는다. 없으면 아무도 숨기지 않는다
+   */
+  isChatHidden?: (playerId: string) => boolean;
   createCharacterArena: (deps: ArenaDeps) => Arena;
   trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
 }
@@ -396,6 +401,7 @@ export function createOnlineQuizScreen(
     onExit,
     onFinished,
     getPlayerId,
+    isChatHidden = () => false,
     createCharacterArena,
     trapFocus,
   }: OnlineQuizScreenDeps,
@@ -638,6 +644,8 @@ export function createOnlineQuizScreen(
 
   function updateChat(event: OnlineChatEvent): void {
     if (!presenceActive) return;
+    // 내가 숨긴 사람의 말은 로그에도 말풍선에도 그리지 않는다 (N06). 내 말은 숨기지 않는다
+    if (event.playerId !== getPlayerId() && isChatHidden(event.playerId)) return;
     appendChatLine(event.nickname, event.text);
     chatBubbles.show(event.playerId, event.text);
     const bubble = chatBubbleNodes.get(event.playerId);

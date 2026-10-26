@@ -20,6 +20,7 @@ import type {
   PlayerInfo,
   PublicPlayer,
   PublicRoom,
+  RemoveMemberResult,
   RoomActionResult,
   RoomEvent,
   RoomEventHandler,
@@ -41,7 +42,9 @@ import {
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
+  RemovedFromRoom,
   type JoinFailReason,
+  type RemoveMemberFailReason,
 } from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
@@ -55,6 +58,14 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   // 409·429. 연결 실패로 던지면 화면이 «네트워크를 확인하라»고 잘못 말한다 (U33)
   'game-in-progress',
   'rate-limited',
+]);
+/** 내보내기 거절 가운데 화면이 이유를 말할 것. 그 밖(요청 한도 등)은 오류로 던진다 */
+const REMOVE_MEMBER_FAILURES = new Set<RemoveMemberFailReason>([
+  'not-found',
+  'not-host',
+  'not-member',
+  'member-connected',
+  'game-in-progress',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHARACTER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -760,6 +771,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         requestGeneration,
       };
     } catch (error) {
+      // 끊긴 사이 방장이 나를 내보냈다. «없는 방»과 다른 말을 해야 해서 따로 던진다 (U24)
+      if (error instanceof ApiFailure && error.code === 'removed') throw new RemovedFromRoom();
       if (error instanceof ApiFailure && error.status === 404) {
         return { room: null, requestGeneration };
       }
@@ -771,6 +784,27 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     const code = normalizeCode(rawCode);
     if (!CODE_PATTERN.test(code)) return null;
     return (await fetchRoomSnapshot(code)).room;
+  }
+
+  /** 방장의 «내보내기» (U24). 연결이 끊긴 참가자만 서버가 받아 준다 */
+  async function removeMember(spec: { code: string; playerId: string }): Promise<RemoveMemberResult> {
+    const code = normalizeCode(spec.code);
+    if (!CODE_PATTERN.test(code)) return { ok: false, reason: 'not-found' };
+    if (!UUID_PATTERN.test(spec.playerId)) return { ok: false, reason: 'not-member' };
+    const requestGeneration = beginRoomSnapshotRequest();
+    try {
+      const room = parseRoom(await request(
+        `/v1/rooms/${encodeURIComponent(code)}/members/${encodeURIComponent(spec.playerId)}`,
+        { method: 'DELETE' },
+      ));
+      commitRoomMutation(code, requestGeneration);
+      return { ok: true, room };
+    } catch (error) {
+      if (error instanceof ApiFailure && REMOVE_MEMBER_FAILURES.has(error.code as RemoveMemberFailReason)) {
+        return { ok: false, reason: error.code as RemoveMemberFailReason };
+      }
+      throw error;
+    }
   }
 
   async function updateRoom(spec: { code: string; patch: RoomPatch }): Promise<RoomActionResult> {
@@ -960,8 +994,25 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }, RECONNECT_DELAY_MS);
     }
 
+    /** 끊긴 사이 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 그만 붙고 화면에 알린다 (U24) */
+    function removedFromRoom(connectionGeneration: number): void {
+      if (stopped || connectionGeneration !== generation) return;
+      clearTimers();
+      handler({ type: 'removed' });
+    }
+
     async function refreshRoom(connectionGeneration: number): Promise<void> {
-      const { room, requestGeneration } = await fetchRoomSnapshot(code);
+      let snapshot: Awaited<ReturnType<typeof fetchRoomSnapshot>>;
+      try {
+        snapshot = await fetchRoomSnapshot(code);
+      } catch (error) {
+        if (error instanceof RemovedFromRoom) {
+          removedFromRoom(connectionGeneration);
+          return;
+        }
+        throw error;
+      }
+      const { room, requestGeneration } = snapshot;
       if (stopped || connectionGeneration !== generation) return;
       if (requestGeneration < latestDeliveredRoomGeneration) return;
       if (requestGeneration < mutationState.committedGeneration) return;
@@ -1145,7 +1196,12 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           scheduleReconnect();
         });
         connected.addEventListener('error', () => connected.close());
-      } catch {
+      } catch (error) {
+        // 서버가 «방장이 내보냈다»고 했다. 같은 티켓 요청을 되풀이하지 않는다 (U24)
+        if (error instanceof ApiFailure && error.code === 'removed') {
+          removedFromRoom(connectionGeneration);
+          return;
+        }
         scheduleReconnect();
       }
     }
@@ -1203,6 +1259,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       return { ok: true };
     },
     getRoom,
+    removeMember,
     updateRoom,
     setReady,
     async sendChat({ code, text, player }) {

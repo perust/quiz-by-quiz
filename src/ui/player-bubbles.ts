@@ -11,6 +11,8 @@ export interface PlayerBubbleController {
   unbindAll(): void;
   /** Replace this player's bubble and give the newest message full lifetime ownership. */
   show(playerId: string, text: string): void;
+  /** Hide this player's live bubble now, e.g. after I hid their messages on my screen (N06). */
+  clear(playerId: string): void;
   /** End the current room lifecycle, clearing messages, targets, and timers. */
   reset(): void;
 }
@@ -114,6 +116,10 @@ export function createPlayerBubbleController({
       bubble.timer = setTimer(() => clearActive(playerId, bubble), durationMs);
       const target = targets.get(playerId);
       if (target) project(playerId, target);
+    },
+
+    clear(playerId) {
+      clearActive(playerId);
     },
 
     reset() {

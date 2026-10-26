@@ -1439,6 +1439,39 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   min-width: 132px;
 }
 
+/* 기록 내보내기 (N02). 목록 아래, 위험 보조 버튼 위의 패널 하나. 파일·복사 두 버튼은 한 줄에 나란히,
+   좁으면 쌓는다. 클립보드를 못 쓰면 글을 펼쳐 모두 골라 둔다 */
+.ranking-export {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  word-break: keep-all;
+}
+
+.ranking-export__note,
+.ranking-export__status {
+  margin: 0;
+}
+
+.ranking-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ranking-export__actions .button {
+  flex: 1 1 140px;
+}
+
+.ranking-export__text {
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+
 .ranking-footer {
   display: flex;
   justify-content: center;
@@ -2983,6 +3016,50 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .lounge__player--offline .lounge__portrait {
   opacity: 0.55;
   filter: grayscale(1);
+}
+
+/* 액자의 작은 버튼 (N06 말 숨기기 · U24 내보내기). 말 숨기기는 액자 오른쪽 아래 귀퉁이에 걸린
+   44px 목표라 명단 높이를 늘리지 않는다 — 보이는 것은 그 안의 작은 배지다. 내보내기는 방장 화면의
+   끊긴 사람 상태판 아래에만 한 줄 생긴다. 둘 다 진짜 버튼이라 걸어가 밟고 Enter·직접 누르기·Tab 이
+   같은 길이다. 명단은 걷는 캐릭터(fixed)보다 DOM 앞이라 위치를 줘도 캐릭터와 말풍선을 덮지 않는다. */
+.lounge__player {
+  position: relative;
+}
+
+.lounge__mute {
+  position: absolute;
+  /* 액자(66px)의 오른쪽 아래 귀퉁이. 이름 줄(액자 아래 4px부터)은 덮지 않고, 옆 칸 사이 틈(12px) 안에 든다 */
+  top: 24px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.lounge__mute-badge {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+}
+
+/* .icon(디자인 층, 20px)보다 한 단계 구체적이어야 28px 배지 안에서 16px로 선다 */
+.lounge__mute .lounge__mute-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.lounge__remove {
+  width: 100%;
+  min-width: 0;
+  padding-inline: var(--space-1);
+  /* 80px 칸에서 «내보내기» 네 글자를 한 줄로 */
+  white-space: nowrap;
 }
 
 /* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 원격 캐릭터의 남의 말이 같은 모양이며,

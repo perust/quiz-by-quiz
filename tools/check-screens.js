@@ -47,6 +47,11 @@
 //      WASD로도 걷는다는 것을 알 길이 없었다 (U52) — 말한 키가 정말 캐릭터 몫인지 본다
 //   ⑭ 설정의 문항 시간 «제한 없음»(FR-3.7)은 시간 초과로 가는 길이 아예 없어야 한다. 25초를 앞당겨도
 //      판이 깨어나지 않는지, 설정 대화상자가 워커와 화면의 키(로비의 Esc)를 가두는지 함께 본다
+//   ⑮ 대기실 액자의 «말 숨기기»(N06)는 걸어가 밟고 누를 수 있는 진짜 44px 버튼이어야 한다 — 무엇이 그
+//      위를 덮으면 elementFromPoint 가 버튼을 집지 못해 워커로는 누를 수 없다. 로컬 방에는 끊김이 없어
+//      방장의 «내보내기»(U24)가 그려지지 않는다. 로컬 방에 점검용 손님을 잠깐 넣어 본다
+//   ⑯ 랭킹의 «기록 내보내기»(N02)는 선생님 모드 로더가 읽는 파일을 만든다(student 칸 없음, 문항별 정오 포함).
+//      내려받기와 클립보드는 가로채 실제 파일·클립보드를 건드리지 않는다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -482,6 +487,47 @@
       통과: !document.getElementById('ranking-footer').hidden,
       무엇: document.getElementById('ranking-footer').hidden ? '!! 숨김' : '보임',
     });
+
+    // ⑯ 기록 내보내기. 실제 내려받기·클립보드는 가로챈다
+    결과.push({
+      자리: '랭킹', 이름: '기록이 있으면 「기록 내보내기」가 보인다',
+      통과: !document.getElementById('ranking-export').hidden,
+      무엇: document.getElementById('ranking-export').hidden ? '!! 숨김' : '보임',
+    });
+    const 진짜링크클릭 = HTMLAnchorElement.prototype.click;
+    let 내려받기 = null;
+    HTMLAnchorElement.prototype.click = function 가로챈클릭() {
+      내려받기 = { 이름: this.download, 주소: this.href };
+    };
+    try {
+      await 눌러('ranking-export-file', 400);
+    } finally {
+      HTMLAnchorElement.prototype.click = 진짜링크클릭;
+    }
+    const 파일 = 내려받기 ? await fetch(내려받기.주소).then((r) => r.json()).catch(() => null) : null;
+    결과.push({
+      자리: '랭킹', 이름: '내보낸 파일은 선생님 모드가 읽는 모양이다 (student 없음·문항별 정오)',
+      통과: Boolean(파일) && 파일.schemaVersion === 1 && !('student' in 파일)
+        && Array.isArray(파일.records) && 파일.records.length >= 1
+        && 파일.records.some((기록) => Array.isArray(기록.questionResults))
+        && /^quiz-by-quiz-기록-.+-\d{4}-\d{2}-\d{2}\.json$/.test(내려받기.이름),
+      무엇: 파일 ? `${내려받기.이름} · 기록 ${파일.records?.length}개` : '!! 파일을 만들지 않았다',
+    });
+    const 클립보드 = navigator.clipboard;
+    let 복사한글 = null;
+    if (클립보드) 클립보드.writeText = async (글) => { 복사한글 = 글; };
+    try {
+      await 눌러('ranking-export-copy', 400);
+    } finally {
+      if (클립보드) delete 클립보드.writeText;
+    }
+    const 펼친글 = document.getElementById('ranking-export-text');
+    const 복사본 = 복사한글 ?? (펼친글.hidden ? null : 펼친글.value);
+    결과.push({
+      자리: '랭킹', 이름: '「기록 복사」는 같은 글을 클립보드에 넣거나 펼쳐 골라 둔다',
+      통과: Boolean(복사본) && JSON.parse(복사본).records.length === 파일?.records?.length,
+      무엇: document.getElementById('ranking-export-status').textContent || '(안내 없음)',
+    });
     history.back();
     await 화면기다리기('home');
     살펴본다('랭킹에서 「뒤로」', 'home', true);
@@ -719,6 +765,59 @@
     document.getElementById('create-form').requestSubmit();
     await 화면기다리기('waiting');
     살펴본다('대기실', 'waiting', true);
+
+    // ⑮ 액자의 말 숨기기·내보내기. 로컬 방은 이 브라우저의 나뿐이라 점검용 손님을 잠깐 넣는다
+    const 액자버튼 = (행동) => [...document.querySelectorAll(`#lounge-players [data-portrait-action="${행동}"]`)];
+    결과.push({
+      자리: '대기실', 이름: '내 액자에는 말 숨기기·내보내기가 없다',
+      통과: 액자버튼('mute').length === 0 && 액자버튼('remove').length === 0,
+      무엇: `말 숨기기 ${액자버튼('mute').length} · 내보내기 ${액자버튼('remove').length}`,
+    });
+    const 손님방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+    const 점검방 = 손님방.find((방) => 방.name === '점검용 방');
+    if (점검방) {
+      점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
+      localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
+    }
+    // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
+    await 눌러('setting-category', 400);
+    const [숨기기] = 액자버튼('mute');
+    // 화면 밖이면 elementFromPoint 가 null 이다. 보이는 데로 옮겨 놓고 잰다
+    숨기기?.scrollIntoView({ block: 'center' });
+    await 잠깐(100);
+    const 숨기기상자 = 숨기기?.getBoundingClientRect();
+    const 발밑 = 숨기기상자
+      ? document.elementFromPoint(숨기기상자.left + 숨기기상자.width / 2, 숨기기상자.top + 숨기기상자.height / 2)
+      : null;
+    결과.push({
+      자리: '대기실', 이름: '남의 액자에는 걸어가 밟을 수 있는 44px 말 숨기기 버튼이 있다',
+      통과: Boolean(숨기기) && 숨기기상자.width >= 44 && 숨기기상자.height >= 44
+        && Boolean(발밑?.closest('[data-portrait-action="mute"]'))
+        && 숨기기.getAttribute('aria-label') === '점검손님 님 말 숨기기',
+      무엇: 숨기기 ? `${Math.round(숨기기상자.width)}×${Math.round(숨기기상자.height)} · 발밑 ${발밑?.className || '(없음)'}` : '!! 버튼 없음',
+    });
+    숨기기?.click();
+    await 잠깐(200);
+    const 숨긴뒤 = 액자버튼('mute')[0];
+    const 로그끝 = document.getElementById('chat-log').lastElementChild?.textContent ?? '';
+    결과.push({
+      자리: '대기실', 이름: '말 숨기기는 aria-pressed 로 켜지고 조용한 한 줄을 남긴다',
+      통과: 숨긴뒤?.getAttribute('aria-pressed') === 'true' && 로그끝.includes('점검손님 님의 말을 숨겼어요'),
+      무엇: `${숨긴뒤?.getAttribute('aria-pressed')} · ${로그끝 || '(로그 없음)'}`,
+    });
+    숨긴뒤?.click();
+    결과.push({
+      자리: '대기실', 이름: '로컬 방에는 끊김이 없어 내보내기가 그려지지 않는다',
+      통과: 액자버튼('remove').length === 0 && document.getElementById('remove-member-dialog').hidden,
+      무엇: `내보내기 ${액자버튼('remove').length}`,
+    });
+    if (점검방) {
+      const 되돌린방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+      for (const 방 of 되돌린방) 방.players = (방.players ?? []).filter((사람) => 사람.id !== 'check-guest');
+      localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
+      await 눌러('setting-category', 400);
+    }
+    살펴본곳.push('대기실 액자 버튼');
 
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)

@@ -25,7 +25,7 @@ import {
 } from './movement-contract.js';
 import type {
   CreateRoomResult, CreateRoomSpec, JoinRoomResult, JoinRoomSpec, PublicRoom,
-  RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
+  RemoveMemberResult, RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
   PlayerInfo, StartGameResult, Unsubscribe,
 } from './adapter.js';
 import type { CategoryId } from '../types.js';
@@ -498,6 +498,20 @@ export const localRooms = {
       type: 'match', phase: 'started', matchId: null, setup,
     }), 0);
     return { ok: true, setup };
+  },
+
+  /**
+   * 방장의 «내보내기» (U24). 서버와 같은 규칙으로 판정한다 — 방장만, 남만, 방에 있는 사람만,
+   * 그리고 **연결이 끊긴 사람만**. 이 브라우저 안의 방은 끊김을 알 길이 없어 모두 `connected: true`
+   * 이므로 마지막 조건에서 언제나 거절한다. 화면도 끊긴 사람에게만 버튼을 그려 여기 올 일이 없다.
+   */
+  async removeMember({ code, playerId }: { code: string; playerId: string }): Promise<RemoveMemberResult> {
+    const room = readAll().find((item) => item.code === normalizeCode(code));
+    if (!room) return { ok: false, reason: 'not-found' };
+    if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
+    if (playerId === meId) return { ok: false, reason: 'member-connected' };
+    if (!room.players.some((player) => player.id === playerId)) return { ok: false, reason: 'not-member' };
+    return { ok: false, reason: 'member-connected' };
   },
 
   /** local room에는 server-authoritative match가 없으므로 snapshot을 꾸며 내지 않는다. */

@@ -132,18 +132,22 @@ function subjects(players: readonly PublicPlayer[]): string {
  *
  * 입장·퇴장·방장 승계만 알린다. 준비 토글은 잦아서 여기 넣으면 CHAT_LINES 몇 줄짜리
  * 대화가 금방 밀려난다 — 그건 시작 상태 줄이 맡는다. 한 snapshot의 같은 종류 사건은
- * 한 줄로 합친다.
+ * 한 줄로 합친다. `quiet`의 사람은 퇴장을 알리지 않는다 — 내가 방금 내보낸 사람이라
+ * 부르는 쪽이 «내보냈어요»로 따로 말한다(같은 일을 두 줄로 쓰지 않는다, U24).
  */
 export function waitingRoomChangeNotices(
   previous: PublicRoom,
   next: PublicRoom,
   playerId: string,
+  quiet: readonly string[] = [],
 ): string[] {
   if (previous.code !== next.code) return [];
   const before = new Set(previous.players.map((player) => player.id));
   const after = new Set(next.players.map((player) => player.id));
   const joined = next.players.filter((player) => !before.has(player.id) && player.id !== playerId);
-  const left = previous.players.filter((player) => !after.has(player.id) && player.id !== playerId);
+  const left = previous.players.filter((player) => !after.has(player.id)
+    && player.id !== playerId
+    && !quiet.includes(player.id));
 
   const notices: string[] = [];
   if (joined.length > 0) notices.push(`${subjects(joined)} 들어왔어요.`);

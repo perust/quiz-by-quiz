@@ -40,3 +40,39 @@ export function waitingRoomPortraits(
     };
   });
 }
+
+/**
+ * 액자에 붙는 작은 버튼 둘 (N06·U24).
+ *
+ * - **말 숨기기**는 내 액자 말고 모든 액자에 있다. 내 화면에서만 그 사람의 말을 그리지 않는 장치라
+ *   권한이 필요 없다. 이름은 바뀌지 않고 숨김 여부는 `aria-pressed`가 말한다 (U54와 같은 이유)
+ * - **내보내기**는 방장에게만, 유예를 넘겨 끊긴 남의 액자에만 있다. 접속 중인 사람을 쫓는 길은 두지
+ *   않는다(서버도 그렇게 판정한다). 로컬 방은 모두 `connected: true`라 그려지지 않는다
+ */
+export interface WaitingRoomPortraitActions {
+  mute: boolean;
+  /** 지금 그 사람의 말을 숨겼는가 (`aria-pressed`) */
+  muted: boolean;
+  remove: boolean;
+}
+
+export function waitingRoomPortraitActions(
+  portrait: Pick<WaitingRoomPortrait, 'isMe' | 'connected'>,
+  viewer: { isHost: boolean; muted: boolean },
+): WaitingRoomPortraitActions {
+  return {
+    mute: !portrait.isMe,
+    muted: !portrait.isMe && viewer.muted,
+    remove: viewer.isHost && !portrait.isMe && !portrait.connected,
+  };
+}
+
+/** 말 숨기기 버튼의 이름. 숨겨도 이름은 그대로고 `aria-pressed`가 바뀐다 */
+export function waitingRoomMuteLabel(nickname: string): string {
+  return `${nickname} 님 말 숨기기`;
+}
+
+/** 내보내기 버튼의 이름. 보이는 글자 «내보내기»를 품어 음성 조작으로도 부를 수 있다 */
+export function waitingRoomRemoveLabel(nickname: string): string {
+  return `${nickname} 님 내보내기`;
+}
