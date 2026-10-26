@@ -7,13 +7,14 @@ import {
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
   RECENT_QUESTION_MEMORY,
+  TIME_LIMIT_MS,
 } from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession, type QuizSession } from './core/session.js';
 import { summarizeRound } from './core/scoring.js';
 import { preferences, rankingStore } from './storage/adapter.js';
-import { setEnabled as setSoundEnabled } from './audio.js';
+import { playToggleOn, setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen, type ScreenName } from './ui/screens.js';
 import {
   backStepFor,
@@ -38,8 +39,8 @@ import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
+import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
 import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
-import { need } from './dom.js';
 import type { CategoryId, RankingTarget, RoundMode, RoundSummary } from './types.js';
 
 const ALL_MODE_LABEL = '전체 도전';
@@ -56,6 +57,8 @@ interface PendingResult {
   target: RankingTarget;
   /** 판이 끝난 시각. 닉네임을 입력한 시각이 아니다 */
   playedAt: string;
+  /** 그 판의 문항 시간. 기본(20초)이 아니면 기록에 함께 남긴다 (FR-3.7) */
+  timeLimitMs: number | null;
 }
 
 /**
@@ -104,57 +107,6 @@ function takeInviteCode(): string | null {
   return normalizeCode(raw) || null;
 }
 
-// ── 소리 설정 ────────────────────────────────────────────────────
-
-interface ToggleFace {
-  /** 아이콘 이름 (css/voxel-theme.css 의 data-icon 목록). 글리프를 쓰지 않는다 */
-  icon: string;
-  label: string;
-}
-
-interface ToggleSpec {
-  ids: { button: string; icon: string; label: string };
-  on: ToggleFace;
-  off: ToggleFace;
-  apply: (value: boolean) => void;
-  onChange: (value: boolean) => void;
-}
-
-interface Toggle {
-  /** **onChange를 부르지 않는다.** 저장된 값을 화면에 얹기만 한다 */
-  set(value: boolean): void;
-}
-
-/**
- * 앱 바의 소리 켬/끔 버튼.
- */
-function createToggle({ ids, on, off, apply, onChange }: ToggleSpec): Toggle {
-  const button = need(ids.button);
-  const icon = need(ids.icon);
-  const label = need(ids.label);
-  let enabled = false;
-
-  function render(): void {
-    apply(enabled);
-    button.setAttribute('aria-pressed', String(enabled));
-    icon.dataset.icon = enabled ? on.icon : off.icon;
-    label.textContent = enabled ? on.label : off.label;
-  }
-
-  button.addEventListener('click', () => {
-    enabled = !enabled;
-    render();
-    onChange(enabled);
-  });
-
-  return {
-    set(value: boolean) {
-      enabled = Boolean(value);
-      render();
-    },
-  };
-}
-
 async function main(): Promise<void> {
   markBooted();
   const inviteCode = takeInviteCode();
@@ -170,14 +122,27 @@ async function main(): Promise<void> {
 
   const settings = await preferences.getSettings();
 
-  const soundToggle = createToggle({
-    ids: { button: 'sound-toggle', icon: 'sound-icon', label: 'sound-label' },
-    on: { icon: 'sound-on', label: '소리 켜짐' },
-    off: { icon: 'sound-off', label: '소리 꺼짐' },
-    apply: setSoundEnabled,
-    onChange: (enabled) => preferences.setSettings({ soundEnabled: enabled }),
+  // ── 설정 (U42·U54·U55) ─────────────────────────────────────────
+  // 앱 바의 「설정」 대화상자. 고르는 순간 적용하고 저장한다.
+  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 서버의 20초다 */
+  let timeLimitMs = settings.timeLimitMs;
+  setSoundEnabled(settings.soundEnabled);
+  applyMotionPreference(settings.reduceMotion);
+  const settingsDialog = createSettingsDialog({
+    onChange: (patch) => {
+      if (patch.soundEnabled !== undefined) {
+        setSoundEnabled(patch.soundEnabled);
+        // 켰으면 그 자리에서 한 음 들려준다 (U54). 클릭 안이라 브라우저가 소리를 막지 않는다
+        if (patch.soundEnabled) playToggleOn();
+      }
+      if (patch.timeLimitMs !== undefined) timeLimitMs = patch.timeLimitMs;
+      if (patch.reduceMotion !== undefined) applyMotionPreference(patch.reduceMotion);
+      void preferences.setSettings(patch);
+    },
+    // 대화상자 뒤에서 퀴즈 시간이 끝났으면 퀴즈가 「다음 문제」로 포커스를 이어 간다
+    onClose: () => quizScreen.resumeAfterDialog(),
   });
-  soundToggle.set(settings.soundEnabled);
+  settingsDialog.set(settings);
 
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
@@ -498,6 +463,8 @@ async function main(): Promise<void> {
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
+    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다
+    settingsDialog.dismiss();
     showScreen(name);
     currentScreen = name;
     // 브라우저 «뒤로»가 앱 밖으로 나가지 않게 히스토리 상태만 남긴다. 주소는 그대로다
@@ -689,6 +656,8 @@ async function main(): Promise<void> {
       questions,
       mode: round.mode,
       categoryId: round.categoryId,
+      // 설정에서 고른 문항 시간 (FR-3.7). 판이 도는 동안에 바꿔도 다음 판부터 쓴다
+      timeLimitMs,
     });
 
     goTo('quiz');
@@ -721,7 +690,7 @@ async function main(): Promise<void> {
     if (!isCurrentNavigation(navigationGeneration)) return;
 
     // playedAt은 판이 끝난 시각이다. 닉네임을 입력한 시각이 아니다
-    pending = { summary, target, playedAt: new Date().toISOString() };
+    pending = { summary, target, playedAt: new Date().toISOString(), timeLimitMs: session.timeLimitMs };
     registeredId = null;
 
     resultScreen.show({
@@ -748,7 +717,7 @@ async function main(): Promise<void> {
   async function registerRecord(nickname: string) {
     if (!pending) throw new Error('등록할 기록이 없습니다');
 
-    const { summary, target, playedAt } = pending;
+    const { summary, target, playedAt, timeLimitMs: roundLimit } = pending;
     const outcome = await rankingStore.saveRecord({
       nickname,
       mode: summary.mode,
@@ -760,13 +729,15 @@ async function main(): Promise<void> {
       playedAt,
       // 문항별 정오. 선생님 모드가 문항 단위 정답률을 내는 근거다
       questionResults: summary.questionResults,
+      // 기본(20초)이 아닌 판만 문항 시간을 남긴다. 랭킹은 나누지 않는다 (점수에 속도가 없다)
+      ...(roundLimit === TIME_LIMIT_MS ? {} : { timeLimitMs: roundLimit }),
     });
 
     savedNickname = nickname;
     syncRoomPlayer();
     await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)
     registeredId = outcome.kept ? outcome.record.id : null;
-    pending = { summary, target, playedAt };
+    pending = { summary, target, playedAt, timeLimitMs: roundLimit };
 
     return outcome;
   }

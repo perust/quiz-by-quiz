@@ -3,12 +3,13 @@
 // 이 파일은 그 값들을 화면에 그리고 사용자 입력을 로직으로 넘기는 일만 한다.
 
 import { CATEGORIES, WARNING_THRESHOLD_MS } from '../constants.js';
-import { createQuestionTimer } from '../core/timer.js';
+import { createQuestionTimer, type QuestionTimer } from '../core/timer.js';
 import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { need, needOne } from '../dom.js';
 import { announce } from './screens.js';
 import { createArena } from './arena.js';
 import { answerLines, feedbackScrollTarget } from './feedback-view.js';
+import { timeLimitLabel } from './time-limit.js';
 import type { Point } from './walker.js';
 import type { QuizSession } from '../core/session.js';
 import type { AnswerRecord, Question } from '../types.js';
@@ -41,6 +42,13 @@ export interface QuizScreen {
   /** 무대에서 쓸 캐릭터를 갈아 끼운다. 홈에서 고른 것이 여기로 온다 */
   setCharacter(id: string): void;
 
+  /**
+   * 이 화면 밖의 대화상자(앱 바의 설정)가 닫힌 직후에 부른다.
+   *
+   * 열려 있는 동안 뒤에서 시간이 끝났으면 결과 패널과 「다음 문제」로 이어 가고 참을 돌려준다 —
+   * 그때는 대화상자가 연 자리로 포커스를 돌려주지 않는다. 시간은 대화상자 뒤에서도 흐른다 (FR-3.12).
+   */
+  resumeAfterDialog(): boolean;
 
   /**
    * 판을 접고 화면을 정리한다.
@@ -66,6 +74,12 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     timerFill: need('timer-fill'),
     timerText: need('timer-text'),
     question: need('question-text'),
+    // 질문 제목의 aria-describedby. 포커스가 문항으로 올 때 «문항당 N초»를 함께 읽는다
+    questionLimit: need('question-time-limit'),
+    // 조작법 대화상자의 시간 규칙. 제한 없음이면 «시간이 다 되면 밟은 칸이 답» 규칙이 없다
+    helpTimeLimit: need('help-time-limit'),
+    helpRuleTimed: need('help-rule-timed'),
+    helpRuleUntimed: need('help-rule-untimed'),
     choices: need('choices'),
     feedback: need('feedback'),
     verdict: need('feedback-verdict'),
@@ -81,7 +95,8 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     dialogConfirm: need('exit-confirm'),
   };
 
-  const timer = createQuestionTimer();
+  /** 판마다 새로 만든다. 문항 시간은 판을 여는 순간 정해진다 (FR-3.7) */
+  let timer: QuestionTimer = createQuestionTimer();
 
   // 캐릭터 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
   // 조작법 대화상자도 여기와 같은 포커스 가두기를 쓰라고 trapFocus를 넘긴다.
@@ -124,8 +139,13 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   // ── 타이머 표시 ────────────────────────────────────────────────
 
   function renderTimer(remainingMs: number): void {
+    const limitMs = timer.limitMs;
+    if (limitMs === null) {
+      renderUntimed();
+      return;
+    }
     const remaining = Math.max(remainingMs, 0);
-    el.timerFill.style.transform = `scaleX(${remaining / timer.limitMs})`;
+    el.timerFill.style.transform = `scaleX(${remaining / limitMs})`;
 
     const seconds = Math.ceil(remaining / 1000);
     if (seconds === lastShownSeconds) return;
@@ -147,10 +167,24 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     }
   }
 
+  /**
+   * 제한 없음 (FR-3.7). 셀 것이 없어 글을 한 번만 쓰고, 막대는 디자인 층이 거둔다.
+   * 남은 5초 경고도, 시간 초과도 없다 — 칸에 서 있기만 해서는 답이 나가지 않는다.
+   */
+  function renderUntimed(): void {
+    el.timer.classList.remove('timer--warning');
+    el.timerText.textContent = '시간 제한 없음';
+  }
+
   // 매 프레임 남은 시간을 "다시 계산"한다. 프레임이 밀리거나 탭이 백그라운드로
   // 내려갔다 와도 timer가 시작 시각 기준으로 답하므로 시간이 어긋나지 않는다.
   function startTicking(): void {
     stopTicking();
+    // 제한 없음이면 프레임을 돌리지 않는다. 시간 초과로 가는 길(handleTimeout)이 아예 없다
+    if (timer.limitMs === null) {
+      renderUntimed();
+      return;
+    }
     const tick = () => {
       const remaining = timer.remainingMs();
       renderTimer(remaining);
@@ -247,7 +281,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
   /** 결과 패널까지 문서를 옮기고 새 arena의 같은 상대 위치에 fixed 캐릭터를 복원한다. */
   function revealFeedback(focusNext = true): void {
-    if (focusNext && el.dialog.hidden && !arena.isDialogOpen()) {
+    if (focusNext && el.dialog.hidden && !arena.isDialogOpen() && !anyDialogOpen()) {
       el.nextButton.focus({ preventScroll: true });
     }
     scrollFeedbackIntoView();
@@ -291,7 +325,9 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   }
 
   function handleTimeout(): void {
-    if (!session || session.isAnswered()) return;
+    // 제한 없음이면 시간 초과가 없다 (FR-3.7). startTicking 이 이리로 오지 않지만 한 번 더 막는다
+    const limitMs = timer.limitMs;
+    if (!session || session.isAnswered() || limitMs === null) return;
     timer.stop();
 
     // 시간이 다 됐을 때 «밟고 있는 칸»이 답이다.
@@ -300,7 +336,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     const standing = arena.standingIndex();
 
     // choiceIndex가 null이면 시간 초과다. 오답과 똑같이 정답과 해설을 보여준다 (FR-3.10)
-    showFeedback(session.submit({ choiceIndex: standing, elapsedMs: timer.limitMs }));
+    showFeedback(session.submit({ choiceIndex: standing, elapsedMs: limitMs }));
   }
 
   function showFeedback(record: AnswerRecord): void {
@@ -369,7 +405,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
     // 열린 dialog의 focus trap은 건드리지 않는다. timeout이 뒤에서 났을 때만
     // dialog가 닫히는 순간 다음 버튼으로 이어 간다.
-    feedbackWaitingForDialogClose = !el.dialog.hidden || arena.isDialogOpen();
+    feedbackWaitingForDialogClose = !el.dialog.hidden || arena.isDialogOpen() || anyDialogOpen();
     revealFeedback(!feedbackWaitingForDialogClose);
   }
 
@@ -492,18 +528,39 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     if (arena.handleKey(event)) event.preventDefault();
   });
 
+  /**
+   * 이 판의 문항 시간을 화면 곳곳에 적는다 (FR-3.7). HUD 의 남은 시간은 틱이 쓰고,
+   * 여기서는 질문 제목의 설명(«문항당 40초»)과 조작법의 시간 규칙을 맞춘다.
+   */
+  function describeTimeLimit(limitMs: number | null): void {
+    el.questionLimit.textContent = timeLimitLabel(limitMs);
+    el.timer.classList.toggle('timer--unlimited', limitMs === null);
+    el.helpTimeLimit.textContent = limitMs === null ? '시간 제한이 없습니다.' : `${timeLimitLabel(limitMs)}입니다.`;
+    el.helpRuleTimed.hidden = limitMs === null;
+    el.helpRuleUntimed.hidden = limitMs !== null;
+  }
+
   return {
     start(newSession, { categoryLabel: label }) {
       session = newSession;
       categoryLabel = label;
       el.dialog.hidden = true;
       dialogOpener = null;
+      timer = createQuestionTimer({ limitMs: newSession.timeLimitMs });
+      describeTimeLimit(newSession.timeLimitMs);
       arena.setEnabled(true);
       renderQuestion();
     },
 
     setCharacter(id) {
       arena.setCharacter(id);
+    },
+
+    resumeAfterDialog() {
+      if (el.feedback.hidden || !feedbackWaitingForDialogClose || anyDialogOpen()) return false;
+      feedbackWaitingForDialogClose = false;
+      revealFeedback();
+      return true;
     },
 
     hide() {
@@ -519,6 +576,14 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
       arena.closeDialog();
     },
   };
+}
+
+/**
+ * 인페이지 대화상자가 하나라도 열려 있는가. 이 화면의 나가기·조작법만이 아니라 앱 바의 설정도
+ * 센다 — 열려 있으면 시간 초과가 포커스를 가져가지 않는다 (CLAUDE.md «모달 금지»).
+ */
+function anyDialogOpen(): boolean {
+  return document.querySelector('.dialog-backdrop:not([hidden])') !== null;
 }
 
 /**

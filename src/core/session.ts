@@ -17,6 +17,11 @@ export interface SessionParams {
   questions: Question[];
   mode?: RoundMode;
   categoryId?: CategoryId | null;
+  /**
+   * 문항당 제한 시간(밀리초, FR-3.7). 생략하면 기본 20초이고, **null 이면 제한 없음**이다 —
+   * 시간 초과로 끝나는 길이 아예 없다. 판을 여는 순간 정해지고 판이 도는 동안 바뀌지 않는다.
+   */
+  timeLimitMs?: number | null;
 }
 
 /** 답을 확정할 때 넘기는 값. choiceIndex가 null이면 시간 초과다 (FR-3.10). */
@@ -28,6 +33,9 @@ export interface SubmitInput {
 export interface QuizSession {
   readonly mode: RoundMode;
   readonly categoryId: CategoryId | null;
+
+  /** 이 판의 문항당 제한 시간. null 이면 제한 없음 (FR-3.7) */
+  readonly timeLimitMs: number | null;
 
   /** 총 문항 수 */
   readonly total: number;
@@ -75,9 +83,15 @@ export interface QuizSession {
 /**
  * 퀴즈 세션을 만든다.
  */
-export function createSession({ questions, mode = 'category', categoryId = null }: SessionParams): QuizSession {
+export function createSession({
+  questions, mode = 'category', categoryId = null, timeLimitMs = TIME_LIMIT_MS,
+}: SessionParams): QuizSession {
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error('출제할 문제가 없습니다');
+  }
+  // 저장소의 값은 app.ts 에 오기 전에 이미 검증된다. 여기 이상한 값이 오면 코드를 잘못 짠 것이다
+  if (timeLimitMs !== null && !(Number.isFinite(timeLimitMs) && timeLimitMs > 0)) {
+    throw new Error(`문항 시간이 올바르지 않습니다: ${timeLimitMs}`);
   }
 
   /** 문항별 응답 기록. 점수 계산은 2단계에서 이 기록을 쓴다 */
@@ -87,6 +101,7 @@ export function createSession({ questions, mode = 'category', categoryId = null 
   return {
     mode,
     categoryId,
+    timeLimitMs,
 
     /** 총 문항 수 */
     get total() {
@@ -134,8 +149,11 @@ export function createSession({ questions, mode = 'category', categoryId = null 
         answerIndex: question.answerIndex,
         correct: !timedOut && isCorrect(question, choiceIndex),
         timedOut,
-        // 시간 초과는 제한 시간을 다 쓴 것으로 본다 (FR-5.3)
-        elapsedMs: Math.min(timedOut ? TIME_LIMIT_MS : elapsedMs, TIME_LIMIT_MS),
+        // 시간 초과는 그 판의 제한 시간을 다 쓴 것으로 본다 (FR-5.3).
+        // 제한 없음이면 시간 초과가 생기지 않고, 쓴 시간을 자르지도 않는다
+        elapsedMs: timeLimitMs === null
+          ? Math.max(elapsedMs, 0)
+          : Math.min(timedOut ? timeLimitMs : elapsedMs, timeLimitMs),
       };
 
       answers.push(record);
