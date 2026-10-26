@@ -161,6 +161,30 @@ test('방향키는 여전히 걷기이고, 다이얼로그가 돌려준 포커�
   runFrames();
 });
 
+test('WASD도 방향키처럼 걷고, 조작법과 무대 안내가 그렇게 말한다 (U52)', async () => {
+  stand(walker, new FakeHTMLElement('div'));
+  for (const name of ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D']) {
+    assert.equal(walker.handleKey(key(name)), true, `${name} 로 걷는다`);
+    emit('keyup', { key: name });
+  }
+  runFrames();
+
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  for (const id of ['help-dialog', 'online-help-dialog']) {
+    const start = html.indexOf(`id="${id}"`);
+    const dialog = html.slice(start, html.indexOf('</dl>', start));
+    assert.match(
+      dialog,
+      /<kbd>←<\/kbd> <kbd>↑<\/kbd> <kbd>→<\/kbd> <kbd>↓<\/kbd> 또는 <kbd>W<\/kbd> <kbd>A<\/kbd> <kbd>S<\/kbd> <kbd>D<\/kbd>/,
+      `#${id} 의 «움직이기»가 WASD를 함께 말한다`,
+    );
+  }
+  const hints = [...html.matchAll(/<span class="arena__hint-key">([^<]*)<\/span>/g)].map(([, text]) => text);
+  assert.equal(hints.length, 2, '로컬·온라인 무대의 키보드 안내');
+  for (const text of hints) assert.match(text, /방향키·WASD/);
+});
+
 test('제 키를 스스로 쓰는 것에 포커스가 있으면 발밑에 버튼이 있어도 비켜난다 (#58)', () => {
   const button = new FakeHTMLElement('button');
   stand(walker, button);

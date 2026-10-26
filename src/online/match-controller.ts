@@ -13,6 +13,7 @@ import type {
   RoomEventHandler,
   Unsubscribe,
 } from './adapter.js';
+import { onlineErrorText } from './rules.js';
 
 export interface OnlineMatchGateway {
   getMatch(code: string): Promise<OnlineMatchSnapshot | null>;
@@ -57,9 +58,12 @@ export interface OnlineMatchController {
   close(): void;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+/**
+ * 화면에 넘기는 말 (U40). 어댑터 오류의 개발 상세(«서버 매치 snapshot이 …», «Failed to fetch»)는
+ * 콘솔에만 남기고, 이유를 플레이어의 말로 가진 오류(`OnlinePlayerError`)만 그 말을 쓴다.
+ */
+const REFRESH_FAILED_MESSAGE = '게임 상태를 불러오지 못했어요. 잠시 뒤 다시 맞춰요.';
+const SUBMIT_FAILED_MESSAGE = '답을 보내지 못했어요. 다시 골라 주세요.';
 
 function phaseRank(snapshot: OnlineMatchSnapshot): number {
   if (snapshot.state === 'finished') return 2;
@@ -252,7 +256,7 @@ export function createOnlineMatchController(
         )
       );
       if (ownsError && expectedMatchId === null) awaitingUnknownIdentity = false;
-      const message = ownsError ? errorMessage(error) : null;
+      const message = ownsError ? onlineErrorText(error, REFRESH_FAILED_MESSAGE) : null;
       if (message !== null && reportError) onError(message, { source: 'refresh' });
       return { delivered: false, error: message };
     }
@@ -332,8 +336,8 @@ export function createOnlineMatchController(
       if (!activeCode || !ownsActiveIdentity()) {
         onError(
           activeCode
-            ? '새 온라인 매치가 시작되어 이전 문제 답안을 보낼 수 없습니다.'
-            : '온라인 매치 연결이 없습니다. 대기실에서 다시 시작해 주세요.',
+            ? '새 게임이 시작돼 이전 문제의 답은 보낼 수 없어요.'
+            : '게임 연결이 끊겼어요. 대기실에서 다시 들어와 주세요.',
           { source: 'submit', token, matchId, position },
         );
         return;
@@ -372,7 +376,7 @@ export function createOnlineMatchController(
         }
       } catch (error) {
         if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
-          onError(errorMessage(error), { source: 'submit', token, matchId, position });
+          onError(onlineErrorText(error, SUBMIT_FAILED_MESSAGE), { source: 'submit', token, matchId, position });
         }
       }
     },

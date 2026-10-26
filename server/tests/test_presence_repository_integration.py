@@ -30,6 +30,113 @@ def test_postgres_absent_host_moves_to_the_earliest_connected_member_first() -> 
     asyncio.run(_exercise_absent_host_transfer())
 
 
+@pytest.mark.integration
+def test_postgres_match_does_not_wait_for_long_absent_players() -> None:
+    asyncio.run(_exercise_absent_early_advance())
+
+
+async def _exercise_absent_early_advance() -> None:
+    assert DATABASE_URL is not None
+    repository = PostgresRoomsRepository(
+        DATABASE_URL,
+        question_catalog=_test_catalog(),
+        max_pool_size=4,
+    )
+    await repository.open()
+    host_id, guest_id, gone_id = uuid4(), uuid4(), uuid4()
+    player_ids = [host_id, guest_id, gone_id]
+    room_code: str | None = None
+
+    try:
+        await _register(repository, player_ids)
+        room = await repository.create_room(host_id, _room_spec("조기 진행 검증"), None)
+        room_code = room.code
+        await repository.join_room(guest_id, room.code)
+        await repository.join_room(gone_id, room.code)
+        await repository.set_ready(guest_id, room.code, True)
+        await repository.set_ready(gone_id, room.code, True)
+        setup = await repository.start_game(host_id, room.code)
+        assert await _match_player_ids(setup.id) == set(player_ids)
+        gone = frozenset({gone_id})
+
+        # 1번: 판 도중 끊긴 사람을 빼면 남은 둘이 답하는 순간 넘어간다 (U32)
+        first = await repository.submit_answer(
+            host_id, room.code, position=1, choice_index=0, absent_player_ids=gone
+        )
+        assert first.advanced is False
+        second = await repository.submit_answer(
+            guest_id, room.code, position=1, choice_index=1, absent_player_ids=gone
+        )
+        assert second.advanced is True
+        assert second.match.state == "revealing"
+        # 끊긴 사람의 빈 답은 마감 때와 같은 시간 초과로 채워진다
+        assert {score.player_id: score.answered_count for score in second.match.scores} == {
+            host_id: 1,
+            guest_id: 1,
+            gone_id: 1,
+        }
+        assert await _timed_out(setup.id, 1, gone_id) is True
+
+        # 2번: 다시 붙었으면 다시 센다 — 그 사람이 답할 때까지 기다린다
+        await _expire_deadline(setup.id)
+        reread = await repository.get_match(host_id, room.code)
+        assert reread.match is not None and reread.match.current_position == 2
+        for player_id in (host_id, guest_id):
+            waiting = await repository.submit_answer(
+                player_id, room.code, position=2, choice_index=0
+            )
+            assert waiting.advanced is False
+        returned = await repository.submit_answer(
+            gone_id, room.code, position=2, choice_index=2
+        )
+        assert returned.advanced is True
+
+        # 3번: 남은 사람이 다 답한 뒤에 누가 유예를 넘기면 presence sweep이 넘긴다
+        await _expire_deadline(setup.id)
+        third = await repository.get_match(host_id, room.code)
+        assert third.match is not None and third.match.current_position == 3
+        for player_id in (host_id, guest_id):
+            pending = await repository.submit_answer(
+                player_id, room.code, position=3, choice_index=0
+            )
+            assert pending.advanced is False
+        assert await repository.advance_past_absent_players(room.code, frozenset()) is False
+        # 판의 모두가 끊겼으면 앞당기지 않는다 — 마감이 정한다
+        assert await repository.advance_past_absent_players(
+            room.code, frozenset(player_ids)
+        ) is False
+        assert await repository.advance_past_absent_players(room.code, gone) is True
+        assert await repository.advance_past_absent_players(room.code, gone) is False
+        assert await _timed_out(setup.id, 3, gone_id) is True
+    finally:
+        await repository.close()
+        await _cleanup(player_ids, room_code)
+
+
+async def _expire_deadline(match_id: UUID) -> None:
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        await connection.execute(
+            "UPDATE quiz_online.matches SET deadline_at = question_started_at WHERE id = %s",
+            (match_id,),
+        )
+
+
+async def _timed_out(match_id: UUID, position: int, player_id: UUID) -> bool | None:
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT timed_out
+            FROM quiz_online.match_answers
+            WHERE match_id = %s AND position = %s AND player_id = %s
+            """,
+            (match_id, position, player_id),
+        )
+        row = await cursor.fetchone()
+        return None if row is None else bool(row[0])
+
+
 async def _exercise_presence_start() -> None:
     assert DATABASE_URL is not None
     repository = PostgresRoomsRepository(

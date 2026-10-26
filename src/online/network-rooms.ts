@@ -37,7 +37,12 @@ import {
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
-import { LeaveRoomRejected, normalizeCode, type JoinFailReason } from './rules.js';
+import {
+  LeaveRoomRejected,
+  normalizeCode,
+  OnlinePlayerError,
+  type JoinFailReason,
+} from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
 const CATEGORIES_SET = new Set<string>(CATEGORIES.map(({ id }) => id));
@@ -94,7 +99,16 @@ export interface NetworkRoomStoreOptions {
   newIdentity?: () => BrowserIdentity;
 }
 
-class ApiFailure extends Error {
+/** 서버가 이유를 말하지 않았거나(5xx·형식 밖 응답) 그 말이 개발 용어일 때 플레이어가 보는 말 (U40) */
+const SERVICE_TROUBLE_MESSAGE = '온라인 연결이 잠시 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
+/** 요청이 REQUEST_TIMEOUT_MS 안에 끝나지 않았을 때 (U40) */
+const TIMEOUT_MESSAGE = '응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.';
+
+/**
+ * HTTP 거절. `message`는 화면에 그대로 띄워도 되는 말이다 — 서버가 4xx로 알려 준 이유이거나
+ * `SERVICE_TROUBLE_MESSAGE`다. 상태·코드 같은 개발 상세는 필드와 콘솔에만 남긴다.
+ */
+class ApiFailure extends OnlinePlayerError {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -496,10 +510,12 @@ async function responseBody(response: Response): Promise<unknown> {
 function failureFrom(status: number, body: unknown): ApiFailure {
   const detail = isObject(body) && isObject(body.detail) ? body.detail : null;
   const code = detail && typeof detail.code === 'string' ? detail.code : 'request-failed';
-  const message = detail && typeof detail.message === 'string'
-    ? detail.message
-    : `온라인 서버 요청에 실패했습니다. (${status})`;
-  return new ApiFailure(status, code, message);
+  const serverMessage = detail && typeof detail.message === 'string' ? detail.message : null;
+  // 4xx의 이유는 서버가 플레이어에게 쓴 말이다(«이미 다음 문제로 넘어갔습니다»). 5xx나 이유 없는
+  // 응답은 «데이터베이스…» 같은 개발 상세라 콘솔에만 남기고 화면에는 한 가지 말을 쓴다 (U40)
+  if (serverMessage !== null && status < 500) return new ApiFailure(status, code, serverMessage);
+  console.warn(`[온라인 오류] 요청 실패 (${status} ${code})`, serverMessage ?? '');
+  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE);
 }
 
 export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomStore {
@@ -601,7 +617,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       return body;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('온라인 서버 응답 시간이 너무 오래 걸립니다.');
+        console.warn(`[온라인 오류] ${REQUEST_TIMEOUT_MS}ms 안에 응답이 없습니다: ${init.method ?? 'GET'} ${path}`);
+        throw new OnlinePlayerError(TIMEOUT_MESSAGE);
       }
       throw error;
     } finally {

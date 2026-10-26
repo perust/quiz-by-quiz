@@ -30,6 +30,7 @@ import { createWaitingRoom } from './ui/waiting-room.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { createRoomKeepalive } from './online/room-keepalive.js';
 import { normalizeCode } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
@@ -372,6 +373,8 @@ async function main(): Promise<void> {
     onHome: () => { void goHome(); },
     getPlayerId: () => roomStore.me(),
   });
+  /** 최종 순위를 읽는 동안 방 소켓을 붙든다. 1분 넘게 읽어도 «연결 끊김»이 되지 않게 (U24) */
+  const resultKeepalive = createRoomKeepalive(roomStore);
 
   onlineMatchController = createOnlineMatchController({
     gateway: roomStore,
@@ -401,9 +404,25 @@ async function main(): Promise<void> {
 
   /** finished ranking 역시 server snapshot만 받는다. local ranking store에 쓰지 않는다. */
   function showOnlineFinal(snapshot: OnlineFinishedMatch): void {
+    const code = onlineMatchRoomCode;
     stopOnlineMatch();
     onlineResultScreen.show(snapshot);
     goTo('online-result');
+    // 아직 그 방에 있으면 소켓을 이어 붙든다. 화면을 떠나면 closers가 놓는다 — 대기실로 가면
+    // 대기실이 제 구독을 연 뒤에 놓는다(다시 붙는 잠깐은 60초 유예 안이다). 홈·로비로 가면
+    // 방에 남아 있어도 놓는다 — 홈은 방 밖이라는 기존 계약 그대로다
+    if (!roomStore.isNetworked || !code || code !== activeRoomCode) return;
+    resultKeepalive.hold(code, () => {
+      // 결과를 보는 사이 그 방에서 새 판이 열렸다. 그 판에 넣어졌는지는 서버 snapshot만
+      // 판정한다 — 대기실 복구와 같은 길이다. 넣어지지 않았으면 결과 화면에 그대로 남는다
+      void recoverActiveNetworkMatch(code, {
+        getMatch: (roomCode) => roomStore.getMatch(roomCode),
+        isStillCurrent: () => currentScreen === 'online-result'
+          && activeRoomCode === code && resultKeepalive.heldCode() === code,
+        hasOpenMatch: () => onlineMatchRoomCode === code,
+        openMatch: openOnlineMatch,
+      });
+    });
   }
 
   function stopOnlineMatch(): void {
@@ -481,7 +500,10 @@ async function main(): Promise<void> {
     quiz: () => quizScreen.hide(),
     'online-quiz': () => onlineQuizScreen.hide(),
     result: () => resultScreen.hide(),
-    'online-result': () => onlineResultScreen.hide(),
+    'online-result': () => {
+      resultKeepalive.release();
+      onlineResultScreen.hide();
+    },
     ranking: () => rankingScreen.hide(),
     online: () => onlineScreen.hide(),
     waiting: () => waitingRoom.hide(),

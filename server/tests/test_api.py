@@ -162,6 +162,14 @@ class FakeRepository:
         self.transfer_requested.set()
         return True
 
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        # 이 가짜 방에는 진행 중인 판이 없다.
+        return False
+
     async def is_member(self, actor_id: UUID, code: str) -> bool:
         return self.member and code == self.room.code
 

@@ -14,6 +14,7 @@ import type {
   PublicRoom,
   RoomEvent,
 } from '../online/adapter.js';
+import { onlineErrorText } from '../online/rules.js';
 import type { Arena, ArenaDeps } from './arena.js';
 import {
   createPlayerBubbleController,
@@ -743,8 +744,8 @@ export function createOnlineQuizScreen(
       if (latest?.state === 'running' && latest.ownSubmission === null) {
         render(latest);
       }
-      const message = error instanceof Error ? error.message : '답안을 제출하지 못했습니다.';
-      setStatus(`온라인 매치 오류: ${message}`);
+      // 개발 상세는 콘솔에만 남기고 플레이어의 말로 알린다 (U40)
+      setStatus(onlineErrorText(error, '답을 보내지 못했어요. 다시 골라 주세요.'));
       return;
     }
 
@@ -1048,8 +1049,9 @@ export function createOnlineQuizScreen(
     setNotice(message) {
       setStatus(message);
     },
+    // message는 controller가 이미 플레이어의 말로 옮겼다(onlineErrorText). «오류:» 머리말을 붙이지 않는다
     setRefreshError(message) {
-      setStatus(`온라인 매치 오류: ${message}`);
+      setStatus(message);
     },
     setSubmitError(message, owner) {
       const current = snapshot;
@@ -1059,7 +1061,7 @@ export function createOnlineQuizScreen(
       if (interrupted && current.ownSubmission === null) {
         render(current);
       }
-      setStatus(`온라인 매치 오류: ${message}`);
+      setStatus(message);
     },
     hide() {
       // stopPresence가 표시 루프와 나가기 확인도 함께 접는다.

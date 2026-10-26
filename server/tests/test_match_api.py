@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import threading
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
@@ -12,7 +13,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import _match_payload, create_app
+from app.main import EventHub, _match_payload, create_app
 from app.repository import (
     MatchAnswerView,
     MatchQuestionView,
@@ -76,6 +77,9 @@ class MatchApiRepository:
             explanation="정답 해설",
         )
         self.match_advanced_on_read = False
+        # API가 «모두 답했다»의 분모에서 빼라고 넘긴 참가자 (U32)
+        self.match_absent_player_ids: list[frozenset[UUID]] = []
+        self.answer_absent_player_ids: list[frozenset[UUID]] = []
         self.match = MatchView(
             id=MATCH_ID,
             state="running",
@@ -137,8 +141,15 @@ class MatchApiRepository:
         assert absent_player_ids == frozenset()
         return MatchSetup(id=MATCH_ID, category_id="history", game_mode=True, total_questions=10)
 
-    async def get_match(self, actor_id: UUID, code: str) -> MatchRead:
+    async def get_match(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchRead:
         assert actor_id == PLAYER_ID and code == self.room.code
+        self.match_absent_player_ids.append(absent_player_ids)
         return MatchRead(match=self.match, advanced=self.match_advanced_on_read)
 
     async def submit_answer(
@@ -148,8 +159,10 @@ class MatchApiRepository:
         *,
         position: int,
         choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> MatchSubmission:
         assert actor_id == PLAYER_ID and code == self.room.code
+        self.answer_absent_player_ids.append(absent_player_ids)
         assert position == 1 and choice_index == 2
         self.match = replace(self.match, own_answer=self.answer)
         return MatchSubmission(match=self.match, answer=self.answer, advanced=False)
@@ -330,6 +343,98 @@ def test_match_fetch_that_advances_broadcasts_invalidation() -> None:
 
     assert response.status_code == 200
     assert event == {"type": "match-invalidated", "matchId": str(MATCH_ID)}
+
+
+OTHER_ID = UUID("87654321-4321-4765-8321-876543218765")
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 5_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_match_reads_and_answers_skip_long_absent_players_but_never_the_requester() -> None:
+    # 매치 중 끊긴 사람 때문에 남은 사람이 문제마다 마감까지 기다리지 않게, API는 유예를
+    # 넘겨 끊긴 참가자를 «모두 답했다»의 분모에서 빼라고 넘긴다 (U32). 소켓이 없어도 지금
+    # 요청한 사람은 끊긴 사람이 아니다 — 빼면 그 사람의 GET 하나가 자기 답을 건너뛴다.
+    repository = MatchApiRepository()
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(repository=cast(RoomsRepository, repository), event_hub=hub)
+    with TestClient(app) as client:
+        # 둘 다 이 프로세스에서 소켓을 본 적이 없다. 처음 물어본 때부터 유예를 센다.
+        assert hub.is_present("ABC234", OTHER_ID)
+        assert hub.is_present("ABC234", PLAYER_ID)
+        fresh = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+        clock.now += 61
+        assert hub.absent_actors("ABC234") == frozenset({OTHER_ID, PLAYER_ID})
+        stale = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+        answered = client.post(
+            "/v1/rooms/ABC234/match/answers",
+            headers=HEADERS,
+            json={"position": 1, "choiceIndex": 2},
+        )
+
+    assert fresh.status_code == stale.status_code == answered.status_code == 200
+    assert repository.match_absent_player_ids == [frozenset(), frozenset({OTHER_ID})]
+    assert repository.answer_absent_player_ids == [frozenset({OTHER_ID})]
+
+
+class AbsentAdvanceRepository(MatchApiRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.advance_calls: list[tuple[str, frozenset[UUID]]] = []
+        self.advance_requested = threading.Event()
+
+    async def transfer_absent_host(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        return False
+
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        self.advance_calls.append((code, absent_player_ids))
+        self.advance_requested.set()
+        return True
+
+
+def test_presence_sweep_advances_a_question_that_waited_only_for_a_newly_absent_player() -> None:
+    # 남은 사람이 이미 다 답했으면 다음 제출이 없어 마감까지 아무도 다시 판정하지 않는다.
+    # 누가 유예를 넘기는 순간 sweep이 한 번 판정하고, 넘겼으면 화면들이 다시 읽게 한다.
+    repository = AbsentAdvanceRepository()
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=cast(RoomsRepository, repository),
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            # 판에 있던 친구는 소켓이 끊긴 채 돌아오지 않는다.
+            assert hub.is_present("ABC234", OTHER_ID)
+            time.sleep(0.05)
+            assert repository.advance_calls == []
+
+            clock.now += 61
+            assert repository.advance_requested.wait(timeout=2)
+            events = [websocket.receive_json(), websocket.receive_json()]
+
+    assert repository.advance_calls[0] == ("ABC234", frozenset({OTHER_ID}))
+    assert events == [{"type": "room-invalidated"}, {"type": "match-invalidated"}]
 
 
 def test_revealing_match_is_the_only_snapshot_that_contains_feedback_and_scores() -> None:

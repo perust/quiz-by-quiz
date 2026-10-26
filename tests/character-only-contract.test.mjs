@@ -51,10 +51,14 @@ test('로컬과 온라인 문제 화면은 같은 캐릭터 arena 경계를 사�
     onlineQuiz,
     /shouldAutoFocusOnlineQuestion\(\s*arena\.isDialogOpen\(\)/,
   );
+  // controller가 이미 플레이어의 말로 옮긴 글을 그대로 보인다. «온라인 매치 오류:» 머리말과
+  // 어댑터의 개발 상세(«서버 매치 snapshot이 …»)를 화면에 띄우지 않는다 (U40)
   assert.match(
     onlineQuiz,
-    /setRefreshError\(message\) \{\s*setStatus\(`온라인 매치 오류: \$\{message\}`\);\s*\}/,
+    /setRefreshError\(message\) \{\s*setStatus\(message\);\s*\}/,
   );
+  assert.doesNotMatch(onlineQuiz, /온라인 매치 오류/);
+  assert.doesNotMatch(onlineQuiz, /error\.message/);
   assert.match(
     onlineQuiz,
     /setSubmitError\(message, owner\)[\s\S]*ownsOnlineSubmitError\(current, owner\)[\s\S]*submissionGate\.owns\(owner\)[\s\S]*submissionGate\.invalidate\(owner\)[\s\S]*setStatus/,

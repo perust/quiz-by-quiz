@@ -907,13 +907,23 @@ class PostgresRoomsRepository:
                     total_questions=len(selected),
                 )
 
-    async def get_match(self, actor_id: UUID, code: str) -> MatchRead:
+    async def get_match(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchRead:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 match = await self._locked_match(connection, actor_id, code)
                 if match is None:
                     return MatchRead(match=None, advanced=False)
-                advanced = await self._advance_locked_match(connection, match)
+                advanced = await self._advance_locked_match(
+                    connection,
+                    match,
+                    absent_player_ids=absent_player_ids,
+                )
                 return MatchRead(
                     match=await self._match_view(connection, actor_id, match["id"]),
                     advanced=advanced,
@@ -926,6 +936,7 @@ class PostgresRoomsRepository:
         *,
         position: int,
         choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> MatchSubmission:
         if type(position) is not int or position < 1:
             raise RepositoryFailure("answer position is invalid")
@@ -939,7 +950,11 @@ class PostgresRoomsRepository:
                 match = await self._locked_match(connection, actor_id, code)
                 if match is None:
                     raise MatchNotFound
-                if await self._advance_locked_match(connection, match):
+                if await self._advance_locked_match(
+                    connection,
+                    match,
+                    absent_player_ids=absent_player_ids,
+                ):
                     raise MatchPositionMismatch
                 if match["state"] != "running" or int(match["current_position"]) != position:
                     raise MatchPositionMismatch
@@ -1010,7 +1025,11 @@ class PostgresRoomsRepository:
                     raise RepositoryFailure("answer conflict could not be read")
 
                 feedback = self._answer_view(question, answer, position=position)
-                advanced = was_inserted and await self._advance_locked_match(connection, match)
+                advanced = was_inserted and await self._advance_locked_match(
+                    connection,
+                    match,
+                    absent_player_ids=absent_player_ids,
+                )
                 view = await self._match_view(connection, actor_id, match["id"])
                 if view is None:
                     raise RepositoryFailure("match answer view could not be read")
@@ -1037,6 +1056,43 @@ class PostgresRoomsRepository:
                     if await self._advance_locked_match(connection, match):
                         advanced_codes.append(str(match["code"]))
                 return advanced_codes
+
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        """누가 막 유예를 넘겨 끊겼을 때, 남은 사람이 이미 다 답했으면 마감을 기다리지 않는다.
+
+        presence sweep이 부른다. 남은 사람의 답이 끊긴 사람을 기다리며 이미 다 들어와 있으면
+        다음 제출이 없어, 마감까지 아무도 «모두 답했다»를 다시 판정하지 않기 때문이다.
+        """
+        if not absent_player_ids:
+            return False
+        async with self._pool.connection() as connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """
+                    SELECT match.*, room.code
+                    FROM quiz_online.matches match
+                    JOIN quiz_online.rooms room ON room.id = match.room_id
+                    WHERE room.code = %s
+                      AND match.state = 'running'
+                      AND match.expires_at > now()
+                    ORDER BY match.started_at DESC
+                    LIMIT 1
+                    FOR UPDATE OF match
+                    """,
+                    (code,),
+                )
+                match = await cursor.fetchone()
+                if match is None:
+                    return False
+                return await self._advance_locked_match(
+                    connection,
+                    match,
+                    absent_player_ids=absent_player_ids,
+                )
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
         async with self._pool.connection() as connection:
@@ -1109,6 +1165,8 @@ class PostgresRoomsRepository:
         self,
         connection: AsyncConnection[dict[str, Any]],
         match: Mapping[str, Any],
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> bool:
         state = str(match["state"])
         if state not in {"running", "revealing"}:
@@ -1147,35 +1205,43 @@ class PostgresRoomsRepository:
                 )
             return await completed.fetchone() is not None
 
+        # 판의 참가자마다 이번 문항에 답했는지. 판이 비어 있어도 마감 여부는 읽히게 LEFT JOIN이다.
         progress_cursor = await connection.execute(
             """
             SELECT
-                deadline_at <= now() AS expired,
-                (
-                    SELECT count(*)
-                    FROM quiz_online.match_players
-                    WHERE match_id = %s
-                ) AS player_count,
-                (
-                    SELECT count(*)
-                    FROM quiz_online.match_answers
-                    WHERE match_id = %s AND position = %s
-                ) AS answer_count
-            FROM quiz_online.matches
-            WHERE id = %s
+                match.deadline_at <= now() AS expired,
+                player.player_id,
+                answer.player_id IS NOT NULL AS answered
+            FROM quiz_online.matches match
+            LEFT JOIN quiz_online.match_players player
+              ON player.match_id = match.id
+            LEFT JOIN quiz_online.match_answers answer
+              ON answer.match_id = player.match_id
+             AND answer.position = %s
+             AND answer.player_id = player.player_id
+            WHERE match.id = %s
             """,
-            (match_id, match_id, current_position, match_id),
+            (current_position, match_id),
         )
-        progress = await progress_cursor.fetchone()
-        if progress is None:
+        progress = await progress_cursor.fetchall()
+        if not progress:
             raise RepositoryFailure("locked match disappeared")
-        expired = bool(progress["expired"])
-        player_count = int(progress["player_count"])
-        answer_count = int(progress["answer_count"])
-        if not expired and answer_count < player_count:
+        expired = bool(progress[0]["expired"])
+        players = [row for row in progress if row["player_id"] is not None]
+        # 모두 답하면 마감을 기다리지 않는다. 유예를 넘겨 끊긴 참가자는 그 «모두»에서 뺀다 —
+        # 한 사람이 떠났다고 남은 사람이 문제마다 마감까지 기다리지 않게 (U32). 그 사람의 빈
+        # 답은 아래에서 시간 초과로 채우고, 다시 붙으면 다음 판정부터 다시 센다. 판의 모두가
+        # 끊겼으면 앞당길 까닭이 없어 마감까지 기다린다.
+        counted = [row for row in players if row["player_id"] not in absent_player_ids]
+        if players and not counted:
+            everyone_answered = False
+        else:
+            everyone_answered = all(bool(row["answered"]) for row in counted)
+        if not expired and not everyone_answered:
             return False
 
-        if expired:
+        # 마감이 지났거나 끊긴 사람을 빼고 앞당겼으면, 답이 없는 참가자는 시간 초과로 채운다.
+        if expired or absent_player_ids:
             await connection.execute(
                 """
                 INSERT INTO quiz_online.match_answers (

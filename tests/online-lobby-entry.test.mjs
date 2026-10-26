@@ -295,11 +295,17 @@ test('로비 목록이 실패하면 «다시 시도»만 보이고 방 만들기
   const load = between(online, '  async function loadRooms(request: number)', '  // ── 참가');
   const errorBranch = between(render, 'if (listError !== null) {', 'const visible =');
 
-  assert.match(errorBranch, /title: '온라인 서버에 연결할 수 없어요'/);
+  // «서버» 같은 개발 용어 대신 플레이어의 말로 말한다 (U40)
+  assert.match(errorBranch, /title: '온라인에 연결할 수 없어요'/);
+  assert.match(errorBranch, /copy: listError,/);
+  assert.doesNotMatch(errorBranch, /서버/);
   assert.match(errorBranch, /action: 'retry',\s*label: '다시 시도',\s*practice: false/);
   assert.doesNotMatch(errorBranch, /'create'|방 만들/);
   assert.match(load, /listError = null;\s*renderList\(\);/);
   assert.match(load, /rooms = \[\];\s*listError = [^;]+;\s*renderList\(\);/);
+  // 실패 사연은 onlineErrorText가 고른다. 어댑터의 개발 상세(error.message)를 괄호에 넣지 않는다
+  assert.match(load, /listError = onlineErrorText\(error, '잠시 후 다시 시도해 주세요\.'\);/);
+  assert.doesNotMatch(load, /error\.message/);
   assert.doesNotMatch(load, /say\(el\.message/, '목록 실패를 맨 위 알림과 빈 상태에 두 번 띄우지 않는다');
   assert.match(online, /if \(action === 'retry'\) \{\s*if \(visibleRequest !== null\) void loadRooms\(visibleRequest\);/);
   // 주기적으로 다시 읽지 않는다 (N01)

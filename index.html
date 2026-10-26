@@ -198,7 +198,7 @@
         <!-- 한 줄만 둔다. 나머지 조작법은 헤더의 ? 에 있다.
              입력 장치에 따라 문구가 달라진다. 스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다. -->
         <p class="arena__hint" aria-hidden="true">
-          <span class="arena__hint-key">방향키와 Enter/Space로 조작하세요</span>
+          <span class="arena__hint-key">방향키·WASD와 Enter/Space로 조작하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 고르세요</span>
         </p>
       </div>
@@ -228,7 +228,8 @@
         </header>
 
         <!-- 서버가 보낸 남은 시간(remainingMs)의 표시일 뿐 timeout·채점·다음 문제 전환은 server가 한다.
-             로컬처럼 aria-hidden이고, 남은 5초 경고만 문항당 한 번 announce()로 알린다. -->
+             로컬과 달리 아직 영역째 aria-hidden이다(로컬은 막대·아이콘만 숨기고 #timer-text를 정적
+             글로 남긴다). 남은 5초 경고만 문항당 한 번 announce()로 알린다. -->
         <div class="timer" id="online-timer" aria-hidden="true">
           <div class="timer__track"><div class="timer__fill" id="online-timer-fill"></div></div>
           <p class="timer__label"><span class="timer__icon" id="online-timer-icon"></span>
@@ -249,7 +250,7 @@
           </div>
         </div>
         <p class="arena__hint" aria-hidden="true">
-          <span class="arena__hint-key">방향키로 움직이고 Enter/Space로 제출하세요</span>
+          <span class="arena__hint-key">방향키·WASD로 움직이고 Enter/Space로 제출하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 제출하세요</span>
         </p>
       </div>
@@ -759,7 +760,7 @@
       </p>
       <dl class="help-list">
         <dt>움직이기</dt>
-        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> 를 누르는 동안 움직입니다</dd>
+        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> 또는 <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 를 누르는 동안 움직입니다</dd>
 
         <dt>대각선</dt>
         <dd>두 방향을 함께 누릅니다</dd>
@@ -793,7 +794,7 @@
       </p>
       <dl class="help-list">
         <dt>움직이기</dt>
-        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> 를 누르는 동안 움직입니다</dd>
+        <dd><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> 또는 <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 를 누르는 동안 움직입니다</dd>
         <dt>대각선</dt>
         <dd>두 방향을 함께 누릅니다</dd>
         <dt>제출</dt>
