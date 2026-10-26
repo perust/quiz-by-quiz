@@ -704,6 +704,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
 }
 
 .online-match-status:empty {
@@ -1374,10 +1375,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .online-quiz-chat {
   position: relative;
   margin: var(--space-3) 0 var(--space-4);
-  padding-top: var(--space-3);
+  padding: var(--space-3);
 }
 
-.online-quiz-chat__form {
+/* 공용 .chat 의 위 여백이 뒤에 와서 이기면 표면 안 위쪽만 두 배로 빈다 */
+.online-quiz-chat .online-quiz-chat__form {
   margin-top: 0;
 }
 
@@ -2742,6 +2744,22 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 .chat__hint {
   margin: var(--space-2) 0 0;
+}
+
+/* 대기실의 채팅칸·안내·로그는 형제지만 한 표면으로 이어진다(모양은 디자인 층).
+   사이를 바깥 여백 대신 안쪽 여백으로 채워 표면이 끊기지 않게 한다 */
+[data-screen='waiting'] > .chat {
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+[data-screen='waiting'] > .chat__hint {
+  margin-top: 0;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+[data-screen='waiting'] > .chat-log {
+  margin-top: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 /* 휴대폰에서는 무대 전체가 피드백 시트 위에 남도록 세로를 아낀다.

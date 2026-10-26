@@ -145,7 +145,63 @@ test('입력칸 테두리와 초점 고리는 흰 바탕에서 3:1 을 넘겨 �
     ['--focus', '--bg'],
     ['--accent', '--surface'],
     ['--hud-text', '--mist-12'],
+    // 어두운 HUD 위의 초점·올라섬 고리. --focus(violet-10)는 HUD 바탕에서 1.9:1 이라 따로 둔다
+    ['--focus-on-hud', '--mist-12'],
   ], 3);
+});
+
+// ── 반투명 표면 위의 글자 (U44, U45, U46) ───────────────────────────
+// HUD·유리 표면은 반투명이라 아래 그림에 따라 바탕이 달라진다. 토큰 짝 하나로는 실제 화면을
+// 말하지 못하므로, 글자에 가장 불리한 그림(어두운 HUD 에는 흰 구름, 흰 유리에는 검은 그림자) 위에
+// 표면을 얹은 색으로 잰다.
+function rgbaOf(name) {
+  const value = resolveVars(`var(${name})`, root);
+  const match = value.match(/^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\s*([\d.]+)\s*\)$/);
+  assert.ok(match, `${name} 는 rgb(r g b / a) 로 풀려야 한다: ${value}`);
+  return match.slice(1).map(Number);
+}
+
+function blend(surface, under) {
+  const [r, g, b, alpha] = rgbaOf(surface);
+  const base = under.slice(1).match(/../g).map((part) => Number.parseInt(part, 16));
+  return `#${[r, g, b].map((channel, i) => Math.round(channel * alpha + base[i] * (1 - alpha)).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function assertOnSurface(pairs, minimum) {
+  for (const [foreground, surface, under] of pairs) {
+    const ratio = contrastRatio(hex(foreground), blend(surface, under));
+    assert.ok(ratio >= minimum, `${foreground} on ${surface} over ${under}: ${ratio.toFixed(2)} is below ${minimum}:1`);
+  }
+}
+
+test('어두운 HUD 위의 경고 글자·초점 고리는 HUD 가 가장 밝은 그림 위에 얹혀도 읽힌다', () => {
+  assertContrast([['--hud-warning', '--mist-12']], 4.5);
+  assertOnSurface([
+    ['--hud-warning', '--hud-bg', '#ffffff'],
+    ['--hud-text', '--hud-bg', '#ffffff'],
+    ['--hud-text-muted', '--hud-bg', '#ffffff'],
+    // 결과 점수 장면의 scrim 한가운데
+    ['--hud-text', '--hud-bg-soft', '#ffffff'],
+  ], 4.5);
+  assertOnSurface([['--focus-on-hud', '--hud-bg', '#ffffff']], 3);
+  // 경고 색은 코랄과 같은 색상이다 — 밝기만 다르고 뜻이 같은 색으로 읽힌다
+  const hue = (value) => {
+    const [r, g, b] = value.slice(1).match(/../g).map((part) => Number.parseInt(part, 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const raw = max === r ? ((g - b) / (max - min)) % 6 : max === g ? (b - r) / (max - min) + 2 : (r - g) / (max - min) + 4;
+    return (raw * 60 + 360) % 360;
+  };
+  assert.ok(Math.abs(hue(hex('--hud-warning')) - hue(hex('--wrong'))) < 2, '경고 색은 --wrong 과 같은 색상이다');
+});
+
+test('세계 위의 유리 표면에 놓인 대화·상태 글자는 그 아래가 가장 어두워도 AA 를 지킨다', () => {
+  assertOnSurface([
+    ['--text', '--world-glass', '#000000'],
+    ['--text-muted', '--world-glass', '#000000'],
+    ['--warning', '--world-glass', '#000000'],
+    ['--accent-ink', '--world-glass', '#000000'],
+  ], 4.5);
 });
 
 test('아이콘은 번들 픽셀 글꼴에 없는 장식 글리프에 기대지 않는다', async () => {

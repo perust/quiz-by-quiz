@@ -323,12 +323,12 @@ test('홈: 닉네임 라벨, 보조 edge HUD, 하단 5칸 dock과 동등한 온�
     assert.equal(valueOf(rules, nicknameLabel, 'color', env), 'var(--hud-text-muted)', '작은 닉네임 라벨은 어두운 HUD에서 읽힌다');
     assert.equal(
       valueOf(rules, node('button.challenge-card.challenge-card--online#open-online:focus-visible', primaryActions), 'outline-color', env),
-      'var(--hud-text)',
+      'var(--focus-on-hud)',
       '온라인의 키보드 초점은 어두운 dock과 구분된다',
     );
     assert.equal(
       valueOf(rules, node('button.challenge-card.challenge-card--online#open-online.is-standing', primaryActions), 'outline-color', env),
-      'var(--hud-text)',
+      'var(--focus-on-hud)',
       '온라인의 캐릭터 위치는 배경색 변화에만 기대지 않는다',
     );
     assert.equal(
@@ -417,6 +417,50 @@ test('결과: 점수 장면 → 요약 칩 셋 → 다시 하기(주 행동) →
   assert.equal(valueOf(rules, node('dl.result-stats', node('section.screen')), 'box-shadow', MOBILE), null);
 });
 
+test('표면: 세계 그림 위에 바로 놓이던 대화·매치 상태·결과 등급 글은 유리 표면이나 scrim 위에서 읽힌다', () => {
+  // 실제 마크업의 조상 사슬로 본다 — 대기실 채팅은 section 의 직계 자식이라 받침이 없었다
+  const waitingForm = nodeFromHtml(html, 'chat-form');
+  const waitingLog = nodeFromHtml(html, 'chat-log');
+  const waitingHint = node('p.chat__hint', waitingLog.parent);
+  const status = nodeFromHtml(html, 'online-match-status');
+  const onlineLog = nodeFromHtml(html, 'online-chat-log');
+  const onlineChat = onlineLog.parent;
+  assert.ok(onlineChat.classes.includes('online-quiz-chat'));
+
+  for (const env of [MOBILE, DESKTOP, NARROW]) {
+    for (const [label, element] of [['대기실 채팅칸', waitingForm], ['대기실 안내', waitingHint], ['대기실 로그', waitingLog], ['매치 상태', status], ['온라인 채팅', onlineChat]]) {
+      assert.equal(valueOf(rules, element, 'background', env), 'var(--world-glass)', `${label}: 유리 표면`);
+      assert.match(valueOf(rules, element, 'border', env) ?? '', /var\(--world-floor-line\)/, `${label}: 표면 선`);
+    }
+    // 대기실의 세 형제는 한 표면으로 이어진다: 위아래 모서리를 나눠 갖고 사이에 바깥 여백이 없다
+    assert.equal(valueOf(rules, waitingForm, 'border-radius', env), 'var(--radius-lg) var(--radius-lg) 0 0');
+    assert.equal(valueOf(rules, waitingLog, 'border-radius', env), '0 0 var(--radius-lg) var(--radius-lg)');
+    assert.equal(valueOf(rules, waitingHint, 'border-radius', env), null);
+    for (const element of [waitingHint, waitingLog]) {
+      assert.equal(lengthOf(rules, valueOf(rules, element, 'margin-top', env), env), 0, '이어진 표면 사이에 틈이 없다');
+      assert.equal(valueOf(rules, element, 'border-top', env), '0');
+    }
+    assert.equal(valueOf(rules, waitingForm, 'border-bottom', env), '0');
+    // 온라인 채팅 안의 칸·안내·로그는 제 바탕 없이 표면 하나를 나눠 쓴다
+    assert.equal(valueOf(rules, onlineLog, 'background', env), null);
+    assert.ok(lengthOf(rules, valueOf(rules, onlineChat, 'padding', env), env) > 0, '온라인 채팅 표면은 안쪽 여백을 가진다');
+    assert.equal(lengthOf(rules, valueOf(rules, nodeFromHtml(html, 'online-chat-form'), 'margin-top', env), env), 0, '표면 안 첫 줄은 안쪽 여백만큼만 띄운다');
+    assert.ok(valueOf(rules, status, 'padding', env), '매치 상태 줄은 안쪽 여백을 가진다');
+
+    // 결과 점수 장면은 카드 대신 글자 뒤 방사형 scrim 위에 뜬다
+    const gradeMessage = nodeFromHtml(html, 'result-grade-message');
+    const header = gradeMessage.parent;
+    assert.ok(header.classes.includes('result-header'));
+    assert.match(valueOf(rules, header, 'background', env) ?? '', /^radial-gradient\(.*var\(--hud-bg-soft\).*transparent/);
+    assert.equal(valueOf(rules, header, 'border', env), '0', '점수 장면은 카드가 아니다');
+    assert.equal(valueOf(rules, header, 'text-shadow', env), 'var(--world-title-shadow)');
+    for (const id of ['result-grade', 'result-grade-message']) {
+      assert.equal(valueOf(rules, nodeFromHtml(html, id), 'color', env), 'var(--hud-text)', `#${id}`);
+    }
+    assert.equal(valueOf(rules, gradeMessage, 'font-weight', env), 'var(--weight-bold)');
+  }
+});
+
 test('결과: 320px 요약 칩은 네 글자 라벨과 값을 위한 가로 공간을 남긴다', () => {
   const stats = node('dl.result-stats', node('section.screen'));
   const chip = node("div.result-stats__item[data-icon='clock']", stats);
@@ -449,10 +493,31 @@ test('상태: 보기의 정답·오답·제출 대기·캐릭터 위치는 색�
   assert.equal(valueOf(rules, tile('arena-tile--correct'), '--icon', MOBILE), 'var(--i-check)');
   assert.equal(valueOf(rules, tile('arena-tile--wrong'), '--icon', MOBILE), 'var(--i-cross)');
 
-  // 남은 5초는 아이콘 모양도 바뀐다 (FR-3.9)
-  const timerIcon = (warning) => node('span.timer__icon', node('p.timer__label', node(`div.timer${warning ? '.timer--warning' : ''}`, node('div.quiz-hud'))));
-  assert.match(valueOf(rules, timerIcon(false), '-webkit-mask', MOBILE) ?? '', /var\(--i-clock\)/);
-  assert.equal(valueOf(rules, timerIcon(true), 'mask-image', MOBILE), 'var(--i-alert)');
+  // 남은 5초는 아이콘 모양·글자·막대·HUD 선이 함께 바뀐다 (FR-3.9). 두 퀴즈 화면은 모두
+  // quiz--character 라 그 맥락의 HUD 규칙이 경고 색을 덮었다 — 실제 화면 사슬에서 최종값을 본다
+  for (const screen of ["section.screen.quiz--character[data-screen='quiz']", "section.screen.online-quiz.quiz--character[data-screen='online-quiz']"]) {
+    for (const env of [MOBILE, DESKTOP]) {
+      const hud = (warning) => node('div.quiz-hud', node(screen, node('main.app', node('body'))), { has: warning ? ['.timer--warning'] : [] });
+      const timer = (warning) => node(`div.timer${warning ? '.timer--warning' : ''}`, hud(warning));
+      const label = (warning) => node('p.timer__label', timer(warning));
+      const icon = (warning) => node('span.timer__icon', label(warning));
+      const fill = (warning) => node('div.timer__fill', node('div.timer__track', timer(warning)));
+
+      assert.match(valueOf(rules, icon(false), '-webkit-mask', env) ?? '', /var\(--i-clock\)/);
+      assert.equal(valueOf(rules, icon(true), 'mask-image', env), 'var(--i-alert)');
+      assert.equal(valueOf(rules, label(false), 'color', env), 'var(--hud-text)');
+      assert.equal(valueOf(rules, label(true), 'color', env), 'var(--hud-warning)', `${screen}: 경고 글자 색`);
+      assert.equal(valueOf(rules, fill(false), 'background', env), 'var(--gold-soft)');
+      assert.equal(valueOf(rules, fill(true), 'background', env), 'var(--hud-warning)', `${screen}: 경고 막대 색`);
+      assert.equal(valueOf(rules, hud(false), 'border-color', env), 'var(--hud-line)');
+      assert.equal(valueOf(rules, hud(true), 'border-color', env), 'var(--hud-warning)', `${screen}: 경고 HUD 선`);
+      // 아이콘은 글자색을 따라 그린다 — 색이 바뀐 글자와 같은 코랄로 보인다
+      assert.equal(valueOf(rules, icon(true), 'background-color', env), 'currentColor');
+      // 끝없이 깜빡이지 않는다
+      assert.equal(valueOf(rules, timer(true), 'animation', env), null);
+      assert.equal(valueOf(rules, label(true), 'animation', env), null);
+    }
+  }
 });
 
 test('상태: 버튼은 쉬는·눌림·꺼짐이 높이와 채움으로 구분되고, 걸어서 올라선 표시는 초점 고리와 같다', () => {

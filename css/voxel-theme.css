@@ -98,6 +98,9 @@
   --primary-action-line: var(--gold-2);
 
   --focus: var(--violet-10);
+  /* 어두운 HUD 위의 초점·올라섬 고리. violet-10 은 HUD 바탕에서 1.9:1 이라 고리가 보이지 않는다
+     (WCAG 1.4.11). 흰 HUD 글자색은 HUD 바탕에서 11:1 을 넘는다 */
+  --focus-on-hud: var(--hud-text);
   --overlay: rgb(29 31 58 / 0.48);
   --glass: rgb(255 255 255 / 0.88);
 
@@ -230,6 +233,9 @@
   --hud-line: rgb(255 255 255 / 0.34);
   --hud-text: var(--mist-0);
   --hud-text-muted: #e6e8f8;
+  /* 어두운 HUD 위의 남은 5초 경고 (FR-3.9). coral-9 와 같은 색상(349°)의 밝은 단계라
+     반투명 HUD가 가장 밝은 그림 위에 얹혀도 작은 글자 AA(4.5:1)를 넘긴다. --wrong-ink 는 HUD에서 어둡다 */
+  --hud-warning: #ff8fa3;
   --world-glass: rgb(255 255 255 / 0.9);
   --world-glass-soft: rgb(255 255 255 / 0.8);
   --world-floor-glass: rgb(255 255 255 / 0.22);
@@ -2230,10 +2236,6 @@ select.room-form__input {
   line-height: var(--leading-normal);
 }
 
-.online-quiz-chat {
-  border-top: var(--border-1) solid var(--border);
-}
-
 .online-final__summary {
   border-radius: var(--radius-lg);
   background: var(--accent-soft);
@@ -2422,6 +2424,57 @@ select.is-standing {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);
   background: var(--accent-hover);
+}
+
+/* Enter 대상은 한 번에 하나만 보인다. 걷다가 Tab 을 누르면 초점이 다른 버튼으로 가고 발밑 표시도
+   남는데, 그때 Enter 는 초점 쪽을 누른다(walker.ts 의 handleKey). 같은 모양의 고리가 둘이면 어느 쪽이
+   눌릴지 알 수 없으므로, «제 키를 쓰는 것»(walker.ts 의 pickable)에 키보드 초점이 보이는 동안에는
+   다른 요소의 올라섬 표시를 거둔다. 걷기 시작하면 dropFocus 가 초점을 놓아 올라섬 표시가 돌아온다.
+   화면 전환으로 받은 section·문제 제목의 초점은 Enter 를 가져가지 않으므로 조건에 넣지 않는다.
+   보기·바닥 칸의 «캐릭터 위치» 불은 시간이 끝나면 답이 되는 자리라 그대로 둔다.
+   :has() 를 모르는 브라우저에서는 이 덮어쓰기만 빠지고 올라섬 표시는 그대로 남는다. */
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .is-standing:not(:focus-visible) {
+  outline-color: transparent;
+}
+
+/* 고리 밖의 올라섬 단서(선·바탕)도 같은 조건에서 쉬는 모양으로 되돌린다. 값은 30절의 쉬는 모양과 같다 */
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .home-menu .menu-card.is-standing:not(:focus-visible),
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .home-player .menu-card--wide.is-standing:not(:focus-visible) {
+  border-color: var(--hud-line);
+}
+
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .category-card.is-standing:not(:focus-visible) {
+  border-color: var(--hud-line);
+  background: var(--world-glass);
+}
+
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .home-primary-actions .challenge-card.is-standing:not(:focus-visible) {
+  background: var(--primary-action);
+  color: var(--text);
+}
+
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .home-primary-actions .challenge-card--online.is-standing:not(:focus-visible) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* 지금 쓰는 캐릭터의 보라 테두리·바탕은 «선택됨»이라 남긴다 */
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .character-card.is-standing:not(:focus-visible):not(.character-card--on) {
+  border-color: var(--world-floor-line);
+  background: var(--world-floor-glass);
+}
+
+/* 앉아 있는 좌석의 민트 고리는 올라섬이 아니라 «앉음» 상태다 (css/style.css 대기실 좌석) */
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .lounge__seat.is-standing[aria-pressed='true']:not(:focus-visible) {
+  outline-color: var(--correct);
 }
 
 /* ── 25. 세계 장식: 복셀 마을 ────────────────────────────────────
@@ -2959,6 +3012,14 @@ body:has([data-screen='home']:not([hidden])) {
   backdrop-filter: blur(8px);
 }
 
+/* 그림 위에 홀로 뜬 edge HUD 조각은 바깥이 하늘·구름·나무라 어떤 고리 색도 대비를 보장하지 못한다.
+   같은 3px 고리를 조각 안쪽에 그려 늘 어두운 HUD 바탕 위에 놓는다 (WCAG 1.4.11) */
+.app-bar .icon-button:focus-visible,
+.app-bar .icon-button.is-standing {
+  outline-color: var(--focus-on-hud);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
 /* 홈 HUD */
 .home-player .menu-card--wide,
 .home-menu .menu-card {
@@ -2998,6 +3059,9 @@ body:has([data-screen='home']:not([hidden])) {
   border-color: var(--gold-soft);
   background: var(--hud-bg);
   color: var(--hud-text);
+  /* 소리 버튼과 같은 edge HUD 조각이다. 고리를 안쪽 어두운 바탕 위에 그린다 */
+  outline-color: var(--focus-on-hud);
+  outline-offset: calc(var(--focus-width) * -1);
 }
 
 .home-title,
@@ -3117,10 +3181,11 @@ body:has([data-screen='home']:not([hidden])) {
   color: var(--accent);
 }
 
-/* 어두운 dock 밖에서도 키보드 초점과 캐릭터 위치를 색 변화에 기대지 않고 읽는다. */
-.home-primary-actions .challenge-card:focus-visible,
-.home-primary-actions .challenge-card.is-standing {
-  outline-color: var(--hud-text);
+/* 어두운 dock 안의 분야 칸·두 진입점도 키보드 초점과 캐릭터 위치를 색 변화에 기대지 않고 읽는다.
+   고리는 dock 바탕 위에 그려지므로 HUD 고리색을 쓴다 (WCAG 1.4.11) */
+.home-quests :focus-visible,
+.home-quests .is-standing {
+  outline-color: var(--focus-on-hud);
 }
 
 .home-primary-actions .challenge-card.is-standing {
@@ -3168,11 +3233,32 @@ body:has([data-screen='home']:not([hidden])) {
   background: var(--gold-soft);
 }
 
+/* 남은 5초 (FR-3.9): 어두운 HUD에서도 글자·막대·HUD 선이 함께 코랄로 바뀐다. 10절의 경고 규칙은
+   바로 위 HUD 규칙과 명시도가 같고 앞에 있어 덮이므로, 같은 맥락에서 한 단계 올린다.
+   깜빡이지 않는다 — 아이콘(시계 → 경고)과 글(«서두르세요»)이 색과 함께 바뀐다. */
+.quiz--character .timer--warning .timer__label {
+  color: var(--hud-warning);
+}
+
+.quiz--character .timer--warning .timer__fill {
+  background: var(--hud-warning);
+}
+
+.quiz--character .quiz-hud:has(.timer--warning) {
+  border-color: var(--hud-warning);
+}
+
 .quiz--character .arena__help,
 .quiz--character .button--ghost {
   border-color: var(--hud-line);
   background: transparent;
   color: var(--hud-text);
+}
+
+/* HUD 안의 ?·나가기: 고리가 어두운 HUD 바탕 위에 그려진다 (WCAG 1.4.11) */
+.quiz--character .quiz-hud :focus-visible,
+.quiz--character .quiz-hud .is-standing {
+  outline-color: var(--focus-on-hud);
 }
 
 .quiz--character .question {
@@ -3231,10 +3317,12 @@ body:has([data-screen='home']:not([hidden])) {
   text-shadow: var(--world-title-shadow);
 }
 
-/* 결과: 점수는 세계 위에 직접 뜨고 상세 기록부터 표면을 쓴다. */
+/* 결과: 점수는 세계 위에 직접 뜨고 상세 기록부터 표면을 쓴다.
+   카드를 깔지 않는 대신 글자 뒤만 방사형 scrim으로 눌러, 등급·안내 글이 그림 무늬와 섞이지 않게 한다.
+   가운데 65%까지는 옅은 HUD 바탕(--hud-bg-soft)만큼 어둡고 가장자리로 갈수록 세계가 비친다. */
 [data-screen='result'] .result-header {
   border: 0;
-  background: transparent;
+  background: radial-gradient(farthest-side, var(--hud-bg-soft) 0, var(--hud-bg-soft) 65%, transparent 100%);
   box-shadow: none;
   color: var(--hud-text);
   text-shadow: var(--world-title-shadow);
@@ -3259,6 +3347,11 @@ body:has([data-screen='home']:not([hidden])) {
 
 [data-screen='result'] .result-score strong {
   font-size: var(--text-5xl);
+}
+
+/* 세계 위의 가장 작은 글이다. 굵게 세워 외곽선 그림자와 함께 읽힌다 */
+[data-screen='result'] .result-grade-message {
+  font-weight: var(--weight-bold);
 }
 
 [data-screen='result'] .result-best {
@@ -3319,6 +3412,18 @@ body:has([data-screen='home']:not([hidden])) {
   border-color: var(--hud-line);
   background: transparent;
   color: var(--hud-text);
+}
+
+/* 어두운 머리말 안의 홈·나가기: 고리가 HUD 바탕 위에 그려진다 (WCAG 1.4.11) */
+.ranking-header :focus-visible,
+.ranking-header .is-standing,
+[data-screen='characters'] .quiz-header :focus-visible,
+[data-screen='characters'] .quiz-header .is-standing,
+[data-screen='waiting'] > .quiz-header :focus-visible,
+[data-screen='waiting'] > .quiz-header .is-standing,
+.online-hero__header :focus-visible,
+.online-hero__header .is-standing {
+  outline-color: var(--focus-on-hud);
 }
 
 .ranking-scope,
@@ -3395,6 +3500,27 @@ body:has([data-screen='home']:not([hidden])) {
   background: var(--hud-bg-soft);
 }
 
+/* 어두운 동작 바 위의 아이콘 칸. 19절의 옅은 칸 바탕이 남으면 흰 아이콘이 1.1:1 로 사라진다.
+   고르지 않은 칸은 바탕 없이 바 위에 흰 아이콘만 두고, 고른 칸은 19절의 보라 채움(명시도가 더 높다)이
+   이긴다. 짧은 화면의 아이콘 칸은 아이콘과 같은 16px 라 선을 두르지 않는다 */
+.online-actions .online-action-card__icon {
+  background: transparent;
+}
+
+/* 19절의 옅은 hover 바탕이 흰 이름·설명을 지우지 않게 한다. hover 는 채우지 않고 선만 밝힌다 —
+   고른 칸(금빛 선·채움)과 다르게 보여야 한다 */
+@media (hover: hover) {
+  .online-actions .online-action-card:hover:not([aria-pressed='true']) {
+    border-color: var(--accent-line);
+    background: transparent;
+  }
+}
+
+.online-actions :focus-visible,
+.online-actions .is-standing {
+  outline-color: var(--focus-on-hud);
+}
+
 .online-block,
 .lounge {
   box-shadow: var(--elevation-2);
@@ -3409,6 +3535,47 @@ body:has([data-screen='home']:not([hidden])) {
 
 .waiting-settings .setting-card {
   background: var(--world-glass);
+}
+
+/* 대화와 매치 상태도 상황 overlay 표면에 얹는다. 12–14px 보조 글자가 픽셀 그림 무늬 위에 바로
+   놓이면 토큰 대비와 상관없이 읽히지 않는다. 대기실의 채팅칸·안내·로그는 마크업에서 형제이므로
+   선과 모서리를 나눠 맡아 한 표면으로 이어 보이게 한다 (간격은 css/style.css) */
+[data-screen='waiting'] > .chat,
+[data-screen='waiting'] > .chat__hint,
+[data-screen='waiting'] > .chat-log {
+  border: var(--border-1) solid var(--world-floor-line);
+  background: var(--world-glass);
+}
+
+[data-screen='waiting'] > .chat {
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+[data-screen='waiting'] > .chat__hint {
+  border-top: 0;
+  border-bottom: 0;
+}
+
+[data-screen='waiting'] > .chat-log {
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.online-quiz-chat,
+.online-match-status {
+  border: var(--border-1) solid var(--world-floor-line);
+  background: var(--world-glass);
+  box-shadow: var(--elevation-1);
+}
+
+.online-quiz-chat {
+  border-radius: var(--radius-lg);
+}
+
+/* 한 줄 안내라 랭킹·로비의 안내 줄과 같은 모서리를 쓴다 */
+.online-match-status {
+  border-radius: var(--radius-md);
 }
 
 .feedback {
@@ -3431,6 +3598,11 @@ body:has([data-screen='home']:not([hidden])) {
   [data-screen='result'] .result-header {
     color: CanvasText;
     text-shadow: none;
+  }
+
+  /* 점수 장면의 어두운 scrim 위에 시스템 글자색이 오지 않게 바탕도 시스템 표면으로 */
+  [data-screen='result'] .result-header {
+    background: Canvas;
   }
 
   .home-player .menu-card--wide,
