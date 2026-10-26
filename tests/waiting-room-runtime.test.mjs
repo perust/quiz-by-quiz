@@ -242,7 +242,7 @@ test('거절 뒤 다시 읽어 보니 방이 사라졌으면 그렇다고 말하
   await settle();
 
   assert.equal(byId('waiting-start-status').textContent, '준비 상태를 다시 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.');
-  assert.equal(chatLines().at(-1), '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+  assert.equal(chatLines().at(-1), '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
   waiting.hide();
 });
 
@@ -289,11 +289,11 @@ test('방 작업 실패: 요청 한도·시간 초과처럼 이유를 아는 오
   assert.equal(chatLines().at(-1), '방에서 나오지 못했어요. 잠시 뒤 다시 시도해 주세요.');
   assert.deepEqual(left, [], '거절됐으면 방을 떠나지 않는다');
 
-  behaviour.sendChat = () => Promise.reject(new OnlinePlayerError('채팅은 잠시 뒤 다시 보낼 수 있습니다.'));
+  behaviour.sendChat = () => Promise.reject(new OnlinePlayerError('채팅은 잠시 뒤 다시 보낼 수 있어요.'));
   byId('chat-input').value = '안녕';
   byId('chat-form').dispatchEvent(new Event('submit', { cancelable: true }));
   await settle();
-  assert.equal(chatLines().at(-1), '메시지를 보내지 못했어요. 채팅은 잠시 뒤 다시 보낼 수 있습니다.');
+  assert.equal(chatLines().at(-1), '메시지를 보내지 못했어요. 채팅은 잠시 뒤 다시 보낼 수 있어요.');
   assert.equal(byId('chat-input').value, '안녕', '보내지 못한 글은 칸에 남긴다');
   waiting.hide();
 });

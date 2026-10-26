@@ -19,7 +19,7 @@ export const RECORDS_EXPORT_VERSION = 1;
 
 /** 파일이 담은 범위. 랭킹 저장소는 탭마다 상위 N개만 남기고 밀려난 판은 지운다 (FR-6.4) */
 export const RECORDS_EXPORT_SCOPE =
-  `이 브라우저에 남은 기록입니다. 랭킹 탭마다 상위 ${RANKING_TOP_N}개까지만 남아 있어 그보다 아래로 밀린 판은 없습니다.`;
+  `이 브라우저에 남은 기록이에요. 랭킹 탭마다 상위 ${RANKING_TOP_N}개까지만 남아 있어 그보다 아래로 밀린 판은 없어요.`;
 
 export interface RecordsExportInput {
   /** 모든 랭킹 탭의 기록. 탭마다 따로 읽어 이어 붙인 것이라 겹쳐도 된다 */

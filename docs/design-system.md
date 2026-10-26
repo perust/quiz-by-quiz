@@ -449,6 +449,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/safety-teacher-ui.test.mjs`, `tests/waiting-room-safety.test.mjs`, `tests/room-member-removal.test.mjs`, `tests/records-export.test.mjs` | 대기실 액자의 말 숨기기·내보내기(44px, 비색 단서, 인페이지 확인, 접속 중·끊김에 따라 다른 확인 문구, 포커스 되돌리기), 내보내진 사람의 로비 안내, 랭킹 기록 내보내기 패널(유리 표면, 파일·복사·펼친 글) |
 | `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음(두 퀴즈 HUD의 고리·남은 5초 색), 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |
 | `tests/home-first-visit.test.mjs`, `tests/first-visit-rules.test.mjs`, `tests/boot-screen.test.mjs`, `tests/result-auto-save.test.mjs` | 게임 방법 입구의 자리·44px·HUD 색과 대화상자 계약, 판 길이 글(상수에서, 은행 크기 금지), 처음 세 판의 규칙 줄, 문제 은행 알림의 닫기·다시 불러오기, 부팅 장면(느려요·실패·file:// 안내), 전체 도전 오답 묶음 |
+| `tests/ui-tone.test.mjs` | 화면 문구의 말투(§11): `index.html`의 글·이름 속성, `src/`의 문자열(주석·콘솔 진단 제외), 서버 거절 이유에 합쇼체·한다체 끝이 없는지, 로컬·온라인 판정이 같은 말인지 |
 
 `tests/css-cascade.mjs` 는 브라우저 없이 «실제로 이기는 선언»을 계산하고, 토큰과 `calc()·max()·env()` 를
 풀어 px 로 비교한다 (풀지 못하면 NaN 이라 거짓으로 통과하지 않는다). `@media` 는 폭·높이·`pointer`·`hover`·
@@ -457,3 +458,19 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 단언이 따로따로 틀렸다.
 
 화면을 옮기거나 키를 다루는 코드를 고쳤으면 `tools/check-screens.js` 를 콘솔에서 돌린다.
+
+## 11. 말투
+
+플레이어가 보거나 듣는 문구는 **해요체 하나**다 (N10, 소유자 결정) — …해요·…예요·…이에요·…세요·…까요?·…었어요.
+한 화면 안에서 «정답입니다»와 «기다리는 중이에요»가, 한 문장 안에서 «사라졌어요. … 지워집니다»가 섞였었다.
+
+- 범위: `index.html`의 글과 이름 속성(`aria-label`·`placeholder` 등, 부팅 화면·대화상자 포함), 화면에 쓰거나
+  `announce()`·라이브 리전으로 낭독하는 `src/`의 문자열(`core/scoring.ts` 등급처럼 `core/`가 만드는 글도), 서버가 4xx로
+  보내 화면에 그대로 뜨는 거절 이유(`_error`·`DomainError`의 message — 오류 코드는 그대로)
+- 판정은 «정답이에요»·«시간 초과예요»·«아쉬워요, 오답이에요»이고 로컬·온라인이 같다
+- 문장 끝이 없는 짧은 라벨·버튼(「다음 문제」·「나가기」·「준비 완료」·«연결 끊김»)은 그대로 둔다. 용어(방 코드·비밀번호
+  잠금·준비 완료·다시 하기)도 바꾸지 않는다
+- 범위 밖: 문제·보기·해설(`data/*.json`), 코드 주석(한다체 그대로), 문서, 테스트 이름, 콘솔에만 가는 개발 진단
+  (`console.*`, 기본 `Error`의 message — 화면은 이름 있는 `OnlinePlayerError`만 그대로 쓴다, U40)
+- `tests/ui-tone.test.mjs`가 합쇼체(…습니다·…입니다·…냅니다·…십시오)와 한다체 문장 끝을 막는다. 예외는 그 파일의
+  `ALLOWED_FILES`에 이유와 함께 적고, 쓰지 않게 되면 테스트가 지우라고 한다

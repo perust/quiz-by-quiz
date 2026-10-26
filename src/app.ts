@@ -377,7 +377,7 @@ async function main(): Promise<void> {
       && chatMutes.isMuted(onlineMatchRoomCode, playerId),
     onExit: () => {
       stopOnlineMatch();
-      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
+      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중이에요.');
       void openOnline('매치는 계속 진행돼요. 목록의 「들어가기」로 다시 돌아올 수 있어요.');
     },
     onFinished: showOnlineFinal,
@@ -407,7 +407,7 @@ async function main(): Promise<void> {
       const code = onlineMatchRoomCode;
       stopOnlineMatch();
       if (code && activeRoomCode === code) void openWaitingRoom(code);
-      else void openOnline('진행 중인 온라인 매치를 찾지 못했습니다.');
+      else void openOnline('진행 중인 온라인 매치를 찾지 못했어요.');
     },
     onError: (message, context) => {
       if (!ownsOnlineMatchNavigation()) return;
@@ -714,7 +714,7 @@ async function main(): Promise<void> {
           });
 
     if (questions.length === 0) {
-      homeScreen.setNote('이 카테고리에는 출제할 문제가 없습니다.');
+      homeScreen.setNote('이 카테고리에는 출제할 문제가 없어요.');
       goTo('home');
       return;
     }
@@ -808,7 +808,7 @@ async function main(): Promise<void> {
    * `pagehide`에서 불러도 기록이 남는다. 앞에 await를 넣으면 그 보장이 깨진다.
    */
   async function registerRecord(nickname: string) {
-    if (!pending) throw new Error('등록할 기록이 없습니다');
+    if (!pending) throw new Error('등록할 기록이 없어요');
 
     const { summary, target, playedAt, timeLimitMs: roundLimit } = pending;
     const outcome = await rankingStore.saveRecord({
@@ -925,7 +925,7 @@ async function main(): Promise<void> {
   const notes: string[] = [];
   if (failedCategories.length > 0) {
     const names = failedCategories.map(({ id }) => categoryNames.get(id) ?? id).join(', ');
-    notes.push(`문제를 불러오지 못한 카테고리가 있습니다: ${names}`);
+    notes.push(`문제를 불러오지 못한 카테고리가 있어요: ${names}`);
   }
 
   // 은행이 출제 수보다 적으면 그만큼만 낸다. 짧은 판이 버그로 보이지 않게 미리 알린다
@@ -935,7 +935,7 @@ async function main(): Promise<void> {
   });
   if (short.length > 0) {
     const names = short.map((category) => category.name).join(', ');
-    notes.push(`${names}는 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제됩니다.`);
+    notes.push(`${names}는 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제돼요.`);
   }
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));

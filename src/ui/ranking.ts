@@ -202,7 +202,7 @@ export function createRankingScreen(
       // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12).
       // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
       // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
-      el.emptyMessage.textContent = `${tab.label} 기록이 아직 없습니다.`;
+      el.emptyMessage.textContent = `${tab.label} 기록이 아직 없어요.`;
       el.emptyStartButton.textContent = canStart(tab.target) ? `${tab.label} 시작하기` : '홈으로';
       el.empty.hidden = false;
       el.list.hidden = true;
@@ -236,7 +236,7 @@ export function createRankingScreen(
     // 지우고 나면 「모든 기록 지우기」가 숨는다. 거기 두면 포커스가 <body>로 떨어지므로
     // 빈 탭이 주는 다음 행동(「… 시작하기」)으로 옮긴다 — 되돌릴 수 없는 조작 뒤에는 갈 곳을 남긴다
     (el.empty.hidden ? el.clearButton : el.emptyStartButton).focus();
-    announce('저장된 기록을 모두 지웠습니다.');
+    announce('저장된 기록을 모두 지웠어요.');
   }
 
   // ── 기록 내보내기 (N02) ─────────────────────────────────────────

@@ -82,7 +82,7 @@ test('퀴즈 HUD: 로컬·온라인 남은 시간 글은 브라우즈 모드에�
 
   // 남은 5초는 문항당 한 번만 알리고, 재촉하지 않는 말로 쓴다 (PRD 2.1, FR-3.9)
   assert.equal(quiz.match(/announce\(/g)?.length, 1, 'announce 는 5초 경고 한 곳뿐이다');
-  assert.match(quiz, /if \(isWarning && !warned\) \{\s*warned = true;\s*announce\('시간이 얼마 남지 않았습니다\.'\);/);
+  assert.match(quiz, /if \(isWarning && !warned\) \{\s*warned = true;\s*announce\('시간이 얼마 남지 않았어요\.'\);/);
   assert.ok(quiz.includes('`${seconds}초 남았어요`'));
   assert.doesNotMatch(quiz, /서두르세요/);
 });

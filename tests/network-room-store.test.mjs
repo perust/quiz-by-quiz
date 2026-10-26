@@ -340,7 +340,7 @@ test('네트워크 저장소는 server not-ready 시작 거절을 화면용 결�
     const url = String(input);
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
     if (url.endsWith('/v1/rooms/ABC234/start')) {
-      return json({ detail: { code: 'not-ready', message: '참가자가 두 명 이상이고 모두 준비해야 시작할 수 있습니다.' } }, 409);
+      return json({ detail: { code: 'not-ready', message: '참가자가 두 명 이상이고 모두 준비해야 시작할 수 있어요.' } }, 409);
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -511,7 +511,7 @@ test('참가 오류 코드를 기존 RoomStore 실패 이유로 보존한다', a
     const url = String(input);
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
     if (url.endsWith('/join')) {
-      return json({ detail: { code: 'wrong-password', message: '비밀번호가 맞지 않습니다.' } }, 403);
+      return json({ detail: { code: 'wrong-password', message: '비밀번호가 맞지 않아요.' } }, 403);
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -1243,7 +1243,7 @@ test('채팅 요청 한도(429)는 이유 없는 실패로 삼키지 않고 플�
       if (status === 204) return json(null, 204);
       return json({
         detail: status === 429
-          ? { code: 'rate-limited', message: '채팅은 잠시 뒤 다시 보낼 수 있습니다.' }
+          ? { code: 'rate-limited', message: '채팅은 잠시 뒤 다시 보낼 수 있어요.' }
           : { code: 'not-member', message: '먼저 이 방에 참가해 주세요.' },
       }, status);
     }
@@ -1264,7 +1264,7 @@ test('채팅 요청 한도(429)는 이유 없는 실패로 삼키지 않고 플�
 
   const error = await send().then(() => null, (failure) => failure);
   assert.ok(error instanceof OnlinePlayerError, '«연결을 확인하라»가 아니라 «잠시 뒤에»를 말할 수 있어야 한다');
-  assert.equal(onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.'), '채팅은 잠시 뒤 다시 보낼 수 있습니다.');
+  assert.equal(onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.'), '채팅은 잠시 뒤 다시 보낼 수 있어요.');
 
   // 그 밖의 4xx 는 지금처럼 {ok: false} 다
   status = 403;

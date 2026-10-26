@@ -202,7 +202,7 @@ export const LEAVE_MESSAGES: Record<LeaveFailReason, string> = {
 
 /** 내보내기가 거절된 이유를 대기실 대화 로그에 남길 말로 옮긴다 (U24) */
 export const REMOVE_MEMBER_MESSAGES: Record<RemoveMemberFailReason, (nickname: string) => string> = {
-  'not-found': () => '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.',
+  'not-found': () => '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.',
   'not-host': () => '방장만 참가자를 내보낼 수 있어요.',
   'not-member': (nickname) => `${nickname} 님은 이미 방에 없어요.`,
   // 끊긴 자리를 비우려던 사이 다시 붙었다. 잠시 막히는 내보내기는 방장이 그 확인창을 보고 다시 고른다

@@ -140,7 +140,7 @@ test('모두 지운 뒤 포커스는 숨은 버튼이 아니라 빈 탭의 시�
   assert.deepEqual(stored, {});
   assert.equal(byId('ranking-footer').hidden, true);
   assert.equal(globalThis.document.activeElement, byId('ranking-empty-start'), '되돌릴 수 없는 조작 뒤에는 갈 곳을 남긴다');
-  assert.equal(byId('announcer').textContent, '저장된 기록을 모두 지웠습니다.');
+  assert.equal(byId('announcer').textContent, '저장된 기록을 모두 지웠어요.');
 });
 
 test('문제를 불러오지 못한 분야의 빈 탭은 시작을 권하지 않고 홈으로 돌려보낸다 — 홈의 잠긴 분야 칸과 같은 규칙', async () => {
@@ -149,7 +149,7 @@ test('문제를 불러오지 못한 분야의 빈 탭은 시작을 권하지 않
     unavailable = new Set(['science']);
     started.length = 0;
     await ranking.show({ target: { mode: 'category', category: 'science' } });
-    assert.equal(byId('ranking-empty-message').textContent, '과학 기록이 아직 없습니다.');
+    assert.equal(byId('ranking-empty-message').textContent, '과학 기록이 아직 없어요.');
     assert.equal(byId('ranking-empty-start').textContent, '홈으로', '열 수 없는 판을 «과학 시작하기»로 권하지 않는다');
     byId('ranking-empty-start').click();
     assert.deepEqual(started, ['home'], '홈으로 튕겨 나갈 판을 열지 않는다');

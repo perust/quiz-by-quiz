@@ -132,7 +132,7 @@ test('내보내진 사람이 방을 다시 읽으면 RemovedFromRoom 을, 그냥
   const rooms = await store(async (input) => {
     const url = String(input);
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
-    return json({ detail: { code, message: '방장이 방에서 내보냈습니다.' } }, 404);
+    return json({ detail: { code, message: '방장이 방에서 내보냈어요.' } }, 404);
   });
   rooms.setPlayer({ nickname: '퀴즈왕', characterId: 'slime-blue' });
   const { RemovedFromRoom, REMOVED_BY_HOST_MESSAGE } = await import('../js/online/rules.js');
@@ -175,7 +175,7 @@ test('다시 붙으려다 «내보냈다»를 들으면 화면에 알리고 같�
     if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
     if (url.endsWith('/ws-ticket')) {
       tickets += 1;
-      return json({ detail: { code: 'removed', message: '방장이 방에서 내보냈습니다.' } }, 403);
+      return json({ detail: { code: 'removed', message: '방장이 방에서 내보냈어요.' } }, 403);
     }
     throw new Error(`unexpected request: ${url}`);
   });

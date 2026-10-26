@@ -1045,10 +1045,10 @@ export function createOnlineQuizScreen(
       return;
     }
     const verdict = reveal.correct
-      ? '정답입니다'
+      ? '정답이에요'
       : reveal.timedOut
-        ? '시간 초과입니다'
-        : '아쉽네요, 오답입니다';
+        ? '시간 초과예요'
+        : '아쉬워요, 오답이에요';
     setTextIfChanged(el.verdict, verdict);
     renderRevealAnswer(view.question, reveal);
     setTextIfChanged(el.explanation, reveal.explanation);

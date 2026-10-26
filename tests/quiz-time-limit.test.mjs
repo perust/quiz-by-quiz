@@ -162,7 +162,7 @@ test('기본 20초 판: 21초가 지나면 시간 초과 오답이 되고 해설
   clock = 21_000;
   runFrames();
   assert.ok(feedbackShown(), '시간 초과 패널이 뜬다');
-  assert.equal(byId('feedback-verdict').textContent, '시간 초과입니다');
+  assert.equal(byId('feedback-verdict').textContent, '시간 초과예요');
   assert.equal(session.getAnswers()[0].elapsedMs, 20_000);
   quizScreen.hide();
 });
@@ -171,7 +171,7 @@ test('40초 판: 25초에는 아직 15초가 남고, 41초에 시간 초과가 �
   const session = startRound(40_000);
   assert.equal(byId('timer-text').textContent, '남은 시간 40초');
   assert.equal(byId('question-time-limit').textContent, '문항당 40초', '질문 제목의 설명이 그 판의 시간을 말한다');
-  assert.equal(byId('help-time-limit').textContent, '문항당 40초입니다.');
+  assert.equal(byId('help-time-limit').textContent, '문항당 40초예요.');
   assert.equal(byId('help-rule-timed').hidden, false);
   assert.equal(byId('help-rule-untimed').hidden, true);
 
@@ -201,7 +201,7 @@ test('제한 없음 판: 프레임을 돌리지 않고, 25초·한 시간이 지
   assert.equal(byId('timer-text').textContent, '시간 제한 없음');
   assert.equal(byId('timer').classList.contains('timer--unlimited'), true, '막대는 디자인 층이 거둔다');
   assert.equal(byId('question-time-limit').textContent, '시간 제한 없음');
-  assert.equal(byId('help-time-limit').textContent, '시간 제한이 없습니다.');
+  assert.equal(byId('help-time-limit').textContent, '시간 제한이 없어요.');
   assert.equal(byId('help-rule-timed').hidden, true, '«시간이 다 되면 밟은 칸이 답» 규칙은 감춘다');
   assert.equal(byId('help-rule-untimed').hidden, false);
   runFrames(10);
@@ -278,7 +278,7 @@ test('마크업: 질문 제목은 숨긴 설명으로 문항 시간을 함께 �
   assert.equal(description[2], '문항당 20초');
 
   const help = html.slice(html.indexOf('id="help-dialog"'), html.indexOf('id="online-help-dialog"'));
-  assert.match(help, /<span id="help-time-limit">문항당 20초입니다\.<\/span>/);
+  assert.match(help, /<span id="help-time-limit">문항당 20초예요\.<\/span>/);
   assert.match(help, /<span id="help-rule-timed">[\s\S]*<strong>시간이 다 되면 그때 밟고 있는 칸이 답<\/strong>/);
   assert.match(help, /<span id="help-rule-untimed" hidden>[\s\S]*칸에 서 있기만 해서는 답이 나가지 않으니/);
 

@@ -65,7 +65,7 @@ test('online quiz reuses authenticated room movement without opening a second su
   );
   assert.match(
     app,
-    /onExit: \(\) => \{\s*stopOnlineMatch\(\);\s*onlineQuizScreen\.setNotice\('온라인 로비를 불러오는 중입니다\.'\);/,
+    /onExit: \(\) => \{\s*stopOnlineMatch\(\);\s*onlineQuizScreen\.setNotice\('온라인 로비를 불러오는 중이에요\.'\);/,
   );
   assert.doesNotMatch(app, /onlineQuizScreen[\s\S]{0,200}roomStore\.subscribe/);
 });

@@ -178,7 +178,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     // 남은 시간이 얼마 없다는 사실만 문항당 한 번 알린다.
     if (isWarning && !warned) {
       warned = true;
-      announce('시간이 얼마 남지 않았습니다.');
+      announce('시간이 얼마 남지 않았어요.');
     }
   }
 
@@ -400,13 +400,13 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     el.answer.hidden = record.correct;
 
     if (record.correct) {
-      el.verdict.textContent = '정답입니다';
+      el.verdict.textContent = '정답이에요';
       playCorrect();
     } else if (record.timedOut) {
-      el.verdict.textContent = '시간 초과입니다';
+      el.verdict.textContent = '시간 초과예요';
       playTimeout();
     } else {
-      el.verdict.textContent = '아쉽네요, 오답입니다';
+      el.verdict.textContent = '아쉬워요, 오답이에요';
       playWrong();
     }
     // 오답·시간 초과는 무엇이 정답이고 무엇을 골랐는지 글로 말한다 (FR-4.2, FR-3.10)
@@ -552,7 +552,7 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   function describeTimeLimit(limitMs: number | null): void {
     el.questionLimit.textContent = timeLimitLabel(limitMs);
     el.timer.classList.toggle('timer--unlimited', limitMs === null);
-    el.helpTimeLimit.textContent = limitMs === null ? '시간 제한이 없습니다.' : `${timeLimitLabel(limitMs)}입니다.`;
+    el.helpTimeLimit.textContent = limitMs === null ? '시간 제한이 없어요.' : `${timeLimitLabel(limitMs)}예요.`;
     el.helpRuleTimed.hidden = limitMs === null;
     el.helpRuleUntimed.hidden = limitMs !== null;
     el.hintRule.textContent = arenaRuleHint(limitMs);

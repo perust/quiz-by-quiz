@@ -71,13 +71,13 @@ def validate_room(
 ) -> ValidatedRoom:
     normalized_name = str(name or "").strip()
     if not normalized_name or _utf16_units(normalized_name) > ROOM_NAME_MAX_UNITS:
-        raise DomainError("invalid-name", "방 이름은 1자 이상 16자 이하여야 합니다.")
+        raise DomainError("invalid-name", "방 이름은 1자 이상 16자 이하여야 해요.")
 
     if category_id is not None and category_id not in ALLOWED_CATEGORIES:
-        raise DomainError("invalid-category", "지원하지 않는 게임 형식입니다.")
+        raise DomainError("invalid-category", "지원하지 않는 게임 형식이에요.")
 
     if type(capacity) is not int or capacity not in ALLOWED_CAPACITIES:
-        raise DomainError("invalid-capacity", "인원은 2, 4, 6, 8, 10, 12명 중에서 골라야 합니다.")
+        raise DomainError("invalid-capacity", "인원은 2, 4, 6, 8, 10, 12명 중에서 골라야 해요.")
 
     public = bool(is_public)
     normalized_password: str | None = None
@@ -85,7 +85,7 @@ def validate_room(
         normalized_password = str(password or "")
         password_units = _utf16_units(normalized_password)
         if not ROOM_PASSWORD_MIN_UNITS <= password_units <= ROOM_PASSWORD_MAX_UNITS:
-            raise DomainError("invalid-password", "비밀번호는 4자 이상 12자 이하여야 합니다.")
+            raise DomainError("invalid-password", "비밀번호는 4자 이상 12자 이하여야 해요.")
 
     validate_question_time(question_time_ms)
 
@@ -115,7 +115,7 @@ def validate_player(nickname: str | None, character_id: str | None) -> Validated
         DEFAULT_CHARACTER_ID if character_id is None else str(character_id).strip()
     )
     if not _CHARACTER_RE.fullmatch(normalized_character):
-        raise DomainError("invalid-character", "지원하지 않는 캐릭터 식별자입니다.")
+        raise DomainError("invalid-character", "지원하지 않는 캐릭터 식별자예요.")
 
     return ValidatedPlayer(
         nickname=normalized_nickname,
@@ -133,5 +133,5 @@ def validate_chat(text: str | None) -> str:
 def normalize_code(value: str | None) -> str:
     normalized = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
     if len(normalized) != _CODE_LENGTH:
-        raise DomainError("invalid-code", "방 코드는 여섯 글자여야 합니다.")
+        raise DomainError("invalid-code", "방 코드는 여섯 글자여야 해요.")
     return normalized

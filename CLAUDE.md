@@ -76,6 +76,7 @@ python3 -m unittest discover -s tests -v
 - ES 모듈(`<script type="module">`)과 `fetch` 사용. **`import` 에는 확장자 `.js` 를 붙인다** — 번들러가 없어 브라우저가 그 경로를 그대로 가져간다 (TS 가 `.js` 를 `.ts` 로 이어 준다)
 - `localStorage` 외의 브라우저 저장소 금지
 - UI 문구와 주석은 한국어
+- **화면 문구는 해요체 하나다** (N10, 소유자 결정 — 주석은 지금처럼 한다체, 문제·보기·해설은 범위 밖). `docs/design-system.md` §11, `tests/ui-tone.test.mjs`
 - **`strict: true` 다.** `any` 로 도망가지 않는다 — 저장소나 네트워크에서 읽은 것처럼 정말 모르는 값은 `unknown` 으로 받아 검증하며 좁힌다. 불가피하게 단언할 때는 왜 안전한지 그 자리에 적는다
 
 ## 구조

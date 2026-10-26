@@ -306,9 +306,9 @@ test('문제 은행 알림: 보이는 동안 캐릭터가 꺼지고, 「닫기�
   assert.equal(press('ArrowLeft').defaultPrevented, true, '알림이 없으면 홈 캐릭터가 방향키를 받는다');
   press('Escape');
 
-  home.setNote('문제를 불러오지 못한 카테고리가 있습니다: 과학');
+  home.setNote('문제를 불러오지 못한 카테고리가 있어요: 과학');
   assert.equal(byId('home-note').hidden, false);
-  assert.equal(byId('home-note-text').textContent, '문제를 불러오지 못한 카테고리가 있습니다: 과학');
+  assert.equal(byId('home-note-text').textContent, '문제를 불러오지 못한 카테고리가 있어요: 과학');
   assert.equal(press('ArrowLeft').defaultPrevented, false, '알림이 보이는 동안 캐릭터와 조작부는 꺼져 있다');
 
   // 홈을 다시 그려도 알림이 있는 동안은 꺼진 채다

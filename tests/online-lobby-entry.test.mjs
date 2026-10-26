@@ -183,7 +183,7 @@ test('네트워크 방 상태를 받아 오고, 상태를 모르는 이전 API�
 });
 
 test('게임 중·요청 과다로 거절된 참가는 연결 실패로 던지지 않고 이유를 돌려준다', async () => {
-  let failure = { code: 'game-in-progress', message: '진행 중인 게임에는 새로 참가할 수 없습니다.', status: 409 };
+  let failure = { code: 'game-in-progress', message: '진행 중인 게임에는 새로 참가할 수 없어요.', status: 409 };
   const store = await networkStore((url) => {
     if (url.endsWith('/join')) return json({ detail: { code: failure.code, message: failure.message } }, failure.status);
     throw new Error(`unexpected request: ${url}`);
@@ -191,7 +191,7 @@ test('게임 중·요청 과다로 거절된 참가는 연결 실패로 던지�
   const player = { nickname: '퀴즈왕', characterId: 'slime-blue' };
 
   assert.deepEqual(await store.joinRoom({ code: 'ABC234', player }), { ok: false, reason: 'game-in-progress' });
-  failure = { code: 'rate-limited', message: '참가 시도가 너무 많습니다.', status: 429 };
+  failure = { code: 'rate-limited', message: '참가 시도가 너무 많아요.', status: 429 };
   assert.deepEqual(await store.joinRoom({ code: 'ABC234', player }), { ok: false, reason: 'rate-limited' });
 });
 
@@ -201,9 +201,9 @@ test('판이 도는 방의 나가기 거절(409)은 이유가 실린 오류로 �
   const store = await networkStore((url, init) => {
     if (url.endsWith('/members/me') && init.method === 'DELETE') {
       if (status === 409) {
-        return json({ detail: { code: 'game-in-progress', message: '진행 중인 게임에서는 방을 나갈 수 없습니다.' } }, 409);
+        return json({ detail: { code: 'game-in-progress', message: '진행 중인 게임에서는 방을 나갈 수 없어요.' } }, 409);
       }
-      return json({ detail: { code: 'not-found', message: '그런 코드의 방이 없습니다.' } }, 404);
+      return json({ detail: { code: 'not-found', message: '그런 코드의 방이 없어요.' } }, 404);
     }
     throw new Error(`unexpected request: ${url}`);
   });

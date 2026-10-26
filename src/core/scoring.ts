@@ -27,12 +27,12 @@ interface GradeBand extends Grade {
  * 그래서 정답률로 구간을 잡는다. 카테고리 모드에서는 결과가 PRD 예시와 같다.
  */
 const GRADES: GradeBand[] = [
-  { min: 1, label: '완벽합니다', message: '한 문제도 놓치지 않았어요.' },
+  { min: 1, label: '완벽해요', message: '한 문제도 놓치지 않았어요.' },
   { min: 0.9, label: '상식왕', message: '웬만한 건 다 알고 계시네요.' },
-  { min: 0.7, label: '훌륭해요', message: '탄탄한 상식입니다.' },
-  { min: 0.5, label: '무난합니다', message: '절반은 넘겼어요. 한 판 더 어떠세요?' },
+  { min: 0.7, label: '훌륭해요', message: '탄탄한 상식이에요.' },
+  { min: 0.5, label: '무난해요', message: '절반은 넘겼어요. 한 판 더 어떠세요?' },
   { min: 0.3, label: '조금만 더', message: '해설을 읽고 다시 도전해 보세요.' },
-  { min: 0, label: '다시 도전', message: '틀린 문제부터 살펴보면 금방 올라갑니다.' },
+  { min: 0, label: '다시 도전', message: '틀린 문제부터 살펴보면 금방 올라가요.' },
 ];
 
 function gradeFor(accuracy: number): Grade {

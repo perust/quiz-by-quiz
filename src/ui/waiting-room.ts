@@ -905,7 +905,7 @@ ${me.nickname}`;
       // 대기실에 있는 사이 방이 사라진 때다.
       notice(result.reason === 'not-host'
         ? '방장만 방 설정을 바꿀 수 있어요.'
-        : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+        : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
     } catch (error) {
       if (!ownsAction(action)) return;
       notice(`방 설정을 바꾸지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
@@ -956,7 +956,7 @@ ${me.nickname}`;
         ? '이미 게임이 진행 중이라 준비 상태를 바꿀 수 없어요.'
         : result.reason === 'not-member'
           ? '먼저 이 방에 참가해 주세요.'
-          : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+          : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
     } catch (error) {
       if (!ownsAction(action)) return;
       notice(`준비 상태를 바꾸지 못했어요. ${onlineErrorText(error, RETRY_HINT)}`);
@@ -984,7 +984,7 @@ ${me.nickname}`;
           ? '방장만 판을 시작할 수 있어요.'
           : result.reason === 'game-in-progress'
             ? '이미 게임이 진행 중이에요.'
-            : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+            : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
       }
     } catch (error) {
       if (!ownsAction(action)) return;
@@ -1009,7 +1009,7 @@ ${me.nickname}`;
         applyRoom(fresh);
         return;
       }
-      notice('그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+      notice('그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
     } catch (error) {
       if (!ownsAction(action)) return;
       if (error instanceof RemovedFromRoom && visibleEntry) {
@@ -1221,7 +1221,7 @@ ${me.nickname}`;
         // 목록을 보는 사이 사라졌을 수 있다. 마지막 사람이 나가면 방이 지워진다.
         // **왜 되돌아왔는지 말해 준다** — 공개방의 「참가」는 이미 그렇게 하는데
         // 여기만 조용하면 같은 일에 두 가지 얼굴이 된다
-        onLeave(code, entryGeneration, '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+        onLeave(code, entryGeneration, '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
         return;
       }
 
