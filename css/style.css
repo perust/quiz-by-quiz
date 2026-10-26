@@ -344,6 +344,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   word-break: keep-all;
 }
 
+/* 부제는 말 덩어리 둘(«4지선다 상식 퀴즈» · «혼자·친구와»)이다. 덩어리 안에서 줄이 바뀌면
+   «…혼자 또는» / «친구와»처럼 읽혔다 — 넘치면 사이의 «·» 곁에서만 나뉜다 */
+.home-subtitle__phrase {
+  white-space: nowrap;
+}
+
 /* 분야 고르기: 다섯 분야와 전체 도전을 한 패널에 담는다 */
 .home-quests {
   display: grid;
@@ -717,7 +723,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 /* 넓은 화면에서는 보기를 바닥 칸과 같은 2×2로 놓는다. 1·2가 위, 3·4가 아래라
    «2번 칸 = 오른쪽 위 보기»로 자리가 그대로 이어지고, 무대가 피드백 시트 위로 올라와
-   채점 표시(✓ ✗)를 가리지 않는다. 좁은 화면은 긴 보기를 먼저 다 읽도록 한 줄에 하나다. */
+   채점 표시(✓ ✗)를 가리지 않는다. 좁은 화면은 긴 보기를 먼저 다 읽도록 한 줄에 하나다 —
+   다만 아래처럼 넷이 모두 짧으면 좁은 화면도 2×2다. */
 @media (min-width: 600px) {
   .quiz--character .choices {
     display: grid;
@@ -731,6 +738,44 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
   .quiz--character .choice {
     flex: 1;
+  }
+}
+
+/* 보기 넷이 모두 짧으면(12자 이하, `ui/choice-layout.ts` 가 `data-layout='grid'` 를 단다 — 은행의
+   약 97%) 좁은 화면에서도 바닥 칸과 같은 2×2로 놓는다. 네 줄이 두 줄로 줄어 375×812 휴대폰에서도
+   답한 뒤 질문 머리와 결과 패널이 한 화면에 든다(한 줄에 하나일 때는 질문 첫 줄이 위로 잘렸다).
+   로컬·온라인 보기가 같은 표시를 쓴다. 긴 보기가 하나라도 있으면 위의 한 줄에 하나를 지킨다 */
+.quiz--character .choices[data-layout='grid'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.quiz--character .choices[data-layout='grid'] > li {
+  display: flex;
+}
+
+.quiz--character .choices[data-layout='grid'] .choice {
+  flex: 1;
+}
+
+/* 두 열이면 한 칸이 160px 남짓이다. 안쪽 여백을 한 단계 줄여 글자 자리를 넓히고(높이는 그대로
+   44px 이상), 띄어 쓸 데 없는 긴 낱말(«21.0975킬로미터»)은 칸 안에서 끊는다.
+   판정 알약은 ✓ ✗ ⧗ 모양만 보인다 — 무대 칸과 같은 이유다. 글(«정답»·«오답»·«제출됨»)은 잘려
+   보이지 않을 뿐 낭독되고, 같은 말이 결과 패널에 그대로 있다 */
+@media (max-width: 420px) {
+  .quiz--character .choices[data-layout='grid'] .choice {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .quiz--character .choices[data-layout='grid'] .choice__text {
+    overflow-wrap: anywhere;
+  }
+
+  .quiz--character .choices[data-layout='grid'] .choice__mark {
+    width: calc(var(--icon-sm) + 2 * var(--space-1));
+    padding: 0 var(--space-1);
+    overflow: hidden;
   }
 }
 
@@ -1154,6 +1199,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 .result-actions .button--primary {
   flex-basis: 100%;
+}
+
+/* 대기실을 여는 동안의 「대기실로」 (result.ts 의 markBusy). 뜻은 «연결 중…» 글자가 말하고 커서는 거든다.
+   잠그지 않으므로 다른 행동은 그대로 누를 수 있다 */
+.result-actions .button[aria-busy='true'] {
+  cursor: progress;
 }
 
 .result-block {
@@ -3214,6 +3265,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 .home-title,
 .home-subtitle {
   margin: 0;
+}
+
+/* 부제의 폭은 디자인 층이 묶는다. 가운데 정렬한 브랜드 바로 아래 가운데에 둔다 —
+   왼쪽에 붙으면 글줄만 가운데이고 덩어리는 왼쪽으로 쏠려 마을 그림 위에 떴다 */
+.home-subtitle {
+  margin-inline: auto;
 }
 
 .home-quests {

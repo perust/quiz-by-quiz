@@ -291,6 +291,10 @@ async function main(): Promise<void> {
         ? { mode: 'all', categoryId: null }
         : { mode: 'category', categoryId: target.category },
     ),
+    // 홈의 분야 칸(`card.disabled`)·전체 도전(`startAll.disabled`)과 같은 규칙이다
+    canStart: (target) => (target.mode === 'all'
+      ? allModeCount() > 0
+      : (target.category ? banks[target.category]?.length ?? 0 : 0) > 0),
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
   });

@@ -16,6 +16,7 @@ import type {
 } from '../online/adapter.js';
 import { onlineErrorText } from '../online/rules.js';
 import type { Arena, ArenaDeps } from './arena.js';
+import { choiceLayout } from './choice-layout.js';
 import {
   createPlayerBubbleController,
   shouldPlacePlayerBubbleBelow,
@@ -801,6 +802,8 @@ export function createOnlineQuizScreen(
         return item;
       });
       el.choices.replaceChildren(...items);
+      // 로컬 퀴즈와 같은 배치 표시다. 넷이 모두 짧으면 좁은 화면에서도 2×2
+      el.choices.dataset.layout = choiceLayout(question.choices);
     }
     lastChoiceStructureKey = structureKey;
     const buttons = reconciliation.nodes;

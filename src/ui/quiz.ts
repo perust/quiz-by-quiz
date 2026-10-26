@@ -8,6 +8,7 @@ import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { need, needOne } from '../dom.js';
 import { announce } from './screens.js';
 import { createArena } from './arena.js';
+import { choiceLayout } from './choice-layout.js';
 import { answerLines, feedbackScrollTarget } from './feedback-view.js';
 import { timeLimitLabel } from './time-limit.js';
 import type { Point } from './walker.js';
@@ -209,6 +210,8 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
 
   function renderChoices(question: Question): void {
     el.choices.replaceChildren();
+    // 넷이 모두 짧으면 좁은 화면에서도 2×2로 놓는다. 배치는 CSS 가 이 표시를 보고 정한다
+    el.choices.dataset.layout = choiceLayout(question.choices);
 
     question.choices.forEach((text, index) => {
       const item = document.createElement('li');
