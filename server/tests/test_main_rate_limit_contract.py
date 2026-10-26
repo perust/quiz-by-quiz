@@ -12,7 +12,8 @@ def test_every_actor_room_limiter_has_an_atomic_process_claim() -> None:
         assert f"{prefix}_limiter = AtomicMultiWindowLimiter()" in source
         assert f'prefix="{prefix}"' in source
 
-    assert source.count('prefix="mutation"') == 4
+    # 나가기·방장의 내보내기(U24)·방 설정·준비·시작 — 방을 바꾸는 요청은 모두 같은 한도를 나눠 쓴다
+    assert source.count('prefix="mutation"') == 5
     assert "SlidingWindowLimiter" not in source
 
 

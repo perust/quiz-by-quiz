@@ -55,6 +55,7 @@ from .repository import (
     MatchPositionMismatch,
     MatchSetup,
     MatchView,
+    MemberConnected,
     NotHost,
     NotMember,
     PlayerView,
@@ -82,6 +83,10 @@ PRESENCE_GRACE_SECONDS = 60.0
 # 그보다 오래된 끊김 기록은 버린다. 멤버십이 끝난 사람의 기록은 presence sweep이 방의
 # 참가자 목록을 보고 먼저 버리므로(`retain_presence`) 이것은 마지막 안전망이다.
 PRESENCE_RECORD_SECONDS = 3_600.0
+# 방장이 내보낸 참가자를 기억하는 시간과 개수 (U24). 그 사람이 돌아와 방을 읽으면 «없는 방»이 아니라
+# «방장이 내보냈다»를 듣는다. 차단 목록이 아니다 — 다시 참가하면 지운다.
+REMOVED_RECORD_SECONDS = 3_600.0
+MAX_REMOVED_RECORDS = 4_096
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -550,6 +555,57 @@ class EventHub:
         return websocket in self._connections
 
 
+class RemovedMembers:
+    """방장이 내보낸 (방, 참가자). 단일 worker 계약이라 presence 처럼 메모리로 충분하다.
+
+    알리는 데만 쓴다. 다시 참가하는 것은 막지 않는다 — 끊긴 자리를 비운 것이지 쫓아낸 것이 아니다.
+    """
+
+    def __init__(
+        self,
+        *,
+        record_seconds: float = REMOVED_RECORD_SECONDS,
+        max_records: int = MAX_REMOVED_RECORDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if record_seconds <= 0 or max_records < 1:
+            raise ValueError("removed member records must be positive")
+        self._record_seconds = record_seconds
+        self._max_records = max_records
+        self._clock = clock
+        # 넣은 순서가 곧 시각 순서다. 가득 차면 가장 오래된 것부터 버린다.
+        self._records: dict[tuple[str, UUID], float] = {}
+
+    def mark(self, code: str, player_id: UUID) -> None:
+        now = self._clock()
+        for key, at in tuple(self._records.items()):
+            if now - at < self._record_seconds:
+                break
+            del self._records[key]
+        key = (code, player_id)
+        self._records.pop(key, None)
+        self._records[key] = now
+        while len(self._records) > self._max_records:
+            del self._records[next(iter(self._records))]
+
+    def was_removed(self, code: str, player_id: UUID) -> bool:
+        key = (code, player_id)
+        at = self._records.get(key)
+        if at is None:
+            return False
+        if self._clock() - at >= self._record_seconds:
+            del self._records[key]
+            return False
+        return True
+
+    def forget(self, code: str, player_id: UUID) -> None:
+        self._records.pop((code, player_id), None)
+
+    def forget_room(self, code: str) -> None:
+        for key in [key for key in self._records if key[0] == code]:
+            del self._records[key]
+
+
 def _error(
     status: int,
     code: str,
@@ -724,6 +780,7 @@ def create_app(
     cleanup_interval_seconds: float = 60.0,
     presence_interval_seconds: float = 5.0,
     event_hub: EventHub | None = None,
+    removed_members: RemovedMembers | None = None,
 ) -> FastAPI:
     if (
         isinstance(cleanup_interval_seconds, bool)
@@ -758,6 +815,7 @@ def create_app(
     password_work = BoundedPasswordWork(hasher=password_hasher)
     ticket_store = tickets or WebSocketTickets()
     hub = event_hub or EventHub()
+    removed = removed_members or RemovedMembers()
     ingress_limiter = AtomicMultiWindowLimiter()
     authenticated_ingress_limiter = AtomicMultiWindowLimiter()
     join_limiter = AtomicMultiWindowLimiter()
@@ -1123,6 +1181,13 @@ def create_app(
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
         room = await repo.get_room(actor_id, code)
         if room is None:
+            if removed.was_removed(code, actor_id):
+                # 끊긴 사이 방장이 내보냈다. «없는 방»으로 돌려보내면 방이 사라진 줄 안다 (U24)
+                raise _error(
+                    404,
+                    "removed",
+                    "방장이 방에서 내보냈습니다. 방 코드로 다시 참가할 수 있습니다.",
+                )
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.")
         return room_payload(room)
 
@@ -1216,6 +1281,8 @@ def create_app(
             # 새 멤버십은 새 유예로 센다. 예전 멤버십의 끊김 기록이 남아 있으면 들어오자마자
             # 끊긴 사람이 되어 시작 판정과 판에서 빠진다.
             hub.forget_presence(code, actor_id)
+            # 내보내졌던 사람이 다시 들어왔다. 다음에 나가도 «내보냈다»로 듣지 않는다.
+            removed.forget(code, actor_id)
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
 
@@ -1261,9 +1328,77 @@ def create_app(
         if room is None:
             # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다.
             hub.retain_presence(code, None)
+            removed.forget_room(code)
         else:
             await hub.broadcast(code, {"type": "room-invalidated"})
         return Response(status_code=204)
+
+    @app.delete("/v1/rooms/{raw_code}/members/{raw_player_id}")
+    async def remove_member(
+        raw_code: str,
+        raw_player_id: str,
+        actor_id: UUID = Depends(require_actor),
+    ) -> dict[str, object]:
+        """방장의 «내보내기» (U24). 유예를 넘겨 끊긴 참가자만 뺀다.
+
+        접속 중인 사람은 내보낼 수 없다 — 괴롭힘의 수단이 되지 않게, 탭을 닫고 떠난 자리를
+        비우는 데만 쓴다. 같은 모양의 `members/me`(나가기)가 먼저 등록돼 그 경로를 가져간다.
+        """
+        try:
+            code = normalize_code(raw_code)
+        except DomainError as error:
+            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+        try:
+            player_id = UUID(raw_player_id)
+        except ValueError as error:
+            raise _error(404, "not-member", "그 참가자는 이 방에 없습니다.") from error
+        if not allow_actor_room(
+            mutation_limiter,
+            prefix="mutation",
+            actor_id=actor_id,
+            code=code,
+            actor_limit=30,
+            actor_window_seconds=10,
+            process_limit=600,
+        ):
+            raise _error(
+                429,
+                "rate-limited",
+                "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
+            )
+        if player_id == actor_id:
+            raise _error(400, "invalid-target", "방을 떠나려면 나가기를 눌러 주세요.")
+        try:
+            room = await repo.remove_member(
+                actor_id,
+                code,
+                player_id,
+                absent_player_ids=hub.absent_actors(code),
+            )
+        except RoomNotFound as error:
+            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+        except NotHost as error:
+            raise _error(403, "not-host", "방장만 참가자를 내보낼 수 있습니다.") from error
+        except NotMember as error:
+            raise _error(404, "not-member", "그 참가자는 이 방에 없습니다.") from error
+        except MemberConnected as error:
+            raise _error(
+                409,
+                "member-connected",
+                "연결이 끊긴 참가자만 내보낼 수 있습니다.",
+            ) from error
+        except MatchInProgress as error:
+            raise _error(
+                409,
+                "game-in-progress",
+                "진행 중인 판의 참가자는 판이 끝난 뒤에 내보낼 수 있습니다.",
+            ) from error
+        # 막 다시 붙은 소켓이 있었다면 닫는다. 그 화면은 다시 붙으려다 «내보냈다»를 듣는다.
+        await hub.disconnect_actor(code, player_id)
+        hub.forget_presence(code, player_id)
+        removed.mark(code, player_id)
+        await hub.broadcast(code, {"type": "room-invalidated"})
+        return room_payload(room)
 
     @app.patch("/v1/rooms/{raw_code}")
     async def update_room(
@@ -1538,6 +1673,14 @@ def create_app(
                 "연결 준비 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
             )
         if not await repo.is_member(actor_id, code):
+            if removed.was_removed(code, actor_id):
+                # 끊긴 사이 내보내진 화면이 다시 붙으려 한다. 같은 말로 알려
+                # 재시도를 멈추게 한다 (U24)
+                raise _error(
+                    403,
+                    "removed",
+                    "방장이 방에서 내보냈습니다. 방 코드로 다시 참가할 수 있습니다.",
+                )
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.")
         return {
             "ticket": ticket_store.issue(actor_id, code),

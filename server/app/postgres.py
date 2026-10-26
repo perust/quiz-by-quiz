@@ -28,6 +28,7 @@ from .repository import (
     MatchSetup,
     MatchSubmission,
     MatchView,
+    MemberConnected,
     NotHost,
     NotMember,
     PlayerView,
@@ -608,6 +609,76 @@ class PostgresRoomsRepository:
                     code,
                     require_member=False,
                 )
+
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+    ) -> RoomView:
+        """방장이 유예를 넘겨 끊긴 참가자를 방에서 뺀다 (U24).
+
+        **끊긴 사람만이다.** 접속 중인 사람을 내보내는 길을 두면 방장이 남을 쫓는 수단이 된다 —
+        이것은 탭을 닫고 떠난 자리를 비우는 일이다. 방장 자신은 나가기로 떠난다. 도는 판에 자리가
+        있는 사람은 판이 끝난 뒤에 뺀다(판에서 빠진 멤버는 판이 도는 동안에도 뺄 수 있다). 다시
+        참가하는 것은 막지 않는다. 방을 잠그고 그 안에서 모두 다시 확인한다.
+        """
+        async with self._pool.connection() as connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """
+                    SELECT id, host_player_id
+                    FROM quiz_online.rooms
+                    WHERE code = %s AND expires_at > now()
+                    FOR UPDATE
+                    """,
+                    (code,),
+                )
+                room = await cursor.fetchone()
+                if room is None:
+                    raise RoomNotFound
+                if room["host_player_id"] != actor_id:
+                    raise NotHost
+                # 요청한 방장은 지금 여기 있다. 소켓 없이 REST만 쓰는 방장이 끊긴 사람으로
+                # 세어져 있어도 자신을 내보내지 않는다.
+                if player_id == actor_id:
+                    raise MemberConnected
+                member = await connection.execute(
+                    """
+                    SELECT 1
+                    FROM quiz_online.room_members
+                    WHERE room_id = %s AND player_id = %s
+                    """,
+                    (room["id"], player_id),
+                )
+                if await member.fetchone() is None:
+                    raise NotMember
+                if player_id not in absent_player_ids:
+                    raise MemberConnected
+                playing = await connection.execute(
+                    _PLAYS_ACTIVE_MATCH_SQL,
+                    (room["id"], player_id),
+                )
+                if await playing.fetchone() is not None:
+                    raise MatchInProgress
+                await connection.execute(
+                    """
+                    DELETE FROM quiz_online.room_members
+                    WHERE room_id = %s AND player_id = %s
+                    """,
+                    (room["id"], player_id),
+                )
+                view = await self._fetch_room(
+                    connection,
+                    actor_id,
+                    code,
+                    require_member=True,
+                )
+                if view is None:
+                    raise RepositoryFailure("room could not be read after removing a member")
+                return view
 
     async def transfer_absent_hosts(
         self,
