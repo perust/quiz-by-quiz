@@ -407,10 +407,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin-top: var(--space-1);
 }
 
-/* 온라인과 전체 도전 — 홈의 두 주요 게임 진입점 */
+/* 온라인과 전체 도전 — 홈의 두 주요 게임 진입점.
+   좁은 화면에서 한 줄에 하나씩 쌓여도 두 줄의 높이를 같게 맞춘다(`grid-auto-rows: 1fr`).
+   온라인만 «친구와 함께 · 2명부터» 보조 줄을 갖고, 420px 이하에서는 아이콘 칸이 36px로
+   줄어 그 줄만큼 온라인이 더 커졌다 — 같은 크기의 두 주요 버튼이라는 계약이 깨진다 */
 .home-primary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--space-2);
 }
 
@@ -3368,7 +3372,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 
 /* 온라인만 보조 줄을 남긴다. 혼자서는 시작할 수 없다는 것(2명부터)을 누르기 전에
    알리고, 로비를 불러오는 동안에는 같은 자리가 «연결 중…»이 된다 (U29·U34).
-   두 줄이어도 아이콘 칸 높이 안이라 전체 도전과 크기가 같다 */
+   두 줄이 아이콘 칸보다 높아지는 좁은 화면에서도 `.home-primary-actions` 의 같은 높이
+   행(`grid-auto-rows: 1fr`)이 전체 도전과 크기를 맞춘다 */
 .challenge-card--online .challenge-card__desc {
   display: block;
 }
