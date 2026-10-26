@@ -72,7 +72,7 @@ button,
 
 /* ── 부팅 상태 ──
    app.ts 가 문제를 받기 전에는 .is-booted가 붙지 않아 앱이 계속 숨겨진다 (빈 dock이 보이지 않는다).
-   인라인 스크립트가 3초 뒤 .is-boot-slow(file:// 이면 곧바로 실패)를, 15초 뒤 .is-boot-failed를 붙인다. */
+   인라인 스크립트가 3초 뒤 .is-boot-slow(file:// 이면 곧바로 실패)를, 마지막 진척에서 15초 뒤 .is-boot-failed를 붙인다. */
 .app {
   display: none;
   max-width: var(--content-max);
@@ -103,7 +103,8 @@ body.is-booted .boot {
 }
 
 /* 느린 망 안내(3초)와 두 실패 카드는 인라인 스크립트가 body 클래스로 고른다 (U05).
-   개발자 안내(로컬 서버)는 file:// 로 열었을 때(is-boot-file)만 — http(s)에서는 플레이어의 말만 보인다 */
+   개발자 안내(로컬 서버)는 file:// 로 열었을 때(is-boot-file)만 — http(s)에서는 플레이어의 말만 보인다.
+   «네트워크가 느려요»는 처음부터 보이던 상태 줄(.boot__loading)에 들어가고, .boot__slow 는 그 아래 「새로고침」뿐이다 */
 .boot__slow,
 .boot__error {
   display: none;
@@ -111,12 +112,7 @@ body.is-booted .boot {
 
 .boot__slow {
   justify-items: center;
-  gap: var(--space-3);
-  text-align: center;
-}
-
-.boot__slow .boot__body {
-  margin: 0;
+  margin-top: var(--space-3);
 }
 
 .boot__error {
@@ -127,7 +123,6 @@ body.is-boot-slow .boot__slow {
   display: grid;
 }
 
-body.is-boot-slow .boot__loading,
 body.is-boot-failed .boot__loading,
 body.is-boot-failed .boot__slow {
   display: none;

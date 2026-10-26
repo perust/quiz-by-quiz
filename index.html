@@ -16,19 +16,35 @@
     // 지워지지 않으면 아직 뜨지 못한 것이다 (U05).
     //   · file:// 로 열었으면 스크립트와 문제가 막힌 것이라 3초 뒤 개발자 안내(로컬 서버)를 띄운다
     //   · 그 밖에는 느린 망일 수 있다. 3초 뒤 «네트워크가 느려요»와 새로고침, 15초가 지나서야 실패 안내
-    // 두 번째 타이머도 같은 __bootTimer 에 담아 markBooted() 의 clearTimeout 하나로 끈다.
+    // 실패 안내의 15초는 마지막 진척부터 센다 (local-ux-3). 모듈이 다 와서 app.js 가 문제를 받기 시작하면
+    // window.__bootProgress() 를 부르고 거기서 다시 15초다 — 문제 JSON 은 10초(BANK_FETCH_TIMEOUT_MS)에
+    // 끊기므로 아직 받는 중인데 «불러오지 못했어요»가 뜨지 않는다. 그 뒤로는 app.js 가 끝을 낸다.
+    // 이어지는 타이머도 모두 같은 __bootTimer 에 담아 markBooted() 의 clearTimeout 하나로 끈다.
     (function () {
+      var FAIL_AFTER_MS = 15000;
       var body = function () { return document.body.classList; };
+      var now = function () { return performance.now(); };
+      var since = now();
+      function fail() {
+        var wait = since + FAIL_AFTER_MS - now();
+        if (wait > 0) {
+          window.__bootTimer = setTimeout(fail, wait);
+          return;
+        }
+        body().remove('is-boot-slow');
+        body().add('is-boot-failed');
+      }
+      window.__bootProgress = function () { since = now(); };
       window.__bootTimer = setTimeout(function () {
         if (location.protocol === 'file:') {
           body().add('is-boot-failed', 'is-boot-file');
           return;
         }
         body().add('is-boot-slow');
-        window.__bootTimer = setTimeout(function () {
-          body().remove('is-boot-slow');
-          body().add('is-boot-failed');
-        }, 12000);
+        // 처음부터 보이던 상태 줄(role="status")에 글을 넣는다 — 채운 채 펼친 status 는 낭독된다는 보장이 없다
+        var status = document.getElementById('boot-status');
+        if (status) status.textContent = '불러오는 중… 네트워크가 느려요';
+        window.__bootTimer = setTimeout(fail, since + FAIL_AFTER_MS - now());
       }, 3000);
       // 부팅 안내의 「새로고침」·「다시 시도」. 모듈이 뜨지 않아도 눌려야 하므로 여기서 받는다
       document.addEventListener('click', function (event) {
@@ -43,19 +59,24 @@
   <!-- ─────────── 부팅 상태 (U05) ───────────
        스크립트가 아예 실행되지 않거나 느린 경우를 화면으로 알린다.
        모듈 로드가 막히면 JS로는 손쓸 수 없어 HTML에 정적으로 심어 둔다.
-       무엇을 보일지는 head 의 인라인 스크립트가 body 클래스로 정한다. -->
+       무엇을 보일지는 head 의 인라인 스크립트가 body 클래스로 정한다.
+       라이브 리전은 «알리는 말»까지다 — 「새로고침」·「다시 시도」는 role 밖에 둔다 (a11y-02) -->
   <div class="boot" id="boot">
-    <p class="boot__loading">불러오는 중…</p>
+    <!-- 처음부터 보이는 상태 줄. 3초가 지나도 뜨지 않으면 인라인 스크립트가 여기에 «네트워크가 느려요»를
+         넣는다 — 이미 보이던 role="status" 의 글이 바뀌어야 낭독된다 -->
+    <p class="boot__loading" id="boot-status" role="status">불러오는 중…</p>
     <!-- 3초가 지나도 뜨지 않았을 때. 고장이 아니라 느린 망일 수 있다 -->
-    <div class="boot__slow" role="status">
-      <p class="boot__body">불러오는 중… 네트워크가 느려요</p>
+    <div class="boot__slow">
       <button type="button" class="button button--ghost" data-boot-reload>새로고침</button>
     </div>
     <!-- 15초가 지나도 뜨지 않았거나 문제를 하나도 받지 못했을 때. 플레이어의 말로 쓴다.
-         app.ts 의 showFatalError 가 같은 자리에 제목과 이유를 고쳐 쓴다 -->
-    <div class="boot__error boot__error--net" role="alert">
-      <h1 class="boot__title" id="boot-error-title">게임을 불러오지 못했어요</h1>
-      <p class="boot__body" id="boot-error-body">연결을 확인하고 다시 시도해 주세요.</p>
+         app.ts 의 showFatalError 가 같은 자리에 제목과 이유를 고쳐 쓴다. role="alert" 는 펼치는 순간
+         알리므로(파일 카드와 같다) 제목과 이유만 감싼다 -->
+    <div class="boot__error boot__error--net">
+      <div role="alert">
+        <h1 class="boot__title" id="boot-error-title">게임을 불러오지 못했어요</h1>
+        <p class="boot__body" id="boot-error-body">연결을 확인하고 다시 시도해 주세요.</p>
+      </div>
       <button type="button" class="button button--primary" data-boot-reload>다시 시도</button>
     </div>
     <!-- 파일을 직접 열었을 때(file://)만. 개발자를 위한 안내다 -->
