@@ -32,6 +32,7 @@ import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { readyForRematch } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
 import { normalizeCode } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
@@ -349,6 +350,7 @@ async function main(): Promise<void> {
   onlineQuizScreen.setCharacter(characterId);
 
   const onlineResultScreen = createOnlineResultScreen({
+    onAgain: () => playAgain(),
     onRoom: () => {
       if (activeRoomCode) void openWaitingRoom(activeRoomCode);
       else void openOnline();
@@ -389,7 +391,8 @@ async function main(): Promise<void> {
   function showOnlineFinal(snapshot: OnlineFinishedMatch): void {
     const code = onlineMatchRoomCode;
     stopOnlineMatch();
-    onlineResultScreen.show(snapshot);
+    // 「한 판 더」·「대기실로」는 아직 들어가 있는 방으로 돌아간다. 방 밖이면 「한 판 더」를 그리지 않는다
+    onlineResultScreen.show(snapshot, { inRoom: activeRoomCode !== null });
     goTo('online-result');
     // 아직 그 방에 있으면 소켓을 이어 붙든다. 화면을 떠나면 closers가 놓는다 — 대기실로 가면
     // 대기실이 제 구독을 연 뒤에 놓는다(다시 붙는 잠깐은 60초 유예 안이다). 홈·로비로 가면
@@ -406,6 +409,22 @@ async function main(): Promise<void> {
         openMatch: openOnlineMatch,
       });
     });
+  }
+
+  /**
+   * 「한 판 더」 (U38). 방장이 아니면 대기실을 열기 전에 준비를 켜 둔다(`online/rematch.ts`). 기다리는
+   * 사이 홈·대기실로 등 다른 행동을 눌렀으면 그쪽이 이긴다 — 늦게 끝난 준비가 화면을 옮기지 않는다.
+   */
+  async function playAgain(): Promise<void> {
+    const code = activeRoomCode;
+    if (!code) {
+      await openOnline();
+      return;
+    }
+    const navigation = waitingRoomEntryGeneration;
+    await readyForRematch(roomStore, code);
+    if (!isCurrentNavigation(navigation) || activeRoomCode !== code) return;
+    await openWaitingRoom(code);
   }
 
   function stopOnlineMatch(): void {

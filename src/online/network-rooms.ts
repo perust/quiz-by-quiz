@@ -15,6 +15,7 @@ import type {
   OnlineOwnSubmission,
   OnlineReveal,
   OnlineRevealingMatch,
+  OnlineReviewItem,
   OnlineRunningMatch,
   OnlineScore,
   PlayerInfo,
@@ -385,7 +386,12 @@ function parseReveal(value: unknown): OnlineReveal | null {
   return { ...submission, correct: value.correct, answerIndex, explanation: value.explanation };
 }
 
-function parseScores(value: unknown): OnlineScore[] {
+/**
+ * `revealing`일 때만 참가자별 «방금 문항을 맞혔나»(`lastAnswerCorrect`, U30)를 받는다. 다른 phase에
+ * 섞여 와도 싣지 않는다. 표시용 값이라 깨졌으면 빼고(그 판은 «정답 n/m명»을 그리지 않는다) 점수판
+ * 전체를 거절하지는 않는다.
+ */
+function parseScores(value: unknown, { revealing = false }: { revealing?: boolean } = {}): OnlineScore[] {
   if (!Array.isArray(value)) throw new Error('서버 점수판이 올바르지 않습니다.');
   return value.map((row) => {
     if (!isObject(row)) throw new Error('서버 점수 행이 올바르지 않습니다.');
@@ -396,7 +402,7 @@ function parseScores(value: unknown): OnlineScore[] {
     if (typeof row.characterId !== 'string' || !CHARACTER_ID_PATTERN.test(row.characterId)) {
       throw new Error('서버 점수 캐릭터가 올바르지 않습니다.');
     }
-    return {
+    const score: OnlineScore = {
       playerId,
       nickname: row.nickname,
       characterId: row.characterId,
@@ -404,7 +410,56 @@ function parseScores(value: unknown): OnlineScore[] {
       correctCount: parseInteger(row.correctCount, '정답 수'),
       answeredCount: parseInteger(row.answeredCount, '제출 수'),
     };
+    if (revealing && typeof row.lastAnswerCorrect === 'boolean') score.lastAnswerCorrect = row.lastAnswerCorrect;
+    return score;
   });
+}
+
+function isChoiceIndex(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 3;
+}
+
+/**
+ * 끝난 판의 «문제 다시 보기» (U38). 하나라도 깨졌으면 통째로 뺀다 — 풀이 하나 때문에 최종 순위까지
+ * 거절하지 않는다. 문항 순서는 1부터 판의 문제 수까지 한 번씩이다.
+ */
+function parseReview(value: unknown, totalQuestions: number): OnlineReviewItem[] | undefined {
+  if (!Array.isArray(value) || value.length > totalQuestions) return undefined;
+  const items: OnlineReviewItem[] = [];
+  for (const [index, row] of value.entries()) {
+    if (!isObject(row)) return undefined;
+    const { position, id, categoryId, question, choices, answerIndex, explanation } = row;
+    if (position !== index + 1) return undefined;
+    if (typeof id !== 'string' || !id.trim()) return undefined;
+    if (typeof categoryId !== 'string' || !CATEGORIES_SET.has(categoryId)) return undefined;
+    if (typeof question !== 'string' || !question.trim()) return undefined;
+    if (typeof explanation !== 'string' || !explanation.trim()) return undefined;
+    if (
+      !Array.isArray(choices)
+      || choices.length !== 4
+      || choices.some((choice) => typeof choice !== 'string' || !choice.trim())
+    ) return undefined;
+    const chosen = row.choiceIndex;
+    if (!isChoiceIndex(answerIndex) || (chosen !== null && !isChoiceIndex(chosen))) return undefined;
+    if (typeof row.correct !== 'boolean' || typeof row.timedOut !== 'boolean') return undefined;
+    // 시간 초과는 고른 보기가 없고, 맞힌 것은 정답을 고른 것뿐이다
+    if (row.timedOut ? chosen !== null : chosen === null) return undefined;
+    if (row.correct !== (chosen === answerIndex)) return undefined;
+    items.push({
+      position: index + 1,
+      id,
+      categoryId: categoryId as CategoryId,
+      question,
+      // 바로 위에서 문자열 넷인 것을 확인했다
+      choices: [...choices] as string[],
+      answerIndex,
+      explanation,
+      choiceIndex: chosen,
+      correct: row.correct,
+      timedOut: row.timedOut,
+    });
+  }
+  return items;
 }
 
 function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
@@ -438,6 +493,10 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       ? { remainingMs }
       : {};
   };
+  // «문제 다시 보기»는 끝난 판에만 있다 (U38). 진행 중인 응답에 섞이면 정답이 미리 나간 것이다
+  if (value.state !== 'finished' && Object.hasOwn(value, 'review')) {
+    throw new Error('진행 중인 매치 응답에 정답 풀이가 섞였습니다.');
+  }
   if (value.state === 'running') {
     if (value.reveal !== null || !Array.isArray(value.scores) || value.scores.length !== 0) {
       throw new Error('running 응답에 정답 또는 점수 정보가 섞였습니다.');
@@ -477,7 +536,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       question,
       ownSubmission: null,
       reveal: parseReveal(value.reveal),
-      scores: parseScores(value.scores),
+      scores: parseScores(value.scores, { revealing: true }),
     } satisfies OnlineRevealingMatch;
   }
   if (value.state === 'finished') {
@@ -489,6 +548,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     ) {
       throw new Error('끝난 매치에 문제 또는 정답 공개 상태가 섞였습니다.');
     }
+    const review = parseReview(value.review, totalQuestions);
     return {
       ...base,
       deadlineAt: null,
@@ -497,6 +557,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       ownSubmission: null,
       reveal: null,
       scores: parseScores(value.scores),
+      ...(review === undefined ? {} : { review }),
     } satisfies OnlineFinishedMatch;
   }
   throw new Error('서버 매치 상태가 올바르지 않습니다.');

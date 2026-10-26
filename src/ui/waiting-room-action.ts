@@ -128,6 +128,20 @@ function subjects(players: readonly PublicPlayer[]): string {
 }
 
 /**
+ * 이전 snapshot에 없던 다른 참가자 (U37·N03). 입장 안내 줄과 입장 차임이 같은 판정을 쓴다 —
+ * 방이 바뀌었거나(다른 방의 첫 snapshot) 내가 들어온 것은 «누가 들어왔다»가 아니다.
+ */
+export function waitingRoomJoinedOthers(
+  previous: PublicRoom,
+  next: PublicRoom,
+  playerId: string,
+): PublicRoom['players'] {
+  if (previous.code !== next.code) return [];
+  const before = new Set(previous.players.map((player) => player.id));
+  return next.players.filter((player) => !before.has(player.id) && player.id !== playerId);
+}
+
+/**
  * 이전 snapshot과 견줘 대화 로그에 한 줄씩 남길 드문 사건(FR 밖, 온라인 대기실).
  *
  * 입장·퇴장·방장 승계만 알린다. 준비 토글은 잦아서 여기 넣으면 CHAT_LINES 몇 줄짜리
@@ -140,9 +154,8 @@ export function waitingRoomChangeNotices(
   playerId: string,
 ): string[] {
   if (previous.code !== next.code) return [];
-  const before = new Set(previous.players.map((player) => player.id));
   const after = new Set(next.players.map((player) => player.id));
-  const joined = next.players.filter((player) => !before.has(player.id) && player.id !== playerId);
+  const joined = waitingRoomJoinedOthers(previous, next, playerId);
   const left = previous.players.filter((player) => !after.has(player.id) && player.id !== playerId);
 
   const notices: string[] = [];

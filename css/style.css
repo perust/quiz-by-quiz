@@ -831,12 +831,109 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   list-style: none;
 }
 
+/* 순위 · 캐릭터 · 이름 · 점수 (U38) */
 .online-final-ranking__item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
+}
+
+/* 캐릭터 미리보기와 같은 정지 그림 칸 (.character-card__figure). 이 화면에는 걷는 캐릭터가 없다 */
+.online-final-ranking__figure {
+  position: relative;
+  width: 40px;
+  height: 48px;
+}
+
+.online-final-ranking__score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* «문제 다시 보기» (U38). 행동 줄 아래에 접혀 있다가 버튼으로 편다 */
+.online-final__review-toggle {
+  width: 100%;
+  margin-top: var(--space-4);
+}
+
+.online-final__review {
+  margin-top: var(--space-3);
+}
+
+/* 공개 단계 미니 점수판 (U30). 공개 카드 안 해설 아래다. 위치(position)를 주지 않는다 — 걷는 캐릭터
+   뒤에 오는 문서 흐름 표면이라 위치를 가지면 그 바탕이 캐릭터를 덮는다 */
+.online-standings {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.online-standings__tally {
+  margin: 0 0 var(--space-2);
+}
+
+.online-standings__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.online-standings__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-2);
+}
+
+.online-standings__item--gap {
+  margin-top: var(--space-2);
+}
+
+.online-standings__place {
+  flex: none;
+  min-width: 52px;
+  padding: 0 var(--space-2);
+  text-align: center;
+}
+
+.online-standings__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-standings__me {
+  flex: none;
+  padding: 0 var(--space-2);
+}
+
+.online-standings__result {
+  flex: none;
+  display: inline-flex;
+}
+
+.online-standings__score {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.online-standings__more {
+  margin: var(--space-2) 0 0;
+}
+
+/* 320px 에서도 캐릭터 칸을 접지 않고 이름 자리를 남긴다 */
+@media (max-width: 360px) {
+  .online-final-ranking__item {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
 }
 
 .online-final-ranking__place {
@@ -1655,6 +1752,15 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 /* 화면 아래쪽에서는 닉네임을 몸 위로 올려 viewport 밖으로 잘리지 않게 한다. */
+/* 온라인 정답 공개 중 이름표 앞의 ✓ ✗ 자리 (U30). 줄임표가 그대로 먹도록 이름표를 flex로 바꾸지 않고
+   글줄 안에 둔다. 모양과 색은 디자인 층이 그린다 */
+.walker--answer-correct .walker__name::before,
+.walker--answer-wrong .walker__name::before {
+  display: inline-block;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
+
 .walker--name-above .walker__name {
   top: auto;
   bottom: calc(100% + var(--space-2));

@@ -97,6 +97,27 @@ export function playTimeout(): void {
 }
 
 /**
+ * 온라인 최종 순위 — 부드럽게 올라가는 세 음 (N03). 순위와 상관없이 같은 소리다 —
+ * 꼴찌에게 다른 소리를 들려주지 않는다. 시상대 축하의 움직임과 달리 한 번만 난다.
+ */
+export function playFinish(): void {
+  if (!enabled) return;
+  beep({ freq: 523.25, duration: 0.14, peak: 0.045 });
+  beep({ freq: 659.25, delay: 0.12, duration: 0.14, peak: 0.045 });
+  beep({ freq: 783.99, delay: 0.24, duration: 0.3, peak: 0.05 });
+}
+
+/**
+ * 대기실에 누가 들어왔을 때 — 아주 작은 두 음 (N03). 화면을 보고 있지 않아도 «누가 왔다»를 안다.
+ * 정답·오답보다 작게 낸다. 카운트다운처럼 째깍거리는 소리는 어디에도 두지 않는다.
+ */
+export function playJoin(): void {
+  if (!enabled) return;
+  beep({ freq: 783.99, duration: 0.08, peak: 0.03 });
+  beep({ freq: 1046.5, delay: 0.07, duration: 0.12, peak: 0.03 });
+}
+
+/**
  * 소리를 켰을 때 — 짧고 밝은 한 음으로 «이제 들린다»를 바로 알린다 (U54).
  * 설정의 소리 토글을 누른 클릭 안에서 부르므로 브라우저가 소리를 막지 않는다.
  */
