@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+// 오류 전달 경로를 보는 테스트는 이유를 플레이어의 말로 가진 오류(OnlinePlayerError)를 던진다.
+// 어댑터의 개발 상세가 화면에 새지 않는지는 아래의 따로 된 테스트가 본다 (U40).
+const { OnlinePlayerError } = await import('../js/online/rules.js');
+
 const MATCH_ID = '12345678-1234-5678-9234-567812345678';
 
 function submitSpec(changes = {}) {
@@ -288,7 +292,7 @@ test('후속 refresh가 실패해도 먼저 성공한 snapshot은 버리지 않�
   pending[0].resolve(revealingMatch());
   await waitFor(() => pending.length === 2, 'coalesced follow-up refresh did not start');
   assert.equal(snapshots.at(-1).state, 'revealing');
-  pending[1].reject(new Error('newer refresh failed'));
+  pending[1].reject(new OnlinePlayerError('newer refresh failed'));
   await waitFor(() => errors.length === 1, 'newer refresh failure was not reported');
 
   assert.equal(snapshots.at(-1).state, 'revealing');
@@ -510,7 +514,7 @@ test('성공한 answer 뒤 refetch 실패 시 검증된 server response snapshot
     async getMatch() {
       reads += 1;
       if (reads === 1) return runningMatch();
-      throw new Error('post-submit refetch failed');
+      throw new OnlinePlayerError('post-submit refetch failed');
     },
     async submitMatchAnswer() {
       return { match: accepted, accepted: true, advanced: false };
@@ -553,10 +557,10 @@ test('controller errors는 background refresh와 answer submit ownership을 구�
     async getMatch() {
       reads += 1;
       if (reads === 1) return runningMatch();
-      throw new Error('refresh failed');
+      throw new OnlinePlayerError('refresh failed');
     },
     async submitMatchAnswer() {
-      throw new Error('submit failed');
+      throw new OnlinePlayerError('submit failed');
     },
   };
   const { createOnlineMatchController } = await import('../js/online/match-controller.js');
@@ -670,7 +674,7 @@ test('POST 응답 전에 시작한 더 최신 question refresh는 fallback submi
   const nextQuestion = { ...initial, currentPosition: 2, question: { ...initial.question, position: 2 } };
   pendingRefreshes[0].resolve(nextQuestion);
   await waitFor(() => pendingRefreshes.length === 2, 'post-submit refresh did not start');
-  pendingRefreshes[1].reject(new Error('post-submit refresh failed'));
+  pendingRefreshes[1].reject(new OnlinePlayerError('post-submit refresh failed'));
   await submitting;
 
   assert.equal(snapshots.at(-1).currentPosition, 2);
@@ -753,7 +757,7 @@ test('unknown-identity refresh 실패 뒤 specific invalidation으로 다시 복
   await controller.open('ABC234');
   eventHandler({ type: 'match', phase: 'invalidated', matchId: null });
   await waitFor(() => pending.length === 1, 'unknown identity refresh did not start');
-  pending[0].reject(new Error('reconnect refresh failed'));
+  pending[0].reject(new OnlinePlayerError('reconnect refresh failed'));
   await waitFor(() => errors.length === 1, 'refresh error was not reported');
 
   eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
@@ -807,4 +811,54 @@ test('duplicate started event는 같은 match의 진행 snapshot을 rollback하�
   assert.equal(snapshots.length, 1);
   assert.equal(snapshots.at(-1).currentPosition, 2);
   controller.close();
+});
+
+test('어댑터의 개발 상세는 화면에 넘기지 않고 콘솔에만 남긴다 (U40)', async () => {
+  const errors = [];
+  const warnings = [];
+  let eventHandler;
+  let reads = 0;
+  const gateway = {
+    subscribe(_code, handler) {
+      eventHandler = handler;
+      return () => undefined;
+    },
+    async getMatch() {
+      reads += 1;
+      if (reads === 1) return runningMatch();
+      throw new Error('서버 매치 snapshot이 올바르지 않습니다.');
+    },
+    async submitMatchAnswer() {
+      throw new TypeError('Failed to fetch');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: () => undefined,
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message, context) => errors.push({ message, source: context.source }),
+  });
+
+  const warn = console.warn;
+  console.warn = (...args) => warnings.push(args.map(String).join(' '));
+  try {
+    await controller.open('ABC234');
+    eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+    await waitFor(() => errors.length === 1, 'refresh error was not reported');
+    await controller.submit(submitSpec());
+  } finally {
+    console.warn = warn;
+    controller.close();
+  }
+
+  assert.deepEqual(errors, [
+    { message: '게임 상태를 불러오지 못했어요. 잠시 뒤 다시 맞춰요.', source: 'refresh' },
+    { message: '답을 보내지 못했어요. 다시 골라 주세요.', source: 'submit' },
+  ]);
+  for (const { message } of errors) {
+    assert.doesNotMatch(message, /서버|snapshot|API|fetch/i);
+  }
+  assert.ok(warnings.some((line) => line.includes('서버 매치 snapshot이 올바르지 않습니다.')), '개발 상세는 콘솔에 남는다');
+  assert.ok(warnings.some((line) => line.includes('Failed to fetch')));
 });

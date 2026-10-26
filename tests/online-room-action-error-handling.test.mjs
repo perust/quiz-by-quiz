@@ -32,9 +32,10 @@ test('대기실의 네트워크 방 작업은 실패를 알리고 leave/chat 성
   );
   assert.match(leave, /await roomStore\.leaveRoom\(\{ code: action\.code \}\);/);
   assert.match(leave, /if \(!ownsAction\(action, false\)\) return;\s*onLeave\(action\.code, entryGeneration\);/);
+  // 판이 도는 방의 거절(409)은 로비와 같은 말로 알린다 (U32). 그 밖의 실패만 연결을 의심한다
   assert.match(
     leave,
-    /catch\s*\{\s*if \(!ownsAction\(action, false\)\) return;\s*notice\('방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'\);/,
+    /catch \(error\)\s*\{\s*if \(!ownsAction\(action, false\)\) return;[\s\S]*?notice\(error instanceof LeaveRoomRejected\s*\?\s*LEAVE_MESSAGES\[error\.reason\]\s*:\s*'방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'\);/,
   );
 
   const chat = between(waiting, "  el.chatForm.addEventListener('submit'", '  /**\n   * 채팅칸과 걷기를 오간다.');

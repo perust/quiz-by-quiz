@@ -750,6 +750,14 @@ def create_app(
             )
         )
 
+    def match_absent_ids(code: str, actor_id: UUID) -> frozenset[UUID]:
+        """«모두 답했다»의 분모에서 뺄 참가자 (U32). 지금 요청한 사람은 끊긴 사람이 아니다.
+
+        소켓 없이 REST로만 푸는 사람도 제 요청에서는 세어야 한다 — 빼면 그 사람의 GET 하나가
+        자기 답을 기다리지 않고 문항을 넘겨 버린다.
+        """
+        return hub.absent_actors(code) - {actor_id}
+
     def allow_actor_room(
         limiter: AtomicMultiWindowLimiter,
         *,
@@ -809,6 +817,7 @@ def create_app(
         async def sweep_presence() -> None:
             # 유예를 넘겨 끊겼거나 다시 붙은 방만 다룬다. 끊긴 방장은 접속 중인 다음
             # 참가자에게 넘기고, 남은 화면이 다시 읽도록 room-invalidated를 보낸다.
+            # 막 끊긴 사람만 기다리던 문항은 마감 전에 넘기고 match-invalidated를 보낸다 (U32).
             retry_transfer: set[str] = set()
             while True:
                 await asyncio.sleep(presence_interval_seconds)
@@ -817,6 +826,7 @@ def create_app(
                     pending, retry_transfer = changed | retry_transfer, set()
                     for code in pending:
                         transferred = False
+                        advanced = False
                         absent = hub.absent_actors(code)
                         if absent:
                             try:
@@ -830,8 +840,25 @@ def create_app(
                                     exc_info=True,
                                 )
                                 retry_transfer.add(code)
+                            if code in changed:
+                                try:
+                                    advanced = await repo.advance_past_absent_players(
+                                        code,
+                                        absent,
+                                    )
+                                except asyncio.CancelledError:
+                                    raise
+                                except Exception:
+                                    # 놓쳐도 그 문항의 마감 sweep이 넘긴다.
+                                    logger.warning(
+                                        "absent player match advance failed for room %s",
+                                        code,
+                                        exc_info=True,
+                                    )
                         if code in changed or transferred:
                             await hub.broadcast(code, {"type": "room-invalidated"})
+                        if advanced:
+                            await hub.broadcast(code, {"type": "match-invalidated"})
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -1372,7 +1399,11 @@ def create_app(
             code = normalize_code(raw_code)
         except DomainError as error:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        match_read = await repo.get_match(actor_id, code)
+        match_read = await repo.get_match(
+            actor_id,
+            code,
+            absent_player_ids=match_absent_ids(code, actor_id),
+        )
         match = match_read.match
         if match is None:
             raise _error(404, "no-active-match", "진행하거나 방금 끝난 게임이 없습니다.")
@@ -1411,6 +1442,7 @@ def create_app(
                 code,
                 position=body.position,
                 choice_index=body.choice_index,
+                absent_player_ids=match_absent_ids(code, actor_id),
             )
         except DomainError as error:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error

@@ -45,6 +45,7 @@ import { createBody } from './sprite.js';
 import type {
   MatchSetup, PlayerInfo, PublicRoom, RoomEvent, RoomPatch, RoomStore,
 } from '../online/adapter.js';
+import { LEAVE_MESSAGES, LeaveRoomRejected } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 
 /** 말풍선이 떠 있는 시간. 짧으면 못 읽고 길면 얼굴을 가린다 */
@@ -816,9 +817,13 @@ ${me.nickname}`;
       await roomStore.leaveRoom({ code: action.code });
       if (!ownsAction(action, false)) return;
       onLeave(action.code, entryGeneration);
-    } catch {
+    } catch (error) {
       if (!ownsAction(action, false)) return;
-      notice('방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+      // 판이 도는 방(판에서 빠진 사람이 보는 대기실)의 거절은 연결 문제가 아니다.
+      // 로비의 「나가기」와 같은 말로 언제 되는지를 말한다 (U32)
+      notice(error instanceof LeaveRoomRejected
+        ? LEAVE_MESSAGES[error.reason]
+        : '방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
     }
   });
 

@@ -212,7 +212,15 @@ class RoomsRepository(Protocol):
         absent_player_ids: frozenset[UUID],
     ) -> bool: ...
 
-    async def get_match(self, actor_id: UUID, code: str) -> MatchRead: ...
+    # absent_player_ids: 유예를 넘겨 끊긴 참가자. «모두 답했다»의 분모에서 빠진다 (U32).
+    # 부르는 쪽(API)이 지금 요청한 사람은 넣지 않는다 — 요청하는 사람은 끊긴 사람이 아니다.
+    async def get_match(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchRead: ...
 
     async def submit_answer(
         self,
@@ -221,11 +229,18 @@ class RoomsRepository(Protocol):
         *,
         position: int,
         choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> MatchSubmission: ...
 
     async def cleanup_expired_resources(self) -> None: ...
 
     async def advance_expired_matches(self) -> list[str]: ...
+
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool: ...
 
     async def is_member(self, actor_id: UUID, code: str) -> bool: ...
 

@@ -34,6 +34,7 @@ import {
   hasHangul,
   isValidCode,
   normalizeCode,
+  onlineErrorText,
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
@@ -227,8 +228,8 @@ export function createOnlineScreen(
   el.note.textContent = roomStore.isNetworked
     ? '열린 방을 모두 보여 줘요. 잠긴 방은 비밀번호를 아는 사람만 들어올 수 있어요.'
     : roomStore.isPersistent === false
-      ? '이 브라우저에서 저장이 막혀 있어 새로고침하면 방이 사라져요. API 설정도 없어 방은 이 브라우저 안에만 만들어집니다.'
-      : '이 독립 개발 문서에는 API 설정이 없어 방이 이 브라우저 안에만 만들어져요. 실제 온라인 연결 전 화면과 흐름을 확인하는 단계입니다.';
+      ? '이 브라우저에서 저장이 막혀 있어 새로고침하면 방이 사라져요. 온라인 연결도 없어 방은 이 브라우저 안에만 만들어져요.'
+      : '지금은 온라인 연결이 없어 방이 이 브라우저 안에만 만들어져요. 다른 기기의 친구는 들어올 수 없어요.';
 
   // ── 선택지 채우기 ───────────────────────────────────────────────
 
@@ -474,7 +475,7 @@ export function createOnlineScreen(
   }
 
   /**
-   * 마지막 목록 조회가 실패했으면 그 사연(괄호에 넣을 서버 말), 아니면 null.
+   * 마지막 목록 조회가 실패했으면 플레이어에게 보일 그 사연(`onlineErrorText`), 아니면 null.
    * «방이 없다»와 «모른다»를 가른다 — 서버가 안 되는데 첫 방을 만들라고 하면 눌러도
    * 또 실패한다 (U34).
    */
@@ -504,8 +505,8 @@ export function createOnlineScreen(
       // 낭독은 라이브 리전인 요약 줄이 맡는다. 맨 위 알림에 같은 말을 겹쳐 띄우지 않는다
       el.summary.textContent = '방 목록을 불러오지 못했어요.';
       showEmptyState({
-        title: '온라인 서버에 연결할 수 없어요',
-        copy: `잠시 후 다시 시도해 주세요.${listError}`,
+        title: '온라인에 연결할 수 없어요',
+        copy: listError,
         action: 'retry',
         label: '다시 시도',
         practice: false,
@@ -563,8 +564,9 @@ export function createOnlineScreen(
       renderList();
     } catch (error) {
       if (!ownsScreen(request) || listRequest !== listRequestGeneration) return;
+      // 개발 상세(«서버 방 응답이…», «Failed to fetch»)는 콘솔에만 남긴다 (U40)
       rooms = [];
-      listError = error instanceof Error ? ` (${error.message})` : '';
+      listError = onlineErrorText(error, '잠시 후 다시 시도해 주세요.');
       renderList();
     } finally {
       // 더 늦게 시작한 조회가 있으면 그쪽이 푼다. 화면을 떠났으면 다음 진입의 조회가 푼다
@@ -643,8 +645,7 @@ export function createOnlineScreen(
       commitEnterRoom(result.room.code, owner);
     } catch (error) {
       if (!ownsNavigationAction(owner)) return;
-      const detail = error instanceof Error ? ` (${error.message})` : '';
-      say(messageNode, `방에 들어가지 못했어요. 네트워크 상태를 확인해 주세요.${detail}`, 'bad');
+      say(messageNode, `방에 들어가지 못했어요. ${onlineErrorText(error, '네트워크 상태를 확인해 주세요.')}`, 'bad');
     } finally {
       setBusy(trigger, false);
     }
@@ -726,8 +727,7 @@ export function createOnlineScreen(
       commitEnterRoom(result.room.code, owner);
     } catch (error) {
       if (!ownsNavigationAction(owner)) return;
-      const detail = error instanceof Error ? ` (${error.message})` : '';
-      say(el.createMessage, `방을 만들지 못했어요. 네트워크 상태를 확인해 주세요.${detail}`, 'bad');
+      say(el.createMessage, `방을 만들지 못했어요. ${onlineErrorText(error, '네트워크 상태를 확인해 주세요.')}`, 'bad');
     } finally {
       setBusy(el.createSubmit, false);
     }

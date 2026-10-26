@@ -68,8 +68,12 @@ that actor's sockets immediately, and the
 60-second cleanup sweep revalidates all admitted memberships. The hub also keeps
 in-memory presence: a member whose last socket closed more than 60 seconds ago is
 reported as disconnected, skipped by game start, and loses the host seat to the
-earliest connected member during a 5-second presence sweep. Records older than an
-hour are dropped. These bounds also depend on the single-worker deployment contract.
+earliest connected member during a 5-second presence sweep. Such a member also
+leaves the "everyone answered" count of a running match: the question advances
+once every connected player (and always the requesting player) has answered, the
+absent member's missing answer is stored as a timeout, and a returning member is
+counted again. The presence sweep re-checks the current question when someone
+crosses the grace period. Records older than an hour are dropped. These bounds also depend on the single-worker deployment contract.
 
 Persistent growth is bounded by a two-hour player lifetime, an independent
 60-second resource cleanup loop, and lobby materialization of no more than

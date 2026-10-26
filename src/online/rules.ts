@@ -156,13 +156,38 @@ export const LEAVE_MESSAGES: Record<LeaveFailReason, string> = {
 };
 
 /**
+ * **플레이어에게 그대로 보여도 되는 말**을 가진 온라인 오류 (U40).
+ *
+ * 저장소가 던지는 그 밖의 오류의 `message`는 개발자를 위한 진단이다 — «서버 매치 snapshot이
+ * 올바르지 않습니다», 브라우저의 «Failed to fetch» 같은 것. 서버가 4xx로 알려 준 거절, 응답이
+ * 늦은 것처럼 이유를 플레이어의 말로 말할 수 있을 때만 이 오류로 던진다.
+ */
+export class OnlinePlayerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OnlinePlayerError';
+  }
+}
+
+/**
+ * 오류를 화면에 띄울 말로 옮긴다 (U40). `OnlinePlayerError`면 그 말을, 아니면 부르는 쪽이
+ * 고른 `fallback`을 쓴다. **개발 상세는 콘솔에만 남긴다** — 화면에 «온라인 매치 오류: 서버 …»를
+ * 띄우면 플레이어는 무엇을 해야 할지 모른다.
+ */
+export function onlineErrorText(error: unknown, fallback: string): string {
+  if (error instanceof OnlinePlayerError) return error.message;
+  console.warn('[온라인 오류]', error);
+  return fallback;
+}
+
+/**
  * 저장소가 나가기를 **거절했다**는 표시 (U32).
  *
- * `leaveRoom`의 계약은 `{ok: true}`만 돌려준다. 거절을 그 값에 섞으면 결과를 보지 않는
- * 기존 호출(대기실의 「나가기」)이 거절을 성공으로 읽고 화면을 옮겨 버리므로, 거절은
- * 이 오류로 던진다. 연결 실패(그냥 `Error`)와 구분되므로 화면이 이유를 그대로 말할 수 있다.
+ * `leaveRoom`의 계약은 `{ok: true}`만 돌려준다. 거절을 그 값에 섞으면 결과를 보지 않던
+ * 호출이 거절을 성공으로 읽고 화면을 옮겨 버리므로, 거절은 이 오류로 던진다. 연결 실패(그냥
+ * `Error`)와 구분되므로 로비와 대기실이 같은 말(`LEAVE_MESSAGES`)로 이유를 말한다.
  */
-export class LeaveRoomRejected extends Error {
+export class LeaveRoomRejected extends OnlinePlayerError {
   constructor(readonly reason: LeaveFailReason) {
     super(LEAVE_MESSAGES[reason]);
     this.name = 'LeaveRoomRejected';
