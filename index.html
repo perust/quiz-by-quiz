@@ -918,6 +918,8 @@
   <div class="dialog-backdrop" id="rules-dialog" hidden>
     <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="rules-dialog-title">
       <h2 class="dialog__title" id="rules-dialog-title">게임 방법</h2>
+      <!-- 용어 목록은 혼자 하기 규칙이다. 온라인은 제출·문항 시간이 달라 아래 한 줄로 따로 말한다 (local-ux-1) -->
+      <h3 class="dialog__heading">혼자 하기</h3>
       <dl class="help-list">
         <dt>한 판</dt>
         <dd id="rules-length"></dd>
@@ -937,6 +939,8 @@
         <dt>기록</dt>
         <dd id="rules-record"></dd>
       </dl>
+      <h3 class="dialog__heading">온라인</h3>
+      <p class="dialog__body" id="rules-online"></p>
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="rules-close">닫기</button>
       </div>

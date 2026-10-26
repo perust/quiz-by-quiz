@@ -35,7 +35,7 @@ import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
-import { readyForRematch } from './online/rematch.js';
+import { playAgainInRoom } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
 import { normalizeCode, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
@@ -186,6 +186,8 @@ async function main(): Promise<void> {
   let onlineMatchNavigationGeneration: number | null = null;
   /** 늦게 끝난 REST/저장소 요청이 더 새 화면 전환을 덮지 못하게 하는 소유권 세대. */
   let waitingRoomEntryGeneration = 0;
+  /** 마지막으로 연 대기실. 그 세대가 아직 이기고 있으면 그 방의 대기실에 있거나 들어가는 중이다 */
+  let waitingRoomEntry: { code: string; generation: number } | null = null;
   /** 방금 등록한 기록 ID. 랭킹 화면에서 강조한다 (FR-6.5) */
   let registeredId: string | null = null;
 
@@ -455,7 +457,8 @@ async function main(): Promise<void> {
 
   /**
    * 「한 판 더」 (U38). 방장이 아니면 대기실을 열기 전에 준비를 켜 둔다(`online/rematch.ts`). 기다리는
-   * 사이 홈·대기실로 등 다른 행동을 눌렀으면 그쪽이 이긴다 — 늦게 끝난 준비가 화면을 옮기지 않는다.
+   * 사이 홈·대기실로 등 다른 행동을 눌렀으면 그쪽이 이긴다 — 늦게 끝난 준비가 화면을 옮기지 않고, 그 방의
+   * 대기실로 간 것이 아니면 서버에 닿은 준비도 되돌린다(online-flow-1).
    */
   async function playAgain(): Promise<void> {
     const code = activeRoomCode;
@@ -464,9 +467,14 @@ async function main(): Promise<void> {
       return;
     }
     const navigation = waitingRoomEntryGeneration;
-    await readyForRematch(roomStore, code);
-    if (!isCurrentNavigation(navigation) || activeRoomCode !== code) return;
-    await openWaitingRoom(code);
+    await playAgainInRoom({
+      store: roomStore,
+      code,
+      isStillCurrent: () => isCurrentNavigation(navigation) && activeRoomCode === code,
+      isInWaitingRoom: () => waitingRoomEntry?.code === code
+        && isCurrentNavigation(waitingRoomEntry.generation) && activeRoomCode === code,
+      openWaitingRoom: () => openWaitingRoom(code),
+    });
   }
 
   function stopOnlineMatch(): void {
@@ -867,6 +875,7 @@ async function main(): Promise<void> {
 
   async function openWaitingRoom(code: string): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
+    waitingRoomEntry = { code, generation: entryGeneration };
     // 방에 들어간다는 흔적을 남긴다. 새로고침한 뒤의 홈이 이것을 보고 돌아갈 방을 묻는다 (server-5)
     homeRoomNote.enter(code);
     if (onlineMatchRoomCode) stopOnlineMatch();

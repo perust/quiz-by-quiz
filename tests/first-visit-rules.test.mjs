@@ -42,6 +42,16 @@ test('한 판의 글은 상수에서 온다: 분야 10문제 · 전체 도전 25
   assert.equal(roundRules.RECORD_RULE, '이 브라우저에만 저장돼요');
 });
 
+test('「게임 방법」의 온라인 한 줄: 서 있기만 해서는 제출되지 않고 문항 시간은 방장이 고른다 (local-ux-1)', () => {
+  // 위 줄들(«시간이 끝나면 선 칸이 답»·«설정에서 바꿀 수 있어요»·«이 브라우저에만»)은 혼자 하기 규칙이다.
+  // 온라인은 그 둘이 다르다 — 온라인 조작법·설정의 도움말과 같은 말을 한다
+  const online = roundRules.onlineRule();
+  assert.equal(online, '칸에 서 있기만 해서는 제출되지 않아요. 선택 버튼이나 Enter · Space를 눌러요. 문항 시간은 방장이 20초나 40초로 정해요.');
+  assert.doesNotMatch(online, /시간이 끝나면|설정에서/, '혼자 하기 규칙을 섞지 않는다');
+  // 고를 수 있는 값은 상수에서 온다 — 서버 ALLOWED_QUESTION_TIMES_MS·DB CHECK 와 같은 목록이다
+  for (const ms of constants.ONLINE_QUESTION_TIME_CHOICES) assert.match(online, new RegExp(`${ms / 1000}초`));
+});
+
 test('답하는 법: 직접 누르면 바로 답, 시간이 끝나면 선 칸이 답, 십자 틈은 무응답 — 제한 없음이면 «시간이 끝나면»이 없다', () => {
   const timed = roundRules.answerRule(20_000);
   assert.match(timed, /보기나 바닥 칸을 누르면 바로 답이 나가요/);

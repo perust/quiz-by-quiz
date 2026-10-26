@@ -238,6 +238,9 @@ test('「게임 방법」 대화상자: 다른 대화상자와 같은 인페이�
     assert.match(dialog, new RegExp(`<dt>${term}</dt>\\s*<dd id="${id}"></dd>`), term);
   }
   assert.match(dialog, /<dt>움직이기<\/dt>\s*<dd>[^<]*<kbd>W<\/kbd>/, '홈에서도 걸을 수 있다는 것을 말한다');
+  // 용어 목록은 혼자 하기 규칙이라고 이름을 달고, 온라인은 다른 것만 따로 한 줄로 말한다 (local-ux-1)
+  assert.match(dialog, /id="rules-dialog-title">게임 방법<\/h2>\s*(?:<!--[\s\S]*?-->\s*)?<h3 class="dialog__heading">혼자 하기<\/h3>\s*<dl class="help-list">/);
+  assert.match(dialog, /<\/dl>\s*<h3 class="dialog__heading">온라인<\/h3>\s*<p class="dialog__body" id="rules-online"><\/p>\s*<div class="dialog__actions">/);
   assert.match(dialog, /id="rules-close">닫기<\/button>/);
   assert.doesNotMatch(dialog, /<select|<input/);
   assert.ok(html.indexOf('id="feedback"') < html.indexOf('id="rules-dialog"'));
@@ -255,6 +258,8 @@ test('「게임 방법」: 열면 지금 고른 문항 시간과 규칙을 말�
   assert.equal(byId('rules-score').textContent, '정답당 10점 · 빨리 답해도 점수는 같아요');
   assert.match(byId('rules-answer').textContent, /보기나 바닥 칸을 누르면 바로 답이 나가요\. 시간이 끝나면 캐릭터가 서 있는 칸이 답이에요\. 십자 틈에 서 있으면 답하지 않은 것이 돼요\./);
   assert.equal(byId('rules-record').textContent, '이 브라우저에만 저장돼요');
+  assert.match(byId('rules-online').textContent, /칸에 서 있기만 해서는 제출되지 않아요/, '온라인은 서 있기만 하면 답이 나가지 않는다');
+  assert.match(byId('rules-online').textContent, /방장이 20초나 40초로 정해요/);
 
   // 열려 있는 동안 홈 캐릭터는 방향키를 받지 않고, 키는 화면 쪽으로 새지 않는다
   renderHome();

@@ -222,7 +222,16 @@ test('「한 판 더」: 방장이 아니면 대기실을 열기 전에 준비�
   assert.match(app, /onAgain: \(\) => playAgain\(\),/);
   assert.match(
     app,
-    /async function playAgain\(\): Promise<void> \{[\s\S]*?const navigation = waitingRoomEntryGeneration;\s*await readyForRematch\(roomStore, code\);\s*if \(!isCurrentNavigation\(navigation\) \|\| activeRoomCode !== code\) return;\s*await openWaitingRoom\(code\);/,
+    /async function playAgain\(\): Promise<void> \{[\s\S]*?const navigation = waitingRoomEntryGeneration;\s*await playAgainInRoom\(\{[\s\S]*?isStillCurrent: \(\) => isCurrentNavigation\(navigation\) && activeRoomCode === code,[\s\S]*?openWaitingRoom: \(\) => openWaitingRoom\(code\),\s*\}\);/,
+  );
+  // «그 방의 대기실에 있거나 들어가는 중»은 마지막으로 연 대기실의 세대가 아직 이기는가다 (online-flow-1)
+  assert.match(
+    app,
+    /isInWaitingRoom: \(\) => waitingRoomEntry\?\.code === code\s*&& isCurrentNavigation\(waitingRoomEntry\.generation\) && activeRoomCode === code,/,
+  );
+  assert.match(
+    app,
+    /async function openWaitingRoom\(code: string\): Promise<void> \{\s*const entryGeneration = invalidateWaitingRoomEntry\(\);\s*waitingRoomEntry = \{ code, generation: entryGeneration \};/,
   );
   assert.match(app, /onlineResultScreen\.show\(snapshot, \{ inRoom: activeRoomCode !== null \}\);/);
 });

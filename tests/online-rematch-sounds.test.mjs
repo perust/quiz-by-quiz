@@ -76,6 +76,118 @@ test('「한 판 더」: 방을 못 읽거나 준비가 거절돼도 막지 않�
   assert.equal(await readyForRematch(fakeStore(notMember), 'ABC234'), 'skipped');
 });
 
+// ── 기다리는 사이 다른 행동이 이겼다 (online-flow-1) ──────────────────
+//
+// 「한 판 더」는 방 GET → 준비 PUT 두 번을 기다린다. 그사이 「홈으로」를 누르면 화면은 홈이 이기는데,
+// 준비가 서버에 남으면 홈에 있는 사람이 방장의 다음 시작에 끌려 들어간다(60초 유예 안이라 «접속 중»이다).
+
+/** 응답을 손으로 푸는 가짜 저장소. getRoom·setReady 가 부를 때마다 기다리는 약속을 남긴다 */
+function deferredStore(current) {
+  const calls = [];
+  const pending = [];
+  const wait = (value) => new Promise((resolve) => { pending.push(() => resolve(value)); });
+  return {
+    calls,
+    me: () => ME,
+    getRoom(code) {
+      calls.push(['getRoom', code]);
+      return wait(current);
+    },
+    setReady(spec) {
+      calls.push(['setReady', spec]);
+      return wait({ ok: true, room: current });
+    },
+    /** 가장 먼저 기다린 응답을 푼다 */
+    async release() {
+      pending.shift()();
+      for (let i = 0; i < 3; i += 1) await Promise.resolve();
+    },
+  };
+}
+
+function flowFor(store, nav) {
+  const opened = [];
+  return {
+    opened,
+    flow: {
+      store,
+      code: 'ABC234',
+      isStillCurrent: () => nav.current,
+      isInWaitingRoom: () => nav.inWaitingRoom,
+      openWaitingRoom: async () => { opened.push('ABC234'); },
+    },
+  };
+}
+
+test('「한 판 더」: 방을 읽는 사이 홈으로 갔으면 준비를 보내지 않는다 (online-flow-1)', async () => {
+  const { playAgainInRoom } = await import('../js/online/rematch.js');
+  const store = deferredStore(room());
+  const nav = { current: true, inWaitingRoom: false };
+  const { flow, opened } = flowFor(store, nav);
+  const done = playAgainInRoom(flow);
+
+  nav.current = false; // 「홈으로」가 이겼다
+  await store.release(); // 늦게 온 방 GET
+  assert.deepEqual(store.calls, [['getRoom', 'ABC234']], '준비 PUT 이 나가지 않는다');
+  assert.equal(await done, 'skipped');
+  assert.deepEqual(opened, [], '대기실을 열지 않는다');
+});
+
+test('「한 판 더」: 준비가 나간 뒤에 홈으로 갔으면 서버에 닿은 준비를 되돌린다 (online-flow-1)', async () => {
+  const { playAgainInRoom } = await import('../js/online/rematch.js');
+  const store = deferredStore(room());
+  const nav = { current: true, inWaitingRoom: false };
+  const { flow, opened } = flowFor(store, nav);
+  const done = playAgainInRoom(flow);
+
+  await store.release(); // 방 GET — 아직 결과 화면이다
+  assert.deepEqual(store.calls.at(-1), ['setReady', { code: 'ABC234', isReady: true }]);
+  nav.current = false; // PUT 이 도는 사이 「홈으로」
+  await store.release();
+  assert.equal(await done, 'readied');
+  assert.deepEqual(store.calls.at(-1), ['setReady', { code: 'ABC234', isReady: false }], '켜 둔 준비를 되돌린다');
+  assert.deepEqual(opened, []);
+});
+
+test('「한 판 더」: 기다리는 사이 그 방의 「대기실로」를 눌렀으면 준비를 그대로 둔다 — 대기실이 보여 준다', async () => {
+  const { playAgainInRoom } = await import('../js/online/rematch.js');
+  const store = deferredStore(room());
+  const nav = { current: true, inWaitingRoom: false };
+  const { flow, opened } = flowFor(store, nav);
+  const done = playAgainInRoom(flow);
+
+  await store.release();
+  nav.current = false;
+  nav.inWaitingRoom = true; // 「대기실로」가 같은 방의 대기실을 여는 중이다
+  await store.release();
+  assert.equal(await done, 'readied');
+  assert.deepEqual(store.calls.map(([name, spec]) => [name, spec?.isReady]), [['getRoom', undefined], ['setReady', true]]);
+  assert.deepEqual(opened, [], '「대기실로」가 연다 — 두 번 열지 않는다');
+});
+
+test('「한 판 더」: 아무것도 끼어들지 않으면 준비를 켜고 대기실을 연다. 되돌림은 내가 켠 준비뿐이다', async () => {
+  const { playAgainInRoom } = await import('../js/online/rematch.js');
+  const store = deferredStore(room());
+  const nav = { current: true, inWaitingRoom: false };
+  const { flow, opened } = flowFor(store, nav);
+  const done = playAgainInRoom(flow);
+  await store.release();
+  await store.release();
+  assert.equal(await done, 'readied');
+  assert.deepEqual(opened, ['ABC234']);
+  assert.equal(store.calls.length, 2, '되돌리지 않는다');
+
+  // 이미 준비해 둔 사람(대기실에서 스스로 켰다)은 홈으로 가도 그 준비를 건드리지 않는다
+  const ready = deferredStore(room({ ready: true }));
+  const away = { current: true, inWaitingRoom: false };
+  const other = flowFor(ready, away);
+  const pending = playAgainInRoom(other.flow);
+  await ready.release();
+  away.current = false;
+  assert.equal(await pending, 'already-ready');
+  assert.deepEqual(ready.calls.map(([name]) => name), ['getRoom']);
+});
+
 // ── 효과음 (N03) ────────────────────────────────────────────────
 
 class FakeAudioContext {

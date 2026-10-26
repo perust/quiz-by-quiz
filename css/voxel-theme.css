@@ -1491,6 +1491,13 @@ textarea {
   line-height: var(--leading-normal);
 }
 
+/* 묶음 이름은 용어(dt, 14px heavy)보다 한 단계 크게 읽힌다 */
+.dialog__heading {
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+}
+
 .help-list {
   font-size: var(--text-sm);
   line-height: var(--leading-snug);
