@@ -438,12 +438,41 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   flex: none;
 }
 
+/* 로비를 불러오는 동안의 온라인 입구 (U34). 뜻은 «연결 중…» 글자가 말하고 커서는 거든다 */
+.challenge-card[aria-busy='true'] {
+  cursor: progress;
+}
+
 .home-note {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   margin: var(--space-4) 0 0;
   padding: var(--space-3);
+}
+
+/* 아직 들어가 있는 방으로 돌아가는 줄 (U35). dock 안의 첫 줄이라 dock 높이를 재는
+   --home-dock-h 가 함께 커지고, 조작부·보조 입구가 그 위로 따라 올라간다 */
+.home-room-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-room-note__text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.home-room-note__action {
+  flex: none;
 }
 
 /* ── 화면 머리 (제목 + 돌아가기) ── */
@@ -1994,7 +2023,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   min-width: 0;
 }
 
-.room-item__visibility {
+.room-item__visibility,
+.room-item__status {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -2033,6 +2063,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .room-empty__copy {
   margin: var(--space-1) 0 var(--space-3);
   word-break: keep-all;
+}
+
+/* 주 행동과 「혼자 연습하기」. 좁으면 줄을 바꿔 쌓는다 */
+.room-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
 }
 
 .room-form {
@@ -2075,6 +2113,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .room-form__label {
   flex: none;
   width: 72px;
+}
+
+/* 입력칸 바로 아래의 도움말. 라벨 칸만큼 들여 입력칸과 같은 선에서 시작하고, 폼의 줄 간격을
+   좁혀 아래 줄이 아니라 위 입력칸에 붙은 말로 읽히게 한다 */
+.room-form__help {
+  margin: calc(var(--space-2) * -1) 0 0;
+  padding-left: calc(72px + var(--space-3));
+  word-break: keep-all;
 }
 
 .room-form__input {
@@ -3027,6 +3073,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 
 .challenge-card__desc {
   display: none;
+}
+
+/* 온라인만 보조 줄을 남긴다. 혼자서는 시작할 수 없다는 것(2명부터)을 누르기 전에
+   알리고, 로비를 불러오는 동안에는 같은 자리가 «연결 중…»이 된다 (U29·U34).
+   두 줄이어도 아이콘 칸 높이 안이라 전체 도전과 크기가 같다 */
+.challenge-card--online .challenge-card__desc {
+  display: block;
 }
 
 .home-hint {

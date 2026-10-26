@@ -912,6 +912,38 @@ textarea {
   --icon: var(--i-info);
 }
 
+/* 홈 dock 맨 위의 «아직 방에 있어요» 줄 (U35). 안내 알림 줄과 같은 옅은 보라·안내 아이콘이고,
+   눌러서 돌아가는 버튼이라 올라섬·초점에는 같은 고리를 단다 */
+.home-room-note {
+  border: var(--border-1) solid var(--accent-line);
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.home-room-note::before {
+  content: '';
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--i-info) center / var(--icon-sm) no-repeat;
+  mask: var(--i-info) center / var(--icon-sm) no-repeat;
+}
+
+.home-room-note__action {
+  font-weight: var(--weight-heavy);
+  text-decoration: underline;
+}
+
+.home-room-note.is-standing {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 /* ── 9. 화면 머리 ──────────────────────────────────────────────── */
 .screen-title,
 .ranking-title {
@@ -1446,6 +1478,12 @@ select.room-form__input {
   color: var(--text);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
+}
+
+.room-form__help {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
 }
 
 .room-filter {
@@ -2033,7 +2071,8 @@ select.room-form__input {
   font-variant-numeric: tabular-nums;
 }
 
-.room-item__visibility {
+.room-item__visibility,
+.room-item__status {
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--weight-heavy);
@@ -2058,6 +2097,21 @@ select.room-form__input {
   background-color: currentColor;
   -webkit-mask: var(--i-lock) center / contain no-repeat;
   mask: var(--i-lock) center / contain no-repeat;
+}
+
+/* 게임 중인 방 (U33). 기다림의 골드에 모래시계 모양을 함께 단다 — 색만으로 알리지 않는다 */
+.room-item__status {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.room-item__status::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background-color: currentColor;
+  -webkit-mask: var(--i-hourglass) center / contain no-repeat;
+  mask: var(--i-hourglass) center / contain no-repeat;
 }
 
 .room-item--full .room-item__icon {

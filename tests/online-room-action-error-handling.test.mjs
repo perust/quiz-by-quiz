@@ -53,10 +53,15 @@ test('대기실의 네트워크 방 작업은 실패를 알리고 leave/chat 성
 
 test('로비의 나가기 실패는 목록 갱신 대신 화면 메시지로 처리한다', async () => {
   const online = await source('../src/ui/online.ts');
-  const leave = between(online, '  async function leave(code: string)', '  async function joinByCode(');
+  const leave = between(online, '  async function leave(code: string', '  async function joinByCode(');
 
   assert.match(
     leave,
-    /const request = visibleRequest;\s*if \(request === null \|\| !ownsScreen\(request\)\) return;[\s\S]*?await roomStore\.leaveRoom\(\{ code \}\);\s*if \(!ownsScreen\(request\)\) return;\s*await loadRooms\(request\);\s*\}\s*catch\s*\{\s*if \(!ownsScreen\(request\)\) return;\s*say\(el\.message, '방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.', 'bad'\);/,
+    /const request = visibleRequest;\s*if \(request === null \|\| !ownsScreen\(request\)\) return;[\s\S]*?await roomStore\.leaveRoom\(\{ code \}\);\s*if \(!ownsScreen\(request\)\) return;\s*await loadRooms\(request\);\s*\}\s*catch \(error\)\s*\{\s*if \(!ownsScreen\(request\)\) return;/,
+  );
+  // 판이 도는 방의 거절(409)은 연결 문제로 말하지 않는다 (U32). 그 밖의 실패만 연결을 의심한다
+  assert.match(
+    leave,
+    /error instanceof LeaveRoomRejected\s*\?\s*LEAVE_MESSAGES\[error\.reason\]\s*:\s*'방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'/,
   );
 });

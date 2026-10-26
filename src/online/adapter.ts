@@ -81,7 +81,15 @@ export interface PublicRoom {
   /** 내가 들어가 있는 방인가 */
   joined: boolean;
   createdAt: string;
+  /**
+   * 판이 도는 중인가 (U33). 서버는 진행 중인 판에 새 참가를 받지 않으므로 목록이 미리
+   * 「게임 중」으로 알린다. 서버 권위 판이 없는 로컬 구현은 언제나 `waiting`이다.
+   */
+  status: RoomStatus;
 }
+
+/** 방이 사람을 기다리는지, 판이 도는지 */
+export type RoomStatus = 'waiting' | 'playing';
 
 /** 판을 열 때 쓰는 방 설정 */
 export interface MatchSetup {

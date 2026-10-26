@@ -72,7 +72,7 @@ test('온라인 주요 동작은 선택한 본문만 보여 주고 기존 방 �
   assert.match(joinHandler, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest' \}\)/);
 });
 
-test('빈 방 목록은 첫 방 만들기 또는 필터 초기화로 바로 이어진다', async () => {
+test('빈 방 목록은 방 만들기·혼자 연습하기 또는 필터 초기화로 바로 이어진다', async () => {
   const [html, online] = await Promise.all([
     source('../index.html'),
     source('../src/ui/online.ts'),
@@ -86,7 +86,11 @@ test('빈 방 목록은 첫 방 만들기 또는 필터 초기화로 바로 이�
   assert.match(online, /emptyTitle: need\('room-empty-title'\)/);
   assert.match(online, /emptyCopy: need\('room-empty-copy'\)/);
   assert.match(online, /emptyAction: need<HTMLButtonElement>\('room-empty-action'\)/);
-  assert.match(online, /'첫 방 만들기'/);
+  // 혼자 온 사람에게 2명부터라는 것을 먼저 말하고, 혼자서도 갈 길을 둔다 (U29)
+  assert.match(online, /'친구를 불러야 시작할 수 있어요 \(2명부터\)'/);
+  assert.match(online, /'방 만들고 친구 부르기'/);
+  assert.match(lobby, /id="room-empty-secondary"[^>]*hidden>혼자 연습하기</);
+  assert.match(online, /el\.emptySecondary\.addEventListener\('click', leaveForPractice\)/);
   assert.match(online, /'필터 초기화'/);
   assert.match(
     online,

@@ -407,6 +407,14 @@
     await 눌러('open-online', 0);
     await 화면기다리기('online');
     살펴본다('로비', 'online', true);
+    // 로비를 불러오는 동안 단 «연결 중…»이 남으면 홈에 돌아왔을 때 입구가 계속 바쁜 척한다 (U34)
+    const 온라인입구 = document.getElementById('open-online');
+    결과.push({
+      자리: '로비', 이름: '홈 온라인 입구의 바쁨 표시를 거뒀다',
+      통과: !온라인입구.hasAttribute('aria-busy')
+        && document.getElementById('open-online-desc').textContent.trim() === '친구와 함께 · 2명부터',
+      무엇: `aria-busy ${온라인입구.getAttribute('aria-busy') ?? '없음'} · ${document.getElementById('open-online-desc').textContent.trim()}`,
+    });
     const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
       .map((id) => [id, document.getElementById(id).getBoundingClientRect()]);
     프레임돌리기();
@@ -490,6 +498,12 @@
 
     await 눌러('open-create-room', 250);
     const 이름칸 = document.getElementById('create-name');
+    // 값처럼 보이는 placeholder만 두면 비운 채 만들다 거절당했다 (U41)
+    결과.push({
+      자리: '로비', 이름: '방 이름이 «닉네임의 방»으로 채워져 있다',
+      통과: 이름칸.value.trim().endsWith('의 방'),
+      무엇: 이름칸.value || '(비어 있음)',
+    });
     이름칸.value = '점검용 방';
     document.getElementById('create-form').requestSubmit();
     await 화면기다리기('waiting');
