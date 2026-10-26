@@ -188,11 +188,17 @@ function parsePlayer(value: unknown): PublicPlayer {
   if (typeof value.isReady !== 'boolean') {
     throw new Error('서버 참가자 준비 상태가 올바르지 않습니다.');
   }
+  // 접속 상태를 모르는 이전 서버는 이 필드를 보내지 않는다. 그때는 끊김을 단정하지 않는다.
+  const connected = value.connected ?? true;
+  if (typeof connected !== 'boolean') {
+    throw new Error('서버 참가자 접속 상태가 올바르지 않습니다.');
+  }
   return {
     id: value.id,
     nickname: value.nickname,
     characterId,
     isReady: value.isReady,
+    connected,
   };
 }
 
@@ -884,6 +890,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let generation = 0;
     let latestDeliveredRoomGeneration = 0;
+    /** room 재조회가 지금 날아가는 중인가. 한 subscription에 하나만 띄운다. */
+    let roomRefreshInFlight = false;
+    /** 그 사이 무효화가 또 왔는가. 몇 번이 오든 끝난 뒤 한 번만 더 읽는다. */
+    let roomRefreshQueued = false;
     const movementChannel: MovementChannel = {
       socket: null,
       supportsViewport: false,
@@ -916,6 +926,31 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       if (room) handler({ type: 'room', room });
     }
 
+    /**
+     * room-invalidated와 재연결 복구가 부르는 재조회. **요청을 합친다** — 방송 하나에 방
+     * 전원이 GET을 보내므로, 준비 토글이 몰리면 무효화마다 한 번씩 읽는 것만으로 IP·프로세스
+     * 요청 한도를 먼저 먹는다. 날아가는 요청이 있으면 표시만 해 두고, 끝나면 최신 상태를
+     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 실패해도 다음 무효화·재연결이 다시 맞춘다.
+     */
+    function requestRoomRefresh(): void {
+      if (stopped) return;
+      if (roomRefreshInFlight) {
+        roomRefreshQueued = true;
+        return;
+      }
+      roomRefreshInFlight = true;
+      void (async () => {
+        try {
+          do {
+            roomRefreshQueued = false;
+            await refreshRoom(generation).catch(() => undefined);
+          } while (roomRefreshQueued && !stopped);
+        } finally {
+          roomRefreshInFlight = false;
+        }
+      })();
+    }
+
     function receive(data: unknown, connectionGeneration: number): void {
       if (stopped || connectionGeneration !== generation) return;
       if (typeof data !== 'string') return;
@@ -934,7 +969,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         return;
       }
       if (value.type === 'room-invalidated') {
-        void refreshRoom(connectionGeneration).catch(() => undefined);
+        requestRoomRefresh();
         return;
       }
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
@@ -1046,7 +1081,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           }
           // 연결이 끊긴 동안 room-invalidated를 놓쳤을 수 있으므로 room과 match를
           // 모두 권위 있는 REST snapshot으로 다시 맞춘다.
-          void refreshRoom(connectionGeneration).catch(() => undefined);
+          requestRoomRefresh();
           // A reconnect may have missed a match transition. Send only an invalidation;
           // the controller must obtain its own authorized REST snapshot.
           handler({ type: 'match', phase: 'invalidated', matchId: null });

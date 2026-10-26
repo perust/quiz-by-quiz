@@ -13,6 +13,8 @@ class PlayerView:
     nickname: str
     character_id: str
     is_ready: bool = False
+    # DB는 접속 여부를 모른다. API가 event hub의 presence로 채워 내보낸다.
+    connected: bool = True
 
 
 @dataclass(frozen=True)
@@ -194,7 +196,19 @@ class RoomsRepository(Protocol):
 
     async def send_chat(self, actor_id: UUID, code: str, text: str) -> PlayerView: ...
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup: ...
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup: ...
+
+    async def transfer_absent_host(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool: ...
 
     async def get_match(self, actor_id: UUID, code: str) -> MatchRead: ...
 

@@ -220,6 +220,8 @@ function toPublic(room: Room): PublicRoom {
       nickname,
       characterId: characterId || DEFAULT_CHARACTER_ID,
       isReady: Boolean(isReady),
+      // 이 브라우저 안의 방이라 끊김을 알 길이 없다. 오래 안 보인 사람은 prune이 떨군다.
+      connected: true,
     })),
     isPublic: room.isPublic,
     hasPassword: Boolean(room.password),
@@ -477,6 +479,12 @@ export const localRooms = {
     const room = rooms.find((item) => item.code === normalizeCode(code));
     if (!room) return { ok: false, reason: 'not-found' };
     if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
+    // 서버와 같은 규칙: 방장의 시작 요청이 곧 방장의 준비이고, 나머지는 모두 준비해야 한다.
+    // (최소 인원은 화면이 미리 잠근다. 로컬 방에는 이 브라우저의 나뿐이라 서버처럼 막으면
+    // 개발용 방에서 판을 열 길이 사라진다.)
+    if (room.players.some((player) => player.id !== room.hostId && !player.isReady)) {
+      return { ok: false, reason: 'not-ready' };
+    }
 
     const setup = { categoryId: room.categoryId, gameMode: true as const };
     // 실제 서버의 started 이벤트는 요청 응답과 같은 call stack에서 오지 않는다.

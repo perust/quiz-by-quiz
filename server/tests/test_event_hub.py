@@ -197,3 +197,116 @@ def test_event_hub_shutdown_fails_closed_when_transport_close_cannot_complete() 
         asyncio.run(hub.close_all())
 
     assert hub.connection_count == 1
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_event_hub_presence_waits_one_grace_before_marking_a_member_absent() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    socket = FakeWebSocket()
+    assert hub.connect("ABC234", ACTOR_A, socket)
+    assert hub.is_present("ABC234", ACTOR_A)
+
+    hub.disconnect("ABC234", socket)
+    clock.now += 59
+    assert hub.is_present("ABC234", ACTOR_A)
+    assert hub.absent_actors("ABC234") == frozenset()
+
+    clock.now += 1
+    assert not hub.is_present("ABC234", ACTOR_A)
+    assert hub.absent_actors("ABC234") == frozenset({ACTOR_A})
+    assert hub.absent_actors("XYZ789") == frozenset()
+
+    # 다시 붙으면 즉시 접속 중이다. 끊긴 시각도 지운다.
+    assert hub.connect("ABC234", ACTOR_A, FakeWebSocket())
+    assert hub.is_present("ABC234", ACTOR_A)
+    assert hub.absent_actors("ABC234") == frozenset()
+
+
+def test_event_hub_presence_keeps_an_actor_with_another_live_socket() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    first = FakeWebSocket()
+    second = FakeWebSocket()
+    assert hub.connect("ABC234", ACTOR_A, first)
+    assert hub.connect("ABC234", ACTOR_A, second)
+
+    hub.disconnect("ABC234", first)
+    clock.now += 120
+    assert hub.is_present("ABC234", ACTOR_A)
+
+    hub.disconnect("ABC234", second)
+    clock.now += 60
+    assert not hub.is_present("ABC234", ACTOR_A)
+
+
+def test_event_hub_presence_counts_an_unseen_member_from_the_first_question() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+
+    # 서버가 다시 뜬 뒤 돌아오지 않는 유령, 막 들어와 아직 소켓을 열지 않은 사람.
+    assert hub.is_present("ABC234", ACTOR_B)
+    clock.now += 30
+    assert hub.is_present("ABC234", ACTOR_B)
+    clock.now += 30
+    assert not hub.is_present("ABC234", ACTOR_B)
+
+    # 예약만 하고 활성화하지 못한 소켓은 접속으로 세지 않는다.
+    pending = FakeWebSocket()
+    assert hub.reserve("ABC234", ACTOR_B, pending)
+    assert not hub.is_present("ABC234", ACTOR_B)
+    hub.disconnect("ABC234", pending)
+    assert hub.absent_actors("ABC234") == frozenset({ACTOR_B})
+
+
+def test_event_hub_presence_sweep_reports_each_change_once() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    socket = FakeWebSocket()
+    assert hub.connect("ABC234", ACTOR_A, socket)
+    assert hub.connect("XYZ789", ACTOR_B, FakeWebSocket())
+    hub.disconnect("ABC234", socket)
+
+    assert hub.sweep_presence() == frozenset()
+    clock.now += 61
+    assert hub.sweep_presence() == frozenset({"ABC234"})
+    assert hub.sweep_presence() == frozenset()
+
+    assert hub.connect("ABC234", ACTOR_A, FakeWebSocket())
+    assert hub.sweep_presence() == frozenset({"ABC234"})
+    assert hub.sweep_presence() == frozenset()
+
+
+def test_event_hub_presence_forgets_members_who_left_and_old_records() -> None:
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    left = FakeWebSocket()
+    stale = FakeWebSocket()
+    assert hub.connect("ABC234", ACTOR_A, left)
+    assert hub.connect("ABC234", ACTOR_B, stale)
+    hub.disconnect("ABC234", left)
+    hub.disconnect("ABC234", stale)
+    clock.now += 61
+    assert hub.sweep_presence() == frozenset({"ABC234"})
+
+    hub.forget_presence("ABC234", ACTOR_A)
+    assert hub.absent_actors("ABC234") == frozenset({ACTOR_B})
+    assert hub.sweep_presence() == frozenset()
+
+    # 30분 정리 뒤에도 남은 오래된 기록은 버린다. 다시 물으면 처음 본 사람처럼 센다.
+    clock.now += 3_600
+    assert hub.sweep_presence() == frozenset()
+    assert hub.absent_actors("ABC234") == frozenset()
+    assert hub.is_present("ABC234", ACTOR_B)
+
+
+def test_event_hub_rejects_a_non_positive_presence_grace() -> None:
+    with pytest.raises(ValueError, match="presence grace"):
+        EventHub(presence_grace_seconds=0)

@@ -26,7 +26,11 @@ import {
 import {
   isCurrentWaitingRoomAction,
   type WaitingRoomActionOwnership,
+  waitingRoomChangeNotices,
   waitingRoomControls,
+  waitingRoomInviteLink,
+  waitingRoomNicknameNotice,
+  waitingRoomStartStatus,
 } from './waiting-room-action.js';
 import { waitingRoomPortraits } from './waiting-room-portrait.js';
 import {
@@ -91,9 +95,13 @@ export function createWaitingRoom(
   const el = {
     screen: needOne<HTMLElement>('[data-screen="waiting"]'),
     title: need('waiting-title'),
+    code: need('waiting-code'),
+    invite: need<HTMLButtonElement>('waiting-invite'),
+    inviteLink: need<HTMLInputElement>('waiting-invite-link'),
     lead: need('waiting-lead'),
     leave: need<HTMLButtonElement>('waiting-leave'),
     start: need<HTMLButtonElement>('waiting-start'),
+    startStatus: need('waiting-start-status'),
     ready: need<HTMLButtonElement>('waiting-ready'),
     category: need<HTMLButtonElement>('setting-category'),
     categoryValue: need('setting-category-value'),
@@ -151,6 +159,13 @@ export function createWaitingRoom(
   let visibleEntry: { code: string; entryGeneration: number } | null = null;
   /** 같은 composer에서 앞선 POST가 끝나기 전 중복 submit을 막는다. */
   let chatSendPending = false;
+  /**
+   * 방이 붙여 준 내 이름은 방·이름마다 한 번만 알린다. 판을 마치고 같은 방에 돌아올
+   * 때마다 같은 말을 되풀이하면 몇 줄짜리 대화 로그를 밀어낸다.
+   */
+  const nicknameNoticed = new Set<string>();
+  /** 초대 버튼 글자를 잠깐 «복사했어요»로 바꿨다가 되돌리는 타이머. */
+  let inviteLabelTimer: number | undefined;
   /** 말풍선을 스스로 지우는 타이머. 없으면 undefined — clearTimeout이 그대로 받는다 */
   let bubbleTimer: number | undefined;
   /** room snapshot이 참가자 DOM을 다시 만들어도 아직 살아 있는 남의 말은 유지한다. */
@@ -323,8 +338,12 @@ export function createWaitingRoom(
     if (!room) return;
 
     el.title.textContent = room.name;
-    el.lead.textContent = `방 코드 ${room.code} · ${room.players.length}/${room.capacity}명`
-      + (room.isMine ? ' · 내가 만든 방' : '');
+    // 방 코드는 불러 주고 받아 적는 값이라 글 사이에 묻지 않고 따로 크게 보인다 (U27).
+    // 이 브라우저 안의 방(로컬)은 링크를 받아도 들어올 길이 없어 초대를 내놓지 않는다.
+    el.code.textContent = room.code;
+    el.invite.hidden = !roomStore.isNetworked;
+    el.lead.textContent = `참가 ${room.players.length}명 · 최대 ${room.capacity}명`
+      + (room.isMine ? ' · 내가 방장' : '');
 
     const category = categories.find((item) => item.id === room!.categoryId) ?? ALL_CATEGORY;
     el.categoryValue.textContent = category.name;
@@ -332,11 +351,18 @@ export function createWaitingRoom(
 
     const me = room.players.find((player) => player.id === roomStore.me()) ?? null;
     const controls = waitingRoomControls(room, roomStore.me());
+    // 방장은 시작 요청이 곧 준비다. 따로 누를 「준비 완료」를 두지 않는다 (서버와 같은 규칙)
+    el.ready.hidden = controls.readyHidden;
     el.ready.disabled = controls.readyDisabled;
     el.ready.textContent = me?.isReady ? '준비 취소' : '준비 완료';
     el.ready.setAttribute('aria-pressed', String(Boolean(me?.isReady)));
     el.start.hidden = controls.startHidden;
     el.start.disabled = controls.startDisabled;
+    // 꺼진 「게임 시작」은 눌러도 click이 나지 않는다. 이유는 버튼 밖 상태 줄이 말한다.
+    // 같은 글을 다시 넣으면 낭독이 되풀이될 수 있어 바뀔 때만 쓴다.
+    setStartStatus(waitingRoomStartStatus(room, roomStore.me(), {
+      canInvite: roomStore.isNetworked,
+    }));
 
     // 방장만 설정을 바꾼다. 판정은 저장소가 하고 화면은 미리 알려 줄 뿐이다
     for (const button of [el.category, el.capacity]) {
@@ -361,6 +387,7 @@ export function createWaitingRoom(
       item.className = 'lounge__player';
       item.classList.toggle('lounge__player--me', player.isMe);
       item.classList.toggle('lounge__player--ready', player.isReady);
+      item.classList.toggle('lounge__player--offline', !player.connected);
       item.dataset.playerId = player.id;
       item.setAttribute('aria-label', [
         player.nickname,
@@ -405,12 +432,16 @@ export function createWaitingRoom(
       const readiness = document.createElement('span');
       readiness.className = 'lounge__ready';
       readiness.classList.toggle('lounge__ready--on', player.isReady);
+      // 색만이 아니라 경고 표식과 «연결 끊김» 글자로 알린다 (디자인 시스템 §6, FR-4.1·4.2의 비색 단서)
+      readiness.classList.toggle('lounge__ready--offline', !player.connected);
       readiness.textContent = player.statusLabel;
 
       item.append(portrait, identity, readiness);
       el.players.append(item);
 
-      if (player.isMe) continue;
+      // 오래 끊긴 사람의 캐릭터는 바닥에 세워 두지 않는다. 마지막 좌표는 movement
+      // controller가 들고 있어 다시 붙으면 그 자리로 돌아온다.
+      if (player.isMe || !player.connected) continue;
       const remoteCharacter = document.createElement('div');
       remoteCharacter.className = 'walker walker--home walker--remote';
       remoteCharacter.dataset.movingPlayerId = player.id;
@@ -501,13 +532,45 @@ export function createWaitingRoom(
     while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
   }
 
+  function setStartStatus(text: string): void {
+    if (el.startStatus.textContent !== text) el.startStatus.textContent = text;
+  }
+
+  /**
+   * 새 snapshot으로 갈아 끼운다. 입장·퇴장·방장 승계처럼 드문 사건만 대화 로그에 한 줄씩
+   * 남긴다 — 액자만 바뀌면 화면을 계속 보고 있지 않은 사람, 스크린리더 사용자는 모른다.
+   * 준비 토글은 시작 상태 줄이 맡아 로그(CHAT_LINES)를 대화에 남긴다.
+   */
+  function applyRoom(next: PublicRoom): void {
+    const previous = room;
+    room = next;
+    if (previous) {
+      for (const line of waitingRoomChangeNotices(previous, next, roomStore.me())) notice(line);
+    }
+    render();
+    noticeRoomNickname();
+  }
+
+  /** 서버가 겹친 이름 뒤에 숫자를 붙였으면 그 방에서 한 번 알린다 (U02) */
+  function noticeRoomNickname(): void {
+    if (!room) return;
+    const me = room.players.find((player) => player.id === roomStore.me());
+    if (!me) return;
+    const key = `${room.code}
+${me.nickname}`;
+    if (nicknameNoticed.has(key)) return;
+    const line = waitingRoomNicknameNotice(me.nickname, getPlayer().nickname);
+    if (!line) return;
+    nicknameNoticed.add(key);
+    notice(line);
+  }
+
   function onEvent(
     event: RoomEvent,
     owner: { code: string; entryGeneration: number },
   ): void {
     if (event.type === 'room') {
-      room = event.room;
-      render();
+      applyRoom(event.room);
       return;
     }
     if (event.type === 'movement') {
@@ -579,8 +642,7 @@ export function createWaitingRoom(
       const result = await roomStore.updateRoom({ code: action.code, patch: change });
       if (!ownsAction(action)) return;
       if (result.ok) {
-        room = result.room;
-        render();
+        applyRoom(result.room);
         return;
       }
       // **실패를 삼키지 않는다.** 바로 아래 「게임 시작」이 이미 이렇게 하는데
@@ -627,8 +689,7 @@ export function createWaitingRoom(
       const result = await roomStore.setReady({ code: action.code, isReady: !me.isReady });
       if (!ownsAction(action)) return;
       if (result.ok) {
-        room = result.room;
-        render();
+        applyRoom(result.room);
         return;
       }
       notice(result.reason === 'game-in-progress'
@@ -651,18 +712,95 @@ export function createWaitingRoom(
     try {
       const result = await roomStore.startGame({ code: action.code });
       if (!ownsAction(action)) return;
+      if (!result.ok && result.reason === 'not-ready') {
+        // 버튼이 켜진 사이 누가 준비를 풀었다. 이유는 시작 상태 줄이 말하고, 방을 다시
+        // 읽어 그 줄과 버튼을 서버가 본 상태로 맞춘다.
+        setStartStatus('그 사이 준비 상태가 바뀌었어요. 다시 확인하는 중…');
+        void reloadRoom(action);
+        return;
+      }
       if (!result.ok) {
         notice(result.reason === 'not-host'
           ? '방장만 판을 시작할 수 있어요.'
-          : result.reason === 'not-ready'
-            ? '참가자가 두 명 이상이고 모두 준비해야 시작할 수 있어요.'
-            : result.reason === 'game-in-progress'
-              ? '이미 게임이 진행 중이에요.'
-              : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+          : result.reason === 'game-in-progress'
+            ? '이미 게임이 진행 중이에요.'
+            : '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
       }
     } catch {
       if (!ownsAction(action)) return;
       notice('판을 시작하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    }
+  });
+
+  /** 거절당한 시작 뒤 서버가 본 방을 다시 읽는다. 그사이 화면이 바뀌었으면 버린다. */
+  async function reloadRoom(action: WaitingRoomActionOwnership): Promise<void> {
+    try {
+      const fresh = await roomStore.getRoom(action.code);
+      if (fresh && ownsAction(action)) applyRoom(fresh);
+    } catch {
+      // 다음 room-invalidated나 재연결이 다시 맞춘다.
+    }
+  }
+
+  // ── 초대 (U27) ─────────────────────────────────────────────────
+  // 공유 시트 → 클립보드 → 직접 복사할 수 있게 링크 글자를 골라 두기 순으로 내려간다.
+  // **비밀번호는 링크에 싣지 않는다** (waitingRoomInviteLink).
+
+  function flashInviteLabel(text: string): void {
+    el.invite.textContent = text;
+    clearTimeout(inviteLabelTimer);
+    inviteLabelTimer = window.setTimeout(() => {
+      el.invite.textContent = '초대 링크 복사';
+    }, 2000);
+  }
+
+  function resetInvite(): void {
+    clearTimeout(inviteLabelTimer);
+    inviteLabelTimer = undefined;
+    el.invite.textContent = '초대 링크 복사';
+    el.inviteLink.hidden = true;
+    el.inviteLink.value = '';
+  }
+
+  el.invite.addEventListener('click', async () => {
+    const action = captureAction();
+    if (!action) return;
+    const link = waitingRoomInviteLink(window.location, action.code);
+    const lockedNote = action.snapshot.hasPassword
+      ? ' 비밀번호는 링크에 없으니 따로 알려 주세요.'
+      : '';
+
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: 'quiz by quiz 초대',
+          text: `「${action.snapshot.name}」 방에서 같이 퀴즈 풀어요! 방 코드 ${action.code}`,
+          url: link,
+        });
+        if (!ownsAction(action, false)) return;
+        notice(`초대 링크를 보냈어요.${lockedNote}`);
+        return;
+      } catch (error) {
+        if (!ownsAction(action, false)) return;
+        // 공유 시트를 닫은 것은 실패가 아니다. 그 밖의 거절만 클립보드로 내려간다.
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(link);
+      if (!ownsAction(action, false)) return;
+      flashInviteLabel('링크를 복사했어요');
+      notice(`초대 링크를 복사했어요. 친구에게 보내 주세요.${lockedNote}`);
+    } catch {
+      if (!ownsAction(action, false)) return;
+      // 클립보드를 못 쓰는 브라우저(권한·비보안 문맥)는 링크를 펼쳐 골라 둔다.
+      el.inviteLink.value = link;
+      el.inviteLink.hidden = false;
+      el.inviteLink.focus();
+      el.inviteLink.select();
+      notice(`초대 링크를 골라 두었어요. 복사해서 친구에게 보내 주세요.${lockedNote}`);
     }
   });
 
@@ -754,6 +892,7 @@ export function createWaitingRoom(
       movementPublisher.reset();
       room = null;
       chatSendPending = false;
+      resetInvite();
       el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
@@ -785,6 +924,7 @@ export function createWaitingRoom(
       el.chatLog.replaceChildren();
       el.chatSubmit.disabled = false;
       render();
+      noticeRoomNickname();
       walker.show(characterId);
       // 곧바로 화면이 열리는 경로를 먼저 맞춘다. match 복구로 늦게 열리면 activate()가
       // 보이는 DOM을 기준으로 local/remote 좌표를 다시 확정한다.
@@ -813,6 +953,7 @@ export function createWaitingRoom(
       movementPublisher.reset();
       room = null;
       chatSendPending = false;
+      resetInvite();
       el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;

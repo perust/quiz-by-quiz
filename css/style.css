@@ -2269,6 +2269,50 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin-bottom: var(--space-3);
 }
 
+/* 방 코드 칩 · 인원 글 · 초대 버튼이 한 줄에 놓이고, 좁으면 버튼이 다음 줄로 내려간다.
+   직접 복사용 링크 칸은 클립보드를 못 쓸 때만 펼쳐 한 줄을 다 쓴다. */
+.waiting-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.waiting-invite__code {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.waiting-invite__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.waiting-invite__copy {
+  margin-left: auto;
+}
+
+.waiting-invite__link {
+  flex: 1 0 100%;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+}
+
+/* 「게임 시작」 아래 상태 줄. 비어 있어도 라이브 리전은 남기고 자리만 거둔다 */
+.waiting-start-status {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.waiting-start-status:empty {
+  margin: 0;
+  padding: 0;
+}
+
 /* 참가자 명단은 벽의 액자, 움직이는 캐릭터와 가구는 아래 바닥에 둔다.
    액자는 인원이 늘면 벽을 아래로 늘리고 가구가 있는 바닥(--lounge-floor)은 항상 남긴다. */
 .lounge {
@@ -2664,6 +2708,30 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   background-color: currentColor;
   -webkit-mask: var(--i-check) center / contain no-repeat;
   mask: var(--i-check) center / contain no-repeat;
+}
+
+/* 연결 끊김은 대기·준비와 모양부터 다르다 — 점선 테두리, 경고 표식, «연결 끊김» 글자.
+   시작 판정이 기다리지 않는 사람이라 액자도 흐리게 걸린다. */
+.lounge__ready--offline {
+  border-style: dashed;
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.lounge__ready--offline::before {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 0;
+  border-radius: 0;
+  background-color: currentColor;
+  -webkit-mask: var(--i-alert) center / contain no-repeat;
+  mask: var(--i-alert) center / contain no-repeat;
+}
+
+.lounge__player--offline .lounge__portrait {
+  opacity: 0.55;
+  filter: grayscale(1);
 }
 
 /* 캐릭터 위에 뜨는 말풍선. walker의 내 말과 원격 캐릭터의 남의 말이 같은 모양이며,
