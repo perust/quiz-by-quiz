@@ -249,7 +249,7 @@ test('코드 칸은 여섯 글자에 맞추고 자동 고침을 끄며, 붙여 �
 
 test('초대 링크는 부팅 때 한 번 읽어 주소에서 지우고, 로비를 그린 뒤 코드 참가로 넘긴다 (U27)', async () => {
   const [app, online] = await Promise.all([source('../src/app.ts'), source('../src/ui/online.ts')]);
-  const take = between(app, 'function takeInviteCode(): string | null', '// ── 소리 설정');
+  const take = between(app, 'function takeInviteCode(): string | null', 'async function main(): Promise<void>');
   const openOnline = between(app, '  async function openOnline(', '  async function openWaitingRoom');
   const accept = between(online, '    acceptInvite(rawCode) {', '    hide() {');
 

@@ -1,7 +1,7 @@
 // 게임 전반에서 쓰는 상수를 이 파일 한 곳에 모은다.
 // 값 조정이 필요하면 다른 파일을 뒤지지 않고 여기만 고친다.
 
-import type { Category } from './types.js';
+import type { Category, TimeLimitChoice } from './types.js';
 
 /** 한 판에 출제할 문항 수. 문제 은행 크기와 분리해 관리한다 (FR-1.2) */
 export const QUESTIONS_PER_ROUND = 10;
@@ -10,16 +10,24 @@ export const QUESTIONS_PER_ROUND = 10;
  * 전체 도전에서 카테고리마다 뽑을 문항 수 (FR-2.2).
  *
  * 카테고리 모드와 같은 10을 쓰면 다섯 카테고리를 합쳐 50문제가 되고,
- * 문항당 20초라서 한 판에 16분 40초가 걸린다. 중간 저장이 없어(새로고침하면 홈)
- * 그만큼 완주가 어렵다. 카테고리마다 절반씩만 뽑아 25문제·8분 20초로 줄인다.
+ * 기본 문항 시간 20초로 한 판에 16분 40초가 걸린다. 중간 저장이 없어(새로고침하면 홈)
+ * 그만큼 완주가 어렵다. 카테고리마다 절반씩만 뽑아 25문제·최대 8분 20초로 줄인다.
  *
  * 카테고리별로 같은 수를 뽑는 것이 핵심이다 — 결과 화면의 카테고리별 정답
  * 개수를 서로 비교하려면 분모가 같아야 한다 (FR-5.6).
  */
 export const QUESTIONS_PER_CATEGORY_IN_ALL = 5;
 
-/** 문항당 제한 시간 (밀리초, FR-3.7) */
+/** 문항당 제한 시간의 기본값 (밀리초, FR-3.7). 온라인 매치는 서버가 이 값으로 고정한다 */
 export const TIME_LIMIT_MS = 20_000;
+
+/**
+ * 로컬 판에서 고를 수 있는 문항 시간 (FR-3.7, PRD v1.2). 설정 대화상자에서 고르고
+ * 새로 여는 판부터 쓴다. **null 은 제한 없음**이다 — 시간 초과가 아예 없다.
+ *
+ * 점수에 속도가 없으므로(FR-5.1, PRD 2.1) 고른 시간으로 랭킹을 나누지 않는다.
+ */
+export const TIME_LIMIT_CHOICES: readonly TimeLimitChoice[] = [TIME_LIMIT_MS, 40_000, null];
 
 /** 남은 시간이 이 값 이하로 떨어지면 경고 상태로 전환한다 (FR-3.9) */
 export const WARNING_THRESHOLD_MS = 5_000;

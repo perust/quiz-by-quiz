@@ -47,7 +47,7 @@ export interface AnswerRecord {
   answerIndex: number;
   correct: boolean;
   timedOut: boolean;
-  /** 시간 초과는 제한 시간을 다 쓴 것으로 본다 (FR-5.3) */
+  /** 시간 초과는 그 판의 제한 시간을 다 쓴 것으로 본다 (FR-5.3) */
   elapsedMs: number;
 }
 
@@ -80,6 +80,12 @@ export interface ScoreRecord {
    * 빈 배열이 "다 틀렸다"로 읽히면 안 된다.
    */
   questionResults?: QuestionResult[];
+  /**
+   * 그 판의 문항 시간. PRD 6.2 에 없는 **선택 필드**이고 기본(20초)이 아닌 판에만 남는다 —
+   * 40000 이거나 null(제한 없음). 키가 없으면 20초 판이다(예전 기록도 그렇다).
+   * 점수에 속도가 없어 랭킹을 이것으로 나누지 않는다 (PRD 2.1, FR-6.3).
+   */
+  timeLimitMs?: number | null;
 }
 
 /** 등급 메시지 (core/scoring.ts). 점수 절댓값이 아니라 정답률로 정한다 */
@@ -125,10 +131,20 @@ export interface ReviewItem {
   timedOut: boolean;
 }
 
+/**
+ * 로컬 판의 문항당 제한 시간 (FR-3.7, PRD v1.2). 밀리초이고 **null 이면 제한 없음**이다.
+ * 고를 수 있는 값은 constants.ts 의 TIME_LIMIT_CHOICES 한 곳에 있다.
+ */
+export type TimeLimitChoice = 20000 | 40000 | null;
+
 /** 사용자 설정 (localStorage) */
 export interface Settings {
   soundEnabled: boolean;
   characterId: string | null;
+  /** 새로 여는 로컬 판의 문항 시간. 온라인 매치는 서버가 20초로 고정한다 */
+  timeLimitMs: TimeLimitChoice;
+  /** 앱 안의 «움직임 줄이기» (U55). 기기의 prefers-reduced-motion 은 이것과 따로 늘 따른다 */
+  reduceMotion: boolean;
 }
 
 /** 캐릭터 정의 (characters.ts) */

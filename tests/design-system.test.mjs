@@ -221,8 +221,9 @@ test('모서리·색·글꼴: 컴포넌트는 토큰만 쓴다', () => {
 test('움직임: 화면 피드백은 duration 토큰만 쓰고 끝없이 깜빡이지 않으며, 움직임 줄이기 설정을 따른다', () => {
   const offenders = [];
   for (const declaration of componentDeclarations()) {
-    // 움직임 줄이기 블록은 움직임을 끄는 스위치 자체다
+    // 움직임 줄이기 블록은 움직임을 끄는 스위치 자체다. 기기 설정과 앱 설정(U55) 둘 다
     if (declaration.media.includes('prefers-reduced-motion')) continue;
+    if (declaration.selector.includes("html[data-motion='reduce']")) continue;
     if (/^transition(?:-duration)?$/.test(declaration.property) && declaration.value !== 'none') {
       const durations = declaration.value.replace(/var\(--duration-(?:fast|base|slow)\)/g, '');
       if (/\d(?:ms|s)\b/.test(durations)) offenders.push(`${declaration.selector} { ${declaration.property}: ${declaration.value} }`);
@@ -240,6 +241,17 @@ test('움직임: 화면 피드백은 duration 토큰만 쓰고 끝없이 깜빡�
     assert.match(valueOf(rules, anything, property, reduced) ?? '', /^0\.0+1ms$/, `움직임 줄이기에서는 ${property} 를 끈다`);
   }
   assert.equal(valueOf(rules, anything, 'animation-iteration-count', reduced), '1', '캐릭터의 제자리 뛰기도 한 번에 멈춘다');
+
+  // 앱 안의 «움직임 줄이기»(html[data-motion='reduce'], U55)는 기기 설정을 모르는 사람에게 같은 결과를 준다
+  const app = node('html', null);
+  app.attrs['data-motion'] = 'reduce';
+  const inApp = node('div.choice.choice--correct', node('body', app));
+  const idleBody = node('span.walker__body', node('div.walker.walker--idle', node('body', app)));
+  for (const property of ['animation-duration', 'transition-duration']) {
+    assert.match(valueOf(rules, inApp, property, MOBILE) ?? '', /^0\.0+1ms$/, `앱 설정에서도 ${property} 를 끈다`);
+  }
+  assert.equal(valueOf(rules, idleBody, 'animation-iteration-count', MOBILE), '1', '앱 설정에서도 제자리 뛰기가 멈춘다');
+  assert.equal(valueOf(rules, node('div.choice', node('body', node('html'))), 'animation-duration', MOBILE), null, '설정을 끄면 움직임이 돌아온다');
 });
 
 // ── 글꼴 위계 ──────────────────────────────────────────────────────
@@ -385,11 +397,11 @@ test('홈: 닉네임 라벨, 보조 edge HUD, 하단 5칸 dock과 동등한 온�
   const appBar = node('div.app-bar', body);
   assert.equal(valueOf(rules, appBar, 'position', MOBILE), 'fixed');
   const shortLandscape = { ...MOBILE, width: 568, height: 320 };
-  assert.equal(valueOf(rules, appBar, 'position', shortLandscape), 'fixed', '짧은 홈의 소리 HUD는 월드 가장자리에 남는다');
+  assert.equal(valueOf(rules, appBar, 'position', shortLandscape), 'fixed', '짧은 홈의 설정 HUD는 월드 가장자리에 남는다');
   assert.equal(
     valueOf(rules, node('div.app-bar', node('body')), 'position', shortLandscape),
     'absolute',
-    '짧은 스크롤 화면의 소리 버튼은 아래 콘텐츠를 덮지 않고 문서와 함께 흐른다',
+    '짧은 스크롤 화면의 설정 버튼은 아래 콘텐츠를 덮지 않고 문서와 함께 흐른다',
   );
   assert.equal(valueOf(rules, nickname, 'width', MOBILE), '100%');
 });
@@ -633,8 +645,11 @@ test('손가락 목표: 직접 누르는 모든 조각은 휴대폰 폭에서 44
   const targets = [
     ['button.button', 'min-height'],
     ['button.button.button--small', 'min-height'],
-    ['button.icon-button#sound-toggle', 'min-height'],
-    ['button.icon-button#sound-toggle', 'min-width'],
+    ['button.icon-button#open-settings', 'min-height'],
+    ['button.icon-button#open-settings', 'min-width'],
+    ['button.settings-toggle#setting-sound', 'min-height'],
+    ['button.settings-toggle#setting-motion', 'min-height'],
+    ['button.settings-choice', 'min-height'],
     ['button.arena__help', 'height'],
     ['button.arena__help', 'width'],
     ['button.category-card', 'min-height'],

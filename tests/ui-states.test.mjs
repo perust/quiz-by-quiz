@@ -240,7 +240,7 @@ test('초점·올라섬: 어두운 HUD 안에서는 HUD 고리색(3:1 이상)을
 test('초점·올라섬: 그림 위에 홀로 뜬 edge HUD 조각은 고리를 안쪽 어두운 바탕에 그린다', () => {
   const stage = node('div.home-stage#home-stage', screenOf("section.screen[data-screen='home']"));
   const pieces = [
-    ['소리', (state) => node(`button.icon-button#sound-toggle${state}`, node('div.app-bar', node('body', pageRoot(false))))],
+    ['설정', (state) => node(`button.icon-button#open-settings${state}`, node('div.app-bar', node('body', pageRoot(false))))],
     ['닉네임', (state) => node(`button.menu-card.menu-card--wide#open-nickname${state}`, node('div.home-player', stage))],
     ['랭킹 입구', (state) => node(`button.menu-card#open-ranking${state}`, node('nav.home-menu', stage))],
   ];
@@ -258,16 +258,16 @@ test('초점·올라섬: 그림 위에 홀로 뜬 edge HUD 조각은 고리를 �
 
 test('Enter 대상 하나: 키보드 초점이 다른 곳에 보이면 올라섬 고리를 거두고, 초점이 풀리면 돌아온다', () => {
   const resultGhost = (elsewhere) => (state) => node(`button.button.button--ghost#result-home${state}`, node('div.result-actions', screenOf("section.screen[data-screen='result']", elsewhere)));
-  const sound = (elsewhere) => (state) => node(`button.icon-button#sound-toggle${state}`, node('div.app-bar', node('body', pageRoot(elsewhere))));
+  const settings = (elsewhere) => (state) => node(`button.icon-button#open-settings${state}`, node('div.app-bar', node('body', pageRoot(elsewhere))));
   for (const env of [DESKTOP, MOBILE]) {
-    const elsewhere = [...darkHudButtons(true), ['결과 홈', resultGhost(true)], ['소리', sound(true)]];
+    const elsewhere = [...darkHudButtons(true), ['결과 홈', resultGhost(true)], ['설정', settings(true)]];
     for (const [label, button] of elsewhere) {
       assert.equal(ring(button('.is-standing'), env).color, 'transparent', `${label}: 초점이 다른 곳에 있으면 올라섬 고리는 숨는다`);
       // 초점과 발밑이 같은 요소면 그 고리는 그대로 보인다
       assert.notEqual(ring(button('.is-standing:focus-visible'), env).color, 'transparent', `${label}: 초점이 선 자리의 고리`);
     }
     // 초점이 없으면(걷기 시작하면 walker 가 초점을 놓는다) 올라섬 고리가 돌아온다
-    for (const [label, button] of [...darkHudButtons(false), ['결과 홈', resultGhost(false)], ['소리', sound(false)]]) {
+    for (const [label, button] of [...darkHudButtons(false), ['결과 홈', resultGhost(false)], ['설정', settings(false)]]) {
       const { color, style } = ring(button('.is-standing'), env);
       assert.ok(color && color !== 'transparent', `${label}: 초점이 없을 때의 올라섬 고리 ${color}`);
       assert.equal(style, 'solid', `${label}: 초점이 없을 때의 올라섬 고리`);

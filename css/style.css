@@ -134,7 +134,7 @@ body.is-boot-failed .boot__error {
   padding: 0 var(--space-1);
 }
 
-/* ── 상단 바 (소리 토글) ──
+/* ── 상단 바 (설정 버튼) ──
    기본 흐름 규칙. 월드 우선 구성에서는 section 30이 DOM 순서에 맞춰 fixed edge HUD로 덮는다. */
 .app-bar {
   display: none;
@@ -173,8 +173,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   cursor: pointer;
 }
 
-/* 소리 토글은 글을 스크린리더에만 남긴 아이콘 버튼이라 정확히 44px 원이다.
-   홈에서 닉네임 줄이 비워 두는 자리(44px + 8px)와 맞물린다 */
+/* 설정 버튼은 이름(«설정»)을 스크린리더에만 남긴 아이콘 버튼이라 정확히 44px 원이다.
+   홈에서 닉네임 줄이 비워 두는 자리(44px + 8px)와 맞물린다. 예전 소리 토글 자리 그대로다 */
 .app-bar .icon-button {
   width: 44px;
   padding: 0;
@@ -602,6 +602,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   flex: 1 1 80px;
 }
 
+/* 제한 없음 (FR-3.7): 줄어들 시간이 없어 막대를 거두고 «시간 제한 없음» 글만 남긴다 */
+.timer--unlimited .timer__track {
+  display: none;
+}
+
 /* 넓으면 진행률이 문항 위치 곁 같은 줄로 올라온다.
    마지막 열에 못 박는다 — 온라인은 서버 상태를 받기 전에 화면이 먼저 열려 분야 칩이
    비어 숨는데, 자동 배치에 맡기면 막대가 폭 없는 칸으로 밀려 사라졌다가 튀어나온다 */
@@ -968,6 +973,67 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 #nickname-form .room-form__input {
   width: 100%;
   margin-bottom: var(--space-2);
+}
+
+/* ── 설정 대화상자 (U42·U54·U55) ──
+   소리·움직임 줄이기는 한 줄 전체가 토글 버튼이고, 문항 시간은 세 칸 분절 버튼이다.
+   select 를 쓰지 않는다 — 누르면 바뀌는 버튼이라야 손가락·키보드·캐릭터가 같은 길로 고른다.
+   320px 에서는 «제한 없음»이 두 줄로 접힐 수 있어 칸 높이를 고정하지 않는다. */
+.settings__section {
+  margin: 0 0 var(--space-4);
+}
+
+.settings__heading {
+  margin: 0 0 var(--space-2);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-toggle__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-toggle__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+}
+
+.settings-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-1);
+}
+
+.settings-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  text-align: center;
+  word-break: keep-all;
+  cursor: pointer;
+}
+
+.settings__note {
+  margin: var(--space-2) 0 0;
+  word-break: keep-all;
 }
 
 /* ── 결과 ── */
@@ -3254,7 +3320,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
 .quiz--character .quiz-hud {
   width: min(100%, 1200px);
   margin: 0 auto var(--space-3);
-  /* 오른쪽 위의 전역 소리 HUD와 나가기 버튼이 겹치지 않게 한 슬롯을 비운다. */
+  /* 오른쪽 위의 전역 설정 HUD와 나가기 버튼이 겹치지 않게 한 슬롯을 비운다. */
   padding: var(--space-2) 64px var(--space-2) var(--space-3);
 }
 
@@ -3646,7 +3712,7 @@ body:has(.home-note:not([hidden])) #home-character {
   }
 }
 
-/* 짧은 가로의 스크롤 화면에서는 고정 소리 버튼이 아래로 올라온 새로고침·필터 같은
+/* 짧은 가로의 스크롤 화면에서는 고정 설정 버튼이 아래로 올라온 새로고침·필터 같은
    동작을 덮지 않게 문서와 함께 흘려보낸다. 홈은 더 구체적인 home app-bar 규칙이
    fixed를 유지해, 스크롤 없는 월드의 edge HUD가 그대로 남는다. */
 @media (max-height: 480px) {

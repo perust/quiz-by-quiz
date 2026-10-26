@@ -131,7 +131,7 @@ test('퀴즈 HUD: 하나의 블록 표면이고, 안쪽 조각은 따로 놀던 
     assert.equal(valueOf(rules, timer, 'display', env), 'flex', '남은 시간 글자와 막대는 한 줄로 읽힌다');
   }
 
-  assert.match(valueOf(rules, hud, 'padding', DESKTOP) ?? '', /\b64px\b/, '소리 HUD 한 칸을 비운다');
+  assert.match(valueOf(rules, hud, 'padding', DESKTOP) ?? '', /\b64px\b/, '설정 HUD 한 칸을 비운다');
   assert.equal(valueOf(rules, hud, 'padding-right', NARROW), '52px', '320px에서는 문항 위치와 ?가 겹치지 않게 12px을 되돌린다');
 });
 

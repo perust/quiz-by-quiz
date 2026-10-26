@@ -7,12 +7,16 @@
 // 정지 역시 무언가를 멈추는 게 아니라 "멈춘 시각"을 찍는 것이다.
 // 해설을 읽는 동안 시간이 흐르지 않는 이유가 여기에 있다.
 //
+// 제한 시간은 판마다 정한다 (FR-3.7, PRD v1.2 — 기본 20초, 로컬 판은 40초·제한 없음도 고른다).
+// **제한 없음(null)이어도 재는 방식은 같다.** 소요 시간(FR-5.3)은 그대로 재고, 끝나는 때만 없다.
+//
 // 이 모듈은 DOM을 모른다. 화면 갱신은 ui/quiz.ts가 맡는다.
 
 import { TIME_LIMIT_MS } from '../constants.js';
 
 export interface QuestionTimer {
-  readonly limitMs: number;
+  /** 문항당 제한 시간(밀리초). **null 이면 제한 없음** — 시간이 다 되는 일이 없다 */
+  readonly limitMs: number | null;
 
   /** 문제가 화면에 표시되는 시점에 호출한다 */
   start(): void;
@@ -23,18 +27,19 @@ export interface QuestionTimer {
   /** 시작했고 아직 멈추지 않았는가 */
   isRunning(): boolean;
 
-  /** 이 문항에 쓴 시간. 제한 시간을 넘지 않도록 잘라낸다 (FR-5.3의 계산 기준) */
+  /** 이 문항에 쓴 시간. 제한 시간을 넘지 않도록 잘라낸다 (FR-5.3의 계산 기준). 제한 없음이면 자르지 않는다 */
   elapsedMs(): number;
 
-  /** 남은 시간 (0 미만으로 내려가지 않음) */
+  /** 남은 시간 (0 미만으로 내려가지 않음). 제한 없음이면 언제나 Infinity 다 */
   remainingMs(): number;
 
-  /** 제한 시간을 다 썼는가 */
+  /** 제한 시간을 다 썼는가. 제한 없음이면 언제나 false */
   isExpired(): boolean;
 }
 
 export interface QuestionTimerOptions {
-  limitMs?: number;
+  /** 생략하면 기본 20초다. null 을 넘기면 제한 없음 */
+  limitMs?: number | null;
   /** 기본이 performance.now다. Date.now와 달리 시스템 시계가 바뀌어도 영향받지 않는다. */
   now?: () => number;
 }
@@ -71,11 +76,13 @@ export function createQuestionTimer({
     elapsedMs() {
       if (startedAt === null) return 0;
       const end = stoppedAt ?? now();
-      return Math.min(Math.max(end - startedAt, 0), limitMs);
+      const spent = Math.max(end - startedAt, 0);
+      return limitMs === null ? spent : Math.min(spent, limitMs);
     },
 
-    /** 남은 시간 (0 미만으로 내려가지 않음) */
+    /** 남은 시간 (0 미만으로 내려가지 않음). 제한 없음이면 끝이 없다 */
     remainingMs() {
+      if (limitMs === null) return Number.POSITIVE_INFINITY;
       return limitMs - this.elapsedMs();
     },
 

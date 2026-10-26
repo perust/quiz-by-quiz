@@ -45,9 +45,12 @@
 //   ⑫ 시스템 「뒤로」가 앱 밖으로 나가 풀던 판이 확인도 없이 사라졌다
 //   ⑬ 로비 안내가 «API 설정이 없어…»처럼 개발 용어로 말했다 (U40). 조작법은 방향키만 말해
 //      WASD로도 걷는다는 것을 알 길이 없었다 (U52) — 말한 키가 정말 캐릭터 몫인지 본다
+//   ⑭ 설정의 문항 시간 «제한 없음»(FR-3.7)은 시간 초과로 가는 길이 아예 없어야 한다. 25초를 앞당겨도
+//      판이 깨어나지 않는지, 설정 대화상자가 워커와 화면의 키(로비의 Esc)를 가두는지 함께 본다
 //
-// **localStorage 의 방 목록과 랭킹을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
-// ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. 설정은 만지지 않는다.
+// **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
+// ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
+// 바꿨다가 화면에서 원래 값으로 되돌린다.
 
 (async () => {
   const 결과 = [];
@@ -204,6 +207,7 @@
 
   const 방백업 = localStorage.getItem('quiz.rooms');
   const 랭킹백업 = localStorage.getItem('quiz.rankings');
+  const 설정백업 = localStorage.getItem('quiz.settings');
   console.log('%c화면 점검을 시작합니다', 'font-weight:bold');
 
   try {
@@ -225,11 +229,11 @@
       통과: !document.getElementById('setting-mode'),
       무엇: document.getElementById('setting-mode') ? '!! 남아 있음' : '없음',
     });
-    const 소리크기 = document.getElementById('sound-toggle').getBoundingClientRect();
+    const 설정크기 = document.getElementById('open-settings').getBoundingClientRect();
     결과.push({
-      자리: '공통', 이름: '상단 소리 버튼의 터치 목표가 44px 이상이다',
-      통과: 소리크기.width >= 44 && 소리크기.height >= 44,
-      무엇: `${소리크기.width}px × ${소리크기.height}px`,
+      자리: '공통', 이름: '상단 설정 버튼의 터치 목표가 44px 이상이다',
+      통과: 설정크기.width >= 44 && 설정크기.height >= 44,
+      무엇: `${설정크기.width}px × ${설정크기.height}px`,
     });
     const 닉네임라벨 = document.querySelector('#open-nickname .menu-card__label');
     const 닉네임값 = document.getElementById('nickname-value');
@@ -504,6 +508,80 @@
     잠든퀴즈를깨워본다('퀴즈에서 「뒤로」로 나온 홈');
     살펴본곳.push('뒤로 가기');
 
+    // ⑭ 설정 대화상자와 «제한 없음». 키는 실제처럼 포커스가 있는 요소에서 보낸다 —
+    // 대화상자는 문서의 캡처 단계에서 키를 멈추므로 document 자신에게 보내면 그 길을 타지 않는다
+    const 포커스에서키 = (키) => {
+      const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true });
+      (document.activeElement ?? document.body).dispatchEvent(이벤트);
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
+      return 이벤트.defaultPrevented;
+    };
+    const 설정창 = document.getElementById('settings-dialog');
+    const 시간칸 = (값) => document.querySelector(`#settings-dialog [data-time-limit="${값}"]`);
+    const 원래시간 = document.querySelector('#settings-dialog [data-time-limit][aria-pressed="true"]')?.dataset.timeLimit ?? '20000';
+    document.getElementById('open-settings').focus();
+    await 눌러('open-settings', 300);
+    결과.push({
+      자리: '설정', 이름: '「설정」이 인페이지 대화상자를 열고 패널에 포커스를 둔다',
+      통과: !설정창.hidden && document.activeElement === 설정창.querySelector('[role="dialog"]'),
+      무엇: `${설정창.hidden ? '!! 닫힘' : '열림'} · 포커스 ${document.activeElement?.id || document.activeElement?.className || '(없음)'}`,
+    });
+    const 대화상자방향키 = 포커스에서키('ArrowDown');
+    결과.push({
+      자리: '설정', 이름: '열려 있는 동안 캐릭터가 방향키를 받지 않는다',
+      통과: !대화상자방향키,
+      무엇: 대화상자방향키 ? '!! 뒤에서 캐릭터가 걷는다' : '캐릭터는 그대로다',
+    });
+    시간칸('none').click();
+    await 잠깐(100);
+    결과.push({
+      자리: '설정', 이름: '«제한 없음» 하나만 눌려 있다',
+      통과: 시간칸('none').getAttribute('aria-pressed') === 'true'
+        && document.querySelectorAll('#settings-dialog [data-time-limit][aria-pressed="true"]').length === 1,
+      무엇: [...document.querySelectorAll('#settings-dialog [data-time-limit]')]
+        .map((칸) => `${칸.textContent.trim()} ${칸.getAttribute('aria-pressed')}`).join(' · '),
+    });
+    포커스에서키('Escape');
+    await 잠깐(100);
+    결과.push({
+      자리: '설정', 이름: 'Esc 로 닫으면 「설정」 버튼으로 포커스가 돌아온다',
+      통과: 설정창.hidden && document.activeElement === document.getElementById('open-settings'),
+      무엇: `${설정창.hidden ? '닫힘' : '!! 열림'} · 포커스 ${document.activeElement?.id || '(없음)'}`,
+    });
+    document.querySelector('.category-card').click();
+    await 잠깐(800);
+    살펴본다('«제한 없음» 퀴즈', 'quiz', true);
+    const 막대 = document.querySelector('#timer .timer__track');
+    결과.push({
+      자리: '설정', 이름: '«제한 없음» 판의 HUD는 «시간 제한 없음»을 말하고 막대를 거둔다',
+      통과: document.getElementById('timer-text').textContent.trim() === '시간 제한 없음'
+        && getComputedStyle(막대).display === 'none'
+        && document.getElementById('question-time-limit').textContent.trim() === '시간 제한 없음',
+      무엇: `${document.getElementById('timer-text').textContent.trim()} · 막대 ${getComputedStyle(막대).display}`,
+    });
+    시간앞당기기(25000);
+    const 시간초과났나 = !document.getElementById('feedback').hidden;
+    결과.push({
+      자리: '설정', 이름: '«제한 없음» 판은 25초를 앞당겨도 시간 초과가 나지 않는다',
+      통과: !시간초과났나 && 지금화면() === 'quiz'
+        && [...document.querySelectorAll('#choices .choice')].every((보기) => !보기.disabled),
+      무엇: 시간초과났나 ? `!! ${document.getElementById('feedback-verdict').textContent}` : '판이 그대로 기다린다',
+    });
+    시간되돌리기(25000);
+    await 눌러('quiz-exit', 300);
+    await 눌러('exit-confirm', 700);
+    살펴본다('«제한 없음» 퀴즈에서 나온 홈', 'home', true);
+    // 화면에서 원래 값으로 되돌린다. 저장소만 되돌리면 앱이 기억한 값과 어긋난다
+    await 눌러('open-settings', 300);
+    시간칸(원래시간).click();
+    await 눌러('settings-close', 300);
+    결과.push({
+      자리: '설정', 이름: '문항 시간을 원래 값으로 되돌렸다',
+      통과: 시간칸(원래시간).getAttribute('aria-pressed') === 'true' && 설정창.hidden,
+      무엇: 원래시간,
+    });
+    살펴본곳.push('설정 «제한 없음»');
+
     // 로비와 대기실. 방을 하나 만들어 오간다
     await 눌러('open-online', 0);
     await 화면기다리기('online');
@@ -545,13 +623,23 @@
       통과: !/서버|API|snapshot/i.test(온라인안내.textContent),
       무엇: 온라인안내.textContent.trim(),
     });
-    const 소리버튼위치 = getComputedStyle(document.querySelector('.app-bar')).position;
+    const 설정버튼위치 = getComputedStyle(document.querySelector('.app-bar')).position;
     결과.push({
-      자리: '로비', 이름: '짧은 가로에서는 소리 버튼이 스크롤 동작을 덮지 않고 문서와 함께 흐른다',
-      통과: innerHeight > 480 || 소리버튼위치 === 'absolute',
-      무엇: `높이 ${innerHeight}px · position ${소리버튼위치}`,
+      자리: '로비', 이름: '짧은 가로에서는 설정 버튼이 스크롤 동작을 덮지 않고 문서와 함께 흐른다',
+      통과: innerHeight > 480 || 설정버튼위치 === 'absolute',
+      무엇: `높이 ${innerHeight}px · position ${설정버튼위치}`,
     });
     잠든퀴즈를깨워본다('로비');
+
+    // ⑭ 설정은 어느 화면에서나 열린다. 로비의 Esc 는 «홈으로»라, 대화상자를 닫는 Esc 가 새면 홈으로 튕긴다
+    await 눌러('open-settings', 300);
+    포커스에서키('Escape');
+    await 잠깐(300);
+    결과.push({
+      자리: '로비', 이름: '설정 대화상자의 Esc 는 대화상자만 닫고 화면은 그대로다',
+      통과: document.getElementById('settings-dialog').hidden && 지금화면() === 'online',
+      무엇: `화면 ${지금화면()} · 설정 ${document.getElementById('settings-dialog').hidden ? '닫힘' : '!! 열림'}`,
+    });
 
     // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다
     const 키를보낸다 = (키, 옵션 = {}) => {
@@ -653,6 +741,8 @@
     else localStorage.setItem('quiz.rooms', 방백업);
     if (랭킹백업 === null) localStorage.removeItem('quiz.rankings');
     else localStorage.setItem('quiz.rankings', 랭킹백업);
+    if (설정백업 === null) localStorage.removeItem('quiz.settings');
+    else localStorage.setItem('quiz.settings', 설정백업);
   }
 
   // ── 보고 ──────────────────────────────────────────────────────
@@ -670,6 +760,6 @@
     console.log('%c실패한 것', 'font-weight:bold');
     for (const r of 실패) console.log(`  [${r.자리}] ${r.이름} — ${r.무엇}`);
   }
-  console.log('방 목록과 랭킹은 되돌려 놓았습니다. 설정은 건드리지 않았습니다.');
+  console.log('방 목록·랭킹·설정은 되돌려 놓았습니다.');
   return { 검사: 결과.length, 실패: 실패.length };
 })();
