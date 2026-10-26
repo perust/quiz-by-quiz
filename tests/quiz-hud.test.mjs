@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DESKTOP, NARROW, loadStyles, node, nodeFromHtml, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, NARROW, loadStyles, node, nodeFromHtml, valueOf, winning } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
@@ -107,4 +107,45 @@ test('퀴즈 HUD: 두 자리 현재·전체 문항도 ? 버튼 앞에서 넘치�
   assert.ok(online.includes('`${question.position}/${question.total}`'));
   assert.ok(local.includes('`전체 ${session!.total}문제 중 ${session!.position}번 문제`'));
   assert.ok(online.includes('`전체 ${question.total}문제 중 ${question.position}번 문제`'));
+});
+
+/** 캐스케이드에서 a 가 b 를 이기는가 (중요도 → 명시도 → 순서) */
+function outranks(a, b) {
+  if (a.important !== b.important) return a.important;
+  for (let i = 0; i < 3; i += 1) {
+    if (a.spec[i] !== b.spec[i]) return a.spec[i] > b.spec[i];
+  }
+  return a.order > b.order;
+}
+
+test('퀴즈 HUD: ?·나가기의 초점·올라섬 고리와 남은 5초 경고 색은 두 화면의 어두운 HUD 위에서 보인다', async () => {
+  const html = await source('index.html');
+  for (const [screen, { pieces }] of Object.entries(SCREENS)) {
+    // 실제 마크업 사슬: section.quiz--character > div.quiz-hud > header > button
+    for (const id of [pieces[3], pieces[4]]) {
+      const button = nodeFromHtml(html, id);
+      for (const state of ['focus-visible', null]) {
+        const element = { ...button, states: state ? [state] : [], classes: state ? button.classes : [...button.classes, 'is-standing'] };
+        for (const env of [DESKTOP, MOBILE]) {
+          const color = winning(rules, element, 'outline-color', env);
+          const shorthand = winning(rules, element, 'outline', env);
+          assert.equal(color?.value, 'var(--focus-on-hud)', `${screen} #${id} ${state ?? 'is-standing'}`);
+          // 뒤에 오거나 더 센 outline 단축 속성이 색을 보라로 되돌리지 않는다
+          assert.ok(!(shorthand && outranks(shorthand, color)), `${screen} #${id}: ${shorthand?.selector} 가 고리 색을 덮는다`);
+        }
+      }
+    }
+
+    const timer = nodeFromHtml(html, pieces[5]);
+    const hud = timer.parent;
+    const warningHud = { ...hud, has: ['.timer--warning'] };
+    const warningTimer = { ...timer, parent: warningHud, classes: [...timer.classes, 'timer--warning'] };
+    const label = node('p.timer__label', warningTimer);
+    const fill = node('div.timer__fill', node('div.timer__track', warningTimer));
+    for (const env of [DESKTOP, NARROW]) {
+      assert.equal(valueOf(rules, label, 'color', env), 'var(--hud-warning)', `${screen}: 경고 글자`);
+      assert.equal(valueOf(rules, fill, 'background', env), 'var(--hud-warning)', `${screen}: 경고 막대`);
+      assert.equal(valueOf(rules, warningHud, 'border-color', env), 'var(--hud-warning)', `${screen}: 경고 HUD 선`);
+    }
+  }
 });
