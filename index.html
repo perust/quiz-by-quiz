@@ -155,13 +155,15 @@
           <button type="button" class="button button--ghost button--small" id="quiz-exit">나가기</button>
         </header>
 
-        <!-- 남은 시간은 눈으로만 본다. 1초마다 낭독되면 문제를 읽을 수 없다 -->
-        <div class="timer" id="timer" aria-hidden="true">
-          <div class="timer__track">
+        <!-- 막대와 아이콘은 눈으로만 본다. 남은 시간 글은 스크린리더가 브라우즈 모드에서
+             찾아 읽을 수 있게 남기되 aria-live 는 달지 않는다 — 1초마다 낭독되면 문제를
+             읽을 수 없다. 남은 5초만 quiz.ts 가 문항당 한 번 announce() 로 알린다. -->
+        <div class="timer" id="timer">
+          <div class="timer__track" aria-hidden="true">
             <div class="timer__fill" id="timer-fill"></div>
           </div>
           <p class="timer__label">
-            <span class="timer__icon" id="timer-icon"></span>
+            <span class="timer__icon" id="timer-icon" aria-hidden="true"></span>
             <span id="timer-text">남은 시간 20초</span>
           </p>
         </div>
@@ -174,9 +176,8 @@
       <!-- 캐릭터 퀴즈 무대.
            진짜 조작 대상은 위 보기 버튼이다. 여기 타일은 같은 동작을 부르는
            시각적 조작부이고 aria-hidden이라 보기를 두 번 낭독하지 않는다. -->
-      <!-- 방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
-           손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다.
-           조작부를 두면 하는 일 없이 자리만 차지한다. -->
+      <!-- 3×3 방향 패드는 두지 않는다. 손가락 이동은 공용 스틱(#walk-controls)이 맡고,
+           키보드는 방향키가 있다. 바닥 칸이나 보기를 직접 누르면 걸어가지 않고 곧바로 답이다. -->
       <div class="arena" id="arena" hidden>
         <div class="arena__stage" aria-hidden="true">
           <div class="arena__grid" id="arena-tiles"></div>
@@ -670,7 +671,8 @@
   </div>
 
   <!-- ─────────── 피드백 패널 ───────────
-       퀴즈 화면 뒤의 문서 흐름에서 이어지고, 답을 고르면 이 끝까지 자동으로 스크롤한다.
+       퀴즈 화면 뒤의 문서 흐름에서 이어지고, 답을 고르면 이 끝이 보일 만큼만 스크롤한다.
+       질문 머리가 화면 위로 넘어가지 않게 하고, 둘이 한 화면에 들지 않을 때만 끝에 맞춘다.
        질문·해설 길이나 viewport 높이에 관계없이 보기와 arena를 덮지 않기 위한 구조다.
        **<main> 밖에 둔다** — 이 프로젝트에는 z-index가 하나도 없어 DOM 순서가 곧
        겹치는 순서이고, 뒤에 오는 대화상자가 이 패널보다 위에 와야 한다. -->
@@ -680,6 +682,13 @@
          낭독되고, 곧이어 포커스가 그 버튼으로 가서 같은 말이 또 들린다. -->
     <div role="status">
       <p class="feedback__verdict" id="feedback-verdict"></p>
+      <!-- 틀렸거나 시간이 끝났을 때만 펼친다 (FR-4.2). 해설은 대부분 정답 보기를 다시
+           말하지 않아, 무엇이 정답이고 무엇을 골랐는지 판정 바로 뒤에서 글로 말한다.
+           온라인 결과 공개도 같은 클래스를 쓴다. -->
+      <div class="feedback__answer" id="feedback-answer" hidden>
+        <p class="feedback__answer-row" data-kind="correct"><span class="feedback__answer-label">정답</span> <span class="feedback__answer-text"></span></p>
+        <p class="feedback__answer-row" data-kind="mine"><span class="feedback__answer-label">내 답</span> <span class="feedback__answer-text"></span></p>
+      </div>
       <p class="feedback__explanation" id="feedback-explanation"></p>
     </div>
     <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
@@ -710,8 +719,10 @@
         <dd><kbd>Enter</kbd> · <kbd>Space</kbd> 로 기다리지 않고 바로 냅니다</dd>
 
         <dt>손가락</dt>
-        <dd>왼쪽 스틱으로 움직이고 오른쪽 <strong>선택</strong> 버튼으로 냅니다.
-          바닥을 직접 눌러도 걸어가서 냅니다</dd>
+        <dd>왼쪽 스틱으로 움직이고 오른쪽 <strong>선택</strong> 버튼으로 냅니다</dd>
+
+        <dt>바로 누르기</dt>
+        <dd>바닥 칸이나 위 보기를 직접 누르면 캐릭터가 걸어가지 않고 <strong>그 답을 바로 냅니다</strong></dd>
 
         <dt>번호로</dt>
         <dd><kbd>1</kbd> ~ <kbd>4</kbd> 로도 답을 바로 고를 수 있습니다</dd>

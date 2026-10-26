@@ -489,10 +489,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: 0;
 }
 
+/* 문항 위치 칸은 제 글 폭(min-content) 아래로 줄지 않는다. 전체 도전의 «전체 도전 · 예술과문화»처럼
+   분야 칩이 길어지면 칩이 말줄임으로 물러나야지, 위치 숫자가 밀려 ? 버튼 쪽으로 넘치면 안 된다 */
 .quiz-hud .quiz-meta {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(auto, 1fr);
   align-items: center;
   gap: var(--space-1) var(--space-2);
 }
@@ -560,7 +562,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: 0;
 }
 
-/* 글자가 막대 앞에 온다. «서두르세요 · 5초 남음»으로 바뀌어도 막대 길이가 튀지 않게
+/* 글자가 막대 앞에 온다. «5초 남았어요»로 바뀌어도 막대 길이가 튀지 않게
    긴 쪽 폭을 미리 잡아 둔다. 온라인처럼 더 긴 안내는 막대를 다음 줄로 내린다 */
 .quiz-hud .timer__label {
   order: -1;
@@ -769,8 +771,9 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 /* ── 피드백 ──
    퀴즈 화면 바로 뒤의 문서 흐름에 놓이는 결과 패널이다. 답을 고르면 버튼에 포커스를
-   옮기고 이 패널 끝까지 스크롤해, 긴 질문·해설이나 낮은 viewport에서도 보기와 arena를
-   덮지 않는다. <main> 밖, 대화상자 앞의 DOM 순서는 z-index 없는 레이어 계약을 유지한다. */
+   옮기고 이 패널 끝이 보일 만큼만 스크롤해(질문 머리는 화면에 남긴다), 긴 질문·해설이나
+   낮은 viewport에서도 보기와 arena를 덮지 않는다. <main> 밖, 대화상자 앞의 DOM 순서는
+   z-index 없는 레이어 계약을 유지한다. */
 .feedback {
   position: relative;
   width: min(calc(100% - var(--space-6)), calc(var(--content-max) - 2 * var(--page-pad)));
@@ -787,6 +790,30 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
+}
+
+/* 정답 줄: 틀렸을 때 판정 바로 뒤에 «정답»·«내 답» 두 줄. 라벨 칸과 글이 한 줄로 서고,
+   글이 길면 라벨 오른쪽에서 줄을 바꾼다. 온라인 결과 공개도 같은 클래스를 쓴다 */
+.feedback__answer {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+}
+
+.feedback__answer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  word-break: keep-all;
+}
+
+.feedback__answer-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .feedback__explanation {
@@ -1298,8 +1325,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 /* ── 캐릭터 퀴즈 무대 ──
    바닥을 십자로 나눈 2×2 칸 위에서 캐릭터를 8방향으로 움직여 보기를 고른다.
    조작의 실체는 위 보기 버튼이고 여기는 그 버튼을 부르는 시각적 조작부다.
-   방향 조작부는 두지 않는다. 바닥을 직접 누르면 건너가서 골라지므로
-   손가락·마우스로는 그것으로 충분하고, 키보드는 방향키가 있다. */
+   3×3 방향 패드는 두지 않는다. 손가락 이동은 공용 스틱이 맡고 키보드는 방향키가 있다.
+   바닥 칸이나 보기를 직접 누르면 걸어가지 않고 곧바로 답이다. */
 .arena {
   margin: 0 0 var(--space-5);
 }
@@ -3090,6 +3117,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
    긴 질문에는 보기를, 긴 해설에는 패널을 덮으므로 어떤 viewport에서도 옮기지 않는다. */
 body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   translate: none;
+}
+
+/* 결과 패널이 열리면 arena를 화면 바닥에 붙여 두던 빈 높이를 거둔다. 그대로 두면 화면이
+   늘 viewport보다 길어 패널을 보려면 질문까지 화면 위로 밀어야 했다. arena가 보기 바로
+   뒤로 올라오는 것은 quiz.ts의 capture/restoreCharacterAnchor가 캐릭터와 함께 따라간다. */
+body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
+  min-height: 0;
 }
 
 .quiz--character .arena-tile {

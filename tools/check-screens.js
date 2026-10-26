@@ -35,6 +35,9 @@
 //      줄어들거나 머리말 버튼 폭이 바뀌어도 글 끝과 캐릭터 왼쪽 사이를 직접 확인한다
 //   ⑨ 홈에서 온라인이 작은 보조 HUD로 밀려 주요 게임 진입점처럼 보이지 않았다. 온라인과
 //      전체 도전의 실제 크기가 같은지, 닉네임 라벨이 값 위에 남는지 직접 확인한다
+//   ⑩ 답할 때마다 피드백 패널 끝에 맞춰 스크롤해 질문이 화면 위로 밀려났다. 해설을 읽는 동안
+//      무엇에 대한 해설인지 보이지 않았다. 질문 머리와 패널 끝이 한 화면에 들면 둘 다
+//      보여야 하고, 들지 않을 때만 패널 끝에 맞춘다
 //
 // **localStorage 의 방 목록을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다.
 // 랭킹·설정·닉네임은 만지지 않는다.
@@ -352,6 +355,19 @@
     결과.push({
       자리: '퀴즈', 이름: '답을 내면 시트가 뜬다',
       통과: !document.getElementById('feedback').hidden, 무엇: '준비된 상태를 만든다',
+    });
+    // ⑩ 질문 머리와 패널 끝 사이의 거리는 스크롤과 무관하다. 그 거리가 화면에 들면
+    // 질문 머리도 패널 끝도 화면 안이어야 하고, 들지 않으면 패널 끝(「다음 문제」)에 맞춘다
+    const 질문상자 = document.getElementById('question-text').getBoundingClientRect();
+    const 패널상자 = document.getElementById('feedback').getBoundingClientRect();
+    const 함께담기나 = 패널상자.bottom - 질문상자.top <= innerHeight + 1;
+    결과.push({
+      자리: '퀴즈', 이름: '피드백을 보는 동안 질문 머리가 화면 안에 남는다',
+      통과: 함께담기나
+        ? 질문상자.top >= -1 && 패널상자.bottom <= innerHeight + 1
+        : Math.abs(패널상자.bottom - innerHeight) <= 1,
+      무엇: `${innerWidth}×${innerHeight} · 질문 top ${Math.round(질문상자.top)}px · 패널 bottom ${Math.round(패널상자.bottom)}px`
+        + (함께담기나 ? '' : ' · 한 화면에 들지 않아 패널 끝에 맞춤'),
     });
     await 눌러('quiz-exit', 300);
     await 눌러('exit-confirm', 700);

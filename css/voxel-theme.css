@@ -1316,6 +1316,60 @@ textarea {
   --badge-color: var(--wrong);
 }
 
+/* 정답 줄 (FR-4.2). 로컬 피드백과 온라인 결과 공개가 함께 쓰므로 화면에 묶지 않는다.
+   색만으로 가르지 않는다 — 라벨 글(«정답»·«내 답»), 라벨의 ✓ ✗ 아이콘, 글의 굵기가
+   다르다. 아이콘은 글자가 아니라 mask 라 라이브 리전에서 다시 낭독될 것이 없다 */
+.feedback__answer-row {
+  font-size: var(--text-md);
+  line-height: 24px;
+}
+
+.feedback__answer-label {
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+}
+
+.feedback__answer-label::before {
+  content: '';
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+.feedback__answer-row[data-kind='correct'] .feedback__answer-label {
+  --icon: var(--i-check);
+  background: var(--correct-soft);
+  color: var(--correct-ink);
+}
+
+.feedback__answer-row[data-kind='mine'] .feedback__answer-label {
+  --icon: var(--i-cross);
+  background: var(--wrong-soft);
+  color: var(--wrong-ink);
+}
+
+/* 정답은 굵게 세우고 내 답은 보조 글로 물린다 — 눈이 먼저 정답에 닿는다 */
+.feedback__answer-row[data-kind='correct'] .feedback__answer-text {
+  color: var(--text);
+  font-weight: var(--weight-heavy);
+}
+
+.feedback__answer-row[data-kind='mine'] .feedback__answer-text {
+  color: var(--text-muted);
+}
+
+/* 강제 색상은 배경색을 지워 mask 아이콘이 사라진다. 시스템 글자색으로 다시 칠한다 */
+@media (forced-colors: active) {
+  .feedback__answer-label::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
 .feedback__explanation {
   color: var(--text-muted);
   font-size: var(--text-md);
