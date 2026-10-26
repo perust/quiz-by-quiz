@@ -39,6 +39,43 @@ async function controls(roomSnapshot, playerId) {
   return module.waitingRoomControls(roomSnapshot, playerId);
 }
 
+test('U24: a member left out of the running match may ready up for the next one, but nobody starts', async () => {
+  const playing = { status: 'playing', inMatch: false };
+  assert.deepEqual(
+    await controls(room({ ...playing }), 'guest'),
+    {
+      readyHidden: false,
+      readyDisabled: false,
+      startHidden: true,
+      startDisabled: true,
+    },
+  );
+  // 판 밖의 방장(끊긴 방장을 넘겨받았다)도 판이 끝나기 전에는 시작할 수 없다(서버가 거절한다).
+  assert.deepEqual(
+    await controls(room({
+      ...playing,
+      isMine: true,
+      players: [player('host', false), player('guest', true)],
+    }), 'host'),
+    {
+      readyHidden: true,
+      readyDisabled: false,
+      startHidden: false,
+      startDisabled: true,
+    },
+  );
+  // 판의 참가자는 판이 끝날 때까지 준비를 바꿀 수 없다(서버 set_ready와 같다).
+  assert.deepEqual(
+    await controls(room({ status: 'playing', inMatch: true }), 'guest'),
+    {
+      readyHidden: false,
+      readyDisabled: true,
+      startHidden: true,
+      startDisabled: true,
+    },
+  );
+});
+
 test('participant keeps ready available and never sees the host start control', async () => {
   assert.deepEqual(
     await controls(room({ players: [player('host', true), player('guest', true)] }), 'guest'),

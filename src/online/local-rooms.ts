@@ -229,8 +229,9 @@ function toPublic(room: Room): PublicRoom {
     joined: room.players.some((player) => player.id === meId),
     createdAt: room.createdAt,
     // 로컬 방에는 서버 권위 판이 없다(`getMatch`가 null). 「게임 시작」은 혼자 한 판을
-    // 열 뿐이라 방은 언제나 사람을 기다린다
+    // 열 뿐이라 방은 언제나 사람을 기다린다. 그래서 나가기·준비도 판 때문에 막지 않는다
     status: 'waiting',
+    inMatch: false,
   };
 }
 

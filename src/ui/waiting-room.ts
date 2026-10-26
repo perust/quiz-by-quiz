@@ -819,7 +819,7 @@ ${me.nickname}`;
       onLeave(action.code, entryGeneration);
     } catch (error) {
       if (!ownsAction(action, false)) return;
-      // 판이 도는 방(판에서 빠진 사람이 보는 대기실)의 거절은 연결 문제가 아니다.
+      // 판이 도는 방에서 그 판에 자리가 있는 사람의 거절은 연결 문제가 아니다.
       // 로비의 「나가기」와 같은 말로 언제 되는지를 말한다 (U32)
       notice(error instanceof LeaveRoomRejected
         ? LEAVE_MESSAGES[error.reason]

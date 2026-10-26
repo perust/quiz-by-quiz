@@ -5,6 +5,7 @@ import hashlib
 import logging
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
@@ -15,6 +16,8 @@ from fastapi.testclient import TestClient
 
 from app.main import EventHub, _match_payload, create_app
 from app.repository import (
+    AbsentHostSweep,
+    ExpiredMatchAdvance,
     MatchAnswerView,
     MatchQuestionView,
     MatchRead,
@@ -167,7 +170,7 @@ class MatchApiRepository:
         self.match = replace(self.match, own_answer=self.answer)
         return MatchSubmission(match=self.match, answer=self.answer, advanced=False)
 
-    async def advance_expired_matches(self) -> list[str]:
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
         return []
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
@@ -345,6 +348,60 @@ def test_match_fetch_that_advances_broadcasts_invalidation() -> None:
     assert event == {"type": "match-invalidated", "matchId": str(MATCH_ID)}
 
 
+def test_match_fetch_that_finishes_the_match_also_invalidates_the_room() -> None:
+    # 판이 닫히면 방의 status가 playing에서 waiting으로 바뀐다. 판에서 빠진 멤버(U24)의
+    # 대기실은 GET /match로는 알 길이 없어(그 사람의 판이 아니다) 방을 다시 읽어야 한다.
+    repository = MatchApiRepository()
+    repository.match_advanced_on_read = True
+    repository.match = replace(repository.match, state="finished", question=None)
+
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+            events = [websocket.receive_json(), websocket.receive_json()]
+
+    assert response.status_code == 200
+    assert events == [
+        {"type": "match-invalidated", "matchId": str(MATCH_ID)},
+        {"type": "room-invalidated"},
+    ]
+
+
+class FinishingExpiryRepository(MatchApiRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.pending = [
+            [ExpiredMatchAdvance(code="ABC234", finished=False)],
+            [ExpiredMatchAdvance(code="ABC234", finished=True)],
+        ]
+
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
+        return self.pending.pop(0) if self.pending else []
+
+
+def test_expiry_sweep_invalidates_the_room_only_when_the_match_finishes() -> None:
+    repository = FinishingExpiryRepository()
+
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            events = [websocket.receive_json() for _ in range(3)]
+
+    # 문항이 넘어갈 때는 판만, 판이 닫힐 때는 방도 다시 읽게 한다.
+    assert events == [
+        {"type": "match-invalidated"},
+        {"type": "match-invalidated"},
+        {"type": "room-invalidated"},
+    ]
+
+
 OTHER_ID = UUID("87654321-4321-4765-8321-876543218765")
 
 
@@ -390,12 +447,12 @@ class AbsentAdvanceRepository(MatchApiRepository):
         self.advance_calls: list[tuple[str, frozenset[UUID]]] = []
         self.advance_requested = threading.Event()
 
-    async def transfer_absent_host(
+    async def transfer_absent_hosts(
         self,
-        code: str,
-        absent_player_ids: frozenset[UUID],
-    ) -> bool:
-        return False
+        absent_by_room: Mapping[str, frozenset[UUID]],
+    ) -> AbsentHostSweep:
+        # 방장은 접속 중이고 끊긴 친구는 아직 참가자다.
+        return AbsentHostSweep(transferred=frozenset(), members=dict(absent_by_room))
 
     async def advance_past_absent_players(
         self,

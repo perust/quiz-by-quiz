@@ -268,6 +268,11 @@ function parseRoom(value: unknown): PublicRoom {
   if (status !== 'waiting' && status !== 'playing') {
     throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
   }
+  // 판의 자리를 모르는 이전 API는 이 필드를 보내지 않는다. 그때는 판에 없는 것으로 본다.
+  const inMatch = value.inMatch ?? false;
+  if (typeof inMatch !== 'boolean') {
+    throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
+  }
 
   return {
     code: value.code,
@@ -282,6 +287,7 @@ function parseRoom(value: unknown): PublicRoom {
     joined: value.joined,
     createdAt: value.createdAt,
     status,
+    inMatch,
   };
 }
 

@@ -79,7 +79,8 @@ WAITING_ROOM_SEAT_IDS = frozenset(
 # 새로고침·앱 전환처럼 잠깐 끊긴 사람은 그대로 기다린다. 멤버십과 30분 재입장 유예는
 # 이 값과 무관하다(CLAUDE.md «방이 아니라 참가자를 정리한다»).
 PRESENCE_GRACE_SECONDS = 60.0
-# 그보다 오래된 끊김 기록은 버린다. 30분 정리 sweep이 그 참가자를 이미 지웠을 때다.
+# 그보다 오래된 끊김 기록은 버린다. 멤버십이 끝난 사람의 기록은 presence sweep이 방의
+# 참가자 목록을 보고 먼저 버리므로(`retain_presence`) 이것은 마지막 안전망이다.
 PRESENCE_RECORD_SECONDS = 3_600.0
 
 
@@ -506,11 +507,40 @@ class EventHub:
         self._announced_absent = absent
         return changed
 
+    def absent_by_room(self) -> dict[str, frozenset[UUID]]:
+        """유예를 넘겨 끊긴 참가자가 있는 방마다 그 참가자들. presence sweep이 매번 다시 본다."""
+        now = self._clock()
+        rooms: dict[str, set[UUID]] = defaultdict(set)
+        for actor_room in tuple(self._absent_since):
+            if self._is_absent(actor_room, now):
+                rooms[actor_room[0]].add(actor_room[1])
+        return {code: frozenset(actor_ids) for code, actor_ids in rooms.items()}
+
     def forget_presence(self, code: str, actor_id: UUID) -> None:
-        """방을 나간 참가자의 끊김 기록을 지운다. 다음 sweep에서 방송할 일이 없다."""
+        """멤버십이 끝났거나 새로 시작된 참가자의 끊김 기록을 지운다.
+
+        나간 사람은 다음 sweep에서 방송할 일이 없고, 다시 들어온 사람은 새 유예로 센다.
+        """
         actor_room = (code, actor_id)
         self._absent_since.pop(actor_room, None)
         self._announced_absent.discard(actor_room)
+
+    def retain_presence(self, code: str, member_ids: frozenset[UUID] | None) -> bool:
+        """지금 참가자가 아닌 사람의 끊김 기록을 버린다. 방이 없으면(None) 그 방의 기록을 모두.
+
+        30분 정리와 방 삭제는 hub를 거치지 않는다. 기록이 남으면 같은 방에 다시 들어온 사람이
+        들어오자마자 끊긴 사람으로 세어진다. 무엇이든 버렸으면 True다.
+        """
+        stale = [
+            actor_room
+            for actor_room in tuple(self._absent_since)
+            if actor_room[0] == code
+            and (member_ids is None or actor_room[1] not in member_ids)
+        ]
+        for actor_room in stale:
+            del self._absent_since[actor_room]
+            self._announced_absent.discard(actor_room)
+        return bool(stale)
 
     @property
     def connection_count(self) -> int:
@@ -582,6 +612,7 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         "joined": room.joined,
         "createdAt": room.created_at,
         "status": room.status,
+        "inMatch": room.in_match,
     }
 
 
@@ -792,15 +823,18 @@ def create_app(
             while True:
                 await asyncio.sleep(1)
                 try:
-                    codes = await repo.advance_expired_matches()
+                    advances = await repo.advance_expired_matches()
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     # A transient database outage must not terminate the API lifespan.
                     logger.warning("match expiry sweep failed", exc_info=True)
-                    codes = []
-                for code in codes:
-                    await hub.broadcast(code, {"type": "match-invalidated"})
+                    advances = []
+                for advance in advances:
+                    await hub.broadcast(advance.code, {"type": "match-invalidated"})
+                    if advance.finished:
+                        # 방이 다시 기다리는 방이 됐다. 판에서 빠진 멤버의 대기실이 다시 읽는다.
+                        await hub.broadcast(advance.code, {"type": "room-invalidated"})
 
         async def sweep_expired_resources() -> None:
             while True:
@@ -815,48 +849,52 @@ def create_app(
                     logger.warning("resource cleanup sweep failed", exc_info=True)
 
         async def sweep_presence() -> None:
-            # 유예를 넘겨 끊겼거나 다시 붙은 방만 다룬다. 끊긴 방장은 접속 중인 다음
-            # 참가자에게 넘기고, 남은 화면이 다시 읽도록 room-invalidated를 보낸다.
+            # 끊긴 사람이 있는 방은 **매번** 다시 본다. 끊긴 사람의 집합이 바뀔 때만 보면, 넘길
+            # 사람이 없던 방에 나중에 들어온 사람이나 나가기 승계·30분 정리로 끊긴 사람이 방장이
+            # 된 방을 놓친다. 끊긴 방장은 접속 중인 다음 참가자에게 넘기고, 멤버십이 끝난 사람의
+            # 기록은 버린다. 무엇이 바뀌었으면 room-invalidated로 남은 화면이 다시 읽게 한다.
             # 막 끊긴 사람만 기다리던 문항은 마감 전에 넘기고 match-invalidated를 보낸다 (U32).
-            retry_transfer: set[str] = set()
             while True:
                 await asyncio.sleep(presence_interval_seconds)
                 try:
                     changed = hub.sweep_presence()
-                    pending, retry_transfer = changed | retry_transfer, set()
-                    for code in pending:
-                        transferred = False
+                    absent_by_room = hub.absent_by_room()
+                    transferred: frozenset[str] = frozenset()
+                    forgotten: set[str] = set()
+                    if absent_by_room:
+                        try:
+                            hosts = await repo.transfer_absent_hosts(absent_by_room)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            # 다음 sweep이 같은 방들을 다시 본다.
+                            logger.warning("absent host transfer failed", exc_info=True)
+                        else:
+                            transferred = hosts.transferred
+                            forgotten = {
+                                code
+                                for code in absent_by_room
+                                if hub.retain_presence(code, hosts.members.get(code))
+                            }
+                    for code in changed | transferred | forgotten:
                         advanced = False
-                        absent = hub.absent_actors(code)
-                        if absent:
+                        absent = absent_by_room.get(code, frozenset())
+                        if code in changed and absent:
                             try:
-                                transferred = await repo.transfer_absent_host(code, absent)
+                                advanced = await repo.advance_past_absent_players(
+                                    code,
+                                    absent,
+                                )
                             except asyncio.CancelledError:
                                 raise
                             except Exception:
+                                # 놓쳐도 그 문항의 마감 sweep이 넘긴다.
                                 logger.warning(
-                                    "absent host transfer failed for room %s",
+                                    "absent player match advance failed for room %s",
                                     code,
                                     exc_info=True,
                                 )
-                                retry_transfer.add(code)
-                            if code in changed:
-                                try:
-                                    advanced = await repo.advance_past_absent_players(
-                                        code,
-                                        absent,
-                                    )
-                                except asyncio.CancelledError:
-                                    raise
-                                except Exception:
-                                    # 놓쳐도 그 문항의 마감 sweep이 넘긴다.
-                                    logger.warning(
-                                        "absent player match advance failed for room %s",
-                                        code,
-                                        exc_info=True,
-                                    )
-                        if code in changed or transferred:
-                            await hub.broadcast(code, {"type": "room-invalidated"})
+                        await hub.broadcast(code, {"type": "room-invalidated"})
                         if advanced:
                             await hub.broadcast(code, {"type": "match-invalidated"})
                 except asyncio.CancelledError:
@@ -1174,6 +1212,10 @@ def create_app(
                 "진행 중인 게임에는 새로 참가할 수 없습니다.",
             ) from error
 
+        if not already_joined:
+            # 새 멤버십은 새 유예로 센다. 예전 멤버십의 끊김 기록이 남아 있으면 들어오자마자
+            # 끊긴 사람이 되어 시작 판정과 판에서 빠진다.
+            hub.forget_presence(code, actor_id)
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
 
@@ -1201,7 +1243,11 @@ def create_app(
                 "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
             )
         try:
-            room = await repo.leave_room(actor_id, code)
+            room = await repo.leave_room(
+                actor_id,
+                code,
+                absent_player_ids=hub.absent_actors(code),
+            )
         except (RoomNotFound, NotMember) as error:
             raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
         except MatchInProgress as error:
@@ -1212,7 +1258,10 @@ def create_app(
             ) from error
         await hub.disconnect_actor(code, actor_id)
         hub.forget_presence(code, actor_id)
-        if room is not None:
+        if room is None:
+            # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다.
+            hub.retain_presence(code, None)
+        else:
             await hub.broadcast(code, {"type": "room-invalidated"})
         return Response(status_code=204)
 
@@ -1410,6 +1459,9 @@ def create_app(
         payload = _match_payload(match)
         if match_read.advanced:
             await hub.broadcast(code, {"type": "match-invalidated", "matchId": str(match.id)})
+            if match.state == "finished":
+                # 이 읽기가 판을 닫았다. 방의 status가 바뀌었으니 대기실도 다시 읽게 한다.
+                await hub.broadcast(code, {"type": "room-invalidated"})
         return payload
 
     @app.post("/v1/rooms/{raw_code}/match/answers")
