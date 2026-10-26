@@ -173,29 +173,36 @@ let active: Walker | null = null;
 const controls = createWalkControls({
   onStickInput: () => active?.onStickInput(),
   onConfirm: () => {
-    // 입력칸에 들어가 있을 때는 손가락용 Esc, 즉 «나가기»가 된다.
+    // 글자를 적는 동안에는 조작부가 숨어 있어 여기 오지 않는다. 그래도 칸에 커서가
+    // 있으면 고르지 않고 칸에서 나오기만 한다 — 적던 칸 뒤의 버튼이 눌리면 안 된다.
     const node = document.activeElement;
     if (isTypingTarget(node)) node.blur();
     else active?.confirm();
-    paintConfirm();
+    paintControls();
   },
 });
 
 /**
- * 확정 버튼의 말이 지금 하는 일을 따라가게 한다.
+ * 조작부가 지금 입력 상태를 따라가게 한다.
+ *
+ * **글자를 적는 동안에는 조작부를 거둔다** (`data-typing`). 방향키와 Enter는 이미 그 칸
+ * 것이고(`isBlocked`), 떠 있는 스틱과 확정 버튼은 입력칸과 키보드 쪽을 가릴 뿐이다.
+ * 한때는 확정 버튼이 그동안 «나가기»가 되었는데, 퀴즈·대기실의 「나가기」와 같은 말이라
+ * 방이나 판을 나가는 것으로 읽혔다. 손가락으로는 입력칸 밖을 누르거나 키보드의 완료로
+ * 칸을 벗어나면(blur) 조작부가 돌아온다. 키보드는 여전히 `Esc`다.
  *
  * **바뀌는 자리에서 곧바로 부른다.** 포커스 이벤트에만 기대면 창이 포커스를 갖지
- * 않은 동안(`document.hasFocus()`가 false) 이벤트가 미뤄져 버튼이 거짓말을 한다.
+ * 않은 동안(`document.hasFocus()`가 false) 이벤트가 미뤄져 조작부가 어긋난다.
  * 리스너는 워커를 거치지 않는 길(Tab, 칸을 손가락으로 직접 누르기)을 위해 함께 둔다.
  */
-function paintConfirm(node: EventTarget | null = document.activeElement): void {
-  controls.setConfirmLabel(isTypingTarget(node) ? '나가기' : '선택');
+function paintControls(node: EventTarget | null = document.activeElement): void {
+  controls.setTyping(isTypingTarget(node));
 }
-document.addEventListener('focusin', () => paintConfirm());
+document.addEventListener('focusin', () => paintControls());
 // 나가는 쪽은 «어디로 가는지»(relatedTarget)를 보고 곧바로 정한다. focusout 시점에는
 // activeElement가 아직 넘어가는 중이라 한 프레임 미뤄야 했는데, 프레임이 멈춘
 // 화면에서는 그 갱신이 영영 오지 않았다
-document.addEventListener('focusout', (event) => paintConfirm(event.relatedTarget));
+document.addEventListener('focusout', (event) => paintControls(event.relatedTarget));
 
 /**
  * **입력칸에서 빠져나오는 길.** 캐릭터로 입력칸을 밟아 들어갈 수 있게 되면서
@@ -216,7 +223,7 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopPropagation();
   node.blur();
-  paintConfirm();
+  paintControls();
 }, true);
 
 // 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
@@ -341,16 +348,32 @@ export function createWalker(config: WalkerConfig): Walker {
     return target;
   }
 
+  /**
+   * 지금 «고르기»를 하면 무언가 눌리는가. Enter·Space와 확정 버튼이 같은 답을 쓴다.
+   * 발밑이 비었거나, 화면이 아직 고를 수 없다고 하면(`canPick`) 아니다.
+   */
+  function armed(): boolean {
+    return enabled && !locked && standingTarget !== null && canPick(standingTarget);
+  }
+
+  /** 누를 대상이 없으면 확정 버튼을 흐리게 그린다. 켜진 워커만 공용 조작부를 칠한다 */
+  function paintArmed(): void {
+    if (active === walker) controls.setArmed(armed());
+  }
+
   function render(): void {
     character.style.transform =
       `translate(${pos.x}px, ${pos.y}px) translate(-50%, -100%)`;
 
     const next = pickableAtWalker();
-    if (next === standingTarget) return;
-    standingTarget?.classList.remove(standClass);
-    standingTarget = next;
-    standingTarget?.classList.add(standClass);
-    onStep?.(standingTarget);
+    if (next !== standingTarget) {
+      standingTarget?.classList.remove(standClass);
+      standingTarget = next;
+      standingTarget?.classList.add(standClass);
+      onStep?.(standingTarget);
+    }
+    // 발밑이 그대로여도 `canPick`의 답은 바뀔 수 있다 (퀴즈의 첫 이동 전후)
+    paintArmed();
   }
 
   /**
@@ -454,10 +477,12 @@ export function createWalker(config: WalkerConfig): Walker {
       if (wasMoving) {
         wasMoving = false;
         onMove?.({ ...pos }, false);
+        // 마지막 걸음의 onMove가 `canPick`을 바꿨을 수 있다 (퀴즈의 첫 이동)
+        paintArmed();
       }
       // 움직이지 않으면 루프를 멈춘다. 매 프레임 깨어나 아무 일도 하지 않으면
       // 휴대폰 배터리만 쓴다. 제자리 뛰기는 CSS 애니메이션이라 프레임을
-      // 돌리지 않아도 계속 뛰고, 입력이 오면 start()가 다시 깨운다
+      // 돌리지 않아도 뛰고(멈춰 선 뒤 세 번), 입력이 오면 start()가 다시 깨운다
       // (handleKey 와 onStickInput 이 start를 부른다).
       return;
     }
@@ -520,8 +545,8 @@ export function createWalker(config: WalkerConfig): Walker {
    * 넣어 준다 해도 **누르는 것과 들어가는 것은 뜻이 다르다** — 폼의 「만들기」를
    * 밟았을 때처럼 무언가 일어나는 게 아니라 이제부터 적겠다는 것이다.
    */
-  function pick(): void {
-    if (!enabled || locked || !standingTarget || !canPick(standingTarget)) return;
+  function pick(): boolean {
+    if (!standingTarget || !armed()) return false;
     // 두 갈래가 같은 요소를 쓴다. isTypingTarget 은 «글자 칸이면 HTMLElement»라고
     // 좁혀 주는 함수라 아닌 쪽에서는 타입이 비어 버리므로, 선택 대상을 한 번 붙잡아 둔다
     const target: HTMLElement = standingTarget;
@@ -529,7 +554,8 @@ export function createWalker(config: WalkerConfig): Walker {
     character.classList.add('walker--hop');
     if (isTypingTarget(standingTarget)) target.focus();
     else target.click();
-    paintConfirm();
+    paintControls();
+    return true;
   }
 
   const walker: Walker = {
@@ -568,6 +594,8 @@ export function createWalker(config: WalkerConfig): Walker {
       showControls(true, controlOptions);
       locked = false;
       placed = false;
+      // 아직 서지 않았으니 누를 것도 없다. 다음 프레임의 place()가 발밑을 보고 다시 칠한다
+      controls.setArmed(false);
       // 배치가 잡힌 다음 프레임에 좌표를 잰다.
       //
       // **그 사이에 다른 워커가 켜져 이쪽이 꺼졌을 수 있다.** 여기서 예약한 프레임은
@@ -591,6 +619,7 @@ export function createWalker(config: WalkerConfig): Walker {
       // CSS 선택자로 숨기지 않는다 — 조작부는 화면에 띄운(fixed) 요소라
       // 어느 화면의 자손도 아니다. 잠금은 워커가 아는 상태이므로 여기서 처리한다
       if (active === walker) showControls(enabled && !locked, controlOptions);
+      paintArmed();
       if (locked) stop();
       else start();
     },
@@ -648,6 +677,9 @@ export function createWalker(config: WalkerConfig): Walker {
      */
     handleKey(event) {
       if (!enabled || isBlocked()) return false;
+      // 브라우저·OS 단축키는 건드리지 않는다. Ctrl+S의 s, Alt+←(뒤로 가기)의 ←는 걷기 키와
+      // 같지만 걸으려고 누른 것이 아니다 — 가로채면 저장·뒤로 가기·찾기가 죽는다
+      if (event.ctrlKey || event.metaKey || event.altKey) return false;
 
       if (DIRECTIONS[event.key]) {
         // 잠겨 있어도 눌린 키는 기록해 둔다. 안 그러면 다음에 유령 방향이 생긴다
@@ -671,8 +703,14 @@ export function createWalker(config: WalkerConfig): Walker {
         // 얹어 두는 `<section data-screen>`이나 문제 제목은 여기 걸리지 않아 걷기는 그대로다.
         const focused = document.activeElement;
         if (focused && focused !== document.body && focused.closest(pickable)) return false;
-        pick();
-        return true;
+        // **발밑에 고를 것이 없으면 브라우저 몫이다.** 빈자리에서 삼키면 Space로 긴 결과·
+        // 랭킹을 내려 읽을 수 없고, 눌러도 아무 일이 없는 키가 된다. 그때는 그냥 넘긴다.
+        if (!armed()) return false;
+        // 길게 누르면 OS가 keydown을 되풀이한다(`repeat`). 한 번 누른 것은 한 번만 고른다 —
+        // 되풀이마다 고르면 걸어간 자리의 버튼이 연달아 눌린다. 되풀이는 삼켜 그사이
+        // Space가 페이지를 내리지도 않게 한다.
+        if (event.repeat) return true;
+        return pick();
       }
       return false;
     },

@@ -2379,17 +2379,29 @@ select.room-form__input {
   font-weight: var(--weight-heavy);
 }
 
-/* 최소 44px 원에서도 세 글자 「나가기」가 넘치지 않는다. */
+/* 최소 44px 원에서도 「선택」이 넘치지 않는다. */
 @media (pointer: coarse) and (max-height: 360px) {
   .walk-confirm {
     font-size: var(--text-xs);
   }
 }
 
-.walk-confirm:active {
+/* 눌림. 확정은 뗄 때 하므로 누르고 있는 동안 내려앉아 있고, 밖으로 빼면 다시 솟는다.
+   :active 가 아니라 walk-controls.ts 의 상태 클래스를 본다 — :active 는 터치·pointer capture
+   에서 붙고 떨어지는 때가 브라우저마다 달라, 확정·취소 판정과 같은 순간에 바뀐다는 보장이 없다. */
+.walk-confirm--pressed {
   translate: 0 2px;
   box-shadow: var(--elevation-1);
   background: var(--accent-hover);
+}
+
+/* 발밑에 누를 것이 없으면(walker.ts의 data-armed) 채움을 거둔 빈 고리로 흐리게 그린다.
+   눌러도 아무 일이 없다는 뜻이다. 색만이 아니라 채움·두께가 함께 빠진다. */
+.walk-controls[data-armed='false'] .walk-confirm {
+  border: var(--border-1) solid var(--border-strong);
+  background: var(--glass);
+  box-shadow: var(--elevation-1);
+  color: var(--text-muted);
 }
 
 /* ── 24. 걸어서 올라선 표시 (is-standing) ─────────────────────────

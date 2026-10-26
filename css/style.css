@@ -1537,13 +1537,16 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   animation: walker-bounce-shadow 0.3s infinite;
 }
 
-/* 서 있을 때도 제자리에서 가만히 뛴다. «움직일 수 있다»를 눈으로 알린다 */
+/* 서 있을 때도 제자리에서 가만히 뛴다. «움직일 수 있다»를 눈으로 알린다.
+   끝없이 뛰지 않고 세 번(약 3.3초)에서 멈춘다 — 해설·랭킹을 읽는 옆에서 계속 튀면
+   읽기를 방해한다(WCAG 2.2.2, 5초 안). 다시 멈춰 서거나 고른 뒤에는 클래스가 새로
+   붙어 처음부터 세 번 뛴다. */
 .walker--idle .walker__body {
-  animation: walker-idle 1.1s infinite;
+  animation: walker-idle 1.1s 3;
 }
 
 .walker--idle .walker__shadow {
-  animation: walker-idle-shadow 1.1s infinite;
+  animation: walker-idle-shadow 1.1s 3;
 }
 
 /* 고를 때 한 번 크게 뛴다. --walking·--idle 뒤에 두어야 겹칠 때 이쪽이 이긴다 */
@@ -1677,7 +1680,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 /* 확정 버튼. 스틱의 반대편에 두어 두 엄지로 잡는다.
    손가락에는 Enter가 없어, 이게 없으면 스틱으로 걸어가도 칸을 직접 눌러야 한다.
    로컬 피드백처럼 이동을 잠근 화면에서는 walker.ts가 컴포넌트 상태를 끈다.
-   온라인은 답을 낸 뒤에도 함께 움직일 수 있도록 조작부를 유지한다. */
+   온라인은 답을 낸 뒤에도 함께 움직일 수 있도록 조작부를 유지한다.
+   확정은 버튼 안에서 손을 뗄 때 한다(walk-controls.ts). 누른 채 엄지가 조금 구르는 사이
+   브라우저가 스크롤로 가져가면 pointercancel 로 취소되어 «눌렀는데 안 된다»가 되므로
+   스틱처럼 터치 제스처를 받지 않는다. 밖으로 빼고 떼는 것이 취소다. */
 .walk-confirm {
   display: none;
   position: fixed;
@@ -1686,7 +1692,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   width: var(--walk-confirm-size);
   height: var(--walk-confirm-size);
   padding: 0;
-  touch-action: manipulation;
+  touch-action: none;
   user-select: none;
 }
 
@@ -1708,6 +1714,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
   .walk-controls--on .walk-confirm {
     display: block;
+  }
+
+  /* 글자를 적는 동안에는 조작부를 거둔다(walker.ts가 data-typing 을 단다). 방향키·Enter는
+     이미 입력칸 것이고, 떠 있는 원은 입력칸과 키보드 쪽을 가린다. 칸을 벗어나면 돌아온다.
+     --on 은 그대로라 화면 아래 비움이 남아, 입력하는 순간 내용이 튀지 않는다. */
+  .walk-controls[data-typing='true'] .walk-stick,
+  .walk-controls[data-typing='true'] .walk-confirm {
+    display: none;
   }
 }
 

@@ -26,7 +26,9 @@
 //   ⑥ **키의 임자 다툼.** 워커·버튼·입력칸이 같은 키를 노린다. 한쪽을 고치면
 //      다른 쪽이 깨지는 일이 되풀이됐다 — 입력칸을 밟게 하자 체크박스 Space 가
 //      죽었고(#58), 포커스를 비켜 주게 하자 걸어가서 고르는 것이 막혔다(#67).
-//      그래서 넷을 한자리에서 함께 본다.
+//      그래서 넷을 한자리에서 함께 본다. 워커가 빈자리의 Space 와 Ctrl+S 같은
+//      브라우저 단축키까지 삼켜 키보드로 스크롤·저장을 할 수 없던 것도 여기서 본다
+//      (걷기 키 s 가 Ctrl+S 의 s 와 같다).
 //   ⑦ 시작 자리를 정하지 않은 결과 화면 워커가 «아직 잴 수 없음»만 되풀이해
 //      캐릭터가 좌상단에 박힌 채 움직이지 않았고, 세우려는 프레임만 끝없이 돌았다.
 //      한가운데로 세우자 1280×900 에서는 그 자리가 「랭킹 보기」 위였다 — 결과 화면은
@@ -387,6 +389,21 @@
       통과: !결과발밑,
       무엇: 결과발밑 ? `!! ${결과발밑.id || 결과발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
     });
+    // ⑥ 발밑이 비면 Space 는 브라우저 것이다. 워커가 삼키면 키보드만 쓰는 사람이 긴 오답
+    // 풀이를 내려 읽을 수 없다. 발밑에 무엇이 있으면(앱 바 포함) Space 가 그것을 누르므로 보내지 않는다
+    let 빈자리스페이스 = null;
+    if (!document.querySelector('.is-standing')) {
+      const 스페이스 = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+      document.dispatchEvent(스페이스);
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+      빈자리스페이스 = 스페이스.defaultPrevented;
+    }
+    결과.push({
+      자리: '결과', 이름: '발밑이 비면 Space로 스크롤된다',
+      통과: 빈자리스페이스 === false,
+      무엇: 빈자리스페이스 === null ? '!! 발밑이 비지 않아 보내지 않았다'
+        : (빈자리스페이스 ? '!! 워커가 삼킨다' : '브라우저 것이다'),
+    });
     const 결과행동 = document.getElementById('result-retry').closest('.result-actions');
     const 오답풀이 = document.getElementById('result-review-block');
     결과.push({
@@ -445,6 +462,15 @@
       document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
       return 이벤트.defaultPrevented;
     };
+
+    // 걷기 키(s·←)와 겹치는 브라우저 단축키를 워커가 먹으면 저장·뒤로 가기가 죽는다.
+    // 짝인 «발밑이 비면 Space로 스크롤된다»는 빈자리에서 시작함이 보장된 결과 화면에서 본다
+    const 단축키를가로챘나 = 키를보낸다('s', { ctrlKey: true });
+    결과.push({
+      자리: '로비', 이름: 'Ctrl+S를 워커가 가로채지 않는다',
+      통과: !단축키를가로챘나,
+      무엇: 단축키를가로챘나 ? '!! 워커가 가로챈다' : '브라우저 것이다',
+    });
 
     // 체크박스에서 Space 는 체크박스 것이다. 워커가 가로채면 preventDefault 가
     // 기본 동작까지 죽여 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없다

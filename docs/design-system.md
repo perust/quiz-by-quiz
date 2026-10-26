@@ -129,7 +129,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 - 화면 피드백은 100–180ms 안에 끝난다. **끝없이 깜빡이는 경고를 두지 않는다** — 남은 5초는 아이콘
   (시계 → 경고)·글(«서두르세요»)·색이 함께 바뀌어 알린다.
 - 캐릭터의 걷기·제자리 뛰기·한 번 뛰기는 화면 피드백이 아니라 몸짓이라 `style.css` 에 있다
-  (`walker-land` 이름은 `walker.ts` 가 기다리므로 바꾸지 않는다).
+  (`walker-land` 이름은 `walker.ts` 가 기다리므로 바꾸지 않는다). 제자리 뛰기도 끝없이 돌지 않는다 —
+  멈춰 선 뒤 **세 번**(약 3.3초, WCAG 2.2.2의 5초 안)만 뛰고, 다시 멈추거나 고를 때 처음부터 센다.
 - `prefers-reduced-motion: reduce` 에서는 모든 animation·transition 을 끄고 반복을 한 번으로 줄인다.
 
 ## 4. 아이콘
@@ -198,6 +199,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | focus-visible | 진한 보라 고리 | 3px 고리 + 2px 띄움, 요소 모서리를 따른다 |
 | 캐릭터가 올라섬 (`is-standing`) | 초점과 같은 고리 (+ 칸은 옅은 보라) | 초점 고리와 **같은 모양** — 뜻이 같다 |
 | 눌림 | — | 두께·그림자 사라짐 + 1–2px 내려앉음 |
+| 손가락 선택 버튼: 누르는 중 (`.walk-confirm--pressed`) | 진한 보라 | 2px 내려앉음 — 뗄 때 확정하므로 밖으로 빼면 다시 솟아 «취소»를 미리 보인다 |
+| 손가락 선택 버튼: 누를 대상 없음 (`[data-armed='false']`) | 반투명 흰 바탕·흐린 글자 | 보라 채움 원 → 빈 고리, 눌림 두께 없음 |
 | 선택됨 (캐릭터·내 기록·내 순위·고른 탭) | 옅은 보라 | ✓ 배지 / 왼쪽 띠·«방금 등록» 배지 / 흰 표면으로 들린 탭 |
 | 꺼짐 | 회색 | 그림자·두께 없음, 흐린 글자, 금지 커서 |
 | 캐릭터 위치 (보기·칸) | 보라 채움 | 번호 칸까지 채워진 «불 켜짐» |
@@ -266,6 +269,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
   아래, 대화상자 위아래를 띄운다.
 - 문제 은행 오류 문구가 보이는 홈은 캐릭터와 walker 조작부를 함께 끈다. 보이지 않는 캐릭터용 fixed 조작부가
   오류와 복구 안내를 덮지 않게 하는 예외다.
+- 글자를 적는 동안(입력칸·textarea·contenteditable에 포커스)에는 화면과 관계없이 스틱·선택을 거둔다
+  (`#walk-controls[data-typing]`). 화면 아래 비움은 그대로 두어 입력하는 순간 내용이 튀지 않는다.
 - 320px 에서 가로 넘침이 없다. 데스크톱 200% 확대(640×450)에서도 넘침이 없고 대화상자는 스크롤된다.
   긴 조작법 대화상자는 맨 아래 닫기 버튼이 아니라 `tabindex="-1"`인 패널에 먼저 포커스를 두어 제목부터 보인다.
 - 사용자의 확대를 막지 않는다 (`user-scalable`·`maximum-scale` 금지).
@@ -300,6 +305,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/voxel-theme.test.mjs` | 폰트 로딩, 마을 장식 구조, 분야 아이콘·식별 색, 대비(AA·3:1), 글리프 금지 |
 | `tests/ui-states.test.mjs` | 정답·오답·선택·hover·눌림·캐릭터 위치·제출 대기가 캐스케이드에서 서로 다르게 이기는지 |
 | `tests/walk-controls*.test.mjs`, `tests/arena-neutral-start.test.mjs`, `tests/touch-clearance.test.mjs`, `tests/home-interface.test.mjs` | 단일 이동 UI DOM·pointer lifecycle·포인터 소유권·명시적 배치 계약, 짧은 화면의 이동 전 중립, 화면 이름 기반 스타일·짧은 화면 숨김 금지, 공용 크기, 스틱 위 비움, dock·safe-area |
+| `tests/walker-keys.test.mjs`, `tests/walker-character-settle.test.mjs` | 워커가 받는 키와 브라우저에 남기는 키(빈자리 Space·Ctrl/Meta/Alt 단축키·길게 눌러 되풀이), 입력 중 조작부 숨김·대상 없음 흐림, 내 캐릭터 화면의 머물기·멈춤 적용 |
 | `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음, 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |
 
 `tests/css-cascade.mjs` 는 브라우저 없이 «실제로 이기는 선언»을 계산하고, 토큰과 `calc()·max()·env()` 를
