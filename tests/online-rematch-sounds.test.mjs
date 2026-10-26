@@ -136,12 +136,16 @@ test('입장 차임은 다른 사람이 새로 들어왔을 때만, 보이는 �
   assert.deepEqual(waitingRoomJoinedOthers({ ...before, code: 'XYZ234' }, after, ME), [], '다른 방의 첫 snapshot');
   // 안내 줄과 같은 판정이다
   assert.deepEqual(waitingRoomChangeNotices(before, after, ME), ['민수 님이 들어왔어요.']);
+  // 방장이 내보낸 사람(quiet, U24)은 퇴장 안내만 조용해진다. 입장 판정은 건드리지 않으므로 차임과 안내 줄이
+  // 여전히 같은 판정이고, 내보낸 snapshot에는 입장이 없어 차임도 울리지 않는다
+  assert.deepEqual(waitingRoomChangeNotices(before, after, ME, [guest.id]), ['민수 님이 들어왔어요.'], 'quiet 는 입장을 숨기지 않는다');
+  assert.deepEqual(waitingRoomChangeNotices(after, before, ME, [guest.id]), [], '내보낸 사람은 «나갔어요»가 없다');
 
   const waiting = await source('src/ui/waiting-room.ts');
   assert.match(waiting, /import \{ playJoin \} from '\.\.\/audio\.js';/);
   assert.match(
     waiting,
-    /function applyRoom\(next: PublicRoom\): void \{[\s\S]*?if \(!el\.screen\.hidden && waitingRoomJoinedOthers\(previous, next, roomStore\.me\(\)\)\.length > 0\) playJoin\(\);/,
+    /function applyRoom\(next: PublicRoom, quiet: readonly string\[\] = \[\]\): void \{[\s\S]*?for \(const line of waitingRoomChangeNotices\(previous, next, roomStore\.me\(\), quiet\)\) notice\(line\);[\s\S]*?if \(!el\.screen\.hidden && waitingRoomJoinedOthers\(previous, next, roomStore\.me\(\)\)\.length > 0\) playJoin\(\);/,
   );
 });
 

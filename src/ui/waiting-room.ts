@@ -747,7 +747,8 @@ export function createWaitingRoom(
     room = next;
     if (previous) {
       for (const line of waitingRoomChangeNotices(previous, next, roomStore.me(), quiet)) notice(line);
-      // 누가 들어오면 작은 차임 (N03). 화면을 보고 있을 때만, 소리 설정을 따른다
+      // 누가 들어오면 작은 차임 (N03). 화면을 보고 있을 때만, 소리 설정을 따른다. 입장 안내 줄과 같은
+      // 판정이다 — quiet(방금 내보낸 사람, U24)는 퇴장 안내만 조용히 하고 입장에는 관여하지 않는다
       if (!el.screen.hidden && waitingRoomJoinedOthers(previous, next, roomStore.me()).length > 0) playJoin();
     }
     render();

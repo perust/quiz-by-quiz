@@ -4261,6 +4261,10 @@ body:has(.home-note:not([hidden])) #home-character {
   }
 
   .home-subtitle {
+    display: none;
+  }
+}
+
 /* 처음 세 판은 규칙 한 줄을 짧은 touch·좁은 화면에서도 남긴다 (U01, quiz.ts 가 data-pinned 를 단다).
    위 두 접기(420px 이하·짧은 touch)보다 구체적이라 이긴다. 스틱이 이미 말하는 조작 줄은 그대로 접고,
    세 판이 지나면 data-pinned 가 false 라 예전처럼 줄째 접힌다 */
