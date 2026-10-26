@@ -1,6 +1,6 @@
 // 카테고리별 문제 JSON을 불러와 검증까지 마친 문제 은행을 만든다 (FR-1.6, FR-1.9)
 
-import { CATEGORIES, DATA_DIR } from '../constants.js';
+import { BANK_FETCH_TIMEOUT_MS, CATEGORIES, DATA_DIR } from '../constants.js';
 import { validateQuestionBank } from './validate.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
@@ -18,18 +18,37 @@ export interface FailedCategory {
  * 실패하면 예외를 던진다.
  *
  * 원소는 아직 `Question`이 아니다 — 검증은 validateQuestionBank가 한다.
+ *
+ * **기다리는 데 한도가 있다** (`BANK_FETCH_TIMEOUT_MS`, U05). 느린 망에서 응답이 영영 오지 않으면
+ * 부팅이 «불러오는 중…»에 멈춰 있었다. 한도를 넘기면 끊고 그 분야를 실패로 둔다 — 본문을 읽는
+ * 동안(`json()`)도 같은 신호가 끊는다.
  */
 async function fetchCategoryFile(categoryId: CategoryId): Promise<unknown[]> {
-  const response = await fetch(`${DATA_DIR}/${categoryId}.json`, { cache: 'no-cache' });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}`);
-  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BANK_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${DATA_DIR}/${categoryId}.json`, {
+      cache: 'no-cache',
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
 
-  const parsed: unknown = await response.json();
-  if (!Array.isArray(parsed)) {
-    throw new Error('최상위가 배열이 아닙니다');
+    const parsed: unknown = await response.json();
+    if (!Array.isArray(parsed)) {
+      throw new Error('최상위가 배열이 아닙니다');
+    }
+    return parsed;
+  } catch (error) {
+    // 끊은 것은 우리다. 브라우저의 «The operation was aborted» 대신 무엇을 기다렸는지 남긴다
+    if (controller.signal.aborted) {
+      throw new Error(`${BANK_FETCH_TIMEOUT_MS / 1000}초 안에 받지 못했습니다`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return parsed;
 }
 
 /** 한 카테고리를 불러온 결과. 실패해도 나머지는 계속 간다 */

@@ -349,7 +349,8 @@ test('워커는 대화상자가 열려 있으면 키를 받지 않는다 — 설
   assert.match(dialogMarkup, /^<div class="dialog-backdrop"/);
   // 화면을 옮기면 접는다 — 새 화면 위에 남아 포커스를 가두지 않는다
   const app = await source('src/app.ts');
-  assert.match(app, /function goTo\(name: ScreenName\): void \{[\s\S]*?settingsDialog\.dismiss\(\);\s*showScreen\(name\);/);
+  // 홈의 「게임 방법」(U01)도 같은 자리에서 접는다
+  assert.match(app, /function goTo\(name: ScreenName\): void \{[\s\S]*?settingsDialog\.dismiss\(\);\s*rulesDialog\.dismiss\(\);\s*showScreen\(name\);/);
   assert.match(app, /onClose: \(\) => quizScreen\.resumeAfterDialog\(\)/);
 });
 

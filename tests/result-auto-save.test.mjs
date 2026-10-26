@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DESKTOP, MOBILE, loadStyles, nodeFromHtml, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, loadStyles, node, nodeFromHtml, valueOf } from './css-cascade.mjs';
 
 // 결과 화면은 «등록»을 누르지 않고 떠나도 기록을 남긴다 (FR-6.1, U21).
 // 전에는 「다시 하기」·「홈으로」를 누르면 기록이 조용히 사라졌고, 다음 판의 최고 기록 비교와
@@ -88,14 +88,15 @@ globalThis.document = {
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 
-const { createResultScreen, autoSaveNickname, describeOutcome } = await import('../js/ui/result.js');
+const { createResultScreen, autoSaveNickname, describeOutcome, groupReviewByCategory } = await import('../js/ui/result.js');
+const { summarizeRound } = await import('../js/core/scoring.js');
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function summary({ review = [] } = {}) {
+function summary({ review = [], mode = 'category' } = {}) {
   return {
-    mode: 'category',
-    categoryId: 'science',
+    mode,
+    categoryId: mode === 'all' ? null : 'science',
     score: 70,
     maxScore: 100,
     correctCount: 7,
@@ -135,12 +136,12 @@ const resultScreen = createResultScreen({
   onRanking: async () => { calls.push(['ranking']); },
 });
 
-function showRound({ nickname = '퀴즈왕', review = [], inRoom = false } = {}) {
+function showRound({ nickname = '퀴즈왕', review = [], inRoom = false, mode = 'category' } = {}) {
   calls.length = 0;
   byId('announcer').textContent = '';
   byId('result-room').textContent = '대기실로';
   resultScreen.show({
-    summary: summary({ review }),
+    summary: summary({ review, mode }),
     modeLabel: '과학',
     bestScore: null,
     nickname,
@@ -239,6 +240,96 @@ test('결과 화면: 오답이 있으면 요약 칩 아래 링크가 개수를 �
 
   showRound({ review: [] });
   assert.equal(byId('result-review-jump').hidden, true, '틀린 문제가 없으면 링크도 없다');
+});
+
+// ── 전체 도전의 오답 묶음 (N04) ──────────────────────────────────────
+// 25문제 판의 오답 풀이가 한 목록으로 다 펼쳐져 결과 화면이 끝없이 길었다. 분야별로 접어 묶는다.
+
+const wrong = (id, category) => ({
+  id, category, question: `${id}?`, chosenChoice: '가', correctChoice: '나', explanation: `${id} 해설`, timedOut: false,
+});
+const ALL_REVIEW = [wrong('h1', 'history'), wrong('s1', 'science'), wrong('h2', 'history'), wrong('a1', 'art')];
+
+test('오답 묶음: 분야 정의 순서로 묶고, 틀린 문제가 없는 분야는 빼며, 묶음 안은 푼 순서다', () => {
+  const groups = groupReviewByCategory(ALL_REVIEW);
+  assert.deepEqual(groups.map(({ id, name, items }) => [id, name, items.map((item) => item.id)]), [
+    ['history', '한국사', ['h1', 'h2']],
+    ['science', '과학', ['s1']],
+    ['art', '예술과문화', ['a1']],
+  ]);
+  assert.deepEqual(groupReviewByCategory([]), []);
+});
+
+test('오답 풀이의 항목은 제 분야를 갖는다 — 묶는 근거가 채점 결과에 있다', () => {
+  const question = (id, category) => ({
+    id, category, question: `${id}?`, choices: ['가', '나', '다', '라'], answerIndex: 1, explanation: '', difficulty: 'easy', tags: [],
+  });
+  const questions = [question('g1', 'geography'), question('h1', 'history')];
+  const answers = questions.map((item) => ({
+    questionId: item.id, category: item.category, choiceIndex: 0, answerIndex: 1, correct: false, timedOut: false, elapsedMs: 1000,
+  }));
+  const result = summarizeRound({ questions, answers, mode: 'all' });
+  assert.deepEqual(result.review.map(({ id, category }) => [id, category]), [['g1', 'geography'], ['h1', 'history']]);
+});
+
+test('결과 화면: 전체 도전의 오답은 분야 이름·개수를 단 접힌 묶음이고, 분야 판은 지금처럼 한 목록이다 (N04)', () => {
+  showRound({ review: ALL_REVIEW, mode: 'all' });
+  const list = byId('result-review');
+  assert.equal(list.classList.contains('review--grouped'), true);
+  assert.equal(byId('result-review-link').textContent, '틀린 문제 4개 해설 보기', '건너가는 링크는 전체 개수를 말한다');
+  assert.deepEqual(list.children.map((entry) => entry.className), ['review-group', 'review-group', 'review-group']);
+
+  const [details] = list.children[0].children;
+  assert.equal(details.tagName, 'DETAILS', '펼침은 네이티브 details — 워커·키보드·스크린리더가 그대로 쓴다');
+  assert.equal(details.open, false, '여럿이면 접어 둔다 — 한 벽으로 펼치지 않는다');
+  const [head, items] = details.children;
+  assert.equal(head.tagName, 'SUMMARY');
+  assert.equal(head.className, 'review-group__summary');
+  assert.deepEqual(head.children.map((part) => [part.className, part.textContent]), [
+    ['review-group__name', '한국사'],
+    ['review-group__count', '틀린 문제 2개'],
+  ]);
+  assert.equal(items.tagName, 'OL');
+  assert.equal(items.className, 'review review-group__list');
+  assert.deepEqual(items.children.map((entry) => entry.children[0].textContent), ['h1?', 'h2?']);
+  assert.deepEqual(items.children[0].children.map((row) => row.className), [
+    'review__question', 'review__row review__row--mine', 'review__row review__row--answer', 'review__explanation',
+  ], '묶음 안의 한 문제는 분야 판과 같은 모양이다');
+
+  // 한 분야만 틀렸으면 펼쳐 둔다 — 접을 이유가 없다
+  showRound({ review: [wrong('s1', 'science')], mode: 'all' });
+  assert.equal(byId('result-review').children.length, 1);
+  assert.equal(byId('result-review').children[0].children[0].open, true);
+
+  // 분야 판(10문제)은 한 목록 그대로다
+  showRound({ review: REVIEW });
+  assert.equal(byId('result-review').classList.contains('review--grouped'), false);
+  assert.deepEqual(byId('result-review').children.map((entry) => entry.className), ['review__item', 'review__item']);
+});
+
+test('오답 묶음의 펼침 줄: 44px 목표, 기본 삼각형(글리프) 대신 아이콘, 걸어서 올라서면 초점과 같은 고리', async () => {
+  const [rules, walker] = await Promise.all([
+    loadStyles(['css/style.css', 'css/voxel-theme.css']),
+    source('src/ui/walker.ts'),
+  ]);
+  const block = node('div.result-block#result-review-block', node("section.screen[data-screen='result']", node('main.app', node('body'))));
+  const details = node('details.review-group__details', node('li.review-group', node('ol.review.review--grouped#result-review', block)));
+  const head = node('summary.review-group__summary', details);
+  for (const env of [MOBILE, DESKTOP]) {
+    assert.equal(valueOf(rules, head, 'min-height', env), 'var(--tap)');
+    assert.equal(valueOf(rules, head, 'list-style', env), 'none');
+    assert.equal(valueOf(rules, node('summary.review-group__summary::-webkit-details-marker', details), 'display', env), 'none');
+    assert.equal(valueOf(rules, node('span.review-group__count', head), 'color', env), 'var(--wrong-ink)', '개수는 오답과 같은 알약');
+  }
+  const marker = node('summary.review-group__summary::after', details);
+  assert.match(valueOf(rules, marker, 'mask', MOBILE) ?? '', /var\(--i-chevron\)/);
+  assert.equal(valueOf(rules, marker, 'rotate', MOBILE), '-90deg', '접힌 묶음은 오른쪽을 가리킨다');
+  const openMarker = node('summary.review-group__summary::after', node('details.review-group__details[open]', node('li.review-group')));
+  assert.equal(valueOf(rules, openMarker, 'rotate', MOBILE), 'none', '펼치면 아래를 가리킨다 — 색이 아니라 모양으로');
+  const standing = node('summary.review-group__summary.is-standing', details);
+  assert.equal(valueOf(rules, standing, 'outline', MOBILE), 'var(--focus-width) solid var(--focus)');
+  // 걸어가 Enter·선택으로 누르면 진짜 click() 이 펼친다 — summary 가 «밟을 수 있는 것»에 있다
+  assert.match(walker, /pickable = '[^']*\bsummary\b/);
 });
 
 test('결과 화면: 자동 저장이 실패해도 이동은 막지 않고, 옮긴 화면에서 한 번 알린다', async () => {

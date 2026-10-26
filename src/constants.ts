@@ -32,6 +32,19 @@ export const TIME_LIMIT_CHOICES: readonly TimeLimitChoice[] = [TIME_LIMIT_MS, 40
 /** 남은 시간이 이 값 이하로 떨어지면 경고 상태로 전환한다 (FR-3.9) */
 export const WARNING_THRESHOLD_MS = 5_000;
 
+/**
+ * 처음 몇 판 동안 무대 아래의 규칙 한 줄(«보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답»)을
+ * 짧은 touch 화면·좁은 화면에서도 접지 않을지 (U01). 로컬 판을 열 때 센다. 그 뒤로는 중복 조작
+ * 설명과 함께 예전처럼 접는다 — 규칙은 홈의 「게임 방법」에 늘 있다.
+ */
+export const RULE_HINT_ROUNDS = 3;
+
+/**
+ * 문제 JSON 하나를 기다리는 한도 (밀리초, U05). 넘기면 그 분야를 «불러오지 못함»으로 두고
+ * 나머지로 홈을 연다. 다섯을 함께 받으므로 부팅 화면의 15초 실패 안내보다 먼저 끝난다.
+ */
+export const BANK_FETCH_TIMEOUT_MS = 10_000;
+
 /** 정답 1문항당 배점 (FR-5.1). 속도 보너스나 난이도 배점은 두지 않는다 */
 export const POINTS_PER_CORRECT = 10;
 

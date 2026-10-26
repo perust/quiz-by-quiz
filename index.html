@@ -12,21 +12,54 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='8' fill='%235b3fd6'/><text x='16' y='24' text-anchor='middle' font-family='monospace' font-size='22' font-weight='700' fill='%23ffffff'>?</text></svg>">
   <script>
     // 모듈이 아닌 일반 스크립트라 어떤 환경에서도 실행된다.
-    // app.js가 뜨면 이 타이머를 지운다. 지워지지 않으면 스크립트가 막힌 것이다
-    // (file:// 로 열었을 때가 대표적이다).
-    window.__bootTimer = setTimeout(function () {
-      document.body.classList.add('is-boot-failed');
-    }, 3000);
+    // app.js 가 문제를 받아 홈을 그릴 준비가 되면 markBooted() 가 window.__bootTimer 를 지운다.
+    // 지워지지 않으면 아직 뜨지 못한 것이다 (U05).
+    //   · file:// 로 열었으면 스크립트와 문제가 막힌 것이라 3초 뒤 개발자 안내(로컬 서버)를 띄운다
+    //   · 그 밖에는 느린 망일 수 있다. 3초 뒤 «네트워크가 느려요»와 새로고침, 15초가 지나서야 실패 안내
+    // 두 번째 타이머도 같은 __bootTimer 에 담아 markBooted() 의 clearTimeout 하나로 끈다.
+    (function () {
+      var body = function () { return document.body.classList; };
+      window.__bootTimer = setTimeout(function () {
+        if (location.protocol === 'file:') {
+          body().add('is-boot-failed', 'is-boot-file');
+          return;
+        }
+        body().add('is-boot-slow');
+        window.__bootTimer = setTimeout(function () {
+          body().remove('is-boot-slow');
+          body().add('is-boot-failed');
+        }, 12000);
+      }, 3000);
+      // 부팅 안내의 「새로고침」·「다시 시도」. 모듈이 뜨지 않아도 눌려야 하므로 여기서 받는다
+      document.addEventListener('click', function (event) {
+        var target = event.target;
+        if (target && target.closest && target.closest('[data-boot-reload]')) location.reload();
+      });
+    })();
   </script>
 </head>
 <body>
 
-  <!-- ─────────── 부팅 상태 ───────────
-       스크립트가 아예 실행되지 않는 경우를 화면으로 알린다.
-       모듈 로드가 막히면 JS로는 손쓸 수 없어 HTML에 정적으로 심어 둔다. -->
+  <!-- ─────────── 부팅 상태 (U05) ───────────
+       스크립트가 아예 실행되지 않거나 느린 경우를 화면으로 알린다.
+       모듈 로드가 막히면 JS로는 손쓸 수 없어 HTML에 정적으로 심어 둔다.
+       무엇을 보일지는 head 의 인라인 스크립트가 body 클래스로 정한다. -->
   <div class="boot" id="boot">
     <p class="boot__loading">불러오는 중…</p>
-    <div class="boot__error" role="alert">
+    <!-- 3초가 지나도 뜨지 않았을 때. 고장이 아니라 느린 망일 수 있다 -->
+    <div class="boot__slow" role="status">
+      <p class="boot__body">불러오는 중… 네트워크가 느려요</p>
+      <button type="button" class="button button--ghost" data-boot-reload>새로고침</button>
+    </div>
+    <!-- 15초가 지나도 뜨지 않았거나 문제를 하나도 받지 못했을 때. 플레이어의 말로 쓴다.
+         app.ts 의 showFatalError 가 같은 자리에 제목과 이유를 고쳐 쓴다 -->
+    <div class="boot__error boot__error--net" role="alert">
+      <h1 class="boot__title" id="boot-error-title">게임을 불러오지 못했어요</h1>
+      <p class="boot__body" id="boot-error-body">연결을 확인하고 다시 시도해 주세요.</p>
+      <button type="button" class="button button--primary" data-boot-reload>다시 시도</button>
+    </div>
+    <!-- 파일을 직접 열었을 때(file://)만. 개발자를 위한 안내다 -->
+    <div class="boot__error boot__error--file" role="alert">
       <h1 class="boot__title">게임을 불러오지 못했습니다</h1>
       <p class="boot__body">
         파일을 직접 여는 방식(<code>file://</code>)에서는 브라우저가 스크립트와 문제 데이터를 막습니다.
@@ -81,6 +114,12 @@
                 <span class="menu-card__desc">최고 기록</span>
               </span>
             </button>
+            <!-- 「게임 방법」 (U01). 판을 열기 전에 규칙을 읽는 자리라 시간이 흐르지 않는다.
+                 앱 바의 설정 버튼 바로 아래 edge HUD 조각이고, 홈 화면 안에 있어 다른 화면에는 없다 -->
+            <button type="button" class="icon-button home-rules" id="open-rules" aria-haspopup="dialog">
+              <span class="icon-button__icon icon" data-icon="question" aria-hidden="true"></span>
+              <span class="sr-only">게임 방법</span>
+            </button>
         </nav>
 
         <!-- 배경의 2D 픽셀 월드는 장식이고, 제목만 읽기 순서에 남는다. -->
@@ -101,7 +140,10 @@
             <span class="home-room-note__text" id="home-room-note-text"></span>
             <span class="home-room-note__action">돌아가기</span>
           </button>
-          <div class="category-grid" id="category-grid"></div>
+          <!-- 한 판의 길이 (U04). 글은 home.js 가 QUESTIONS_PER_ROUND 로 쓴다 — 은행 크기는 쓰지 않는다.
+               분야 칸 묶음의 이름이기도 하다 -->
+          <p class="home-quests__caption" id="category-caption"></p>
+          <div class="category-grid" id="category-grid" role="group" aria-labelledby="category-caption"></div>
 
           <!-- 온라인과 전체 도전은 같은 크기의 주요 게임 진입점이다.
                정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
@@ -140,7 +182,15 @@
         <span class="home-hint-touch">스틱으로 캐릭터를 움직이고 선택 버튼으로 고를 수 있어요</span>
       </p>
 
-      <p class="home-note" id="home-note" role="alert" hidden></p>
+      <!-- 문제 은행 오류·문항 부족 (U06). 보이는 동안 캐릭터와 조작부를 거두므로 닫을 길을 둔다.
+           라이브 리전은 «알리는 말»까지다 — 버튼은 role="alert" 밖에 둔다 -->
+      <div class="home-note" id="home-note" hidden>
+        <p class="home-note__text" id="home-note-text" role="alert"></p>
+        <div class="home-note__actions">
+          <button type="button" class="button button--ghost button--small" id="home-note-reload">다시 불러오기</button>
+          <button type="button" class="button button--ghost button--small" id="home-note-close">닫기</button>
+        </div>
+      </div>
     </section>
 
     <!-- ─────────── 퀴즈 ─────────── -->
@@ -200,9 +250,13 @@
           </div>
         </div>
 
-        <!-- 한 줄만 둔다. 나머지 조작법은 헤더의 ? 에 있다.
-             입력 장치에 따라 문구가 달라진다. 스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다. -->
-        <p class="arena__hint" aria-hidden="true">
+        <!-- 무엇이 답이 되는가(규칙) 한 줄과 조작 한 줄. 나머지 조작법은 헤더의 ? 에 있다.
+             조작 줄은 입력 장치에 따라 문구가 달라지고, 짧은 touch·좁은 화면에서는 스틱이 이미 말하므로 접는다.
+             규칙 줄은 처음 세 판(RULE_HINT_ROUNDS)만 그런 화면에서도 남긴다 — quiz.js 가 data-pinned 를 단다 (U01).
+             규칙 글은 판의 문항 시간을 따른다(제한 없음이면 «시간이 끝나면»이 없다).
+             스크린리더는 무대를 쓰지 않으므로 낭독 대상에서 뺀다 — 같은 규칙이 조작법·「게임 방법」에 있다. -->
+        <p class="arena__hint" id="arena-hint" aria-hidden="true">
+          <span class="arena__hint-rule" id="arena-hint-rule">보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답</span>
           <span class="arena__hint-key">방향키·WASD와 Enter/Space로 조작하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 고르세요</span>
         </p>
@@ -818,6 +872,37 @@
       </dl>
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="online-help-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 「게임 방법」 (U01). 홈의 ? 가 판을 열기 전에 연다 — 읽는 동안 시간이 흐르지 않는다.
+       숫자가 든 줄은 rules-dialog.js 가 상수와 지금 고른 문항 시간으로 채운다(은행 크기는 쓰지 않는다).
+       시작 시트·카운트다운·코치마크는 두지 않는다 — 판마다 행동이 하나 늘어난다 (design-system §1, 일시정지 없음 FR-3.12) -->
+  <div class="dialog-backdrop" id="rules-dialog" hidden>
+    <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="rules-dialog-title">
+      <h2 class="dialog__title" id="rules-dialog-title">게임 방법</h2>
+      <dl class="help-list">
+        <dt>한 판</dt>
+        <dd id="rules-length"></dd>
+
+        <dt>문항 시간</dt>
+        <dd id="rules-time"></dd>
+
+        <dt>점수</dt>
+        <dd id="rules-score"></dd>
+
+        <dt>답하기</dt>
+        <dd id="rules-answer"></dd>
+
+        <dt>움직이기</dt>
+        <dd>방향키·<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 나 스틱으로 걷고, <kbd>Enter</kbd> · <kbd>Space</kbd> 나 선택 버튼으로 발밑을 눌러요. 홈에서 미리 걸어 볼 수 있어요</dd>
+
+        <dt>기록</dt>
+        <dd id="rules-record"></dd>
+      </dl>
+      <div class="dialog__actions">
+        <button type="button" class="button button--primary" id="rules-close">닫기</button>
       </div>
     </div>
   </div>

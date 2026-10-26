@@ -22,6 +22,7 @@ const KEYS = {
   nickname: 'quiz.nickname',
   recentQuestionIds: 'quiz.recentQuestionIds',
   lastRoomCode: 'quiz.lastRoomCode',
+  ruleHintRounds: 'quiz.ruleHintRounds',
   schemaVersion: 'quiz.schemaVersion',
 };
 
@@ -378,6 +379,19 @@ export function createLocalPreferences(): Preferences {
         // 못 지워도 다음 부팅에 한 번 더 물어볼 뿐이다 (저장소가 던지는 것은 DOMException 이다)
         console.warn(`[저장소] ${KEYS.lastRoomCode} 지우기 실패: ${(error as Error).message}`);
       }
+    },
+
+    /**
+     * 규칙 한 줄을 보인 로컬 판 수 (U01). 손으로 고쳤거나 깨진 값(음수·소수·글자)은 0 으로 본다 —
+     * 처음 온 사람처럼 규칙을 몇 판 더 보일 뿐이다. 저장이 막혀도 그 세션 안에서는 app.ts 가 센다.
+     */
+    async getRuleHintRounds(): Promise<number> {
+      const value = readJson(KEYS.ruleHintRounds, 0);
+      return isFiniteNumber(value) && Number.isInteger(value) && value >= 0 ? value : 0;
+    },
+
+    async setRuleHintRounds(count: number): Promise<void> {
+      writeJson(KEYS.ruleHintRounds, Math.max(0, Math.floor(count)));
     },
   };
 }

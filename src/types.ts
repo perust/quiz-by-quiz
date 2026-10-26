@@ -123,6 +123,8 @@ export interface CategoryScore {
 
 export interface ReviewItem {
   id: string;
+  /** 문항의 분야. 전체 도전 결과가 오답을 분야별로 묶을 때 쓴다 (N04) */
+  category: CategoryId;
   question: string;
   /** 시간 초과면 고른 보기가 없다 */
   chosenChoice: string | null;

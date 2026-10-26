@@ -11,6 +11,7 @@ import { createArena } from './arena.js';
 import { choiceLayout } from './choice-layout.js';
 import { answerLines, feedbackScrollTarget } from './feedback-view.js';
 import { timeLimitLabel } from './time-limit.js';
+import { arenaRuleHint } from './round-rules.js';
 import type { Point } from './walker.js';
 import type { QuizSession } from '../core/session.js';
 import type { AnswerRecord, Question } from '../types.js';
@@ -33,12 +34,22 @@ export interface QuizScreenDeps {
   onComplete: (session: QuizSession) => void;
 }
 
+/** 판을 열 때 화면이 받는 것 */
+export interface QuizRoundView {
+  categoryLabel: string;
+  /**
+   * 무대 아래 규칙 한 줄을 짧은 touch·좁은 화면에서도 접지 않을까 (U01). 처음 몇 판만 참이고
+   * 세는 것은 app.ts 다. 생략하면 예전처럼 접는다.
+   */
+  pinRules?: boolean;
+}
+
 export interface QuizScreen {
   /**
    * 새 판을 화면에 올린다.
    * @param newSession core/session.js가 만든 세션
    */
-  start(newSession: QuizSession, view: { categoryLabel: string }): void;
+  start(newSession: QuizSession, view: QuizRoundView): void;
 
   /** 무대에서 쓸 캐릭터를 갈아 끼운다. 홈에서 고른 것이 여기로 온다 */
   setCharacter(id: string): void;
@@ -81,6 +92,9 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     helpTimeLimit: need('help-time-limit'),
     helpRuleTimed: need('help-rule-timed'),
     helpRuleUntimed: need('help-rule-untimed'),
+    // 무대 아래 규칙 한 줄 (U01). 처음 몇 판은 짧은 화면에서도 접지 않는다(data-pinned)
+    hint: need('arena-hint'),
+    hintRule: need('arena-hint-rule'),
     choices: need('choices'),
     feedback: need('feedback'),
     verdict: need('feedback-verdict'),
@@ -541,16 +555,19 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     el.helpTimeLimit.textContent = limitMs === null ? '시간 제한이 없습니다.' : `${timeLimitLabel(limitMs)}입니다.`;
     el.helpRuleTimed.hidden = limitMs === null;
     el.helpRuleUntimed.hidden = limitMs !== null;
+    el.hintRule.textContent = arenaRuleHint(limitMs);
   }
 
   return {
-    start(newSession, { categoryLabel: label }) {
+    start(newSession, { categoryLabel: label, pinRules = false }) {
       session = newSession;
       categoryLabel = label;
       el.dialog.hidden = true;
       dialogOpener = null;
       timer = createQuestionTimer({ limitMs: newSession.timeLimitMs });
       describeTimeLimit(newSession.timeLimitMs);
+      // 처음 몇 판은 규칙 줄을 짧은 화면에서도 남긴다. 접는 것은 CSS 가 이 표시를 보고 정한다 (U01)
+      el.hint.dataset.pinned = String(pinRules);
       arena.setEnabled(true);
       renderQuestion();
     },
