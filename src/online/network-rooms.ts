@@ -37,7 +37,7 @@ import {
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
-import { normalizeCode, type JoinFailReason } from './rules.js';
+import { LeaveRoomRejected, normalizeCode, type JoinFailReason } from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
 const CATEGORIES_SET = new Set<string>(CATEGORIES.map(({ id }) => id));
@@ -47,6 +47,9 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   'need-password',
   'full',
   'save-failed',
+  // 409·429. 연결 실패로 던지면 화면이 «네트워크를 확인하라»고 잘못 말한다 (U33)
+  'game-in-progress',
+  'rate-limited',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHARACTER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -239,6 +242,12 @@ function parseRoom(value: unknown): PublicRoom {
   if (typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) {
     throw new Error('서버 방 생성 시각이 올바르지 않습니다.');
   }
+  // status 를 모르는 이전 API로 되돌려도 목록이 깨지지 않게, 없으면 기다리는 방으로 본다.
+  // 있는데 모르는 값이면 다른 계약이므로 믿지 않는다.
+  const status = value.status ?? 'waiting';
+  if (status !== 'waiting' && status !== 'playing') {
+    throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
+  }
 
   return {
     code: value.code,
@@ -252,6 +261,7 @@ function parseRoom(value: unknown): PublicRoom {
     isMine: value.isMine,
     joined: value.joined,
     createdAt: value.createdAt,
+    status,
   };
 }
 
@@ -1114,6 +1124,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             method: 'DELETE',
           });
         } catch (error) {
+          // 판이 도는 동안 서버는 멤버십을 지킨다(409). 연결 실패와 구분해 던진다 (U32)
+          if (error instanceof ApiFailure && error.code === 'game-in-progress') {
+            throw new LeaveRoomRejected('game-in-progress');
+          }
           if (!(error instanceof ApiFailure) || error.status !== 404) throw error;
         }
         commitRoomMutation(normalized, requestGeneration);

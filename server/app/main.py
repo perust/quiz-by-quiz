@@ -493,6 +493,7 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         "isMine": room.is_mine,
         "joined": room.joined,
         "createdAt": room.created_at,
+        "status": room.status,
     }
 
 

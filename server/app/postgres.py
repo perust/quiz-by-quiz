@@ -55,7 +55,13 @@ WITH selected_rooms AS MATERIALIZED (
             FROM quiz_online.room_members mine
             WHERE mine.room_id = candidate.id
               AND mine.player_id = %(actor_id)s
-        ) AS joined
+        ) AS joined,
+        EXISTS (
+            SELECT 1
+            FROM quiz_online.matches active_match
+            WHERE active_match.room_id = candidate.id
+              AND active_match.state IN ('running', 'revealing')
+        ) AS is_playing
     FROM quiz_online.rooms candidate
     WHERE candidate.expires_at > now()
       AND (
@@ -89,6 +95,7 @@ SELECT
     (r.password_hash IS NOT NULL) AS has_password,
     (r.host_player_id = %(actor_id)s) AS is_mine,
     selected.joined,
+    selected.is_playing,
     r.created_at,
     member.player_id,
     member.nickname,
@@ -1391,6 +1398,8 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 "is_mine": bool(row["is_mine"]),
                 "joined": bool(row["joined"]),
                 "created_at": str(created_at),
+                # join_room 이 MatchInProgress 를 내는 조건과 같은 판정이다
+                "status": "playing" if row["is_playing"] else "waiting",
             }
             grouped[room_id] = item
         if row["player_id"] is not None:
@@ -1416,6 +1425,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
             is_mine=item["is_mine"],
             joined=item["joined"],
             created_at=item["created_at"],
+            status=item["status"],
         )
         for item in grouped.values()
     ]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from .domain import ValidatedPlayer, ValidatedRoom
@@ -28,6 +28,8 @@ class RoomView:
     is_mine: bool
     joined: bool
     created_at: str
+    # 진행 중인(running·revealing) 매치가 있으면 playing. 그동안 새 참가는 거절된다.
+    status: Literal["waiting", "playing"] = "waiting"
 
 
 @dataclass(frozen=True)

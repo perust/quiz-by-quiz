@@ -63,6 +63,9 @@ async def _exercise_match_lifecycle() -> None:
 
         setup = await repository.start_game(player_ids[0], room.code)
         assert setup.id
+        # 로비는 진행 중인 방을 미리 «게임 중»으로 알린다 (U33)
+        lobby = await repository.list_rooms(player_ids[1])
+        assert {view.code: view.status for view in lobby}[room.code] == "playing"
         assert setup.category_id == "science"
         assert setup.total_questions == 10
 
@@ -120,6 +123,8 @@ async def _exercise_match_lifecycle() -> None:
         finished = finished_read.match
         assert finished.state == "finished"
         assert finished.deadline_at is None
+        lobby = await repository.list_rooms(player_ids[1])
+        assert {view.code: view.status for view in lobby}[room.code] == "waiting"
         assert finished.question is None
         assert finished.own_answer is None
         assert len(finished.scores) == 2

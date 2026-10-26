@@ -44,6 +44,7 @@ function room(changes = {}) {
     isMine: true,
     joined: true,
     createdAt: '2026-09-17T00:00:00+00:00',
+    status: 'waiting',
     ...changes,
   };
 }

@@ -30,6 +30,7 @@ import { createWaitingRoom } from './ui/waiting-room.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { normalizeCode } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
@@ -85,6 +86,24 @@ function showFatalError(message: string): void {
   }
 }
 
+/**
+ * 초대 링크(`?room=CODE`)의 코드 (U27). **부팅 때 한 번만** 읽고 주소에서 지운다 —
+ * 남겨 두면 새로고침할 때마다 같은 방에 다시 들어가려 한다. 해시 라우팅은 두지 않으며
+ * (새로고침하면 홈), 비밀번호는 링크에 싣지 않는다.
+ */
+function takeInviteCode(): string | null {
+  const url = new URL(window.location.href);
+  const raw = url.searchParams.get('room');
+  if (raw === null) return null;
+  url.searchParams.delete('room');
+  try {
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    // 주소를 못 고쳐도 초대는 받는다. 새로고침하면 한 번 더 열릴 뿐이다
+  }
+  return normalizeCode(raw) || null;
+}
+
 // ── 소리 설정 ────────────────────────────────────────────────────
 
 interface ToggleFace {
@@ -138,6 +157,7 @@ function createToggle({ ids, on, off, apply, onChange }: ToggleSpec): Toggle {
 
 async function main(): Promise<void> {
   markBooted();
+  const inviteCode = takeInviteCode();
 
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
@@ -201,6 +221,7 @@ async function main(): Promise<void> {
     onOpenRanking: () => openRanking(),
     onOpenCharacters: () => openCharacters(),
     onOpenOnline: () => openOnline(),
+    onReturnToRoom: (code) => { void openWaitingRoom(code); },
     onNickname: (value) => {
       savedNickname = value;
       syncRoomPlayer();
@@ -212,6 +233,7 @@ async function main(): Promise<void> {
   const onlineScreen = createOnlineScreen({
     roomStore,
     onHome: goHome,
+    onPractice: () => { void practiceAlone(); },
     onEnterRoom: (code) => openWaitingRoom(code),
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
@@ -230,6 +252,8 @@ async function main(): Promise<void> {
       })) return;
       stopOnlineMatch();
       activeRoomCode = null;
+      // 스스로 나왔으면 홈의 «아직 방에 있어요» 줄도 거둔다 (U35)
+      if (!reason) homeScreen.setRoomNote(null);
       // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
       void openOnline(reason);
     },
@@ -578,6 +602,39 @@ async function main(): Promise<void> {
       nickname: savedNickname,
     });
     goTo('home');
+    void refreshHomeRoomNote(navigationGeneration);
+  }
+
+  /**
+   * 홈으로 와도 방에서 나간 것은 아니다. 새로고침했거나 매치에서 빠져나온 사람이 돌아갈
+   * 방을 잃지 않게, 아직 들어가 있는 방을 묻는다 (U35). 누르면 대기실로 가고, 판이 돌고
+   * 있으면 대기실의 복구 경로가 그 판을 연다.
+   *
+   * **주기적으로 묻지 않는다** — 같은 와이파이의 여럿이 IP당 요청 한도를 나눠 쓴다 (N01).
+   * 부팅 직후와 온라인 화면을 다녀온 뒤에만 한 번 묻고, 그 사이에는 마지막 답을 둔다.
+   * 서버 권위 방이 없는 로컬 구현에서는 묻지 않는다.
+   */
+  let roomNoteStale = true;
+  async function refreshHomeRoomNote(navigationGeneration: number): Promise<void> {
+    if (!roomStore.isNetworked || !roomNoteStale) return;
+    roomNoteStale = false;
+    try {
+      const rooms = await roomStore.myRooms();
+      if (!isCurrentNavigation(navigationGeneration)) {
+        roomNoteStale = true;
+        return;
+      }
+      const room = rooms.find(({ code }) => code === activeRoomCode) ?? rooms[0] ?? null;
+      homeScreen.setRoomNote(room ? { code: room.code, name: room.name } : null);
+    } catch {
+      // 안내일 뿐이다. 서버가 안 되면 홈은 그대로 돌고, 온라인을 다녀오면 다시 묻는다
+    }
+  }
+
+  /** 빈 로비의 「혼자 연습하기」 (U29). 홈으로 가서 분야 dock에 선다 */
+  async function practiceAlone(): Promise<void> {
+    await goHome();
+    homeScreen.focusPractice();
   }
 
   // ── 퀴즈 ───────────────────────────────────────────────────────
@@ -725,15 +782,26 @@ async function main(): Promise<void> {
 
   // ── 온라인 ─────────────────────────────────────────────────────
 
-  async function openOnline(notice?: string): Promise<void> {
+  async function openOnline(notice?: string, invite?: string): Promise<void> {
     const navigationGeneration = invalidateWaitingRoomEntry();
-    await onlineScreen.show(characterId, notice);
+    roomNoteStale = true;
+    // 로비는 목록을 받아 그린 뒤에 연다(내용을 그린 뒤 goTo). 그동안 홈의 입구가 아무
+    // 반응이 없어 보이지 않게 바로 바쁨 표시를 단다 (U34)
+    homeScreen.setOnlineBusy(true);
+    try {
+      await onlineScreen.show(characterId, notice);
+    } finally {
+      homeScreen.setOnlineBusy(false);
+    }
     if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('online');
+    // 화면이 보인 뒤에 넘긴다. 포커스를 비밀번호 칸으로 옮길 수 있어야 한다 (U27)
+    if (invite) onlineScreen.acceptInvite(invite);
   }
 
   async function openWaitingRoom(code: string): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
+    roomNoteStale = true;
     if (onlineMatchRoomCode) stopOnlineMatch();
     activeRoomCode = code;
     try {
@@ -806,6 +874,9 @@ async function main(): Promise<void> {
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));
 
   await goHome();
+  // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27).
+  // 홈의 온라인 입구가 «연결 중…»으로 그 사이를 알린다
+  if (inviteCode) await openOnline(undefined, inviteCode);
 }
 
 main().catch((error: unknown) => {
