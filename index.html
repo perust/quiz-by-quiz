@@ -74,7 +74,7 @@
               </span>
             </button>
             <button type="button" class="menu-card" id="open-ranking"
-                    aria-label="랭킹에서 최고 기록 보기" disabled>
+                    aria-label="랭킹: 이 브라우저의 최고 기록 보기" disabled>
               <span class="menu-card__figure" data-icon="trophy" aria-hidden="true"></span>
               <span class="menu-card__body">
                 <span class="menu-card__name">랭킹</span>
@@ -87,7 +87,7 @@
         <header class="home-header">
           <div class="home-heading">
             <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
-            <p class="home-subtitle">퀴즈 아카데미를 탐험하세요.</p>
+            <p class="home-subtitle">4지선다 상식 퀴즈 · 혼자 또는 친구와</p>
           </div>
         </header>
 
@@ -578,6 +578,12 @@
         </div>
       </dl>
 
+      <!-- 오답이 있을 때만. 맨 아래 오답 풀이로 건너가는 글자 링크다 — 행동 버튼이 아니라
+           결과 행동 줄의 순서와 무게는 그대로다. result.js 가 주소를 바꾸지 않고 포커스만 옮긴다 -->
+      <p class="result-review-jump" id="result-review-jump" hidden>
+        <a class="result-review-link" id="result-review-link" href="#result-review-title">틀린 문제 해설 보기</a>
+      </p>
+
       <div class="result-actions">
         <button type="button" class="button button--primary" id="result-retry">다시 하기</button>
         <!-- 방에서 시작한 판일 때만 보인다. result.js 가 여닫는다 -->
@@ -592,15 +598,17 @@
         <ul class="category-score" id="result-category-list"></ul>
       </div>
 
-      <!-- 랭킹 등록 (FR-6.1) -->
+      <!-- 랭킹 등록 (FR-6.1). 「등록」을 누르지 않고 화면을 떠나도 이 칸의 이름으로 저장한다 -->
       <div class="result-block">
         <h2 class="result-block__title">랭킹에 기록 남기기</h2>
+        <!-- 저장 범위 명시 (FR-6.10). 랭킹 화면의 안내 줄과 같은 모양이다 -->
+        <p class="ranking-scope" id="register-scope">화면을 나가면 이 이름으로 저장돼요 · 이 브라우저에만 저장돼요</p>
         <form class="register" id="register-form" novalidate>
           <div class="register__row">
             <label class="register__label" for="nickname-input">닉네임</label>
             <input class="register__input" id="nickname-input" type="text" inputmode="text"
                    maxlength="10" autocomplete="off" placeholder="2~10자"
-                   aria-describedby="register-message">
+                   aria-describedby="register-scope register-message">
             <button type="submit" class="button button--primary" id="register-button">등록</button>
           </div>
           <p class="register__message" id="register-message" role="status" hidden></p>
@@ -609,7 +617,7 @@
 
       <!-- 틀린 문제 다시 보기 (FR-5.4) -->
       <div class="result-block" id="result-review-block" hidden>
-        <h2 class="result-block__title">틀린 문제 다시 보기</h2>
+        <h2 class="result-block__title" id="result-review-title" tabindex="-1">틀린 문제 다시 보기</h2>
         <ol class="review" id="result-review"></ol>
       </div>
 
@@ -636,10 +644,12 @@
       <ol class="ranking-list" id="ranking-list"></ol>
       <div class="ranking-empty" id="ranking-empty" hidden>
         <p class="ranking-empty__message" id="ranking-empty-message"></p>
-        <button type="button" class="button button--primary" id="ranking-empty-home">퀴즈 시작하기</button>
+        <!-- 글자는 ranking.js 가 탭 이름으로 바꾼다 (예: 「과학 시작하기」). 누르면 그 탭의 판이 열린다 -->
+        <button type="button" class="button button--primary" id="ranking-empty-start">퀴즈 시작하기</button>
       </div>
 
-      <div class="ranking-footer">
+      <!-- 어느 탭에도 기록이 없으면 지울 것이 없어 ranking.js 가 숨긴다 -->
+      <div class="ranking-footer" id="ranking-footer">
         <button type="button" class="button button--ghost" id="ranking-clear">모든 기록 지우기</button>
       </div>
 

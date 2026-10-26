@@ -1026,6 +1026,20 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   white-space: nowrap;
 }
 
+/* 오답 풀이로 건너가는 글자 링크 (FR-5.4). 요약 칩과 다음 행동 줄 사이에 한 줄로 둔다.
+   글자 링크여도 손가락 목표는 44px이다 */
+.result-review-jump {
+  margin-top: 0;
+  margin-bottom: var(--space-3);
+}
+
+.result-review-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: var(--space-3);
+}
+
 /* 다시 하기는 한 줄을 다 쓰고, 나머지 행동은 그 아래 한 줄에 나란히 선다 */
 .result-actions {
   display: flex;
@@ -1143,6 +1157,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .register__message {
   margin: var(--space-3) 0 0;
   word-break: keep-all;
+}
+
+/* 자동 저장·저장 범위 안내 (FR-6.1, FR-6.10). 랭킹의 저장 범위 줄과 같은 모양을 쓰되,
+   결과 워커는 점수 장면 왼쪽 위에서 쉬므로 오른쪽 주차 공간을 비워 두지 않는다 */
+.result-block > .ranking-scope {
+  margin-bottom: var(--space-3);
+  padding-inline-end: var(--space-3);
 }
 
 /* ── 랭킹 ── */

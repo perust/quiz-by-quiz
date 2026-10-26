@@ -15,6 +15,15 @@ import { summarizeRound } from './core/scoring.js';
 import { preferences, rankingStore } from './storage/adapter.js';
 import { setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen, type ScreenName } from './ui/screens.js';
+import {
+  backStepFor,
+  closeDialog,
+  createBackGuard,
+  isGuardState,
+  openDialog,
+  pressControl,
+  setUnloadWarning,
+} from './ui/back-guard.js';
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
@@ -154,7 +163,11 @@ async function main(): Promise<void> {
   let recentQuestionIds = await preferences.getRecentQuestionIds();
 
   // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
-  let savedNickname = (await preferences.getNickname()) || DEFAULT_NICKNAME;
+  const storedNickname = await preferences.getNickname();
+  let savedNickname = storedNickname || DEFAULT_NICKNAME;
+  // 저장된 이름이 없으면 기본 이름을 한 번 저장해 둔다. 홈 HUD·결과 등록 칸·온라인 프로필이
+  // 모두 같은 값을 읽는다 — 전에는 홈에 «퀴즈왕»이 보이는데 등록 칸은 비어 있었다 (FR-6.11)
+  if (!storedNickname) await preferences.setNickname(savedNickname);
 
   /** 다시 하기가 되풀이할 판 종류 */
   let lastRound: Round | null = null;
@@ -270,22 +283,24 @@ async function main(): Promise<void> {
 
   quizScreen.setCharacter(characterId);
 
+  // 결과 화면은 아직 남기지 않은 기록을 저장한 **뒤에** 이 콜백들을 부른다 (FR-6.1).
+  // 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려준다
   const resultScreen = createResultScreen({
-    onRetry: () => {
-      if (lastRound) startRound(lastRound);
-      else goHome();
-    },
+    onRetry: () => (lastRound ? startRound(lastRound) : goHome()),
     onHome: goHome,
-    onRoom: () => {
-      if (activeRoomCode) openWaitingRoom(activeRoomCode);
-      else goHome();
-    },
+    onRoom: () => (activeRoomCode ? openWaitingRoom(activeRoomCode) : goHome()),
     onRanking: () => openRanking(pending?.target ?? null),
     onRegister: registerRecord,
   });
 
   const rankingScreen = createRankingScreen({
     onHome: goHome,
+    // 빈 탭에서 그 탭의 판을 곧바로 연다 (FR-6.12)
+    onStart: (target) => startRound(
+      target.mode === 'all'
+        ? { mode: 'all', categoryId: null }
+        : { mode: 'category', categoryId: target.category },
+    ),
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
   });
@@ -449,13 +464,71 @@ async function main(): Promise<void> {
     characters: () => charactersScreen.hide(),
   };
 
+  /** 지금 보이는 화면. goTo 만 바꾼다 */
+  let currentScreen: ScreenName = 'home';
+  /** 브라우저 «뒤로»의 안전망. 화면을 옮길 때마다 goTo 가 알린다 */
+  const backGuard = createBackGuard(window.history);
+
   function goTo(name: ScreenName): void {
     if (name !== 'waiting') invalidateWaitingRoomEntry();
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
     showScreen(name);
+    currentScreen = name;
+    // 브라우저 «뒤로»가 앱 밖으로 나가지 않게 히스토리 상태만 남긴다. 주소는 그대로다
+    backGuard.enter(name);
+    // 새로고침·탭 닫기 확인은 로컬 판이 진행 중일 때만 (FR-3.6)
+    setUnloadWarning(name === 'quiz');
   }
+
+  // ── 뒤로 가기 ──────────────────────────────────────────────────
+  //
+  // 홈이 아닌 화면에서 시스템 「뒤로」나 뒤로 스와이프를 하면 앱 밖으로 나가 풀던 판과
+  // 결과가 통째로 사라졌다. 이제는 popstate 로 돌아와 그 화면의 뒤로·나가기 버튼을
+  // 누른 것과 같이 움직인다 — 퀴즈는 나가기 확인, 결과는 자동 저장 뒤 홈.
+
+  window.addEventListener('popstate', (event) => {
+    const dialog = openDialog();
+    const step = backStepFor(currentScreen, {
+      dialogOpen: dialog !== null,
+      landedOnGuard: isGuardState(event.state),
+    });
+
+    if (step.kind === 'leave') {
+      // 홈에 남아 있던 guard 를 지나 페이지를 연 자리에 닿았다. 사용자는 앱을 나가려던 것이다
+      history.back();
+      return;
+    }
+    if (step.kind === 'stay') {
+      backGuard.enter(currentScreen);
+      return;
+    }
+    // 그 밖에는 이 화면을 계속 지키며 시작한다. 확인을 무르거나 옮기는 중에 또 「뒤로」를
+    // 눌러도 앱 밖으로 나가지 않는다. 다른 화면으로 옮기면 goTo 가 이 자리를 바꿔 쓴다
+    if (currentScreen !== 'home') backGuard.rearm(currentScreen);
+
+    switch (step.kind) {
+      case 'close-dialog':
+        if (dialog) closeDialog(dialog);
+        break;
+      case 'control':
+        pressControl(step.id);
+        break;
+      case 'lobby':
+        void openOnline();
+        break;
+      case 'home':
+        void goHome();
+        break;
+    }
+  });
+
+  // 결과 화면에서 탭을 닫거나 새로고침해도 기록을 남긴다 (FR-6.1). 로컬 저장소는 부르는
+  // 자리에서 동기로 써지므로 여기서 끝난다 — 서버 구현으로 바꾸면 다른 길이 필요하다
+  window.addEventListener('pagehide', () => {
+    if (currentScreen === 'result') resultScreen.flush();
+  });
 
   // ── 홈 ─────────────────────────────────────────────────────────
 
@@ -582,7 +655,8 @@ async function main(): Promise<void> {
 
     const target: RankingTarget = { mode: summary.mode, category: summary.categoryId };
 
-    // 최고 점수는 이번 기록을 저장하기 전에 읽어야 비교가 성립한다 (FR-5.7)
+    // 최고 점수는 이번 기록을 저장하기 전에 읽어야 비교가 성립한다 (FR-5.7).
+    // 앞 판을 등록하지 않고 떠났어도 결과 화면이 자동 저장했으므로 그 판까지 들어 있다
     const [bestScore, nickname] = await Promise.all([
       rankingStore.getBestScore(target),
       preferences.getNickname(),
@@ -597,7 +671,8 @@ async function main(): Promise<void> {
       summary,
       modeLabel: labelFor({ mode: summary.mode, categoryId: summary.categoryId }),
       bestScore,
-      nickname,
+      // 등록 칸은 홈 HUD와 같은 이름으로 채운다. 비워 두면 매번 새로 지어야 한다 (FR-6.11)
+      nickname: nickname || savedNickname,
       characterId,
       inRoom: Boolean(activeRoomCode),
     });
@@ -606,7 +681,12 @@ async function main(): Promise<void> {
 
   /**
    * 랭킹 등록 (FR-6.1). 저장은 어댑터를 통해서만 한다 (FR-6.8).
-   * nickname은 결과 화면이 길이를 검사한 값이다.
+   * nickname은 결과 화면이 길이를 검사한 값이다. 「등록」을 눌렀을 때도, 등록하지 않고
+   * 결과 화면을 떠날 때(자동 저장)도 이 한 길로 온다 — 문항별 정오까지 똑같이 남는다.
+   * 한 판을 두 번 남기지 않는 것은 결과 화면이 지킨다(저장 하나를 나눠 쓴다).
+   *
+   * **`saveRecord`까지 기다리는 것이 없다.** 로컬 저장소는 이 호출 안에서 동기로 써져
+   * `pagehide`에서 불러도 기록이 남는다. 앞에 await를 넣으면 그 보장이 깨진다.
    */
   async function registerRecord(nickname: string) {
     if (!pending) throw new Error('등록할 기록이 없습니다');

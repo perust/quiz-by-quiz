@@ -1,6 +1,7 @@
 // 화면 전환
 // 단일 HTML 안의 <section data-screen="..."> 를 hidden 속성으로 토글한다.
 // 해시 라우팅을 쓰지 않으므로 새로고침하면 항상 홈에서 시작한다.
+// 브라우저 «뒤로»는 주소를 바꾸지 않고 히스토리 상태만 쓴다 (back-guard.ts).
 
 import { all, maybe } from '../dom.js';
 
