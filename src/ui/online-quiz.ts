@@ -4,6 +4,7 @@
 // Its inputs are validated REST snapshots; its only output is a position + choice index
 // submission through the controller supplied by app.ts.
 
+import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { CATEGORIES, WARNING_THRESHOLD_MS } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import type {
@@ -27,6 +28,7 @@ import {
   normalizeViewportMovement,
   type MovementSample,
 } from './player-movement.js';
+import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { announce } from './screens.js';
 import { createBody } from './sprite.js';
 
@@ -281,6 +283,90 @@ export function onlineRevealAnswerText(
   };
 }
 
+/** 공개 단계 미니 점수판에 그리는 줄 수 (U30). 넘치면 내 줄을 덧붙이고 나머지는 수로만 알린다 */
+export const REVEAL_STANDINGS_LIMIT = 5;
+
+export interface OnlineRevealStandingRow {
+  playerId: string;
+  nickname: string;
+  score: number;
+  place: number;
+  tied: boolean;
+  isMe: boolean;
+  /** 이번 문제를 맞혔는가. 서버가 참가자별 정오를 보내지 않으면(구버전) null */
+  correct: boolean | null;
+  /** 위 줄과 순위가 이어지지 않는다 — 위 몇 줄 뒤에 덧붙인 내 줄 */
+  afterGap: boolean;
+}
+
+export interface OnlineRevealStandings {
+  rows: OnlineRevealStandingRow[];
+  /** 이번 문제를 맞힌 사람 수. 한 사람이라도 정오를 모르면 null이다 — 지어내지 않는다 */
+  correctCount: number | null;
+  playerCount: number;
+  /** 줄로 그리지 않은 참가자 수 */
+  hiddenCount: number;
+  /** 원격 캐릭터 이름표의 ✓/✗. 정오를 아는 참가자만 들어 있다 */
+  results: ReadonlyMap<string, boolean>;
+}
+
+/**
+ * 공개 단계의 미니 점수판 (U30). **revealing이 아니면 null이다** — 아직 답을 고르는 사람에게 남의
+ * 점수·정오·정답자 수를 보이지 않는다(PRD 2.1). 순위는 최종 순위와 같은 규칙(서버 순서, 공동 순위)이다.
+ * 방이 크면 위 `limit`줄(그 마지막 순위와 같은 점수는 모두)과 내 줄만 그린다 — 같은 점수의 누구를
+ * 이름 순서로 잘라 내지 않는다.
+ */
+export function onlineRevealStandings(
+  snapshot: OnlineMatchSnapshot,
+  playerId: string,
+  limit = REVEAL_STANDINGS_LIMIT,
+): OnlineRevealStandings | null {
+  if (snapshot.state !== 'revealing' || snapshot.scores.length === 0) return null;
+  const scores = snapshot.scores;
+  const places = onlinePlaces(scores);
+  const all: OnlineRevealStandingRow[] = scores.map((score, index) => ({
+    playerId: score.playerId,
+    nickname: score.nickname,
+    score: score.score,
+    place: places[index].place,
+    tied: places[index].tied,
+    isMe: score.playerId === playerId,
+    correct: typeof score.lastAnswerCorrect === 'boolean' ? score.lastAnswerCorrect : null,
+    afterGap: false,
+  }));
+  const cutoff = all.length > limit ? all[Math.max(limit, 1) - 1].place : Number.POSITIVE_INFINITY;
+  const top = all.filter((row) => row.place <= cutoff);
+  const me = all.find((row) => row.isMe);
+  const rows = me && !top.includes(me) ? [...top, { ...me, afterGap: true }] : top;
+  const results = new Map<string, boolean>();
+  for (const row of all) {
+    if (row.correct !== null) results.set(row.playerId, row.correct);
+  }
+  return {
+    rows,
+    correctCount: results.size === all.length
+      ? all.filter((row) => row.correct === true).length
+      : null,
+    playerCount: all.length,
+    hiddenCount: all.length - rows.length,
+    results,
+  };
+}
+
+/** «이번 문제 정답 2/4명». 정답자 수를 모르면(구버전 서버) 그리지 않는다 */
+export function onlineRevealTally(standings: OnlineRevealStandings): string | null {
+  if (standings.correctCount === null) return null;
+  return `이번 문제 정답 ${standings.correctCount}/${standings.playerCount}명`;
+}
+
+/** 내 결과의 효과음 (N03). 로컬 피드백과 같은 세 소리다 — 시간 초과는 오답과 구분된다 */
+export function onlineRevealSound(
+  reveal: Pick<OnlineQuizRevealView, 'correct' | 'timedOut'>,
+): 'correct' | 'wrong' | 'timeout' {
+  if (reveal.correct) return 'correct';
+  return reveal.timedOut ? 'timeout' : 'wrong';
+}
+
 /** Pure projection: hidden match data has no path into a running UI. */
 export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
   if (snapshot.state === 'running') {
@@ -417,6 +503,7 @@ export function createOnlineQuizScreen(
     verdict: need('online-reveal-verdict'),
     revealAnswer: need('online-reveal-answer'),
     explanation: need('online-reveal-explanation'),
+    standings: need('online-standings'),
     exitDialog: need('online-exit-dialog'),
     exitCancel: need<HTMLButtonElement>('online-exit-cancel'),
     exitConfirm: need<HTMLButtonElement>('online-exit-confirm'),
@@ -452,6 +539,12 @@ export function createOnlineQuizScreen(
   /** 공개 카드 때문에 화면을 아래로 옮겼는가. 다음 문제에서 맨 위로 되돌린다 */
   let revealMovedPage = false;
   let revealAnswerKey: string | null = null;
+  /** 미니 점수판은 내용(문항·순위·정오)이 바뀔 때만 다시 만든다 — 재조회마다 다시 낭독하지 않는다 */
+  let standingsKey: string | null = null;
+  /** 공개 중인 문항의 참가자별 정오. 원격 캐릭터 이름표의 ✓/✗가 이것을 본다. 공개가 아니면 null */
+  let revealResults: ReadonlyMap<string, boolean> | null = null;
+  /** 내 결과 효과음은 문항마다 처음 공개될 때 한 번만 낸다 (N03) */
+  let revealSoundKey: string | null = null;
   /** 나가기 확인을 연 버튼. 취소하면 포커스를 되돌려 준다 */
   let exitDialogOpener: HTMLElement | null = null;
   const remoteMovements = createPlayerMovementController();
@@ -519,6 +612,11 @@ export function createOnlineQuizScreen(
     revealAnswerKey = null;
     el.revealAnswer.hidden = true;
     el.revealAnswer.replaceChildren();
+    standingsKey = null;
+    revealResults = null;
+    revealSoundKey = null;
+    el.standings.hidden = true;
+    el.standings.replaceChildren();
     el.reveal.hidden = true;
     // 확인 대화상자는 <main> 밖이라 화면과 함께 숨지 않는다. 열어 둔 채 떠나면 다음 화면을 덮는다.
     // 화면을 떠나는 중이므로 포커스는 되돌리지 않고 닫기만 한다.
@@ -571,7 +669,22 @@ export function createOnlineQuizScreen(
       remoteMovements.bind(player.id, character);
       bindChatBubble(player.id, bubble);
     }
+    // 공개 중에 명단이 바뀌어 캐릭터를 새로 만들었으면 이름표의 ✓/✗도 다시 단다
+    paintRemoteResults();
     movementPublisher.resend();
+  }
+
+  /**
+   * 공개 중인 문항에서 각 원격 캐릭터가 맞혔는지를 이름표 옆 ✓/✗로 보인다 (U30). 표식은 디자인 층이
+   * 상태 클래스를 보고 아이콘으로 그린다(글리프 금지). 무대는 aria-hidden이고 같은 정오는 점수판이 글로 말한다.
+   */
+  function paintRemoteResults(): void {
+    for (const character of el.remoteCharacters.querySelectorAll<HTMLElement>('.walker--remote')) {
+      const id = character.dataset.movingPlayerId;
+      const result = id === undefined ? undefined : revealResults?.get(id);
+      character.classList.toggle('walker--answer-correct', result === true);
+      character.classList.toggle('walker--answer-wrong', result === false);
+    }
   }
 
   function updateMovement(movement: OnlineMovementEvent): void {
@@ -910,6 +1023,106 @@ export function createOnlineQuizScreen(
   }
 
   /**
+   * 공개 카드 아래의 미니 점수판 (U30). 공개 카드(`aria-live`) 안이지만 순위 목록은 `aria-live="off"`라
+   * «정답 n/m명» 한 줄만 낭독된다 — 문항마다 순위를 다 읽어 주면 판정·해설을 덮는다. 목록은 브라우즈
+   * 모드로 찾아 읽는다. 공개가 아니면 비우고 접는다(숨기기만 하지 않는다).
+   */
+  function renderStandings(active: OnlineActiveMatch, view: OnlineQuizView): void {
+    const standings = view.reveal === null ? null : onlineRevealStandings(active, getPlayerId());
+    revealResults = standings?.results ?? null;
+    paintRemoteResults();
+    const key = standings === null
+      ? null
+      : JSON.stringify([
+        active.matchId,
+        active.question.position,
+        standings.rows,
+        standings.correctCount,
+        standings.hiddenCount,
+      ]);
+    if (key === standingsKey) return;
+    standingsKey = key;
+    if (standings === null) {
+      el.standings.hidden = true;
+      el.standings.replaceChildren();
+      return;
+    }
+    // **먼저 펼치고 넣는다** (라이브 리전 규칙)
+    el.standings.hidden = false;
+    const children: HTMLElement[] = [];
+    const tally = onlineRevealTally(standings);
+    if (tally !== null) {
+      const line = document.createElement('p');
+      line.className = 'online-standings__tally';
+      line.textContent = tally;
+      children.push(line);
+    }
+    const list = document.createElement('ol');
+    list.className = 'online-standings__list';
+    list.setAttribute('aria-label', '지금 순위');
+    list.setAttribute('aria-live', 'off');
+    for (const row of standings.rows) list.append(createStandingRow(row));
+    children.push(list);
+    if (standings.hiddenCount > 0) {
+      const more = document.createElement('p');
+      more.className = 'online-standings__more';
+      more.textContent = `그 밖에 ${standings.hiddenCount}명`;
+      children.push(more);
+    }
+    el.standings.replaceChildren(...children);
+  }
+
+  function createStandingRow(row: OnlineRevealStandingRow): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'online-standings__item';
+    item.classList.toggle('online-standings__item--mine', row.isMe);
+    item.classList.toggle('online-standings__item--gap', row.afterGap);
+    const place = document.createElement('span');
+    place.className = 'online-standings__place';
+    // 금·은·동 칸은 줄 순서가 아니라 표시 순위로 칠한다 (최종 순위와 같다)
+    place.dataset.place = String(row.place);
+    place.textContent = onlinePlaceLabel(row.place, row.tied);
+    const name = document.createElement('span');
+    name.className = 'online-standings__name';
+    name.textContent = row.nickname;
+    item.append(place, name);
+    if (row.isMe) {
+      // 내 줄은 바탕색만이 아니라 글자로도 짚는다
+      const me = document.createElement('span');
+      me.className = 'online-standings__me';
+      me.textContent = '나';
+      item.append(me);
+    }
+    if (row.correct !== null) {
+      // ✓ ✗ 는 디자인 층이 상태 클래스를 보고 그린다. 뜻은 숨긴 글자가 말한다
+      const result = document.createElement('span');
+      result.className = `online-standings__result online-standings__result--${row.correct ? 'correct' : 'wrong'}`;
+      const label = document.createElement('span');
+      label.className = 'sr-only';
+      label.textContent = row.correct ? '이번 문제 정답' : '이번 문제 오답';
+      result.append(label);
+      item.append(result);
+    }
+    const score = document.createElement('span');
+    score.className = 'online-standings__score';
+    score.textContent = `${row.score}점`;
+    item.append(score);
+    return item;
+  }
+
+  /** 내 결과를 소리로도 알린다 (N03, FR-4.5). 문항마다 처음 공개될 때 한 번, 소리 설정을 따른다 */
+  function playRevealSound(active: OnlineActiveMatch, view: OnlineQuizView): void {
+    if (active.state !== 'revealing' || view.reveal === null) return;
+    const key = `${active.matchId}:${active.question.position}`;
+    if (key === revealSoundKey) return;
+    revealSoundKey = key;
+    const cue = onlineRevealSound(view.reveal);
+    if (cue === 'correct') playCorrect();
+    else if (cue === 'timeout') playTimeout();
+    else playWrong();
+  }
+
+  /**
    * 공개 카드는 arena 바로 뒤 문서 흐름에 있다. 문항마다 처음 공개될 때 한 번만 보이는 데까지
    * 옮긴다(`nearest` — 이미 보이면 움직이지 않는다). 채팅을 치는 중이면 화면을 옮기지 않는다 —
    * 쓰던 글과 caret을 빼앗지 않는다는 계약과 같다. fixed 캐릭터는 arena 안의 같은 자리로 되돌린다.
@@ -968,6 +1181,8 @@ export function createOnlineQuizScreen(
     renderChoices(view, choiceStructureKey);
     renderReveal(view);
     returnFromReveal(view);
+    renderStandings(nextSnapshot, view);
+    playRevealSound(nextSnapshot, view);
 
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
     if (arenaQuestionKey !== lastArenaQuestionKey) {

@@ -10,6 +10,7 @@
 // **방이 어디에 있는지 이 파일은 모른다.** `roomStore`만 부르고, 무슨 일이 있었는지는
 // `subscribe`로 듣는다 — 서버에서 온 남의 말도 같은 길로 들어온다.
 
+import { playJoin } from '../audio.js';
 import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
@@ -28,6 +29,7 @@ import {
   type WaitingRoomActionOwnership,
   waitingRoomChangeNotices,
   waitingRoomControls,
+  waitingRoomJoinedOthers,
   waitingRoomInviteLink,
   waitingRoomNicknameNotice,
   waitingRoomStartStatus,
@@ -554,6 +556,8 @@ export function createWaitingRoom(
     room = next;
     if (previous) {
       for (const line of waitingRoomChangeNotices(previous, next, roomStore.me())) notice(line);
+      // 누가 들어오면 작은 차임 (N03). 화면을 보고 있을 때만, 소리 설정을 따른다
+      if (!el.screen.hidden && waitingRoomJoinedOthers(previous, next, roomStore.me()).length > 0) playJoin();
     }
     render();
     noticeRoomNickname();

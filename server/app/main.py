@@ -53,6 +53,8 @@ from .repository import (
     MatchNotFound,
     MatchNotReady,
     MatchPositionMismatch,
+    MatchReviewView,
+    MatchScoreView,
     MatchSetup,
     MatchView,
     NotHost,
@@ -651,6 +653,36 @@ def _remaining_ms(match: MatchView, now: datetime) -> int | None:
     return max(0, math.floor((deadline - now).total_seconds() * 1000))
 
 
+def _score_payload(score: MatchScoreView, *, revealing: bool) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "playerId": str(score.player_id),
+        "nickname": score.nickname,
+        "characterId": score.character_id,
+        "score": score.score,
+        "correctCount": score.correct_count,
+        "answeredCount": score.answered_count,
+    }
+    # 공개 단계의 미니 점수판·이름표 ✓/✗ (U30). 공개 중일 때만 싣는다.
+    if revealing and score.last_answer_correct is not None:
+        payload["lastAnswerCorrect"] = score.last_answer_correct
+    return payload
+
+
+def _review_payload(item: MatchReviewView) -> dict[str, object]:
+    return {
+        "position": item.position,
+        "id": item.question_id,
+        "categoryId": item.category_id,
+        "question": item.question,
+        "choices": list(item.choices),
+        "answerIndex": item.answer_index,
+        "explanation": item.explanation,
+        "choiceIndex": item.choice_index,
+        "correct": item.correct,
+        "timedOut": item.timed_out,
+    }
+
+
 def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, object]:
     question = None
     if match.question is not None:
@@ -662,7 +694,7 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
             "position": match.question.position,
             "total": match.question.total,
         }
-    return {
+    payload: dict[str, object] = {
         "matchId": str(match.id),
         "state": match.state,
         "categoryId": match.category_id,
@@ -683,19 +715,16 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
             else None
         ),
         "scores": [
-            {
-                "playerId": str(score.player_id),
-                "nickname": score.nickname,
-                "characterId": score.character_id,
-                "score": score.score,
-                "correctCount": score.correct_count,
-                "answeredCount": score.answered_count,
-            }
+            _score_payload(score, revealing=match.state == "revealing")
             for score in match.scores
         ]
         if match.state != "running"
         else [],
     }
+    # «문제 다시 보기»(U38)는 끝난 판에만 있다. 진행 중인 판의 응답에는 키조차 없다.
+    if match.state == "finished":
+        payload["review"] = [_review_payload(item) for item in match.review]
+    return payload
 
 
 def _match_start_payload(match: MatchSetup) -> dict[str, object]:

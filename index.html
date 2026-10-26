@@ -320,6 +320,8 @@
         <!-- 틀렸을 때만 «정답 / 내 답» 줄을 채운다. 로컬 피드백과 같은 공유 마크업이다 -->
         <div class="feedback__answer" id="online-reveal-answer" hidden></div>
         <p class="online-reveal__explanation" id="online-reveal-explanation"></p>
+        <!-- 공개 단계에만 채우는 미니 점수판 (U30). «정답 n/m명»만 알리고 순위 목록은 낭독하지 않는다 -->
+        <div class="online-standings" id="online-standings" hidden></div>
       </section>
       <p class="online-match-status" id="online-match-status" role="status"></p>
       <section class="online-quiz-chat" aria-labelledby="online-chat-title">
@@ -345,8 +347,17 @@
       <p class="online-final__summary" id="online-final-summary" role="status"></p>
       <ol class="online-final-ranking" id="online-final-ranking" aria-label="최종 순위"></ol>
       <div class="result-actions">
-        <button type="button" class="button button--primary" id="online-final-room">대기실로</button>
+        <!-- 방에 아직 있을 때만. 대기실로 돌아가며 방장이 아니면 준비를 켜 둔다 (U38) -->
+        <button type="button" class="button button--primary" id="online-final-again" hidden>한 판 더</button>
+        <button type="button" class="button button--ghost" id="online-final-room">대기실로</button>
         <button type="button" class="button button--ghost" id="online-final-home">홈으로</button>
+      </div>
+      <!-- 끝난 판의 문제·정답·해설 (U38). 처음에는 접어 두어 행동 줄이 먼저 온다 -->
+      <button type="button" class="button button--ghost online-final__review-toggle" id="online-final-review-toggle"
+              aria-controls="online-final-review-block" aria-expanded="false" hidden>문제 다시 보기</button>
+      <div class="result-block online-final__review" id="online-final-review-block" hidden>
+        <h2 class="result-block__title">문제 다시 보기</h2>
+        <ol class="review" id="online-final-review"></ol>
       </div>
     </section>
 

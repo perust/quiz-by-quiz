@@ -2610,9 +2610,137 @@ select.room-form__input {
   line-height: 1;
 }
 
-/* 줄 순서가 아니라 표시 순위로 칠한다 — 공동 1위는 모두 금색이다 */
-.online-final-ranking__place[data-place='1'] {
+/* 줄 순서가 아니라 표시 순위로 칠한다 — 공동 1위는 모두 금색이다. 로컬 랭킹의 금·은·동 칸과 같다 (U38) */
+.online-final-ranking__place[data-place='1'],
+.online-standings__place[data-place='1'] {
   background: var(--medal-gold);
+}
+
+.online-final-ranking__place[data-place='2'],
+.online-standings__place[data-place='2'] {
+  background: var(--medal-silver);
+}
+
+.online-final-ranking__place[data-place='3'],
+.online-standings__place[data-place='3'] {
+  background: var(--medal-bronze);
+}
+
+/* 내 1~3위에 한 번만 도는 축하: 순위 칸이 한 번 튀고 점수 앞에 골드 별이 돋는다. 끝나면 별만 남는다.
+   움직임 줄이기(기기·앱 설정)는 27절의 두 블록이 모든 움직임을 끈다 — 그때는 별이 그대로 놓인다 */
+.online-final-ranking__item--celebrate .online-final-ranking__place {
+  animation: final-place-pop var(--duration-slow) var(--ease-out);
+}
+
+.online-final-ranking__star {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--gold);
+  background-color: currentColor;
+  -webkit-mask: var(--i-star) center / contain no-repeat;
+  mask: var(--i-star) center / contain no-repeat;
+  animation: final-star-pop var(--duration-slow) var(--ease-out) var(--duration-base) both;
+}
+
+@keyframes final-place-pop {
+  50% {
+    scale: 1.15;
+  }
+}
+
+@keyframes final-star-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+  60% {
+    opacity: 1;
+    scale: 1.3;
+  }
+}
+
+/* 공개 단계 미니 점수판 (U30). 해설과 갈라 읽히게 위에 선 하나를 긋는다 */
+.online-standings {
+  border-top: var(--border-1) solid var(--border);
+}
+
+.online-standings__tally {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heavy);
+}
+
+.online-standings__item {
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.online-standings__item--mine {
+  background: var(--accent-soft);
+  box-shadow: var(--marker-mine);
+}
+
+/* 위 줄과 순위가 이어지지 않는 내 줄. 끊긴 데를 점선으로 보인다 */
+.online-standings__item--gap {
+  border-top: var(--border-1) dashed var(--border-strong);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.online-standings__place {
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  line-height: 20px;
+}
+
+.online-standings__name {
+  font-weight: var(--weight-bold);
+}
+
+.online-standings__me {
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  line-height: 20px;
+}
+
+.online-standings__score,
+.online-standings__more {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+/* 이번 문제의 정오. 모양(✓ ✗)이 뜻을 지고 색은 거든다. 낭독은 숨긴 글자가 맡는다 */
+.online-standings__result::before {
+  content: '';
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+.online-standings__result--correct {
+  --icon: var(--i-check);
+  color: var(--correct-ink);
+}
+
+.online-standings__result--wrong {
+  --icon: var(--i-cross);
+  color: var(--wrong-ink);
+}
+
+/* 맞힌 문제의 «내 답 · 정답» 한 줄 (온라인 «문제 다시 보기», U38) */
+.review__row--mine-correct .review__tag {
+  --icon: var(--i-check);
+  background: var(--correct-soft);
+  color: var(--correct-ink);
 }
 
 .online-final-ranking__name {
@@ -2674,6 +2802,36 @@ select.room-form__input {
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
   line-height: 20px;
+}
+
+/* 온라인 정답 공개 중 다른 참가자가 이번 문제를 맞혔는지 (U30). 이름표 앞의 ✓ ✗ 모양이 뜻을 지고
+   테두리 색은 거든다. 무대는 aria-hidden 이고 같은 정오는 공개 카드의 점수판이 글로 말한다 */
+.walker--answer-correct .walker__name {
+  --icon: var(--i-check);
+  border-color: var(--correct);
+}
+
+.walker--answer-wrong .walker__name {
+  --icon: var(--i-cross);
+  border-color: var(--wrong);
+}
+
+.walker--answer-correct .walker__name::before,
+.walker--answer-wrong .walker__name::before {
+  content: '';
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+.walker--answer-correct .walker__name::before {
+  color: var(--correct-ink);
+}
+
+.walker--answer-wrong .walker__name::before {
+  color: var(--wrong-ink);
 }
 
 .walker__bubble {
@@ -2982,7 +3140,11 @@ select.is-standing {
   .online-match-status::before,
   .lounge__host,
   .lounge__ready--on::before,
-  .lounge__ready--offline::before {
+  .lounge__ready--offline::before,
+  .online-standings__result::before,
+  .walker--answer-correct .walker__name::before,
+  .walker--answer-wrong .walker__name::before,
+  .online-final-ranking__star {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
@@ -2991,7 +3153,8 @@ select.is-standing {
   .walker,
   .lounge__furniture,
   .lounge__portrait,
-  .character-card__figure {
+  .character-card__figure,
+  .online-final-ranking__figure {
     forced-color-adjust: none;
   }
 

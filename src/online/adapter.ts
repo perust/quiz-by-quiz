@@ -206,6 +206,29 @@ export interface OnlineScore {
   score: number;
   correctCount: number;
   answeredCount: number;
+  /**
+   * 방금 공개한 문항을 맞혔는가 (U30). **revealing에만 온다** — 아직 답을 고르는 사람에게 남의
+   * 정오가 가지 않는다. 구버전 서버는 보내지 않고, 그때 화면은 «정답 n/m명»을 지어내지 않는다.
+   */
+  lastAnswerCorrect?: boolean;
+}
+
+/**
+ * 끝난 판의 문항 하나와 내 답 (U38 «문제 다시 보기»). 판이 끝난 뒤 그 판의 참가자에게만 온다 —
+ * 공개 단계에서 문항마다 이미 본 것(문제·보기·정답·해설)을 한데 모은 것이다.
+ */
+export interface OnlineReviewItem {
+  position: number;
+  id: string;
+  categoryId: CategoryId;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  /** 내가 고른 보기. 시간 안에 고르지 않았으면 null */
+  choiceIndex: number | null;
+  correct: boolean;
+  timedOut: boolean;
 }
 
 interface OnlineMatchBase {
@@ -252,6 +275,8 @@ export interface OnlineFinishedMatch extends OnlineMatchBase {
   ownSubmission: null;
   reveal: null;
   scores: OnlineScore[];
+  /** 문항 순서대로. 구버전 서버이거나 맞춰 볼 수 없으면 없다 — 그때는 순위만 보인다 */
+  review?: OnlineReviewItem[];
 }
 
 /** API가 준 상태는 이 union 밖으로 넓히지 않는다. */

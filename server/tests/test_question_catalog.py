@@ -117,3 +117,109 @@ def test_catalog_fails_closed_when_a_required_category_file_is_missing(tmp_path:
 
     with pytest.raises(CatalogError, match="art.json"):
         QuestionCatalog.from_directory(tmp_path)
+
+
+# ── 같은 방의 «한 판 더»가 방금 푼 문제를 되풀이하지 않는다 (N08) ─────────────────
+
+
+def _ids(selected: tuple[object, ...]) -> set[str]:
+    return {question.id for question in selected}  # type: ignore[attr-defined]
+
+
+def test_round_prefers_questions_this_room_has_not_seen(tmp_path: Path) -> None:
+    _write_catalog(tmp_path, count=20)
+    catalog = QuestionCatalog.from_directory(tmp_path)
+    first = catalog.select_round(
+        category_id="history",
+        random_source=random.Random(3),  # noqa: S311 - deterministic fixture only
+    )
+    recent = {question.id: 100.0 for question in first}
+
+    for seed in range(20):
+        rematch = catalog.select_round(
+            category_id="history",
+            random_source=random.Random(seed),  # noqa: S311 - deterministic fixture only
+            recent_use=recent,
+        )
+        # 안 본 문제가 열 개 남아 있으면 본 문제는 하나도 다시 나오지 않는다
+        assert len(rematch) == 10
+        assert _ids(rematch).isdisjoint(_ids(first))
+
+
+def test_round_fills_from_the_oldest_seen_questions_when_unseen_run_out(tmp_path: Path) -> None:
+    _write_catalog(tmp_path, count=12)
+    catalog = QuestionCatalog.from_directory(tmp_path)
+    # 열두 문제를 모두 봤다. 판마다 시각이 다르다 — 숫자가 클수록 최근이다
+    recent = {f"history-{number:03d}": float(number) for number in range(12)}
+
+    for seed in range(20):
+        selected = catalog.select_round(
+            category_id="history",
+            random_source=random.Random(seed),  # noqa: S311 - deterministic fixture only
+            recent_use=recent,
+        )
+        # 가장 최근에 본 둘(010·011)은 빠지고 오래전에 본 열 개가 나온다
+        assert _ids(selected) == {f"history-{number:03d}" for number in range(10)}
+
+
+def test_round_takes_every_unseen_question_before_any_seen_one(tmp_path: Path) -> None:
+    _write_catalog(tmp_path, count=14)
+    catalog = QuestionCatalog.from_directory(tmp_path)
+    # 안 본 문제는 넷(010~013)뿐이다. 본 열 개 가운데 오래된 여섯이 채운다
+    recent = {f"history-{number:03d}": float(100 - number) for number in range(10)}
+
+    selected = catalog.select_round(
+        category_id="history",
+        random_source=random.Random(5),  # noqa: S311 - deterministic fixture only
+        recent_use=recent,
+    )
+
+    assert _ids(selected) == {
+        *(f"history-{number:03d}" for number in range(10, 14)),
+        # 100 - number 가 작을수록 오래전이다: 009, 008, … 004
+        *(f"history-{number:03d}" for number in range(4, 10)),
+    }
+
+
+def test_all_round_applies_the_room_memory_to_each_category(tmp_path: Path) -> None:
+    _write_catalog(tmp_path, count=10)
+    catalog = QuestionCatalog.from_directory(tmp_path)
+    first = catalog.select_round(
+        category_id=None,
+        random_source=random.Random(11),  # noqa: S311 - deterministic fixture only
+    )
+    recent = {question.id: 1.0 for question in first}
+
+    rematch = catalog.select_round(
+        category_id=None,
+        random_source=random.Random(12),  # noqa: S311 - deterministic fixture only
+        recent_use=recent,
+    )
+
+    # 분야마다 열 문제 중 다섯을 봤으니 남은 다섯이 그대로 나온다 — 분야별 다섯 개도 그대로다
+    assert len(rematch) == 25
+    assert _ids(rematch).isdisjoint(_ids(first))
+    assert {
+        category: sum(question.category == category for question in rematch)
+        for category in CATEGORIES
+    } == {category: 5 for category in CATEGORIES}
+
+
+def test_unknown_or_empty_room_memory_keeps_the_plain_random_round(tmp_path: Path) -> None:
+    _write_catalog(tmp_path, count=10)
+    catalog = QuestionCatalog.from_directory(tmp_path)
+
+    plain = catalog.select_round(
+        category_id="science",
+        random_source=random.Random(9),  # noqa: S311 - deterministic fixture only
+    )
+    remembered_elsewhere = catalog.select_round(
+        category_id="science",
+        random_source=random.Random(9),  # noqa: S311 - deterministic fixture only
+        # 다른 분야·없어진 문제의 기억은 이 분야의 판을 바꾸지 않는다
+        recent_use={"history-001": 1.0, "retired-question": 2.0},
+    )
+
+    assert [question.id for question in remembered_elsewhere] == [
+        question.id for question in plain
+    ]

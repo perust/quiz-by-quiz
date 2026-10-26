@@ -84,6 +84,29 @@ class MatchScoreView:
     score: int
     correct_count: int
     answered_count: int
+    # 공개(revealing) 중에만 채운다: 방금 공개한 문항을 맞혔는가 (U30). 다른 phase에서는 None이라
+    # 아직 고민 중인 사람에게 남의 정오가 나가지 않는다.
+    last_answer_correct: bool | None = None
+
+
+@dataclass(frozen=True)
+class MatchReviewView:
+    """끝난 판의 문항 하나와 묻는 사람의 답 (U38 «문제 다시 보기»).
+
+    finished snapshot에만, 그 판의 참가자에게만 싣는다. 공개 단계에서 문항마다 이미 본 것
+    (문제·보기·정답·해설)을 한데 모은 것이라 판이 끝나기 전에는 존재하지 않는다.
+    """
+
+    position: int
+    question_id: str
+    category_id: str
+    question: str
+    choices: tuple[str, ...]
+    answer_index: int
+    explanation: str
+    choice_index: int | None
+    correct: bool
+    timed_out: bool
 
 
 @dataclass(frozen=True)
@@ -98,6 +121,7 @@ class MatchView:
     question: MatchQuestionView | None
     own_answer: MatchAnswerView | None
     scores: tuple[MatchScoreView, ...]
+    review: tuple[MatchReviewView, ...] = ()
 
 
 @dataclass(frozen=True)
