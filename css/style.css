@@ -710,8 +710,9 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   display: none;
 }
 
+/* 무대 바로 뒤 문서 흐름의 결과 카드다(로컬 피드백과 같은 자리). 무대와 붙지 않게 위를 띄운다. */
 .online-reveal {
-  margin: 0 0 var(--space-5);
+  margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-4);
 }
 

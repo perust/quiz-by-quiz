@@ -9,9 +9,20 @@ from app.postgres import (
     _DELETE_STALE_MEMBERS_SQL,
     _LOBBY_ROOM_LIMIT,
     _PLAYER_LIFETIME,
+    _QUESTION_TIMEOUT,
+    _REVEAL_DURATION,
     _ROOM_ROWS_SQL,
     PostgresRoomsRepository,
 )
+
+
+def test_reveal_window_leaves_time_to_read_the_answer_and_explanation() -> None:
+    # 공개 3초로는 해설을 다 읽기 전에 다음 문제로 넘어갔다. 소유자 결정으로 8초다.
+    assert _QUESTION_TIMEOUT == "20 seconds"
+    assert _REVEAL_DURATION == "8 seconds"
+    advance_source = inspect.getsource(PostgresRoomsRepository._advance_locked_match)
+    assert "SET state = 'revealing', deadline_at = now() + %s::interval" in advance_source
+    assert "(_REVEAL_DURATION, match_id)" in advance_source
 
 
 def test_optional_room_code_is_explicitly_typed_for_postgres() -> None:

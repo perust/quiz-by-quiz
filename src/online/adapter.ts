@@ -199,6 +199,12 @@ interface OnlineMatchBase {
 /** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
 interface OnlineActiveMatchBase extends OnlineMatchBase {
   deadlineAt: string;
+  /**
+   * 서버가 응답 시점에 잰 이 phase의 남은 시간(ms). running이면 제출 마감까지,
+   * revealing이면 다음 문제(또는 최종 순위)까지다. 기기 시계와 무관하게 남은 시간을
+   * **표시만** 하려는 값이고 제출 가능 여부를 닫는 데 쓰지 않는다. 구버전 서버는 보내지 않는다.
+   */
+  remainingMs?: number;
 }
 
 export interface OnlineRunningMatch extends OnlineActiveMatchBase {

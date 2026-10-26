@@ -312,3 +312,40 @@ test('online presence text exposes a stable non-moving participant roster', asyn
     '함께 푸는 참가자 2명: 나, 친구',
   );
 });
+
+test('온라인 정답 공개는 틀렸을 때만 «정답 / 내 답» 줄을 보기 글자와 함께 만든다 (U11)', async () => {
+  const { onlineRevealAnswerText } = await import('../js/ui/online-quiz.js');
+  const choices = ['1443년', '1446년', '1450년', '1453년'];
+  const reveal = (changes) => ({
+    chosenChoiceIndex: 2, answerIndex: 1, correct: false, timedOut: false, explanation: '해설', ...changes,
+  });
+
+  assert.deepEqual(onlineRevealAnswerText(choices, reveal()), {
+    correct: '2번 · 1446년',
+    mine: '3번 · 1450년',
+  });
+  // 시간 안에 아무것도 내지 않았으면 내 답이 없다고 말한다
+  assert.deepEqual(onlineRevealAnswerText(choices, reveal({ chosenChoiceIndex: null, timedOut: true })), {
+    correct: '2번 · 1446년',
+    mine: '고르지 않음',
+  });
+  // 맞혔으면 판정으로 충분하다 — 줄을 만들지 않아 공개 카드를 짧게 둔다
+  assert.equal(onlineRevealAnswerText(choices, reveal({ chosenChoiceIndex: 1, correct: true })), null);
+});
+
+test('정답 줄은 공유 feedback__answer 마크업으로 펼친 뒤 채우고, 같은 공개를 다시 그려도 다시 만들지 않는다', async () => {
+  const source = await readFile(new URL('../src/ui/online-quiz.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /row\.className = 'feedback__answer-row';/);
+  assert.match(source, /row\.dataset\.kind = kind;/);
+  assert.match(source, /labelNode\.className = 'feedback__answer-label';/);
+  assert.match(source, /textNode\.className = 'feedback__answer-text';/);
+  assert.match(source, /createAnswerRow\('correct', '정답', answer\.correct\)/);
+  assert.match(source, /createAnswerRow\('mine', '내 답', answer\.mine\)/);
+  assert.match(source, /if \(key === revealAnswerKey\) return;/);
+  assert.match(
+    source,
+    /el\.revealAnswer\.hidden = false;\s*el\.revealAnswer\.replaceChildren\(/,
+    '숨긴 채로 라이브 리전을 채우면 낭독되지 않으므로 먼저 펼친다',
+  );
+});

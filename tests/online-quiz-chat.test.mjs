@@ -29,7 +29,8 @@ test('chat sends once while pending and tall bubbles choose the side with enough
 test('online quiz chat is a normal-flow control with an accessible recent-message log', async () => {
   const [html, css] = await Promise.all([source('index.html'), source('css/style.css')]);
   const quizStart = html.indexOf('data-screen="online-quiz"');
-  const quizEnd = html.indexOf('</section>', html.indexOf('id="online-reveal"', quizStart));
+  // 공개 카드가 무대 바로 뒤로 옮겨 와 더 이상 화면의 마지막 자식이 아니다. 다음 화면 앞까지 본다.
+  const quizEnd = html.indexOf('data-screen="online-result"', quizStart);
   const quizMarkup = html.slice(quizStart, quizEnd);
 
   assert.match(quizMarkup, /id="online-chat-form"[^>]*novalidate/);
@@ -43,6 +44,44 @@ test('online quiz chat is a normal-flow control with an accessible recent-messag
     css,
     /@media \(pointer: coarse\)[\s\S]*\[data-screen='online-quiz'\] \.online-quiz-chat\s*{[^}]*margin-bottom:\s*calc\(var\(--walk-stick-size\) \+ var\(--space-4\) \+ var\(--space-2\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
   );
+});
+
+test('정답 공개 카드는 무대 바로 뒤, 상태 줄·채팅 앞에 오고 처음 공개될 때 한 번만 화면으로 옮긴다', async () => {
+  const [html, quiz] = await Promise.all([source('index.html'), source('src/ui/online-quiz.ts')]);
+  const quizStart = html.indexOf('data-screen="online-quiz"');
+  const quizEnd = html.indexOf('data-screen="online-result"', quizStart);
+  const quizMarkup = html.slice(quizStart, quizEnd);
+  const at = (needle) => {
+    const index = quizMarkup.indexOf(needle);
+    assert.notEqual(index, -1, `${needle} 가 온라인 퀴즈 화면에 있다`);
+    return index;
+  };
+
+  // 채팅 아래 맨 끝에 있으면 휴대폰에서는 공개 시간 안에 화면에 들어오지 않았다 (U26)
+  assert.ok(at('id="online-arena"') < at('id="online-reveal"'));
+  assert.ok(at('id="online-reveal"') < at('id="online-match-status"'));
+  assert.ok(at('id="online-reveal"') < at('id="online-chat-form"'));
+  // «정답 / 내 답» 줄은 판정과 해설 사이에 공유 마크업으로 둔다 (U11)
+  assert.ok(at('id="online-reveal-verdict"') < at('id="online-reveal-answer"'));
+  assert.ok(at('id="online-reveal-answer"') < at('id="online-reveal-explanation"'));
+  assert.match(quizMarkup, /<div class="feedback__answer" id="online-reveal-answer" hidden><\/div>/);
+
+  // 문항마다 한 번만, 채팅을 치는 중이 아닐 때만 옮긴다. 쓰던 글과 caret을 빼앗지 않는다.
+  assert.match(
+    quiz,
+    /function revealIntoView\(active: OnlineActiveMatch\)[\s\S]*if \(key === revealScrolledKey\) return;[\s\S]*revealScrolledKey = key;[\s\S]*if \(document\.activeElement === el\.chatInput\) return;[\s\S]*el\.reveal\.scrollIntoView\(\{ block: 'nearest' \}\);/,
+  );
+  // 화면이 움직여도 fixed 캐릭터는 arena 안의 같은 자리에 남는다 (로컬 피드백과 같은 방식)
+  assert.match(
+    quiz,
+    /const anchor = arena\.captureCharacterAnchor\(\);\s*el\.reveal\.scrollIntoView\(\{ block: 'nearest' \}\);\s*arena\.restoreCharacterAnchor\(anchor\);/,
+  );
+  // 다음 문제는 HUD·질문부터 보이게 맨 위로 되돌리고, 그 뒤에 새 무대 자리를 잰다
+  assert.match(
+    quiz,
+    /function returnFromReveal\(view: OnlineQuizView\)[\s\S]*if \(document\.activeElement !== el\.chatInput\) window\.scrollTo\(0, 0\);/,
+  );
+  assert.match(quiz, /renderReveal\(view\);\s*returnFromReveal\(view\);[\s\S]*arena\.reset\(question\.choices\.length\);/);
 });
 
 test('online quiz chat reuses the active match subscription and binds bubbles to moving players', async () => {

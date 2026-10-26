@@ -4,11 +4,13 @@
 // Its inputs are validated REST snapshots; its only output is a position + choice index
 // submission through the controller supplied by app.ts.
 
-import { CATEGORIES } from '../constants.js';
+import { CATEGORIES, WARNING_THRESHOLD_MS } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import type {
   OnlineMatchQuestion,
   OnlineMatchSnapshot,
+  OnlineRevealingMatch,
+  OnlineRunningMatch,
   PublicRoom,
   RoomEvent,
 } from '../online/adapter.js';
@@ -23,9 +25,11 @@ import {
   normalizeViewportMovement,
   type MovementSample,
 } from './player-movement.js';
+import { announce } from './screens.js';
 import { createBody } from './sprite.js';
 
 type OnlineMovementEvent = Extract<RoomEvent, { type: 'movement' }>;
+type OnlineActiveMatch = OnlineRunningMatch | OnlineRevealingMatch;
 type OnlineChatEvent = Extract<RoomEvent, { type: 'chat' }>;
 
 /** 말풍선 수명과 최근 대화 줄 수는 대기실과 같은 계약을 쓴다. */
@@ -190,6 +194,71 @@ export function reconcileOnlineChoiceNodes<T>(
   };
 }
 
+/** 서버가 남은 시간을 보내지 않을 때(구버전 서버)의 안내. 카운트다운은 그리지 않는다. */
+export const ONLINE_TIME_NOTICE = '시간이 끝나면 다 같이 결과를 확인해요.';
+
+export interface OnlineCountdownView {
+  text: string;
+  /** 타이머 막대의 채움. 0~1 */
+  fraction: number;
+  /** 남은 5초 경고. 아이콘·문구는 디자인 층이 timer--warning을 보고 바꾼다 */
+  warning: boolean;
+}
+
+/**
+ * 서버 마감까지의 **표시용** 남은 시간 (로컬 FR-3.7·FR-3.9와 같은 HUD 읽는 법).
+ *
+ * 마감 판정은 서버만 한다. 여기서 0이 되어도 제출을 닫거나 자동으로 내지 않는다 —
+ * «결과를 기다리는 중»을 보여 줄 뿐이다. 이미 낸 사람에게는 서두르라는 경고를 하지 않는다.
+ */
+export function onlineCountdownView(
+  phase: OnlineActiveMatch['state'],
+  remainingMs: number,
+  spanMs: number,
+  { submitted, lastQuestion }: { submitted: boolean; lastQuestion: boolean },
+): OnlineCountdownView {
+  const remaining = Math.max(remainingMs, 0);
+  const fraction = spanMs > 0 ? Math.min(remaining / spanMs, 1) : 0;
+  const seconds = Math.ceil(remaining / 1000);
+  if (phase === 'revealing') {
+    const next = lastQuestion ? '최종 순위' : '다음 문제';
+    return {
+      text: remaining > 0 ? `${next}까지 ${seconds}초` : `${next}를 불러오는 중…`,
+      fraction,
+      warning: false,
+    };
+  }
+  if (remaining <= 0) return { text: '결과를 기다리는 중…', fraction: 0, warning: false };
+  return {
+    text: `${seconds}초 남았어요`,
+    fraction,
+    warning: !submitted && remaining <= WARNING_THRESHOLD_MS,
+  };
+}
+
+export interface OnlineRevealAnswerText {
+  correct: string;
+  mine: string;
+}
+
+/**
+ * 틀렸거나 시간이 끝났을 때만 «정답 2번 · 1446년 / 내 답 3번 · 1450년»을 만든다.
+ * 로컬 피드백(FR-4.2)과 같은 줄이다. 맞혔으면 판정만으로 충분해 줄을 생략한다.
+ * 번호는 원문자 글리프 대신 «2번»처럼 글자로 쓴다 — 번들 글꼴에 없는 글리프다.
+ */
+export function onlineRevealAnswerText(
+  choices: readonly string[],
+  reveal: OnlineQuizRevealView,
+): OnlineRevealAnswerText | null {
+  if (reveal.correct) return null;
+  // 어댑터가 보기 넷과 0~3 번호를 이미 검증했다.
+  const describe = (index: number): string => `${index + 1}번 · ${choices[index]}`;
+  return {
+    correct: describe(reveal.answerIndex),
+    mine: reveal.chosenChoiceIndex === null ? '고르지 않음' : describe(reveal.chosenChoiceIndex),
+  };
+}
+
 /** Pure projection: hidden match data has no path into a running UI. */
 export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
   if (snapshot.state === 'running') {
@@ -200,9 +269,10 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
       canSubmit: canAttemptOnlineSubmission(snapshot),
       selectedChoiceIndex: submission?.choiceIndex ?? null,
       reveal: null,
+      // 로컬과 달리 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
       status: submission === null
-        ? '캐릭터로 답을 고르면 서버에 제출합니다.'
-        : '답안을 제출했습니다. 서버 결과를 기다려 주세요.',
+        ? '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.'
+        : '제출 완료! 다른 친구를 기다리는 중이에요.',
       showFinalResult: false,
     };
   }
@@ -220,7 +290,9 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
         timedOut: reveal.timedOut,
         explanation: reveal.explanation,
       },
-      status: '서버가 이번 문제의 결과를 공개했습니다.',
+      // 판정·정답·해설은 공개 카드(aria-live)가 말한다. 상태 줄이 같은 순간에 «공개했다»고
+      // 겹쳐 말하면 두 라이브 리전이 서로의 낭독을 덮는다 — 그래서 비워 둔다.
+      status: '',
       showFinalResult: false,
     };
   }
@@ -230,7 +302,7 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
     canSubmit: false,
     selectedChoiceIndex: null,
     reveal: null,
-    status: '서버가 최종 순위를 확정했습니다.',
+    status: '최종 순위가 나왔어요.',
     showFinalResult: true,
   };
 }
@@ -321,7 +393,11 @@ export function createOnlineQuizScreen(
     status: need('online-match-status'),
     reveal: need('online-reveal'),
     verdict: need('online-reveal-verdict'),
+    revealAnswer: need('online-reveal-answer'),
     explanation: need('online-reveal-explanation'),
+    exitDialog: need('online-exit-dialog'),
+    exitCancel: need<HTMLButtonElement>('online-exit-cancel'),
+    exitConfirm: need<HTMLButtonElement>('online-exit-confirm'),
     remoteCharacters: need('online-remote-characters'),
     bubble: need('online-bubble'),
     chatForm: need<HTMLFormElement>('online-chat-form'),
@@ -342,6 +418,20 @@ export function createOnlineQuizScreen(
   let presenceGeneration = 0;
   let chatSendPending = false;
   let movementHeartbeat: number | undefined;
+  /** 남은 시간 표시. 같은 phase 안에서는 가장 이른 마감 추정을 믿는다 (응답이 늦을수록 부풀려진다). */
+  let countdownKey: string | null = null;
+  let countdownDeadline = 0;
+  let countdownSpan = 0;
+  let countdownFrame: number | null = null;
+  /** 남은 5초 경고는 문항당 한 번만 낭독한다 */
+  let warnedQuestionKey: string | null = null;
+  /** 공개 카드로 한 번만 스크롤하고, 정답 줄은 내용이 바뀔 때만 다시 만든다 */
+  let revealScrolledKey: string | null = null;
+  /** 공개 카드 때문에 화면을 아래로 옮겼는가. 다음 문제에서 맨 위로 되돌린다 */
+  let revealMovedPage = false;
+  let revealAnswerKey: string | null = null;
+  /** 나가기 확인을 연 버튼. 취소하면 포커스를 되돌려 준다 */
+  let exitDialogOpener: HTMLElement | null = null;
   const remoteMovements = createPlayerMovementController();
   const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
   const chatBubbleNodes = new Map<string, HTMLElement>();
@@ -399,7 +489,19 @@ export function createOnlineQuizScreen(
     lastQuestionKey = null;
     lastArenaQuestionKey = null;
     lastChoiceStructureKey = null;
+    // 화면을 떠나면 표시 루프도 멈춘다. 안 보이는 화면에서 프레임이 계속 돌지 않게 한다.
+    stopCountdown();
+    warnedQuestionKey = null;
+    revealScrolledKey = null;
+    revealMovedPage = false;
+    revealAnswerKey = null;
+    el.revealAnswer.hidden = true;
+    el.revealAnswer.replaceChildren();
     el.reveal.hidden = true;
+    // 확인 대화상자는 <main> 밖이라 화면과 함께 숨지 않는다. 열어 둔 채 떠나면 다음 화면을 덮는다.
+    // 화면을 떠나는 중이므로 포커스는 되돌리지 않고 닫기만 한다.
+    el.exitDialog.hidden = true;
+    exitDialogOpener = null;
     for (const button of el.choices.querySelectorAll<HTMLButtonElement>('.choice')) {
       button.disabled = true;
     }
@@ -553,11 +655,71 @@ export function createOnlineQuizScreen(
     setTextIfChanged(el.status, text);
   }
 
-  /** The server owns expiry. This is an informational label, not a local countdown. */
-  function renderServerTimeNotice(): void {
+  // ── 남은 시간 표시 (표시 전용) ──────────────────────────────────
+  // 마감은 서버가 판정한다(CLAUDE.md «온라인 deadline 판정은 서버만 소유»). 여기서는 응답을
+  // 받은 순간의 performance.now()에 서버가 잰 remainingMs를 더해 표시용 마감을 만들고,
+  // 로컬 core/timer.ts처럼 매 프레임 «마감 − 지금»을 다시 계산한다. 기기 시계가 틀려도,
+  // 탭이 숨었다 돌아와도 어긋나지 않는다. 0이 되어도 아무것도 제출하지 않는다.
+
+  function stopCountdown(): void {
+    if (countdownFrame !== null) cancelAnimationFrame(countdownFrame);
+    countdownFrame = null;
+    countdownKey = null;
+  }
+
+  /** 구버전 서버처럼 남은 시간이 없으면 막대를 채운 채 안내 문구만 둔다. */
+  function renderTimeNotice(): void {
+    stopCountdown();
     el.timer.classList.remove('timer--warning');
     el.timerFill.style.transform = 'scaleX(1)';
-    el.timerText.textContent = '제출 시간은 서버가 관리합니다.';
+    setTextIfChanged(el.timerText, ONLINE_TIME_NOTICE);
+  }
+
+  function syncCountdown(active: OnlineActiveMatch): void {
+    const remainingMs = active.remainingMs;
+    if (remainingMs === undefined) {
+      renderTimeNotice();
+      return;
+    }
+    const key = `${active.matchId}:${active.question.position}:${active.state}`;
+    const deadline = performance.now() + remainingMs;
+    if (key !== countdownKey) {
+      countdownKey = key;
+      countdownDeadline = deadline;
+      countdownSpan = remainingMs;
+    } else {
+      // 같은 phase의 응답은 같은 마감을 가리킨다. 늦게 도착한 응답일수록 마감이 뒤로 밀려
+      // 보이므로 가장 이른 추정을 쓴다. 같은 snapshot을 다시 그려도 마감이 늘지 않는다.
+      countdownDeadline = Math.min(countdownDeadline, deadline);
+      countdownSpan = Math.max(countdownSpan, remainingMs);
+    }
+    if (countdownFrame !== null) cancelAnimationFrame(countdownFrame);
+    countdownFrame = null;
+    tickCountdown();
+  }
+
+  function tickCountdown(): void {
+    countdownFrame = null;
+    const current = snapshot;
+    if (current === null || current.state === 'finished' || countdownKey === null) return;
+    const remaining = Math.max(countdownDeadline - performance.now(), 0);
+    const view = onlineCountdownView(current.state, remaining, countdownSpan, {
+      submitted: current.state === 'running'
+        && (current.ownSubmission !== null || submissionGate.pendingFor(current)),
+      lastQuestion: current.question.position >= current.question.total,
+    });
+    el.timerFill.style.transform = `scaleX(${view.fraction})`;
+    el.timer.classList.toggle('timer--warning', view.warning);
+    setTextIfChanged(el.timerText, view.text);
+
+    // 타이머 영역은 aria-hidden이다. 1초마다 바뀌는 값은 낭독하지 않고,
+    // 남은 시간이 얼마 없다는 사실만 문항당 한 번 알린다 (로컬과 같은 규칙).
+    const questionKey = `${current.matchId}:${current.question.position}`;
+    if (view.warning && warnedQuestionKey !== questionKey) {
+      warnedQuestionKey = questionKey;
+      announce('시간이 얼마 남지 않았어요.');
+    }
+    if (remaining > 0) countdownFrame = requestAnimationFrame(tickCountdown);
   }
 
   async function submitChoice(index: number): Promise<void> {
@@ -667,20 +829,87 @@ export function createOnlineQuizScreen(
     });
   }
 
+  /** 로컬 피드백과 같은 «정답 / 내 답» 줄. 공유 마크업(feedback__answer)을 그대로 쓴다. */
+  function createAnswerRow(kind: 'correct' | 'mine', label: string, text: string): HTMLElement {
+    const row = document.createElement('p');
+    row.className = 'feedback__answer-row';
+    row.dataset.kind = kind;
+    const labelNode = document.createElement('span');
+    labelNode.className = 'feedback__answer-label';
+    labelNode.textContent = label;
+    const textNode = document.createElement('span');
+    textNode.className = 'feedback__answer-text';
+    textNode.textContent = text;
+    row.append(labelNode, ' ', textNode);
+    return row;
+  }
+
+  function renderRevealAnswer(question: OnlineMatchQuestion, reveal: OnlineQuizRevealView): void {
+    const answer = onlineRevealAnswerText(question.choices, reveal);
+    const key = answer === null ? null : JSON.stringify([question.id, question.position, answer]);
+    if (key === revealAnswerKey) return;
+    revealAnswerKey = key;
+    if (answer === null) {
+      el.revealAnswer.hidden = true;
+      el.revealAnswer.replaceChildren();
+      return;
+    }
+    // **먼저 펼치고 넣는다.** 줄을 새로 만들어 붙이므로 «정답 2번 · …»가 이름표째 낭독된다.
+    // 같은 공개를 다시 그릴 때(재조회)는 위 key가 같아 다시 낭독하지 않는다.
+    el.revealAnswer.hidden = false;
+    el.revealAnswer.replaceChildren(
+      createAnswerRow('correct', '정답', answer.correct),
+      createAnswerRow('mine', '내 답', answer.mine),
+    );
+  }
+
   function renderReveal(view: OnlineQuizView): void {
     const reveal = view.reveal;
     el.reveal.hidden = reveal === null;
     // 로컬 피드백 시트와 같은 판정 배지·테두리를 쓰도록 결과를 클래스로도 남긴다
     el.reveal.classList.toggle('online-reveal--correct', reveal?.correct === true);
     el.reveal.classList.toggle('online-reveal--wrong', reveal !== null && !reveal.correct);
-    if (reveal === null) return;
+    if (reveal === null || view.question === null) {
+      revealAnswerKey = null;
+      el.revealAnswer.hidden = true;
+      el.revealAnswer.replaceChildren();
+      return;
+    }
     const verdict = reveal.correct
       ? '정답입니다'
       : reveal.timedOut
         ? '시간 초과입니다'
         : '아쉽네요, 오답입니다';
     setTextIfChanged(el.verdict, verdict);
+    renderRevealAnswer(view.question, reveal);
     setTextIfChanged(el.explanation, reveal.explanation);
+  }
+
+  /**
+   * 공개 카드는 arena 바로 뒤 문서 흐름에 있다. 문항마다 처음 공개될 때 한 번만 보이는 데까지
+   * 옮긴다(`nearest` — 이미 보이면 움직이지 않는다). 채팅을 치는 중이면 화면을 옮기지 않는다 —
+   * 쓰던 글과 caret을 빼앗지 않는다는 계약과 같다. fixed 캐릭터는 arena 안의 같은 자리로 되돌린다.
+   */
+  function revealIntoView(active: OnlineActiveMatch): void {
+    if (active.state !== 'revealing' || active.reveal === null) return;
+    const key = `${active.matchId}:${active.question.position}`;
+    if (key === revealScrolledKey) return;
+    revealScrolledKey = key;
+    if (document.activeElement === el.chatInput) return;
+    const anchor = arena.captureCharacterAnchor();
+    el.reveal.scrollIntoView({ block: 'nearest' });
+    arena.restoreCharacterAnchor(anchor);
+    revealMovedPage = true;
+  }
+
+  /**
+   * 공개 카드를 보려고 내려간 화면은 다음 문제에서 맨 위로 되돌린다. 새 HUD·남은 시간·질문부터
+   * 보여야 한다(로컬 피드백을 닫을 때와 같은 규칙). 새 무대 자리를 재기 전에 부른다.
+   */
+  function returnFromReveal(view: OnlineQuizView): void {
+    if (view.reveal !== null || !revealMovedPage) return;
+    revealMovedPage = false;
+    if (document.activeElement !== el.chatInput) window.scrollTo(0, 0);
   }
 
   function render(nextSnapshot: OnlineMatchSnapshot): void {
@@ -688,6 +917,7 @@ export function createOnlineQuizScreen(
     snapshot = nextSnapshot;
     const view = onlineQuizView(nextSnapshot);
     if (nextSnapshot.state === 'finished') {
+      stopCountdown();
       arena.setEnabled(false);
       if (finishedMatchId !== nextSnapshot.matchId) {
         finishedMatchId = nextSnapshot.matchId;
@@ -706,13 +936,14 @@ export function createOnlineQuizScreen(
     el.progressFill.style.width = `${percent}%`;
     el.progress.setAttribute('aria-valuenow', String(percent));
     el.question.textContent = question.question;
-    renderServerTimeNotice();
+    syncCountdown(nextSnapshot);
     setStatus(view.status);
     const isSubmitPending = submissionGate.pendingFor(nextSnapshot);
     const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
     if (choiceStructureKey === null) throw new Error('active match choice key is missing');
     renderChoices(view, choiceStructureKey);
     renderReveal(view);
+    returnFromReveal(view);
 
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
     if (arenaQuestionKey !== lastArenaQuestionKey) {
@@ -733,17 +964,55 @@ export function createOnlineQuizScreen(
     if (questionKey !== lastQuestionKey) {
       lastQuestionKey = questionKey;
       // 서버 phase가 바뀌어도 쓰던 메시지와 caret을 빼앗지 않는다.
+      // 나가기 확인이 열려 있으면 그 안에 가둔 포커스를 밖으로 빼지 않는다.
       if (shouldAutoFocusOnlineQuestion(
-        arena.isDialogOpen(),
+        arena.isDialogOpen() || !el.exitDialog.hidden,
         document.activeElement === el.chatInput,
       )) {
         el.question.focus({ preventScroll: true });
       }
     }
+    revealIntoView(nextSnapshot);
   }
 
-  el.exit.addEventListener('click', onExit);
+  // ── 매치 나가기 확인 ───────────────────────────────────────────
+  // 로컬 퀴즈의 나가기 확인과 같은 인페이지 다이얼로그다(window.confirm 금지). 확인하는 동안에도
+  // 매치는 서버에서 계속 흐른다. 떠나도 방에서 나간 것은 아니라 목록의 「들어가기」로 돌아온다.
+
+  function openExitDialog(): void {
+    exitDialogOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    el.exitDialog.hidden = false;
+    el.exitCancel.focus();
+  }
+
+  function closeExitDialog(): void {
+    if (el.exitDialog.hidden) return;
+    el.exitDialog.hidden = true;
+    // 열기 전에 있던 자리로 포커스를 돌려준다
+    if (exitDialogOpener && document.contains(exitDialogOpener)) exitDialogOpener.focus();
+    exitDialogOpener = null;
+  }
+
+  function confirmExit(): void {
+    el.exitDialog.hidden = true;
+    exitDialogOpener = null;
+    onExit();
+  }
+
+  el.exit.addEventListener('click', openExitDialog);
+  el.exitCancel.addEventListener('click', closeExitDialog);
+  el.exitConfirm.addEventListener('click', confirmExit);
   document.addEventListener('keydown', (event) => {
+    // 나가기 확인이 열려 있으면 그 안에서만 움직인다. 숫자키·채팅 `/`가 뒤로 새지 않는다.
+    if (!el.exitDialog.hidden) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeExitDialog();
+      } else if (event.key === 'Tab') {
+        trapFocus(el.exitDialog, event);
+      }
+      return;
+    }
     if (arena.handleDialogKey(event)) return;
     if (el.screen.hidden || arena.isDialogOpen()) return;
     if (event.key === '/' && document.activeElement !== el.chatInput && presenceActive) {
@@ -793,6 +1062,7 @@ export function createOnlineQuizScreen(
       setStatus(`온라인 매치 오류: ${message}`);
     },
     hide() {
+      // stopPresence가 표시 루프와 나가기 확인도 함께 접는다.
       stopPresence();
       arena.closeDialog();
       el.choices.replaceChildren();
