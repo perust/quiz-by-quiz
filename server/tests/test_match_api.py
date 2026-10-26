@@ -21,6 +21,7 @@ from app.repository import (
     MatchAnswerView,
     MatchQuestionView,
     MatchRead,
+    MatchReviewView,
     MatchScoreView,
     MatchSetup,
     MatchSubmission,
@@ -593,3 +594,101 @@ def test_match_answer_rejects_an_out_of_range_choice_index_before_repository() -
         )
 
     assert response.status_code == 422
+
+
+def _scored(*, last_answer_correct: bool | None) -> MatchScoreView:
+    return MatchScoreView(
+        player_id=PLAYER_ID,
+        nickname="퀴즈왕",
+        character_id="slime-blue",
+        score=10,
+        correct_count=1,
+        answered_count=1,
+        last_answer_correct=last_answer_correct,
+    )
+
+
+_REVIEW = MatchReviewView(
+    position=1,
+    question_id="history-001",
+    category_id="history",
+    question="역사 문제",
+    choices=("1", "2", "3", "4"),
+    answer_index=2,
+    explanation="정답 해설",
+    choice_index=1,
+    correct=False,
+    timed_out=False,
+)
+
+
+def test_per_player_correctness_is_sent_only_while_revealing() -> None:
+    # 공개 단계의 «정답 n/m명»·이름표 ✓/✗ (U30). 아직 답을 고르는 사람에게는 남의 정오가 가지 않는다
+    repository = MatchApiRepository()
+    scores = (_scored(last_answer_correct=True),)
+    revealing = _match_payload(
+        replace(repository.match, state="revealing", own_answer=repository.answer, scores=scores)
+    )
+    running = _match_payload(replace(repository.match, scores=scores))
+    finished = _match_payload(
+        replace(repository.match, state="finished", deadline_at=None, question=None, scores=scores)
+    )
+
+    assert revealing["scores"] == [
+        {
+            "playerId": str(PLAYER_ID),
+            "nickname": "퀴즈왕",
+            "characterId": "slime-blue",
+            "score": 10,
+            "correctCount": 1,
+            "answeredCount": 1,
+            "lastAnswerCorrect": True,
+        }
+    ]
+    assert running["scores"] == []
+    finished_scores = cast(list[dict[str, object]], finished["scores"])
+    assert "lastAnswerCorrect" not in finished_scores[0]
+
+
+def test_question_review_exists_only_in_the_finished_snapshot() -> None:
+    # «문제 다시 보기»(U38). 판이 끝나기 전의 응답에는 키조차 없다
+    repository = MatchApiRepository()
+    running = _match_payload(replace(repository.match, review=(_REVIEW,)))
+    revealing = _match_payload(
+        replace(
+            repository.match,
+            state="revealing",
+            own_answer=repository.answer,
+            review=(_REVIEW,),
+        )
+    )
+    finished_match = replace(
+        repository.match,
+        state="finished",
+        deadline_at=None,
+        question=None,
+        review=(_REVIEW,),
+    )
+    repository.match = finished_match
+
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+    assert "review" not in running
+    assert "review" not in revealing
+    assert response.status_code == 200
+    assert response.json()["review"] == [
+        {
+            "position": 1,
+            "id": "history-001",
+            "categoryId": "history",
+            "question": "역사 문제",
+            "choices": ["1", "2", "3", "4"],
+            "answerIndex": 2,
+            "explanation": "정답 해설",
+            "choiceIndex": 1,
+            "correct": False,
+            "timedOut": False,
+        }
+    ]
+    assert _match_payload(replace(finished_match, review=()))["review"] == []

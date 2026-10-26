@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,10 @@ CATEGORY_IDS = ("history", "science", "geography", "general", "art")
 QUESTIONS_PER_CATEGORY_ROUND = 10
 QUESTIONS_PER_CATEGORY_IN_ALL = 5
 CHOICE_COUNT = 4
+# 한 방이 기억하는 최근 출제 문항 수 (N08). 로컬 FR-1.4의 `RECENT_QUESTION_MEMORY`처럼 한 판이
+# 아니라 여러 판을 기억한다 — 분야 판 12번, 전체 판 4~5번 분량이다. 기억이 은행을 다 덮어도
+# 깨지지 않는다: 안 본 문제가 모자라면 오래전에 본 것부터 채운다.
+RECENT_QUESTION_MEMORY = 120
 
 
 class CatalogError(RuntimeError):
@@ -125,8 +130,17 @@ class QuestionCatalog:
         *,
         category_id: str | None,
         random_source: random.Random | None = None,
+        recent_use: Mapping[str, float] | None = None,
     ) -> tuple[SelectedQuestion, ...]:
+        """한 판의 문제를 고른다.
+
+        ``recent_use``는 이 방에서 최근에 낸 문항 ID → 마지막으로 낸 시각(클수록 최근)이다 (N08).
+        안 본 문제를 먼저 내고, 모자랄 때만 본 문제를 **오래전에 본 것부터** 채운다 — 로컬
+        FR-1.4(`core/sampler.ts`)와 같은 규칙이다. 본 문제를 무작위로 섞어 채우면 은행이 바닥났을 때
+        방금 푼 문제가 곧바로 다음 판에 돌아온다.
+        """
         rng = random_source or secrets.SystemRandom()
+        recent = recent_use or {}
         if category_id is not None:
             if category_id not in self.by_category:
                 raise CatalogError(f"unsupported category: {category_id}")
@@ -134,13 +148,14 @@ class QuestionCatalog:
                 self.by_category[category_id],
                 QUESTIONS_PER_CATEGORY_ROUND,
                 rng,
+                recent,
             )
         else:
             selected = [
                 question
                 for category in CATEGORY_IDS
                 for question in _sample(
-                    self.by_category[category], QUESTIONS_PER_CATEGORY_IN_ALL, rng
+                    self.by_category[category], QUESTIONS_PER_CATEGORY_IN_ALL, rng, recent
                 )
             ]
             rng.shuffle(selected)
@@ -161,11 +176,23 @@ def _sample(
     questions: tuple[_CatalogQuestion, ...],
     count: int,
     random_source: random.Random,
+    recent_use: Mapping[str, float],
 ) -> list[_CatalogQuestion]:
     # A malformed or temporarily shortened checked-in bank stays usable without
     # duplicating a question in the same match. Production validation guarantees
     # sufficient entries; this also makes fixture catalogs practical.
-    return random_source.sample(list(questions), k=min(count, len(questions)))
+    unseen = [question for question in questions if question.id not in recent_use]
+    if len(unseen) >= count:
+        return random_source.sample(unseen, k=count)
+    seen = [question for question in questions if question.id in recent_use]
+    # 같은 판에서 함께 나온 문제는 시각이 같다. 그 사이의 순서는 정하지 않도록 먼저 섞고,
+    # 안정 정렬로 오래전에 본 것부터 세운다.
+    random_source.shuffle(seen)
+    seen.sort(key=lambda question: recent_use[question.id])
+    picked = unseen + seen[: count - len(unseen)]
+    # 채운 본 문제가 늘 판 끝에 몰리지 않게 섞는다.
+    random_source.shuffle(picked)
+    return picked
 
 
 def _parse_question(item: object, *, expected_category: str, source: str) -> _CatalogQuestion:
