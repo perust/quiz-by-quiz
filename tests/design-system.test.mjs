@@ -8,8 +8,10 @@
 //   · 상태는 색만이 아니라 모양·표식·높이로도 구분
 //   · 아이콘은 하나의 24×24 픽셀 묶음에서만, 손가락 목표 44px, 안전 영역
 //
-// «세계 장식»(복셀 마을, 대기실 픽셀 가구·액자, 캐릭터 몸통과 몸짓)은 그림이라 이 규칙에서 뺀다.
+// «세계 장식»(대기실 픽셀 가구·액자, 캐릭터 몸통과 몸짓)은 그림이라 이 규칙에서 뺀다.
 // 그 목록은 아래 DECOR 하나뿐이다 — 장식 이름을 붙여 규칙을 피해 가지 못하게 좁게 둔다.
+// 쓰지 않는 장식은 예외째 지운다 — 복셀 마을(.voxel-*·.iso-cube*)이 홈에서 사라진 뒤에도 300줄 가까이
+// 남아 이 예외의 보호를 받았다 (U49). 아래 «DECOR» 테스트가 예외 규칙의 클래스가 실제로 쓰이는지 본다.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,8 +31,6 @@ const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
 const root = tokens(rules, DESKTOP);
 
 const DECOR = [
-  /^\.voxel-/,
-  /^\.iso-cube/,
   /\.lounge__(?:chair|sofa|table|seat|portrait|furniture)/,
   /\.walker__(?:body|face|dot|shadow)/,
   /^\.walker--(?:sad|seated|walking|idle|hop)\b/,
@@ -115,6 +115,32 @@ test('토큰: 움직임은 100–180ms 의 짧은 피드백이고, 글자 크기
   assert.ok(sizes.length >= 6);
   for (const [name, value] of sizes) {
     assert.ok(px(value) >= 12, `${name} ${value} 는 12px 이상이어야 한다`);
+  }
+});
+
+test('DECOR: 토큰 규칙을 면제받는 장식 규칙은 화면이 실제로 쓰는 클래스만 그린다 (U49)', async () => {
+  // 마크업(index.html)과 화면 코드(src/**/*.ts)에 그 클래스 이름이 있어야 한다. 화면이 지운 장식이
+  // 예외 뒤에 숨어 남지 않게 한다 — 복셀 마을이 그랬다
+  const { readdir } = await import('node:fs/promises');
+  const sources = (await readdir(new URL('../src/', import.meta.url), { recursive: true }))
+    .filter((name) => name.endsWith('.ts'));
+  const used = [html, ...await Promise.all(sources.map((name) => source(`src/${name.replaceAll('\\', '/')}`)))].join('\n');
+  const decorClasses = new Set();
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      if (!isDecor(rule)) continue;
+      for (const selector of rule.selectors) {
+        for (const match of selector.matchAll(/\.([\w-]+)/g)) decorClasses.add(match[1]);
+      }
+    }
+  }
+  assert.ok(decorClasses.size > 10, `장식 규칙을 충분히 모으지 못했다: ${[...decorClasses]}`);
+  const unused = [...decorClasses].filter((name) => !used.includes(name));
+  assert.deepEqual(unused, [], '쓰지 않는 장식 규칙은 DECOR 예외와 함께 지운다');
+  // 그리고 DECOR 의 패턴마다 그것이 면제하는 규칙이 하나는 있다 — 빈 예외를 남기지 않는다
+  for (const pattern of DECOR) {
+    const covered = Object.values(files).some((list) => list.some((rule) => rule.selectors.some((selector) => pattern.test(selector))));
+    assert.ok(covered, `${pattern} 가 면제할 규칙이 없다`);
   }
 });
 
@@ -266,7 +292,6 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
     '.result-grade',
     '.ranking-item__rank',
     '.online-final-ranking__place',
-    '.voxel-building--tower .voxel-building__clock',
   ]);
   const display = [];
   for (const list of Object.values(files)) {

@@ -320,7 +320,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-/* 마을 패널: 브랜드와 장식 마을이 한 장면이다. 장식이 글을 밀어내지 않게 높이를 묶는다 */
+/* 홈 머리(브랜드). 옛 마을 패널 시절의 두 칸 배치라 지금은 30절의 .home-header 가 위치·폭·display 를
+   다시 정한다 — 30절을 각 절로 옮기는 U49 3단계에서 함께 정리한다 */
 .home-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
