@@ -38,6 +38,7 @@ import {
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
+import { scrollBehavior } from './motion.js';
 import {
   isCurrentOnlineScreenAction,
   type OnlineScreenActionOwnership,
@@ -335,7 +336,7 @@ export function createOnlineScreen(
     el.joinPassword.value = '';
     say(el.joinMessage, `${room.name}의 비밀번호를 입력해 주세요.`);
     showPanel('join');
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.joinBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.joinPassword.focus({ preventScroll: true });
   }
 
@@ -554,6 +555,7 @@ export function createOnlineScreen(
   async function loadRooms(request: number): Promise<void> {
     const listRequest = ++listRequestGeneration;
     const retry = el.emptyAction.dataset.action === 'retry' ? el.emptyAction : null;
+    const retryHadFocus = retry !== null && document.activeElement === retry;
     setBusy(el.refresh, true);
     if (retry) setBusy(retry, true);
     try {
@@ -573,8 +575,24 @@ export function createOnlineScreen(
       if (listRequest === listRequestGeneration) {
         setBusy(el.refresh, false);
         if (retry) setBusy(retry, false);
+        // 다시 시도가 통해 오류 칸이 접혔으면 그 버튼으로는 포커스를 돌려줄 수 없다 (a11y-ux-07)
+        if (retryHadFocus) focusRevealedList();
       }
     }
+  }
+
+  /**
+   * 빈 상태의 버튼을 눌렀더니 그 칸이 접혔다(다시 시도가 통했거나 필터를 풀었다). 누른 버튼이 숨어
+   * 포커스가 `<body>`로 떨어지면 다음 Tab이 페이지 맨 위에서 시작하고, 방금 나타난 방들을 지나친다.
+   * 그래서 목록의 첫 버튼(없으면 늘 보이는 새로고침)으로 옮긴다. 빈 상태가 그대로면(방이 여전히
+   * 없거나 다시 실패했다) 같은 버튼이 보이므로 `setBusy`가 돌려준 자리를 둔다.
+   */
+  function focusRevealedList(): void {
+    if (el.screen.hidden || !el.empty.hidden) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== el.emptyAction) return;
+    const first = el.list.querySelector<HTMLButtonElement>('button:not([disabled])');
+    (first ?? el.refresh).focus({ preventScroll: true });
   }
 
   // ── 참가 ───────────────────────────────────────────────────────
@@ -605,7 +623,7 @@ export function createOnlineScreen(
         el.message,
         error instanceof LeaveRoomRejected
           ? LEAVE_MESSAGES[error.reason]
-          : '방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.',
+          : `방에서 나오지 못했어요. ${onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.')}`,
         'bad',
       );
     } finally {
@@ -757,7 +775,7 @@ export function createOnlineScreen(
     const action = el.emptyAction.dataset.action;
     if (action === 'create') {
       showPanel('create');
-      el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      el.createBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
       el.createName.focus({ preventScroll: true });
       return;
     }
@@ -765,24 +783,28 @@ export function createOnlineScreen(
       if (visibleRequest !== null) void loadRooms(visibleRequest);
       return;
     }
+    // 그 버튼에 포커스가 있던 때만 옮긴다. 캐릭터가 밟아 누른(click) 것이면 포커스를 주지 않는다 —
+    // 버튼에 포커스가 생기면 다음 Enter가 발밑이 아니라 그 버튼을 누른다(walker의 «비켜난다» 규칙)
+    const hadFocus = document.activeElement === el.emptyAction;
     resetRoomFilters();
+    if (hadFocus) focusRevealedList();
   });
   el.emptySecondary.addEventListener('click', leaveForPractice);
 
   el.openPublic.addEventListener('click', () => {
     showPanel('rooms');
-    el.summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.summary.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
   });
 
   el.openPrivate.addEventListener('click', () => {
     showPanel('join');
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.joinBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.joinCode.focus({ preventScroll: true });
   });
 
   el.openCreate.addEventListener('click', () => {
     showPanel('create');
-    el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.createBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.createName.focus({ preventScroll: true });
   });
 

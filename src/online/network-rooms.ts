@@ -1216,7 +1216,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         }, player);
         return { ok: true };
       } catch (error) {
-        if (error instanceof ApiFailure && error.status >= 400 && error.status < 500) {
+        // 요청 한도(429)는 «보내지 못했다»가 아니라 «잠시 뒤에»다. 서버의 말(«채팅은 잠시 뒤…»)을
+        // 화면이 쓸 수 있게 그대로 던진다 (U40) — `{ok: false}`에는 이유가 실리지 않는다
+        if (
+          error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 429
+        ) {
           return { ok: false };
         }
         throw error;

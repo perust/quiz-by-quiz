@@ -94,7 +94,8 @@
         <!-- 분야 고르기. 다섯 분야와 두 주요 게임 진입점이 한 패널 안에 있다 -->
         <div class="home-quests" id="home-quests" role="group" aria-label="게임 선택">
           <!-- 홈으로 와도 방에서 나간 것은 아니다. 서버가 «아직 방에 있다»고 답할 때만
-               뜨는 복귀 줄이다 (app.js가 홈에 올 때 한 번 묻는다) -->
+               뜨는 복귀 줄이다 (online/home-room-note.js 가 언제 묻는지 정한다 — 온라인을 다녀온
+               뒤의 홈, 그리고 방에 들어갔던 흔적이 있을 때의 부팅 직후) -->
           <button type="button" class="home-room-note" id="home-room-note" hidden>
             <span class="home-room-note__text" id="home-room-note-text"></span>
             <span class="home-room-note__action">돌아가기</span>

@@ -2410,6 +2410,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   .room-form__label {
     width: auto;
   }
+
+  /* 라벨이 위로 올라가 입력칸이 왼쪽 끝에서 시작한다. 라벨 칸만큼 들이면 도움말이 84px 밀려
+     입력칸에 붙은 말이 아니라 떠도는 글처럼 보였다 (css-responsive-03) */
+  .room-form__help {
+    padding-left: 0;
+  }
 }
 
 /* ── 대기실 ──
@@ -2860,6 +2866,9 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-heavy);
+  /* 상태판 글자는 한 덩어리다. 80px 액자 칸에서 «연결 끊김»이 «연결 끊 / 김»으로 갈라졌다 */
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .lounge__ready::before {
@@ -2890,6 +2899,9 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 /* 연결 끊김은 대기·준비와 모양부터 다르다 — 점선 테두리, 경고 표식, «연결 끊김» 글자.
    시작 판정이 기다리지 않는 사람이라 액자도 흐리게 걸린다. */
 .lounge__ready--offline {
+  /* 가장 긴 상태판이다. 맑은 고딕의 한글은 한 자가 1em이라 «연결 끊김»만 52px — 기본 여백과
+     16px 표식을 더하면 90px로 80px 칸을 넘는다. 여백과 표식을 줄여 칸 안(78px)에 한 줄로 둔다 */
+  padding: 0 var(--space-1);
   border-style: dashed;
   border-color: var(--warning);
   background: var(--warning-soft);
@@ -2897,8 +2909,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 .lounge__ready--offline::before {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: 12px;
+  height: 12px;
   border: 0;
   border-radius: 0;
   background-color: currentColor;

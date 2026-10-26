@@ -70,7 +70,9 @@ test('온라인 주요 동작은 선택한 본문만 보여 주고 기존 방 �
   assert.match(showPanel, /roomBrowser\.hidden = panel !== 'rooms'/);
   assert.doesNotMatch(browseHandler, /visibility\.value|availability\.value/);
   assert.doesNotMatch(joinHandler, /visibility\.value|renderList\(\)/);
-  assert.match(joinHandler, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest' \}\)/);
+  // 움직임 줄이기(설정·기기)를 켰으면 미끄러지지 않고 곧바로 옮긴다 (U55)
+  assert.match(joinHandler, /scrollIntoView\(\{ behavior: scrollBehavior\(\), block: 'nearest' \}\)/);
+  assert.doesNotMatch(online, /behavior: 'smooth'/, '부드러운 스크롤은 motion.ts 의 scrollBehavior() 로만 고른다');
 });
 
 test('빈 방 목록은 방 만들기·혼자 연습하기 또는 필터 초기화로 바로 이어진다', async () => {
