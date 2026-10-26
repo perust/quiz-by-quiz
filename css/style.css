@@ -1973,6 +1973,18 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
+/* 폭 640px 이상의 짧은 가로 홈은 dock이 한 줄로 낮아져(section 30 끝, U07) 입구 한 줄 위의 양쪽
+   모서리가 닉네임·설정 HUD에서 멀다. 그래서 anchor를 다른 화면과 같은 양쪽 모서리(엄지 자리)로
+   되돌린다. 모서리에서는 바로 아래가 두 보조 입구라, 360px 이하에서도 입구 한 줄 위의 거리를
+   700px 이하와 같게 둔다(낮은 dock이라 위 HUD와 닿지 않는다). 크기·모양은 위 규칙 그대로다. */
+@media (pointer: coarse) and (max-height: 420px) and (min-width: 640px) {
+  .walk-controls[data-placement='home-dock'] {
+    --walk-controls-bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
+    --walk-stick-left: max(var(--space-3), env(safe-area-inset-left));
+    --walk-confirm-right: max(var(--space-3), env(safe-area-inset-right));
+  }
+}
+
 /* 손가락 조작부는 화면 아래에 떠서 그 밑의 내용을 가린다. 홈·로컬 퀴즈·온라인 퀴즈는
    각 월드가 따로 계산하고, 나머지 walker 화면은 공용 크기만큼 아래를 비워 마지막 행동을
    조작부 위까지 스크롤할 수 있게 한다. */
@@ -3789,6 +3801,178 @@ body:has(.home-note:not([hidden])) #home-character {
    문제·보기·arena에 쓸 세로 공간을 돌려준다. */
 @media (pointer: coarse) and (max-height: 772px) {
   [data-screen='quiz']:not([hidden]) .arena__hint {
+    display: none;
+  }
+}
+
+/* 짧은 가로 touch 화면의 퀴즈(U15): 왼쪽 열에 HUD·질문·보기, 오른쪽 열에 arena(2×2 바닥)를 둔다.
+   세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래로 밀렸고, 고정 스틱·선택이
+   3·4번 보기를 덮었다. 로컬·온라인 퀴즈가 같은 .quiz--character 배치를 쓴다.
+   - 양옆 여백은 공용 이동 UI 크기 토큰에서 계산한다(조작부의 바깥 거리 + 크기 + 8px). 조작부를 화면
+     이름으로 바꾸거나 숨기지 않고 내용이 그 아래로 들어가지 않게 자리를 비우므로, 어느 스크롤 위치에서도
+     스틱·선택이 보기나 바닥 칸을 덮지 않고 아래를 스틱 높이만큼 비울 필요도 없다. 오른쪽 여백은 위 끝의
+     설정 버튼(44px)도 품어 HUD가 그 자리를 비우지 않는다
+   - arena는 오른쪽 열 아래쪽(보기 둘째 줄과 같은 바닥선)에 붙는다. 넷째 줄(1fr)은 arena가 왼쪽 열보다
+     길 때만 늘어나 HUD·질문·보기 사이를 벌리지 않는다. 시작 자리는 그대로 바닥 십자 한가운데다
+   - 칸이 좁아지므로 보기는 좁은 화면의 2×2처럼 안쪽 여백을 줄이고 판정 알약은 모양만 보인다(글은
+     낭독되고 결과 패널에 있다). 높이는 44px 아래로 줄이지 않는다. 바닥 칸은 열 폭만큼의 정사각이다
+   - 답한 뒤 결과 패널은 여전히 arena 뒤 문서 흐름이다(<main> 밖). 질문까지 한 화면에 담을 수 없어
+     feedbackScrollTarget이 패널 끝에 맞추므로, 판정·정답 줄·다음 문제가 패널 안 스크롤 없이 한 화면에
+     들도록 패널 높이 한도만 화면 높이에 맞춘다(60vh는 360px 화면에서 216px이라 「다음 문제」가 잘렸다) */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    column-gap: var(--space-3);
+    align-content: start;
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+    padding-right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--walk-confirm-size) + var(--space-2));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(max(var(--space-3), env(safe-area-inset-left)) + var(--walk-stick-size) + var(--space-2));
+  }
+
+  /* 조작부는 양옆 여백에 있으므로 로컬 퀴즈도 아래를 스틱 높이만큼 비우지 않는다 */
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .quiz--character > * {
+    grid-column: 1;
+  }
+
+  .quiz--character > .arena {
+    grid-column: 2;
+    grid-row: 1 / 5;
+    width: 100%;
+    min-height: 0;
+    margin: auto 0 0;
+    padding-top: 0;
+  }
+
+  /* 온라인의 결과 공개·상태 줄·채팅은 두 열 아래에 폭을 다 쓴다 (여전히 양옆 여백 안이다) */
+  .quiz--character > .online-reveal,
+  .quiz--character > .online-match-status,
+  .quiz--character > .online-quiz-chat {
+    grid-column: 1 / -1;
+  }
+
+  /* 공개 카드도 양옆 여백 안이라 떠 있는 조작부와 겹치지 않는다. 스틱 높이만큼 더 올리면 보기와
+     바닥만 화면 위로 더 밀려나므로, 카드 끝을 화면 아래 여백 안에만 들인다 */
+  [data-screen='online-quiz'] .online-reveal {
+    scroll-margin-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 설정 버튼이 오른쪽 여백에 있어 HUD 오른쪽 64px 슬롯을 비우지 않는다. 열이 좁아 진행률은 아랫줄이다 */
+  .quiz--character .quiz-hud {
+    margin-bottom: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .quiz--character .quiz-hud .quiz-meta {
+    grid-template-columns: minmax(0, auto) minmax(auto, 1fr);
+  }
+
+  .quiz--character .quiz-hud .progress {
+    grid-column: 1 / -1;
+  }
+
+  .quiz--character .question {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .quiz--character .choices {
+    margin-bottom: 0;
+  }
+
+  .quiz--character .choice {
+    gap: var(--space-2);
+    min-height: var(--tap);
+    padding: var(--space-2);
+  }
+
+  .quiz--character .choice__text {
+    overflow-wrap: anywhere;
+  }
+
+  .quiz--character .choice__mark {
+    width: calc(var(--icon-sm) + 2 * var(--space-1));
+    padding: 0 var(--space-1);
+    overflow: hidden;
+  }
+
+  .quiz--character .arena-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    min-height: 64px;
+    max-height: 104px;
+  }
+
+  .feedback {
+    max-height: calc(100svh - var(--space-6));
+  }
+}
+
+/* 짧은 가로 홈(U07): 분야 다섯 칸 | 온라인·전체 도전을 dock 한 줄에 둔다. 두 줄로 쌓으면 740×360에서
+   dock이 171px(화면의 절반)이었고, 그 위에 얹히는 두 보조 입구와 조작부가 위 가운데까지 밀려 올라왔다.
+   한 줄이면 dock이 70px 안팎이라 월드가 돌아온다. 접어 두었던 브랜드는 위 가운데(닉네임과 설정 사이)에
+   작게 되살리고 부제는 접은 채 둔다(글자 크기·dock 안쪽 여백은 디자인 층 30절 끝).
+   - 온라인·전체 도전은 한 묶음의 같은 두 칸(1fr)이라 크기가 같다. 전체 최고점 pill은 접고 접근 가능한
+     이름에 남긴다. 온라인 보조 줄 «친구와 함께 · 2명부터»는 한 줄로 남는다
+   - 분야 칸이 좁아지므로 짧은 이름(상식·예술)을 보인다. 버튼 이름은 전체 이름 그대로다
+   - 두 보조 입구는 여전히 dock 바로 위 양쪽이고(--home-dock-h), 캐릭터는 그 사이 브랜드 아래에서
+     시작한다(walker-geometry.ts의 shortHomeStartPoint) */
+@media (max-height: 420px) and (min-width: 640px) {
+  .home-quests {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    column-gap: var(--space-2);
+  }
+
+  .home-room-note {
+    grid-column: 1 / -1;
+  }
+
+  .home-primary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: auto;
+    margin: 0;
+  }
+
+  .home-primary-actions .challenge-card {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  }
+
+  .home-primary-actions .challenge-card__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .home-primary-actions .challenge-card__meta {
+    display: none;
+  }
+
+  .category-card__name--full {
+    display: none;
+  }
+
+  .category-card__name--compact {
+    display: block;
+  }
+
+  .home-header {
+    top: max(var(--space-4), env(safe-area-inset-top));
+    width: min(42vw, 520px);
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  .home-subtitle {
     display: none;
   }
 }

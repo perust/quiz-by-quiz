@@ -7,6 +7,7 @@
 import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need } from '../dom.js';
 import { createWalker } from './walker.js';
+import { shortHomeStartPoint } from './walker-geometry.js';
 import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
 import type { Category, CategoryId, Question } from '../types.js';
@@ -97,6 +98,7 @@ export function createHomeScreen({
     dialogMessage: need('nickname-message'),
     dialogCancel: need<HTMLButtonElement>('nickname-cancel'),
     walker: need('home-character'),
+    title: need('home-title'),
     note: need('home-note'),
   };
 
@@ -123,15 +125,16 @@ export function createHomeScreen({
     startAt: () => {
       // 200% 확대나 가로 화면에서는 두 보조 입구가 dock 위 양쪽으로 이동한다.
       // 그때는 가운데 위의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
+      // 짧은 가로 화면(U07)은 접었던 브랜드를 위 가운데에 되살리므로 그 아래에 선다.
+      // 브랜드가 접혀 있으면 머리말이 1px 칸이라 제목의 폭도 1px 이하다
       if (window.innerHeight <= 700) {
-        const entry = el.openRanking.getBoundingClientRect();
-        return {
-          x: window.innerWidth / 2,
-          y: Math.max(
-            el.walker.offsetHeight,
-            Math.min(el.walker.offsetHeight + 48, entry.top - 8),
-          ),
-        };
+        const brand = el.title.getBoundingClientRect();
+        return shortHomeStartPoint({
+          viewportWidth: window.innerWidth,
+          walkerHeight: el.walker.offsetHeight,
+          entryTop: el.openRanking.getBoundingClientRect().top,
+          brandBottom: brand.width > 1 ? brand.bottom : null,
+        });
       }
       const box = el.openCharacters.getBoundingClientRect();
       if (box.width === 0) return null;

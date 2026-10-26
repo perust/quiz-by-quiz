@@ -47,6 +47,12 @@
 //      WASD로도 걷는다는 것을 알 길이 없었다 (U52) — 말한 키가 정말 캐릭터 몫인지 본다
 //   ⑭ 설정의 문항 시간 «제한 없음»(FR-3.7)은 시간 초과로 가는 길이 아예 없어야 한다. 25초를 앞당겨도
 //      판이 깨어나지 않는지, 설정 대화상자가 워커와 화면의 키(로비의 Esc)를 가두는지 함께 본다
+//   ⑮ 짧은 가로 홈(U07)의 두 줄 dock이 화면의 절반을 먹어 두 보조 입구와 조작부가 위 가운데로 밀려
+//      올라왔다. dock 한 줄·되살린 브랜드·가장자리 조각끼리 겹치지 않음·캐릭터 시작 자리를 본다
+//   ⑯ 짧은 가로 touch 퀴즈(U15)에서 바닥이 접힘 아래로 밀리고 조작부가 보기를 덮었다. 두 열 배치에서
+//      답하기 전에 스크롤 없이 다 보이는지, 답한 뒤 「다음 문제」가 패널 안에 잘리지 않는지 본다.
+//      짧은 가로 검사는 그 화면 크기(touch · 높이 480px 이하 가로 / 높이 420px 이하 · 폭 640px 이상)에서만
+//      돈다 — 740×360 · 667×375 · 844×390 · 915×412 를 touch 에뮬레이션으로 열고 붙여넣는다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -288,6 +294,52 @@
     전체도전기록.hidden = 원래기록숨김;
     전체도전기록.textContent = 원래기록문구;
 
+    // ⑮ 짧은 가로 홈(U07). 두 줄 dock이 화면의 절반(740×360에서 171px)을 먹어 두 보조 입구와 조작부가
+    // 위 가운데까지 밀려 올라왔고 브랜드는 접혀 있었다. 가장자리 조각끼리 겹치지 않는 것은 어느 화면에서나 본다
+    const 홈조각 = {
+      dock: document.getElementById('home-quests'),
+      캐릭터입구: document.getElementById('open-characters'),
+      랭킹입구: document.getElementById('open-ranking'),
+      닉네임: document.getElementById('open-nickname'),
+      설정: document.getElementById('open-settings'),
+      브랜드: document.getElementById('home-title'),
+      스틱: document.querySelector('.walk-stick'),
+      선택: document.querySelector('.walk-confirm'),
+    };
+    const 홈상자 = Object.entries(홈조각)
+      .map(([이름, 요소]) => [이름, 요소.getBoundingClientRect()])
+      // 접은 브랜드(1px)·조작부가 없는 마우스 기기의 빈 상자는 뺀다
+      .filter(([, 상자]) => 상자.width > 1 && 상자.height > 1);
+    const 겹친홈조각 = [];
+    for (let 앞 = 0; 앞 < 홈상자.length; 앞 += 1) {
+      for (let 뒤 = 앞 + 1; 뒤 < 홈상자.length; 뒤 += 1) {
+        const 넓이 = 겹친넓이(홈상자[앞][1], 홈상자[뒤][1]);
+        if (넓이 > 0) 겹친홈조각.push(`${홈상자[앞][0]}×${홈상자[뒤][0]} ${Math.round(넓이)}px²`);
+      }
+    }
+    결과.push({
+      자리: '홈', 이름: '가장자리 입구·dock·브랜드·조작부가 서로 겹치지 않는다',
+      통과: 겹친홈조각.length === 0,
+      무엇: `${innerWidth}×${innerHeight} · ${겹친홈조각.join(', ') || '겹침 없음'}`,
+    });
+    if (matchMedia('(max-height: 420px) and (min-width: 640px)').matches) {
+      const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
+      const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
+      const dock상자 = 홈조각.dock.getBoundingClientRect();
+      결과.push({
+        자리: '홈', 이름: '짧은 가로: 분야와 온라인·전체 도전이 dock 한 줄에 있다',
+        통과: Math.abs(분야줄.top - 주행동줄.top) <= 1 && 분야줄.right <= 주행동줄.left + 1
+          && dock상자.height <= innerHeight / 4,
+        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px / 화면 ${innerHeight}px`,
+      });
+      const 브랜드상자 = 홈조각.브랜드.getBoundingClientRect();
+      결과.push({
+        자리: '홈', 이름: '짧은 가로: 브랜드가 위 가운데에 보인다',
+        통과: 브랜드상자.width > 40 && 브랜드상자.top >= 0 && 브랜드상자.bottom <= 홈조각.dock.getBoundingClientRect().top,
+        무엇: `브랜드 ${Math.round(브랜드상자.width)}px × ${Math.round(브랜드상자.height)}px · top ${Math.round(브랜드상자.top)}px`,
+      });
+    }
+
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
     // 놓지 않으면 걸어간 자리가 아니라 포커스에 남은 버튼이 눌린다.
@@ -345,6 +397,24 @@
     });
     잠든퀴즈를깨워본다('랭킹');
     await 눌러('ranking-home');
+    // ⑮ 홈으로 돌아오면 워커가 시작 자리에 다시 선다. 버튼을 밟지 않고, 되살린 브랜드·입구·조작부를 덮지 않는다
+    프레임돌리기(3);
+    const 홈캐릭터상자 = document.getElementById('home-character').getBoundingClientRect();
+    const 홈발밑 = document.querySelector('[data-screen="home"] .is-standing, .app-bar .is-standing');
+    const 캐릭터가덮은것 = ['home-title', 'open-characters', 'open-ranking', 'open-nickname', 'home-quests']
+      .map((id) => document.getElementById(id))
+      .concat([document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')])
+      .filter((요소) => {
+        const 상자 = 요소.getBoundingClientRect();
+        return 상자.width > 1 && 상자.height > 1 && 겹친넓이(상자, 홈캐릭터상자) > 0;
+      })
+      .map((요소) => 요소.id || 요소.className);
+    결과.push({
+      자리: '홈', 이름: '캐릭터가 아무것도 밟거나 덮지 않은 자리에서 시작한다',
+      통과: !홈발밑 && 캐릭터가덮은것.length === 0,
+      무엇: 홈발밑 ? `!! ${홈발밑.id || 홈발밑.className} 위`
+        : (캐릭터가덮은것.length ? `!! 덮음: ${캐릭터가덮은것.join(', ')}` : `빈자리 (${Math.round(홈캐릭터상자.left)}, ${Math.round(홈캐릭터상자.bottom)})`),
+    });
     살펴본곳.push('랭킹');
 
     // 홈 → 내 캐릭터 → 홈
@@ -370,12 +440,70 @@
       통과: 도움크기.width >= 44 && 도움크기.height >= 44,
       무엇: `${도움크기.width}px × ${도움크기.height}px`,
     });
+    // ⑯ 짧은 가로 touch 화면(U15). 세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래였고,
+    // 고정 스틱·선택이 3·4번 보기를 덮었다. 두 열(왼쪽 HUD·질문·보기, 오른쪽 바닥)에서는 답하기 전에 스크롤 없이
+    // 넷이 다 보이고, 조작부는 양옆 여백에 있다. 은행에서 가장 긴 질문과 긴 보기가 겹치면 넘칠 수 있다
+    const 짧은가로퀴즈 = matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches;
+    if (짧은가로퀴즈) {
+      // 워커는 다음 프레임에 십자 한가운데에 선다
+      프레임돌리기(3);
+      const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
+      const 보기상자 = [...document.querySelectorAll('#choices .choice')].map((보기) => 보기.getBoundingClientRect());
+      const 칸상자 = [...document.querySelectorAll('#arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
+      const 위쪽 = [document.querySelector('[data-screen="quiz"] .quiz-hud'), document.getElementById('question-text')]
+        .map((요소) => 요소.getBoundingClientRect());
+      const 문서높이 = document.documentElement.scrollHeight;
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 답하기 전에 문서가 화면 높이를 넘지 않는다',
+        통과: 문서높이 <= innerHeight + 1 && scrollY === 0,
+        무엇: `${innerWidth}×${innerHeight} · 문서 ${문서높이}px · scrollY ${scrollY} · 질문 ${document.getElementById('question-text').textContent.length}자`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: HUD·질문·네 보기·네 바닥 칸이 모두 화면 안에 있다',
+        통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안),
+        무엇: `보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 바닥은 보기 오른쪽 열에 있다',
+        통과: 칸상자.length === 4 && Math.min(...칸상자.map((상자) => 상자.left)) >= Math.max(...보기상자.map((상자) => 상자.right)),
+        무엇: `보기 오른쪽 ${Math.round(Math.max(...보기상자.map((상자) => 상자.right)))}px · 칸 왼쪽 ${Math.round(Math.min(...칸상자.map((상자) => 상자.left)))}px`,
+      });
+      const 조작부상자 = [document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')]
+        .map((요소) => 요소.getBoundingClientRect());
+      const 덮인넓이 = [...보기상자, ...칸상자]
+        .reduce((합, 상자) => 합 + 조작부상자.reduce((작은합, 조작부) => 작은합 + 겹친넓이(상자, 조작부), 0), 0);
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 고정 스틱·선택이 보기와 바닥 칸을 덮지 않는다',
+        통과: 조작부상자.every((상자) => 상자.width >= 44) && 덮인넓이 === 0,
+        무엇: `조작부 ${조작부상자.map((상자) => `${Math.round(상자.width)}px`).join(' · ')} · 덮인 넓이 ${Math.round(덮인넓이)}px²`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 캐릭터가 바닥 십자 한가운데(아무 칸도 아닌 자리)에서 시작한다',
+        통과: !document.querySelector('[data-screen="quiz"] .is-standing'),
+        무엇: document.querySelector('[data-screen="quiz"] .is-standing')?.className ?? '중립',
+      });
+    }
     document.querySelector('.choice').click();
     await 잠깐(400);
     결과.push({
       자리: '퀴즈', 이름: '답을 내면 시트가 뜬다',
       통과: !document.getElementById('feedback').hidden, 무엇: '준비된 상태를 만든다',
     });
+    if (짧은가로퀴즈) {
+      // 결과 패널 높이 한도가 60vh(360px 화면에서 216px)이면 「다음 문제」가 패널 안 스크롤 밑에 잘렸다
+      const 화면안 = (요소) => {
+        const 상자 = 요소.getBoundingClientRect();
+        return 상자.top >= -1 && 상자.bottom <= innerHeight + 1;
+      };
+      const 정답줄 = document.getElementById('feedback-answer');
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 답한 뒤 판정·정답 줄·「다음 문제」가 한 화면에 보인다',
+        통과: 화면안(document.getElementById('feedback-verdict'))
+          && (정답줄.hidden || 화면안(정답줄))
+          && 화면안(document.getElementById('next-button')),
+        무엇: `scrollY ${Math.round(scrollY)} · 다음 문제 bottom ${Math.round(document.getElementById('next-button').getBoundingClientRect().bottom)}px / ${innerHeight}px`,
+      });
+    }
     // ⑩ 질문 머리와 패널 끝 사이의 거리는 스크롤과 무관하다. 그 거리가 화면에 들면
     // 질문 머리도 패널 끝도 화면 안이어야 하고, 들지 않으면 패널 끝(「다음 문제」)에 맞춘다
     const 질문상자 = document.getElementById('question-text').getBoundingClientRect();
