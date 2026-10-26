@@ -2,12 +2,13 @@
 // 게임 규칙은 core/session.js가, 시간 계산은 core/timer.js가 갖고 있다.
 // 이 파일은 그 값들을 화면에 그리고 사용자 입력을 로직으로 넘기는 일만 한다.
 
-import { WARNING_THRESHOLD_MS } from '../constants.js';
+import { CATEGORIES, WARNING_THRESHOLD_MS } from '../constants.js';
 import { createQuestionTimer } from '../core/timer.js';
 import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { need, needOne } from '../dom.js';
 import { announce } from './screens.js';
 import { createArena } from './arena.js';
+import { answerLines, feedbackScrollTarget } from './feedback-view.js';
 import type { Point } from './walker.js';
 import type { QuizSession } from '../core/session.js';
 import type { AnswerRecord, Question } from '../types.js';
@@ -17,6 +18,9 @@ const CHOICE_KEYS = ['1', '2', '3', '4'];
 
 /** 채점 뒤 다음 문제로 넘어가는 키. 캐릭터 조작 안내와 같아야 한다. */
 const NEXT_KEYS = ['Enter', ' '];
+
+/** 전체 도전에서 문항마다 분야 칩에 붙일 이름 (FR-2.2) */
+const CATEGORY_NAMES = new Map(CATEGORIES.map((category) => [category.id, category.name]));
 
 /** 다이얼로그 안에서 Tab이 맴돌게 할 대상 */
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -65,6 +69,9 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     choices: need('choices'),
     feedback: need('feedback'),
     verdict: need('feedback-verdict'),
+    answer: need('feedback-answer'),
+    answerCorrect: needOne<HTMLElement>('#feedback-answer [data-kind="correct"] .feedback__answer-text'),
+    answerMine: needOne<HTMLElement>('#feedback-answer [data-kind="mine"] .feedback__answer-text'),
     explanation: need('feedback-explanation'),
     nextButton: need('next-button'),
     nextLabel: need('next-label'),
@@ -128,9 +135,11 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     // 아이콘(시계 → 경고 삼각형)은 디자인 층이 timer--warning 을 보고 바꿔 그린다
     const isWarning = remaining <= WARNING_THRESHOLD_MS;
     el.timer.classList.toggle('timer--warning', isWarning);
-    el.timerText.textContent = isWarning ? `서두르세요 · ${seconds}초 남음` : `남은 시간 ${seconds}초`;
+    // 재촉하지 않고 남은 양만 말한다. 제한 시간은 경쟁 요소가 아니다 (PRD 2.1)
+    el.timerText.textContent = isWarning ? `${seconds}초 남았어요` : `남은 시간 ${seconds}초`;
 
-    // 타이머 영역은 aria-hidden이라 낭독되지 않는다.
+    // 남은 시간 글은 라이브 리전이 아니라 저절로 낭독되지 않는다 — 브라우즈 모드에서
+    // 찾아 읽을 수만 있다. 1초마다 읽히면 문제를 들을 수 없다.
     // 남은 시간이 얼마 없다는 사실만 문항당 한 번 알린다.
     if (isWarning && !warned) {
       warned = true;
@@ -218,19 +227,40 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     if (wasVisible) window.scrollTo(0, 0);
   }
 
+  /**
+   * 결과 패널 끝이 보일 만큼만 문서를 옮긴다 (PRD 2.1 «해설을 읽으며», FR-4.3).
+   *
+   * 질문 머리가 화면 위로 넘어가지 않는 한도 안에서 가장 적게 움직인다. 질문과 패널 끝을
+   * 한 화면에 함께 담을 수 없을 때만 예전처럼 패널 끝에 맞춘다 — 포커스가 간
+   * 「다음 문제」는 언제나 보여야 한다. 고정 시트로 바꾸지 않는다: 패널은 문서 흐름에 있다.
+   */
+  function scrollFeedbackIntoView(): void {
+    const target = feedbackScrollTarget({
+      scrollY: window.scrollY,
+      viewportHeight: window.innerHeight,
+      panelBottom: el.feedback.getBoundingClientRect().bottom,
+      questionTop: el.question.getBoundingClientRect().top,
+    });
+    if (target === null) el.feedback.scrollIntoView({ block: 'end' });
+    else if (target !== window.scrollY) window.scrollTo(0, target);
+  }
+
   /** 결과 패널까지 문서를 옮기고 새 arena의 같은 상대 위치에 fixed 캐릭터를 복원한다. */
   function revealFeedback(focusNext = true): void {
     if (focusNext && el.dialog.hidden && !arena.isDialogOpen()) {
       el.nextButton.focus({ preventScroll: true });
     }
-    el.feedback.scrollIntoView({ block: 'end' });
+    scrollFeedbackIntoView();
     if (feedbackCharacterAnchor) arena.restoreCharacterAnchor(feedbackCharacterAnchor);
   }
 
   function renderQuestion(): void {
     const question = session!.currentQuestion();
 
-    el.category.textContent = categoryLabel;
+    // 전체 도전은 분야가 섞여 나오므로 칩이 문항마다 그 분야를 함께 말한다 (FR-2.2, FR-5.6).
+    // 분야 색은 칠하지 않는다 — 분야 색은 아이콘 칸에만 쓴다 (docs/design-system.md §1)
+    const categoryName = session!.mode === 'all' ? CATEGORY_NAMES.get(question.category) : undefined;
+    el.category.textContent = categoryName ? `${categoryLabel} · ${categoryName}` : categoryLabel;
     el.position.textContent = `${session!.position}/${session!.total}`;
     el.position.setAttribute('aria-label', `전체 ${session!.total}문제 중 ${session!.position}번 문제`);
     el.question.textContent = question.question;
@@ -309,9 +339,12 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     el.feedback.classList.add(record.correct ? 'feedback--correct' : 'feedback--wrong');
 
     // **먼저 펼치고 넣는다.** 숨긴 채로 라이브 리전을 채우면 낭독되지 않는다.
+    // 정답 줄도 같다 — 틀렸으면 먼저 드러내고 글을 넣는다. 맞았으면 판정과 보기 표시로
+    // 충분해 접어 패널 높이를 아낀다.
     // 같은 태스크 안에서 내용까지 채우므로 이전 문항의 피드백이 비치지는 않는다.
     // 자동 전환 없이 「다음 문제」를 눌러야 넘어간다 (FR-4.4)
     el.feedback.hidden = false;
+    el.answer.hidden = record.correct;
 
     if (record.correct) {
       el.verdict.textContent = '정답입니다';
@@ -322,6 +355,12 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
     } else {
       el.verdict.textContent = '아쉽네요, 오답입니다';
       playWrong();
+    }
+    // 오답·시간 초과는 무엇이 정답이고 무엇을 골랐는지 글로 말한다 (FR-4.2, FR-3.10)
+    if (!record.correct) {
+      const lines = answerLines(question, record.choiceIndex);
+      el.answerCorrect.textContent = lines.correct;
+      el.answerMine.textContent = lines.mine;
     }
     el.explanation.textContent = question.explanation;
 
@@ -394,6 +433,22 @@ export function createQuizScreen({ onExit, onComplete }: QuizScreenDeps): QuizSc
   el.nextButton.addEventListener('click', goNext);
 
   document.addEventListener('keydown', (event) => {
+    // **누르고 있는 키의 자동 반복은 받지 않는다** (FR-4.4). 답을 낸 Enter·Space를 떼지
+    // 않고 있으면 반복 keydown이 곧바로 포커스가 간 「다음 문제」를 눌러, 해설을 읽기도
+    // 전에 다음 문항으로 넘어갈 수 있다. 숫자키도 같다. 기본 동작까지 막는다 — 버튼에
+    // 포커스가 있으면 브라우저가 반복마다 그 버튼을 누르기 때문이다. 판이 도는 퀴즈
+    // 화면의 대화상자 안에서도 같다 — 「나가기」를 Enter로 연 채 누르고 있으면 반복이
+    // 곧바로 「계속 풀기」를 눌러 확인창을 닫아 버린다.
+    if (
+      event.repeat
+      && session
+      && !el.screen.hidden
+      && (NEXT_KEYS.includes(event.key) || CHOICE_KEYS.includes(event.key))
+    ) {
+      event.preventDefault();
+      return;
+    }
+
     // 다이얼로그가 열려 있으면 그 안에서만 움직인다
     if (!el.dialog.hidden) {
       if (event.key === 'Escape') {

@@ -49,7 +49,7 @@ test('퀴즈 HUD: 분야·문항 위치·진행률·조작법·나가기·타이
   }
 });
 
-test('퀴즈 HUD: 진행률은 접근 가능한 progressbar로, 타이머는 낭독하지 않는 채로 남는다', async () => {
+test('퀴즈 HUD: 진행률은 접근 가능한 progressbar로, 타이머는 저절로 낭독하지 않는 채로 남는다', async () => {
   const html = await source('index.html');
   for (const id of ['progress', 'online-progress']) {
     const progress = nodeFromHtml(html, id);
@@ -59,8 +59,53 @@ test('퀴즈 HUD: 진행률은 접근 가능한 progressbar로, 타이머는 낭
       assert.ok(attr in progress.attrs, `#${id} 의 ${attr}`);
     }
   }
-  for (const id of ['timer', 'online-timer']) {
+  for (const id of ['online-timer']) {
     assert.equal(nodeFromHtml(html, id).attrs['aria-hidden'], 'true', `#${id} 는 1초마다 낭독되면 안 된다`);
+  }
+});
+
+test('퀴즈 HUD: 로컬 남은 시간 글은 브라우즈 모드에서 찾아 읽히고, 막대·아이콘만 숨긴다', async () => {
+  const [html, quiz] = await Promise.all([source('index.html'), source('src/ui/quiz.ts')]);
+
+  // 조상의 aria-hidden 은 자손에서 풀 수 없다. 그래서 영역(#timer)이 아니라 그림 조각에만 단다
+  const text = nodeFromHtml(html, 'timer-text');
+  for (let element = text; element; element = element.parent) {
+    assert.notEqual(element.attrs['aria-hidden'], 'true', `#timer-text 의 조상 <${element.tag}${element.id ? `#${element.id}` : ''}> 이 글을 숨긴다`);
+    // 라이브 리전이 아니어야 1초마다 낭독되지 않는다
+    assert.equal(element.attrs['aria-live'], undefined, `<${element.tag}${element.id ? `#${element.id}` : ''}> 에 aria-live 를 달지 않는다`);
+    assert.ok(!['status', 'alert', 'log', 'timer', 'marquee'].includes(element.attrs.role), `<${element.tag}> 의 role=${element.attrs.role}`);
+  }
+  assert.equal(nodeFromHtml(html, 'timer-icon').attrs['aria-hidden'], 'true', '시계·경고 아이콘은 그림이다');
+  const track = nodeFromHtml(html, 'timer-fill').parent;
+  assert.ok(track.classes.includes('timer__track'));
+  assert.equal(track.attrs['aria-hidden'], 'true', '막대는 눈으로만 본다');
+
+  // 남은 5초는 문항당 한 번만 알리고, 재촉하지 않는 말로 쓴다 (PRD 2.1, FR-3.9)
+  assert.equal(quiz.match(/announce\(/g)?.length, 1, 'announce 는 5초 경고 한 곳뿐이다');
+  assert.match(quiz, /if \(isWarning && !warned\) \{\s*warned = true;\s*announce\('시간이 얼마 남지 않았습니다\.'\);/);
+  assert.ok(quiz.includes('`${seconds}초 남았어요`'));
+  assert.doesNotMatch(quiz, /서두르세요/);
+});
+
+test('퀴즈 HUD: 전체 도전에서는 분야 칩이 문항마다 «전체 도전 · 분야»를 보이고 분야 색은 칠하지 않는다 (FR-2.2)', async () => {
+  const [quiz, css, theme] = await Promise.all([
+    source('src/ui/quiz.ts'), source('css/style.css'), source('css/voxel-theme.css'),
+  ]);
+  assert.match(quiz, /const CATEGORY_NAMES = new Map\(CATEGORIES\.map\(\(category\) => \[category\.id, category\.name\]\)\);/);
+  assert.match(
+    quiz,
+    /function renderQuestion\(\): void \{[\s\S]*?session!\.mode === 'all' \? CATEGORY_NAMES\.get\(question\.category\) : undefined;\s*el\.category\.textContent = categoryName \? `\$\{categoryLabel\} · \$\{categoryName\}` : categoryLabel;/,
+  );
+  // 분야 색은 아이콘 칸에만 쓴다 (docs/design-system.md §1·§3)
+  assert.doesNotMatch(quiz, /el\.category\.(?:dataset|setAttribute\('data-category')/);
+  for (const text of [css, theme]) assert.doesNotMatch(text, /\.quiz-category\[data-category/);
+
+  // 칩이 길어져도 문항 위치 칸은 제 글 폭 아래로 줄지 않는다 — 칩이 말줄임으로 물러난다
+  const meta = node('div.quiz-meta', node('header.quiz-header', node('div.quiz-hud', node("section.screen.quiz--character[data-screen='quiz']"))));
+  for (const env of [NARROW, DESKTOP]) {
+    const columns = valueOf(rules, meta, 'grid-template-columns', env) ?? '';
+    const [, position] = columns.match(/^minmax\(0, auto\)\s+(minmax\(auto, 1fr\)|auto)(?:\s|$)/) ?? [];
+    assert.ok(position, `${env.width}px: 칩 다음 칸(문항 위치)이 0까지 줄 수 있다: ${columns}`);
   }
 });
 
