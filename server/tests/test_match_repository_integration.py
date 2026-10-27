@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
@@ -12,6 +13,7 @@ import pytest
 from psycopg import AsyncConnection
 
 from app.domain import validate_player, validate_room
+from app.main import _match_payload
 from app.postgres import PostgresRoomsRepository
 from app.question_catalog import QuestionCatalog
 from app.repository import MatchInProgress, MatchNotReady, MatchPositionMismatch
@@ -226,6 +228,103 @@ async def _exercise_reveal_review_and_rematch() -> None:
         assert (await repository.get_match(player_ids[0], room.code)).match is not None
         third_match = await _start_ready_match(repository, player_ids, room.code)
         assert await _match_question_ids(third_match) == first_ids
+    finally:
+        await repository.close()
+        await _cleanup(player_ids, room_code)
+
+
+@pytest.mark.integration
+def test_postgres_answer_that_does_not_advance_leaves_other_players_payload_unchanged() -> None:
+    asyncio.run(_exercise_other_players_running_payload())
+
+
+async def _exercise_other_players_running_payload() -> None:
+    """N01: API는 문항을 넘기지 않은 답을 방송하지 않는다. 그 근거를 실제 DB로 본다.
+
+    남이 보는 running payload(API가 보내는 JSON 그대로, 남은 시간만 같은 시각으로 잰다)는 누가
+    답해도 한 글자도 바뀌지 않는다. 바뀌는 것은 낸 사람 자신의 것뿐이고 그것은 POST 응답에 있다.
+    """
+    assert DATABASE_URL is not None
+    catalog = _test_catalog()
+    repository = PostgresRoomsRepository(DATABASE_URL, question_catalog=catalog, max_pool_size=4)
+    await repository.open()
+    player_ids = [uuid4(), uuid4(), uuid4()]
+    room_code: str | None = None
+
+    try:
+        for index, player_id in enumerate(player_ids):
+            await repository.upsert_player(
+                player_id,
+                _token_hash(player_id),
+                validate_player(f"방송{index}", f"character-{index}"),
+            )
+        room = await repository.create_room(
+            player_ids[0],
+            validate_room(
+                name="방송 줄이기 검증",
+                category_id="science",
+                capacity=4,
+                is_public=True,
+                password=None,
+                game_mode=True,
+            ),
+            None,
+        )
+        room_code = room.code
+        for player_id in player_ids[1:]:
+            await repository.join_room(player_id, room.code)
+            await repository.set_ready(player_id, room.code, True)
+        await repository.start_game(player_ids[0], room.code)
+        now = datetime.now(UTC)
+
+        async def payloads() -> dict[UUID, dict[str, object]]:
+            seen: dict[UUID, dict[str, object]] = {}
+            for player_id in player_ids:
+                read = await repository.get_match(player_id, room.code)
+                assert read.match is not None and read.advanced is False
+                seen[player_id] = _match_payload(read.match, now)
+            return seen
+
+        before = await payloads()
+        assert {payload["state"] for payload in before.values()} == {"running"}
+        assert all(payload["scores"] == [] for payload in before.values())
+
+        first = await repository.submit_answer(player_ids[0], room.code, position=1, choice_index=0)
+        assert first.advanced is False
+        after_first = await payloads()
+        for observer in player_ids[1:]:
+            assert after_first[observer] == before[observer]
+        assert after_first[player_ids[0]]["ownSubmission"] == {
+            "position": 1,
+            "choiceIndex": 0,
+            "timedOut": False,
+        }
+        # 낸 사람이 다시 읽을 것은 POST 응답이 이미 싣고 있다
+        assert _match_payload(first.match, now) == after_first[player_ids[0]]
+
+        # 같은 사람이 다시 내도(첫 답이 남는다) 넘어가지 않는다
+        repeat = await repository.submit_answer(
+            player_ids[0], room.code, position=1, choice_index=3
+        )
+        assert repeat.advanced is False
+        second = await repository.submit_answer(
+            player_ids[1], room.code, position=1, choice_index=1
+        )
+        assert second.advanced is False
+        after_second = await payloads()
+        assert after_second[player_ids[2]] == before[player_ids[2]]
+        assert after_second[player_ids[0]] == after_first[player_ids[0]]
+        assert _match_payload(second.match, now) == after_second[player_ids[1]]
+
+        # 마지막 사람의 답은 공개를 연다. 남의 화면이 바뀌는 것은 이때뿐이라 이때만 방송한다
+        last = await repository.submit_answer(player_ids[2], room.code, position=1, choice_index=2)
+        assert last.advanced is True
+        assert last.match.state == "revealing"
+        revealed = await payloads()
+        assert all(payload["state"] == "revealing" for payload in revealed.values())
+        for payload in revealed.values():
+            scores = payload["scores"]
+            assert isinstance(scores, list) and len(scores) == 3
     finally:
         await repository.close()
         await _cleanup(player_ids, room_code)

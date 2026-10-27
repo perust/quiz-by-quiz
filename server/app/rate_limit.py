@@ -39,19 +39,36 @@ class AtomicMultiWindowLimiter:
             if not attempts:
                 del self._attempts[claim]
 
-    def allow(self, claims: tuple[RateLimitClaim, ...]) -> bool:
+    def try_acquire(self, claims: tuple[RateLimitClaim, ...]) -> float | None:
+        """Consume every claim or none of them.
+
+        Returns ``None`` when admitted. Otherwise nothing is consumed and the result is the
+        number of seconds until every exhausted claim frees a slot — the honest value for an
+        HTTP ``Retry-After`` hint (a sliding window frees the slot of its oldest live attempt).
+        """
         unique_claims = tuple(dict.fromkeys(claims))
         now = self._clock()
         with self._lock:
             self._prune(now)
-            if any(
-                len(self._attempts.get(claim, ())) >= claim.limit
-                for claim in unique_claims
-            ):
-                return False
+            blocked = False
+            wait = 0.0
+            for claim in unique_claims:
+                attempts = self._attempts.get(claim)
+                if attempts is None or len(attempts) < claim.limit:
+                    continue
+                blocked = True
+                # Rejections never append, so a full bucket holds exactly `limit` attempts and
+                # frees a slot once the oldest of them leaves the window.
+                oldest = attempts[len(attempts) - claim.limit]
+                wait = max(wait, oldest + claim.window_seconds - now)
+            if blocked:
+                return wait
             for claim in unique_claims:
                 self._attempts.setdefault(claim, deque()).append(now)
-            return True
+            return None
+
+    def allow(self, claims: tuple[RateLimitClaim, ...]) -> bool:
+        return self.try_acquire(claims) is None
 
     @property
     def retained_key_count(self) -> int:

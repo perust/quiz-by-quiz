@@ -140,3 +140,40 @@ def test_atomic_multi_window_rejected_unique_keys_do_not_grow_state() -> None:
         )
 
     assert limiter.retained_key_count == retained_after_accept
+
+
+def test_atomic_multi_window_reports_when_every_exhausted_claim_frees_a_slot() -> None:
+    now = [100.0]
+    limiter = AtomicMultiWindowLimiter(clock=lambda: now[0])
+    player = RateLimitClaim(key="player", limit=2, window_seconds=60)
+    address = RateLimitClaim(key="address", limit=3, window_seconds=10)
+
+    assert limiter.try_acquire((player, address)) is None
+    now[0] = 104.0
+    assert limiter.try_acquire((player, address)) is None
+    now[0] = 105.0
+    # player는 100초의 첫 시도가 160초에 빠져야 자리가 난다 (Retry-After의 정직한 값)
+    assert limiter.try_acquire((player, address)) == 55.0
+    assert limiter.allow((player, address)) is False
+
+    # 두 claim이 함께 막히면 둘 다 풀릴 때까지 기다려야 한다
+    assert limiter.try_acquire((address,)) is None
+    now[0] = 106.0
+    assert limiter.try_acquire((address,)) == 4.0
+    assert limiter.try_acquire((player, address)) == 54.0
+
+    now[0] = 160.01
+    assert limiter.try_acquire((player, address)) is None
+
+
+def test_atomic_multi_window_rejection_with_wait_consumes_nothing() -> None:
+    now = [0.0]
+    limiter = AtomicMultiWindowLimiter(clock=lambda: now[0])
+    strict = RateLimitClaim(key="strict", limit=1, window_seconds=30)
+    shared = RateLimitClaim(key="shared", limit=2, window_seconds=30)
+
+    assert limiter.try_acquire((strict, shared)) is None
+    assert limiter.try_acquire((strict, shared)) == 30.0
+    # 거절은 shared를 먹지 않았다 — 한 자리가 그대로 남아 있다
+    assert limiter.try_acquire((shared,)) is None
+    assert limiter.try_acquire((shared,)) == 30.0

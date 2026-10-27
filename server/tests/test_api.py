@@ -329,6 +329,7 @@ def test_release_readiness_database_queries_are_rate_limited() -> None:
     assert [response.status_code for response in responses[:12]] == [200] * 12
     assert responses[12].status_code == 429
     assert responses[12].json()["detail"]["code"] == "rate-limited"
+    assert 55 <= int(responses[12].headers["retry-after"]) <= 60
     assert repository.schema_version_calls == 12
 
 
@@ -535,18 +536,80 @@ def test_session_process_limit_survives_client_and_identity_rotation() -> None:
     assert [response.status_code for response in responses[:300]] == [200] * 300
     assert responses[300].status_code == 429
     assert responses[300].json()["detail"]["code"] == "rate-limited"
+    assert int(responses[300].headers["retry-after"]) >= 1
     assert len(repository.sessions) == 300
 
 
-def test_authenticated_client_limit_runs_before_database_authentication() -> None:
+def test_authenticated_player_limit_runs_before_database_authentication() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         responses = [client.get("/v1/rooms", headers=HEADERS) for _ in range(121)]
 
     assert [response.status_code for response in responses[:120]] == [200] * 120
     assert responses[120].status_code == 429
-    assert responses[120].headers["retry-after"] == "1"
+    assert responses[120].json()["detail"]["code"] == "rate-limited"
+    # 120번이 한꺼번에 들어왔으니 첫 자리가 비는 것은 거의 60초 뒤다 — 정직한 Retry-After (N01)
+    assert 55 <= int(responses[120].headers["retry-after"]) <= 60
     assert repository.authenticate_calls == 120
+
+
+def test_players_behind_one_address_do_not_share_the_player_limit() -> None:
+    # 교실·집 NAT (N01): 한 사람이 제 몫을 다 써도 같은 IP의 다른 사람은 그대로 들어온다
+    repository = RotatingIdentityRepository()
+    with make_client(repository) as client:
+        busy = register_rotating_identity(client, 0, "198.51.100.40")
+        calm = register_rotating_identity(client, 1, "198.51.100.40")
+        exhausted = [client.get("/v1/rooms", headers=busy) for _ in range(121)]
+        neighbour = client.get("/v1/rooms", headers=calm)
+
+    assert [response.status_code for response in exhausted[:120]] == [200] * 120
+    assert exhausted[120].status_code == 429
+    assert neighbour.status_code == 200
+
+
+def test_forged_token_cannot_drain_another_players_limit() -> None:
+    # player id는 방 snapshot에 실린다. DB 인증 전의 몫을 id만으로 세면 남이 틀린 토큰으로
+    # 그 사람의 몫을 비울 수 있다
+    repository = FakeRepository()
+    forged = {**HEADERS, "Authorization": "Bearer " + "f" * 48}
+    with make_client(repository) as client:
+        attacks = [client.get("/v1/rooms", headers=forged) for _ in range(121)]
+        victim = client.get("/v1/rooms", headers=HEADERS)
+
+    assert [response.status_code for response in attacks[:120]] == [401] * 120
+    assert attacks[120].status_code == 429
+    assert victim.status_code == 200
+
+
+def test_authenticated_address_and_process_limits_bound_every_player(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 실제 값(IP 1,500 · 프로세스 3,000)을 다 채우면 느리다. 같은 계약을 작은 값으로 본다
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "AUTHENTICATED_PLAYER_LIMIT", 3)
+    monkeypatch.setattr(main_module, "AUTHENTICATED_CLIENT_LIMIT", 5)
+    monkeypatch.setattr(main_module, "AUTHENTICATED_PROCESS_LIMIT", 8)
+    repository = RotatingIdentityRepository()
+    with make_client(repository) as client:
+        shared = [register_rotating_identity(client, index, "198.51.100.50") for index in range(3)]
+        address = [
+            client.get("/v1/rooms", headers=shared[index % 3]).status_code for index in range(6)
+        ]
+        elsewhere = [
+            register_rotating_identity(client, 10 + index, f"192.0.2.{60 + index}")
+            for index in range(3)
+        ]
+        process = [client.get("/v1/rooms", headers=identity).status_code for identity in elsewhere]
+        process.append(client.get("/v1/rooms", headers=elsewhere[0]).status_code)
+        blocked = client.get("/v1/rooms", headers=elsewhere[1])
+
+    # 셋이 한 IP에서 다섯을 나눠 쓴다. 여섯째는 누구의 몫도 다 쓰지 않았지만 IP 몫에서 막힌다
+    assert address == [200, 200, 200, 200, 200, 429]
+    # 다른 IP의 세 사람이 나머지 셋을 쓰면 프로세스 몫(8)이 찬다
+    assert process == [200, 200, 200, 429]
+    assert blocked.status_code == 429
+    assert "retry-after" in blocked.headers
 
 
 def test_room_create_actor_limit_survives_client_rotation() -> None:
@@ -844,6 +907,7 @@ def test_private_join_is_rate_limited_before_unbounded_password_checks() -> None
     assert [response.status_code for response in attempts[:10]] == [403] * 10
     assert attempts[10].status_code == 429
     assert attempts[10].json()["detail"]["code"] == "rate-limited"
+    assert int(attempts[10].headers["retry-after"]) >= 1
 
 
 def test_chat_and_websocket_ticket_issuance_are_rate_limited_per_actor_and_room() -> None:
@@ -870,9 +934,12 @@ def test_chat_and_websocket_ticket_issuance_are_rate_limited_per_actor_and_room(
     assert [response.status_code for response in chats[:12]] == [202] * 12
     assert chats[12].status_code == 429
     assert chats[12].json()["detail"]["code"] == "rate-limited"
+    # 모든 요청 한도 거절은 언제 다시 해도 되는지 초로 말한다 (N01)
+    assert 55 <= int(chats[12].headers["retry-after"]) <= 60
     assert [response.status_code for response in tickets[:6]] == [201] * 6
     assert tickets[6].status_code == 429
     assert tickets[6].json()["detail"]["code"] == "rate-limited"
+    assert 55 <= int(tickets[6].headers["retry-after"]) <= 60
 
 
 def test_protected_routes_reject_unknown_browser_session() -> None:
@@ -1698,3 +1765,22 @@ def test_removed_member_records_expire_and_stay_bounded() -> None:
     assert not records.was_removed("ABC234", UUID(int=3))
     records.forget_room("ABC234")
     assert not records.was_removed("ABC234", UUID(int=2))
+
+
+def test_cross_origin_browser_can_read_retry_after_on_a_rate_limit() -> None:
+    # Retry-After는 CORS 기본 노출 헤더가 아니다. 드러내지 않으면 Pages의 브라우저는
+    # null을 읽는다 (N01)
+    repository = FakeRepository()
+    cross_origin = {**HEADERS, "Origin": "http://localhost:8765"}
+    with make_client(repository) as client:
+        responses = [client.get("/v1/rooms", headers=cross_origin) for _ in range(121)]
+
+    limited = responses[120]
+    assert limited.status_code == 429
+    assert limited.headers["access-control-allow-origin"] == "http://localhost:8765"
+    exposed = {
+        header.strip().lower()
+        for header in limited.headers["access-control-expose-headers"].split(",")
+    }
+    assert "retry-after" in exposed
+    assert int(limited.headers["retry-after"]) >= 1

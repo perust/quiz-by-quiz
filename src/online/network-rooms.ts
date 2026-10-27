@@ -40,10 +40,13 @@ import {
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
 import {
+  ApiFailure,
   isOnlineQuestionTime,
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
+  parseRetryAfterMs,
+  rateLimitRetryDelayMs,
   removalKind,
   RemovedFromRoom,
   type JoinFailReason,
@@ -114,27 +117,15 @@ export interface NetworkRoomStoreOptions {
   fetchImpl?: typeof fetch;
   webSocketFactory?: (url: string, protocols: string[]) => WebSocketLike;
   newIdentity?: () => BrowserIdentity;
+  /** 요청 한도(429)에 걸린 방 재조회를 다시 보내기 전의 기다림과 jitter (N01). 테스트가 가짜 시계를 넣는다 */
+  sleep?: (delayMs: number) => Promise<void>;
+  random?: () => number;
 }
 
 /** 서버가 이유를 말하지 않았거나(5xx·형식 밖 응답) 그 말이 개발 용어일 때 플레이어가 보는 말 (U40) */
 const SERVICE_TROUBLE_MESSAGE = '온라인 연결이 잠시 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
 /** 요청이 REQUEST_TIMEOUT_MS 안에 끝나지 않았을 때 (U40) */
 const TIMEOUT_MESSAGE = '응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.';
-
-/**
- * HTTP 거절. `message`는 화면에 그대로 띄워도 되는 말이다 — 서버가 4xx로 알려 준 이유이거나
- * `SERVICE_TROUBLE_MESSAGE`다. 상태·코드 같은 개발 상세는 필드와 콘솔에만 남긴다.
- */
-class ApiFailure extends OnlinePlayerError {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiFailure';
-  }
-}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -601,15 +592,19 @@ async function responseBody(response: Response): Promise<unknown> {
   }
 }
 
-function failureFrom(status: number, body: unknown): ApiFailure {
+function failureFrom(status: number, body: unknown, retryAfter: string | null = null): ApiFailure {
   const detail = isObject(body) && isObject(body.detail) ? body.detail : null;
   const code = detail && typeof detail.code === 'string' ? detail.code : 'request-failed';
   const serverMessage = detail && typeof detail.message === 'string' ? detail.message : null;
+  // 요청 한도(429)는 «언제 다시»를 함께 든다. 재조회가 그 값을 따라 한 번 다시 보낸다 (N01)
+  const retryAfterMs = status === 429 ? parseRetryAfterMs(retryAfter) : null;
   // 4xx의 이유는 서버가 플레이어에게 쓴 말이다(«이미 다음 문제로 넘어갔습니다»). 5xx나 이유 없는
   // 응답은 «데이터베이스…» 같은 개발 상세라 콘솔에만 남기고 화면에는 한 가지 말을 쓴다 (U40)
-  if (serverMessage !== null && status < 500) return new ApiFailure(status, code, serverMessage);
+  if (serverMessage !== null && status < 500) {
+    return new ApiFailure(status, code, serverMessage, retryAfterMs);
+  }
   console.warn(`[온라인 오류] 요청 실패 (${status} ${code})`, serverMessage ?? '');
-  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE);
+  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE, retryAfterMs);
 }
 
 export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomStore {
@@ -618,6 +613,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   const socketFactory = options.webSocketFactory
     ?? ((url: string, protocols: string[]) => new WebSocket(url, protocols));
   const identityFactory = options.newIdentity ?? randomIdentity;
+  const sleep = options.sleep
+    ?? ((delayMs: number) => new Promise<void>((resolve) => { setTimeout(resolve, delayMs); }));
+  const random = options.random ?? Math.random;
   let identity = readIdentity(options.storage, identityFactory);
   let playerProfile: PlayerInfo = {
     nickname: '손님',
@@ -707,7 +705,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         signal: controller.signal,
       });
       const body = await responseBody(response);
-      if (!response.ok) throw failureFrom(response.status, body);
+      if (!response.ok) throw failureFrom(response.status, body, response.headers.get('Retry-After'));
       return body;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -1095,10 +1093,30 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       handler({ type: 'removed', kind });
     }
 
+    /**
+     * 방 GET 하나. 요청 한도(429)에 걸리면 Retry-After(상한 약 3초)와 jitter를 두고 **한 번만** 다시
+     * 보낸다 (N01) — 조용히 버리면 준비·입장 변화가 다음 무효화까지 화면에 오지 않는다. 그사이 구독이
+     * 끝났거나 소켓이 다시 붙었으면(재연결이 새로 읽는다), 또는 그사이 온 무효화가 후속 조회를
+     * 예약했으면(그것이 같은 일을 한다) 다시 보내지 않는다.
+     */
+    async function readRoomForRefresh(
+      connectionGeneration: number,
+    ): Promise<Awaited<ReturnType<typeof fetchRoomSnapshot>>> {
+      try {
+        return await fetchRoomSnapshot(code);
+      } catch (error) {
+        const delayMs = rateLimitRetryDelayMs(error, random);
+        if (delayMs === null) throw error;
+        await sleep(delayMs);
+        if (stopped || connectionGeneration !== generation || roomRefreshQueued) throw error;
+        return fetchRoomSnapshot(code);
+      }
+    }
+
     async function refreshRoom(connectionGeneration: number): Promise<void> {
       let snapshot: Awaited<ReturnType<typeof fetchRoomSnapshot>>;
       try {
-        snapshot = await fetchRoomSnapshot(code);
+        snapshot = await readRoomForRefresh(connectionGeneration);
       } catch (error) {
         if (error instanceof RemovedFromRoom) {
           removedFromRoom(connectionGeneration, error.kind);
@@ -1118,7 +1136,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
      * room-invalidated와 재연결 복구가 부르는 재조회. **요청을 합친다** — 방송 하나에 방
      * 전원이 GET을 보내므로, 준비 토글이 몰리면 무효화마다 한 번씩 읽는 것만으로 IP·프로세스
      * 요청 한도를 먼저 먹는다. 날아가는 요청이 있으면 표시만 해 두고, 끝나면 최신 상태를
-     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 실패해도 다음 무효화·재연결이 다시 맞춘다.
+     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 요청 한도(429)면 한 번 다시 보내고(N01), 그래도
+     * 실패하면 다음 무효화·재연결이 다시 맞춘다.
      */
     function requestRoomRefresh(): void {
       if (stopped) return;

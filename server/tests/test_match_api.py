@@ -314,8 +314,68 @@ def test_match_routes_hide_answer_feedback_and_scores_until_reveal() -> None:
     assert '"correct"' not in submitted.text
 
 
-def test_match_answer_broadcast_only_invalidates_other_clients() -> None:
+def test_an_answer_that_does_not_advance_the_match_is_not_broadcast() -> None:
+    # N01: 아직 고르는 사람이 남은 답은 남의 running snapshot을 하나도 바꾸지 않는다(점수는
+    # 비어 있고 제출 표시는 묻는 사람 자신의 것뿐). 방송하면 방 전원이 같은 snapshot을 다시
+    # 읽어 같은 IP의 요청 한도를 N²로 먹는다. 낸 사람은 응답의 snapshot을 쓴다.
     repository = MatchApiRepository()
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            response = client.post(
+                "/v1/rooms/ABC234/match/answers",
+                headers=HEADERS,
+                json={"position": 1, "choiceIndex": 2},
+            )
+            # 같은 답을 다시 보내도(저장소는 첫 답을 돌려준다) 방송하지 않는다
+            repeated = client.post(
+                "/v1/rooms/ABC234/match/answers",
+                headers=HEADERS,
+                json={"position": 1, "choiceIndex": 2},
+            )
+            # 방송이 있었다면 그것이 먼저 온다. 뒤에 알려진 방송 하나를 보내 순서로 확인한다
+            client.put("/v1/rooms/ABC234/ready", headers=HEADERS, json={"isReady": False})
+            event = websocket.receive_json()
+
+    assert response.status_code == 200
+    assert response.json()["advanced"] is False
+    assert response.json()["match"]["ownSubmission"] == {
+        "position": 1,
+        "choiceIndex": 2,
+        "timedOut": False,
+    }
+    assert repeated.status_code == 200
+    assert event == {"type": "room-invalidated"}
+
+
+class RevealOpeningRepository(MatchApiRepository):
+    """마지막으로 답한 사람의 제출이 모두 답한 문항을 공개로 넘긴다."""
+
+    async def submit_answer(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        position: int,
+        choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSubmission:
+        submission = await super().submit_answer(
+            actor_id,
+            code,
+            position=position,
+            choice_index=choice_index,
+            absent_player_ids=absent_player_ids,
+        )
+        self.match = replace(self.match, state="revealing")
+        return replace(submission, match=self.match, advanced=True)
+
+
+def test_an_answer_that_opens_the_reveal_invalidates_the_whole_room() -> None:
+    repository = RevealOpeningRepository()
     with _client(repository) as client:
         ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
         with client.websocket_connect(
@@ -330,6 +390,8 @@ def test_match_answer_broadcast_only_invalidates_other_clients() -> None:
             event = websocket.receive_json()
 
     assert response.status_code == 200
+    assert response.json()["advanced"] is True
+    assert response.json()["match"]["state"] == "revealing"
     assert event == {"type": "match-invalidated", "matchId": str(MATCH_ID)}
 
 
@@ -607,6 +669,8 @@ def test_answer_submission_is_rate_limited_per_player_and_room() -> None:
     assert [response.status_code for response in responses[:8]] == [200] * 8
     assert responses[8].status_code == 429
     assert responses[8].json()["detail"]["code"] == "rate-limited"
+    # 답안 몫은 30초 창이다. 언제 다시 낼 수 있는지 초로 말한다 (N01)
+    assert 25 <= int(responses[8].headers["retry-after"]) <= 30
 
 
 def test_match_answer_rejects_an_out_of_range_choice_index_before_repository() -> None:

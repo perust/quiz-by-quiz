@@ -1272,3 +1272,189 @@ test('채팅 요청 한도(429)는 이유 없는 실패로 삼키지 않고 플�
   status = 204;
   assert.deepEqual(await send(), { ok: true });
 });
+
+// ── N01: 같은 IP 다인원 — 요청 한도(429)의 «언제 다시» ─────────────────────
+
+function rateLimitedResponse(retryAfter) {
+  return new Response(JSON.stringify({
+    detail: { code: 'rate-limited', message: '요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.' },
+  }), {
+    status: 429,
+    headers: {
+      'content-type': 'application/json',
+      ...(retryAfter === undefined ? {} : { 'retry-after': retryAfter }),
+    },
+  });
+}
+
+test('Retry-After는 초·HTTP 날짜를 ms로 읽고, 다시 보낼 때까지의 기다림은 상한 3초 안에서 jitter를 더한다', async () => {
+  const {
+    ApiFailure,
+    parseRetryAfterMs,
+    rateLimitRetryDelayMs,
+    RATE_LIMIT_RETRY_CAP_MS,
+  } = await import('../js/online/rules.js');
+
+  assert.equal(parseRetryAfterMs('1'), 1_000);
+  assert.equal(parseRetryAfterMs(' 2.5 '), 2_500);
+  assert.equal(parseRetryAfterMs(null), null);
+  assert.equal(parseRetryAfterMs('soon'), null);
+  const now = Date.parse('2026-10-27T00:00:00Z');
+  assert.equal(parseRetryAfterMs('Tue, 27 Oct 2026 00:00:04 GMT', now), 4_000);
+  assert.equal(parseRetryAfterMs('Tue, 27 Oct 2026 00:00:00 GMT', now + 5_000), 0);
+
+  const limited = (retryAfterMs) => new ApiFailure(429, 'rate-limited', '잠시 뒤에', retryAfterMs);
+  assert.equal(RATE_LIMIT_RETRY_CAP_MS, 3_000);
+  assert.equal(rateLimitRetryDelayMs(limited(1_000), () => 0), 1_000);
+  assert.equal(rateLimitRetryDelayMs(limited(1_000), () => 0.5), 1_250);
+  // 말이 없으면 1초
+  assert.equal(rateLimitRetryDelayMs(limited(null), () => 0), 1_000);
+  // 60초를 기다리라 해도 jitter를 남긴 채 3초를 넘지 않는다(거절은 몫을 먹지 않는다)
+  assert.equal(rateLimitRetryDelayMs(limited(60_000), () => 0), 2_500);
+  assert.equal(rateLimitRetryDelayMs(limited(60_000), () => 0.999), 3_000);
+  // 요청 한도가 아니면 다시 보내지 않는다
+  assert.equal(rateLimitRetryDelayMs(new ApiFailure(503, 'database-unavailable', '잠시 뒤에'), () => 0), null);
+  assert.equal(rateLimitRetryDelayMs(new Error('Failed to fetch'), () => 0), null);
+});
+
+test('네트워크 저장소의 429 거절은 서버의 Retry-After를 ms로 든다', async () => {
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234/match')) return rateLimitedResponse('2');
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const { ApiFailure } = await import('../js/online/rules.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+  });
+
+  await assert.rejects(store.getMatch('ABC234'), (error) => {
+    assert.ok(error instanceof ApiFailure);
+    assert.equal(error.status, 429);
+    assert.equal(error.code, 'rate-limited');
+    assert.equal(error.retryAfterMs, 2_000);
+    assert.equal(error.message, '요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.');
+    return true;
+  });
+});
+
+function roomRefreshHarness(roomResponses) {
+  FakeWebSocket.instances.length = 0;
+  const sleeps = [];
+  const wakeups = [];
+  let roomReads = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'rate-limit-ticket' }, 201);
+    if (url.endsWith('/v1/rooms/ABC234')) {
+      roomReads += 1;
+      return roomResponses(roomReads);
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  return {
+    sleeps,
+    wake: () => wakeups.shift()?.(),
+    reads: () => roomReads,
+    async create() {
+      const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+      return createNetworkRoomStore({
+        baseUrl: 'https://quiz-api.example.test',
+        storage: memoryStorage(),
+        fetchImpl,
+        newIdentity: () => identity,
+        webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+        sleep: (delayMs) => {
+          sleeps.push(delayMs);
+          return new Promise((resolve) => wakeups.push(resolve));
+        },
+        random: () => 0.5,
+      });
+    },
+  };
+}
+
+test('요청 한도에 걸린 room-invalidated 재조회는 Retry-After와 jitter를 두고 한 번 다시 읽는다 (N01)', async () => {
+  const harness = roomRefreshHarness((read) => (
+    read === 1 ? rateLimitedResponse('1') : json(room({ name: '다시 읽은 방' }))
+  ));
+  const store = await harness.create();
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    FakeWebSocket.instances[0].emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+    await waitFor(() => harness.sleeps.length === 1, 'retry was not scheduled');
+    assert.deepEqual(harness.sleeps, [1_250]);
+    assert.equal(harness.reads(), 1);
+
+    harness.wake();
+    await waitFor(() => events.some((event) => event.type === 'room'), 'retried room read was not delivered');
+    assert.equal(harness.reads(), 2);
+    assert.equal(events.find((event) => event.type === 'room').room.name, '다시 읽은 방');
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('room 재조회는 429를 한 번만 다시 보내고, 그사이 온 무효화가 있으면 후속 조회에 맡긴다', async () => {
+  const harness = roomRefreshHarness((read) => (
+    read <= 2 ? rateLimitedResponse('1') : json(room({ name: `읽기 ${read}` }))
+  ));
+  const store = await harness.create();
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    const socket = FakeWebSocket.instances[0];
+    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+    await waitFor(() => harness.sleeps.length === 1, 'retry was not scheduled');
+    harness.wake();
+    // 다시 보낸 것도 429다. 더 되풀이하지 않고 다음 무효화를 기다린다
+    await waitFor(() => harness.reads() === 2, 'retry was not sent');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(harness.reads(), 2);
+    assert.equal(harness.sleeps.length, 1);
+    assert.equal(events.some((event) => event.type === 'room'), false);
+
+    // 실패해도 막히지 않는다 — 다음 무효화가 다시 읽는다
+    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+    await waitFor(() => harness.reads() === 3, 'next refresh was not sent');
+    await waitFor(() => events.some((event) => event.type === 'room'), 'next refresh was not delivered');
+    assert.equal(events.filter((event) => event.type === 'room').at(-1).room.name, '읽기 3');
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('기다리는 사이 무효화가 오면 재시도 대신 후속 조회 하나만 보내고, 구독을 끝냈으면 아무것도 보내지 않는다', async () => {
+  const harness = roomRefreshHarness((read) => (
+    read === 1 || read === 3 ? rateLimitedResponse('1') : json(room({ name: `읽기 ${read}` }))
+  ));
+  const store = await harness.create();
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  const socket = await (async () => {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    return FakeWebSocket.instances[0];
+  })();
+  socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+  await waitFor(() => harness.sleeps.length === 1, 'retry was not scheduled');
+  socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+  harness.wake();
+  await waitFor(() => events.some((event) => event.type === 'room'), 'follow-up refresh was not delivered');
+  assert.equal(harness.reads(), 2, '첫 GET 하나와 합친 후속 하나 — 재시도와 후속을 함께 보내지 않는다');
+
+  socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+  await waitFor(() => harness.sleeps.length === 2, 'second retry was not scheduled');
+  unsubscribe();
+  harness.wake();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(harness.reads(), 3, '구독을 끝냈으면 다시 보내지 않는다');
+});

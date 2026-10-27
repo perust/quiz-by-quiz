@@ -48,7 +48,8 @@ Ingress limits are atomic across their scopes: sessions are 60/client/minute
 and 300/process/minute; room creation is 10/actor/hour, 30/client/hour, and
 100/process/hour; private password attempts are 10/client+room/minute and
 120/process/minute. Every authenticated REST request is bounded before database
-authentication at 120/client/minute and 600/process/minute. Public/private join is
+authentication at 120/player-session/minute, 1,500/client/minute and
+3,000/process/minute (see "Shared-address players" below). Public/private join is
 12/actor+room/minute and 300/process/minute;
 room mutations are 30/actor+room/10 seconds and 600/process/minute; chat is
 12/actor+room/minute and 600/process/minute; answer submission is
@@ -57,6 +58,11 @@ room mutations are 30/actor+room/10 seconds and 600/process/minute; chat is
 exactly one Uvicorn worker.
 Do not increase the worker count or horizontally scale this service without a
 shared distributed limiter and a fresh memory/rate-envelope review.
+
+Every limiter rejection is HTTP `429` with `Retry-After` set to the whole
+seconds until the exhausted sliding window actually frees a slot (at least 1).
+CORS exposes `Retry-After` so the cross-origin Pages client can read it.
+Rejected attempts consume nothing, so an early retry cannot deepen a limit.
 
 The in-process event hub admits at most two sockets per actor+room, 32 per room,
 and 256 total. Movement and heartbeat frames share an actor+room budget of 30 per
@@ -98,13 +104,66 @@ Cleanup failures are logged and retried on the next tick.
 Increasing the worker count, container memory, Argon2 costs or admission
 limits, ingress limits, lifetimes, cleanup interval, or lobby cap is a new
 resource-envelope review boundary; do not treat it as an operational tuning
-change.
+change. "Shared-address players" below records such a review.
 
 Before the one-shot migrator handles `QUIZ_DB_PASSWORD`, the owner must confirm
 that PostgreSQL statement logging cannot persist credential-bearing SQL. The
 verified baseline is `log_statement=none` with duration logging disabled; a
 changed logging policy is a new preflight blocker, not a reason to print a
 secret for diagnosis.
+
+### Shared-address players (N01, owner decision)
+
+A classroom or home NAT puts every player of a room behind one client address.
+With the former authenticated envelope (120/client/minute, 600/process/minute)
+a same-address load simulation of a 10-question match lost 10–14% of answers to
+`429` at 6 players, about 25% at 8 players (half of them stuck), and 61–70% at
+12 players (every player stuck on the last reveal). The cause was O(N²)
+fan-out: every accepted answer broadcast `match-invalidated` to the whole room
+and every browser re-read `GET /match`, 77% of those reads returning an
+unchanged snapshot; a refresh lost to `429` was never retried, and no broadcast
+follows the final transition.
+
+The owner approved this envelope change together with three traffic changes:
+
+- Authenticated ingress adds a per-player bucket of 120/minute, keyed by player
+  id **and** the bearer-token hash so a forged request that only knows another
+  player's id (ids appear in room snapshots) drains its own bucket, not the
+  victim's. The client bucket rises to 1,500/minute, above the largest room
+  (12 players × 120), and the process bucket to 3,000/minute. All three are
+  checked atomically before database authentication. Answer submission keeps
+  8/actor+room/30 seconds; unauthenticated limits are unchanged.
+- An accepted answer that does not advance the match is no longer broadcast:
+  the running snapshot other players read carries no scores and no foreign
+  submission flags, so it is byte-for-byte unchanged (Postgres integration test
+  `test_postgres_answer_that_does_not_advance_leaves_other_players_payload_unchanged`).
+  The answer that opens the reveal, expiry advances, and read-triggered
+  advances still broadcast.
+- The browser draws the answer response snapshot instead of re-reading, retries
+  a `429`'d `GET /match` or room refresh once after `Retry-After` (default 1 s)
+  plus up to 500 ms jitter, capped at 3 s, and re-reads once per phase when the
+  displayed countdown has been over for 2 seconds without a new phase.
+
+Measured demand with the broadcast suppression and no post-answer read, limits
+lifted: peak 60-second totals of 132 (6 players), 177 (8) and 332 (12, lobby
+dominated; match phase 115) requests from one address, and at most 36 requests
+per player in any 60-second window (50 with the former client). The per-player
+bucket therefore keeps more than 3× headroom, and one address can carry about
+four full 12-player rooms at that peak.
+
+Resource review for the raised ceiling: the process bucket now admits up to 50
+authenticated requests per second, five times the former 10/s, each costing
+one indexed authentication read plus the route's own statement. That rate has
+not been load-tested inside the `0.50` CPU container; measured rooms stay far
+below it, and the expected effect at the ceiling is slower responses rather than
+memory growth. Limiter state stays bounded because rejected attempts never
+create keys: at most 3,000 admitted requests per minute, each held in three
+claims (≤ 9,000 timestamps), and per-player keys bounded by the same 3,000.
+The change needs no migration and is compatible in either deployment order: an
+older browser still re-reads after its own answer (one extra read, within its
+new per-player bucket), and against an older API the new browser falls back to
+its read coalescing (every answer is still broadcast) and to the 1-second
+default when `Retry-After` is not exposed.
 
 ## Caddy integration
 

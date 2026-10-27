@@ -248,6 +248,58 @@ export class OnlinePlayerError extends Error {
 }
 
 /**
+ * HTTP 거절 (U40). `message`는 화면에 그대로 띄워도 되는 말이다 — 서버가 4xx로 알려 준 이유이거나
+ * 한 가지 서비스 문제 말이다. 상태·코드 같은 개발 상세는 필드와 콘솔에만 남긴다.
+ *
+ * 요청 한도(429)면 서버의 `Retry-After`를 ms로 옮긴 값을 `retryAfterMs`로 든다 (N01). 서버가 말하지
+ * 않았거나 읽을 수 없으면(CORS가 드러내지 않은 구버전 API 등) null이다.
+ */
+export class ApiFailure extends OnlinePlayerError {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly retryAfterMs: number | null = null,
+  ) {
+    super(message);
+    this.name = 'ApiFailure';
+  }
+}
+
+/**
+ * 요청 한도(429)에 걸린 재조회를 **한 번** 다시 보내기까지의 최장 대기 (N01). jitter를 더해도 넘지 않는다.
+ * 그보다 오래 기다리면 그 사이 phase가 바뀌어 다시 읽을 까닭이 다른 것이 된다 — 그 몫은 마감 뒤 다시
+ * 읽기(`match-controller.ts`)와 다음 무효화가 맡는다. 서버는 거절한 요청을 몫에서 깎지 않으므로 이른
+ * 재시도가 몫을 더 먹지는 않는다.
+ */
+export const RATE_LIMIT_RETRY_CAP_MS = 3_000;
+/** 같은 IP 뒤의 여럿이 같은 순간에 다시 보내지 않게 흩는 폭 */
+export const RATE_LIMIT_RETRY_JITTER_MS = 500;
+/** 서버가 `Retry-After`를 말하지 않았을 때 기다리는 시간 */
+export const RATE_LIMIT_RETRY_DEFAULT_MS = 1_000;
+
+/** `Retry-After` 헤더(초, 또는 HTTP 날짜)를 ms로 옮긴다. 없거나 읽을 수 없으면 null */
+export function parseRetryAfterMs(value: string | null, nowMs: number = Date.now()): number | null {
+  if (value === null) return null;
+  const text = value.trim();
+  if (/^\d+(\.\d+)?$/.test(text)) return Math.round(Number(text) * 1000);
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? null : Math.max(0, at - nowMs);
+}
+
+/**
+ * 요청 한도(429)에 걸린 읽기를 한 번 다시 보내기까지 기다릴 ms (N01). 429가 아니면 null — 그때는 다시
+ * 보내지 않는다. 서버의 `Retry-After`를 따르되 `RATE_LIMIT_RETRY_CAP_MS` 안에서 jitter를 더한다.
+ */
+export function rateLimitRetryDelayMs(error: unknown, random: () => number = Math.random): number | null {
+  if (!(error instanceof ApiFailure) || error.status !== 429) return null;
+  const hinted = error.retryAfterMs ?? RATE_LIMIT_RETRY_DEFAULT_MS;
+  const base = Math.min(Math.max(hinted, 0), RATE_LIMIT_RETRY_CAP_MS - RATE_LIMIT_RETRY_JITTER_MS);
+  const jitter = Math.min(Math.max(random(), 0), 1) * RATE_LIMIT_RETRY_JITTER_MS;
+  return Math.min(RATE_LIMIT_RETRY_CAP_MS, Math.round(base + jitter));
+}
+
+/**
  * 오류를 화면에 띄울 말로 옮긴다 (U40). `OnlinePlayerError`면 그 말을, 아니면 부르는 쪽이
  * 고른 `fallback`을 쓴다. **개발 상세는 콘솔에만 남긴다** — 화면에 «온라인 매치 오류: 서버 …»를
  * 띄우면 플레이어는 무엇을 해야 할지 모른다.
