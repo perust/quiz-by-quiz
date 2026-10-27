@@ -38,6 +38,9 @@ class RoomView:
     in_match: bool = False
     # 방장이 고른 문항 시간(ms, 20초·40초). 판을 열 때 그 판에 옮겨 적는다.
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 이 요청(나가기)이 방장 자리를 넘겼는가. 운영 기록(`ops_log.host_transferred`)만 읽는다 —
+    # 방 payload에는 싣지 않는다.
+    host_transferred: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,9 @@ class MatchSetup:
     game_mode: bool
     total_questions: int
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 판에 든 사람 수. 운영 기록(`ops_log.match_started`)만 읽는다 — 시작 payload에는 싣지 않는다.
+    # 모르는 저장소(테스트의 가짜)는 None이다.
+    player_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +167,38 @@ class AbsentHostSweep:
     transferred: frozenset[str]
     # 지금 있는 방마다 참가자. 물어본 방이 여기 없으면 사라졌거나 만료됐다.
     members: Mapping[str, frozenset[UUID]]
+
+
+@dataclass(frozen=True)
+class CleanupCounts:
+    """60초 정리 한 번이 지우거나 넘긴 수. API가 0이 아닐 때만 운영 기록에 한 줄 낸다."""
+
+    rooms_deleted: int = 0
+    members_removed: int = 0
+    hosts_transferred: int = 0
+    matches_deleted: int = 0
+    players_deleted: int = 0
+
+    @property
+    def changed(self) -> bool:
+        return any(
+            (
+                self.rooms_deleted,
+                self.members_removed,
+                self.hosts_transferred,
+                self.matches_deleted,
+                self.players_deleted,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class RoomCounts:
+    """운영 요약의 방·판 수. 5분에 한 번 집계 쿼리 하나로 읽는다(`ops_counts`)."""
+
+    waiting_rooms: int
+    playing_rooms: int
+    running_matches: int
 
 
 class RepositoryFailure(RuntimeError):
@@ -322,7 +360,11 @@ class RoomsRepository(Protocol):
         absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> MatchSubmission: ...
 
-    async def cleanup_expired_resources(self) -> None: ...
+    # 지우거나 넘긴 수를 돌려준다. 수를 모르는 구현은 None을 돌려줘도 된다(운영 기록만 빠진다).
+    async def cleanup_expired_resources(self) -> CleanupCounts | None: ...
+
+    # 운영 요약(5분마다)의 기다리는 방·게임 중인 방·도는 판 수
+    async def ops_counts(self) -> RoomCounts: ...
 
     async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]: ...
 

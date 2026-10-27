@@ -1,0 +1,69 @@
+# 공개 서비스 점검 (uptime monitor)
+#
+# 15분마다 공개 API의 release gate와 Pages를 **읽기만 해서** 본다(deploy/oracle/uptime.py check).
+# 방이나 세션을 만들지 않는다. 실패하면 «운영 경보» 이슈 하나를 열거나(열린 것이 있으면 거기에
+# 덧붙인다 — 열린 경보는 늘 하나다) job을 실패로 끝내 GitHub이 소유자에게 실패 메일을 보내게 한다.
+# 통과하면 열린 경보에 회복을 남기고 닫는다. 소유자 결정: 경보는 이슈 + 실패 메일이다.
+#
+# - schedule은 기본 브랜치(main)의 이 파일로만 돈다. 저장소에 60일 동안 활동이 없으면 GitHub이
+#   schedule을 멈춘다(Actions 탭에서 다시 켠다).
+# - 계획된 배포(API가 503 migration-required를 내는 동안)에는 경보가 열린다. 그동안은
+#   `gh workflow disable uptime.yml`로 끄고 끝나면 `gh workflow enable uptime.yml`로 켠다.
+# 읽는 법은 deploy/oracle/README.md «Uptime monitor».
+
+name: Uptime monitor
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# 한 번에 하나만 돈다. 앞 점검이 다시 해 보며 기다리는 동안 온 것은 하나만 기다리고 나머지는
+# 버려진다 — 쌓이지 않는다. 도는 점검을 끊지 않는다(실패를 알리던 중에 끊기면 경보를 놓친다).
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            deploy/oracle/uptime.py
+            .github/workflows/pages.yml
+          sparse-checkout-cone-mode: false
+
+      - name: 공개 API·Pages 점검
+        id: probe
+        run: |
+          status=0
+          python3 deploy/oracle/uptime.py check --report "$RUNNER_TEMP/uptime-report.txt" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: 운영 경보 이슈 열기·덧붙이기·닫기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROBE_STATUS: ${{ steps.probe.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 deploy/oracle/uptime.py notify \
+            --status "${PROBE_STATUS:-missing}" \
+            --report "$RUNNER_TEMP/uptime-report.txt" \
+            --run-url "$RUN_URL"
+
+      - name: 점검이 실패했으면 job을 실패로 끝낸다
+        if: always() && steps.probe.outputs.status != '0'
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.status }}
+        run: |
+          echo "uptime check failed (status ${PROBE_STATUS:-missing}); see the 운영 경보 issue"
+          exit 1

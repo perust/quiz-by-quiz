@@ -1103,6 +1103,18 @@ GET을 보내므로 무효화마다 한 번씩 읽으면 준비 토글이 몰릴
 길만 남아 있다. 다만 이 브라우저 안의 방은 늘 나 혼자라 시작 조건(둘 이상)을 채울 수 없어 화면이 버튼을
 잠근다 — 실제로 여럿이 푸는 판은 네트워크 방에서만 열린다.
 
+**운영 기록은 개인 정보를 싣지 않는다** (`server/app/ops_log.py`, `deploy/oracle/README.md`의 «Operational log
+and uptime monitor»). API는 uvicorn의 `--log-level warning`과 무관하게 `quiz.ops` logger의 제 stderr handler로
+한 줄 JSON을 낸다 — 방 생성·삭제, 참가·나가기·내보내기, 방장 승계(나가기·presence sweep), 판 시작·끝, 0이 아닌
+60초 정리 수, 처리하지 못한 5xx(경로 틀과 예외 클래스뿐)와 5분 요약(소켓·접속 인원·방·판 수, 상태 갈래별 REST
+요청 수, 429, p50/p95). 사건마다 함수의 인자가 곧 칸이고(`EVENT_FIELDS`) 닉네임·방 이름·채팅·토큰·티켓·IP·
+player id·비밀번호·문항은 어느 칸에도 자리가 없다. 사건을 더하면 그 목록과 `server/tests/test_ops_log.py`의 금지
+칸·값 검사를 함께 고친다. 요약은 고정 크기 칸(`RequestWindow`)만 센다 — 요청마다 무엇을 붙들지 않는다. 저장소가
+돌려주는 `RoomView.host_transferred`·`MatchSetup.player_count`는 이 기록만 읽고 payload에 싣지 않는다. 공개 서비스
+점검(`.github/workflows/uptime.yml` → `deploy/oracle/uptime.py`)은 GET 두 개로 읽기만 하고, 기대하는
+`schemaVersion`을 `pages.yml`의 `backend-ready`에서 읽으므로 gate 판을 올릴 때 따로 고칠 곳이 없다. 실패하면
+«운영 경보» 이슈를 하나만 두고 job을 실패시킨다.
+
 ## 문제 데이터
 
 `data/*.json`은 PRD 6.1 스키마의 배열이다. **문제 추가는 JSON만 고치면 되고 코드는 손대지 않는다.**

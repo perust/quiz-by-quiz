@@ -164,6 +164,12 @@ hash-verified 상태로 health check 되기 전에는 Pages에 API를 공개하�
 않는다. Oracle overlay의 운영 경계는 [`deploy/oracle/README.md`](deploy/oracle/README.md)를
 따른다.
 
+운영 감시는 둘이다. API는 개인 정보를 싣지 않는 한 줄 JSON 운영 기록(방·참가·판 사건, 처리하지 못한
+오류, 5분 요약)을 컨테이너 stderr에 남기고, `.github/workflows/uptime.yml`이 15분마다 공개 API의
+release gate와 Pages를 읽기만 해서 점검한다. 점검이 실패하면 «운영 경보» 이슈 하나를 열거나 거기에
+덧붙이고 job을 실패시켜 GitHub이 실패 메일을 보낸다. 읽는 법과 남기지 않는 것은
+[`deploy/oracle/README.md`](deploy/oracle/README.md)의 «Operational log and uptime monitor»를 따른다.
+
 모든 웹 경로는 상대 경로라 `https://<사용자>.github.io/<저장소>/` 같은 하위 경로에서도 동작한다.
 
 ## 기술 제약

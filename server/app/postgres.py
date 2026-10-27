@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -22,6 +23,7 @@ from .question_catalog import (
 from .repository import (
     AbsentHostSweep,
     AccessInfo,
+    CleanupCounts,
     ExpiredMatchAdvance,
     MatchAnswerView,
     MatchInProgress,
@@ -40,6 +42,7 @@ from .repository import (
     NotMember,
     PlayerView,
     RepositoryFailure,
+    RoomCounts,
     RoomFull,
     RoomNotFound,
     RoomView,
@@ -251,6 +254,30 @@ WHERE player.expires_at <= now()
       WHERE match_player.player_id = player.id
         AND match.expires_at > now()
   )
+"""
+
+# 운영 요약(5분마다)의 방·판 수 (deploy/oracle/README.md «Operational log»). 로비와 같이 만료된 방은
+# 없는 방이고, 게임 중인 방은 진행 중인(running·revealing) 판이 있는 방이다. 집계 하나라 방이 많아도
+# 결과는 한 줄이다.
+_OPS_COUNTS_SQL = """
+SELECT
+    count(*) FILTER (WHERE NOT room_state.playing) AS waiting_rooms,
+    count(*) FILTER (WHERE room_state.playing) AS playing_rooms,
+    (
+        SELECT count(*)
+        FROM quiz_online.matches running_match
+        WHERE running_match.state IN ('running', 'revealing')
+    ) AS running_matches
+FROM quiz_online.rooms room
+CROSS JOIN LATERAL (
+    SELECT EXISTS (
+        SELECT 1
+        FROM quiz_online.matches active_match
+        WHERE active_match.room_id = room.id
+          AND active_match.state IN ('running', 'revealing')
+    ) AS playing
+) room_state
+WHERE room.expires_at > now()
 """
 
 # 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
@@ -620,7 +647,8 @@ class PostgresRoomsRepository:
                     )
                     return None
 
-                if room["host_player_id"] == actor_id:
+                host_left = room["host_player_id"] == actor_id
+                if host_left:
                     await connection.execute(
                         """
                         UPDATE quiz_online.rooms
@@ -630,12 +658,16 @@ class PostgresRoomsRepository:
                         """,
                         (next_member["player_id"], _ROOM_LIFETIME, room["id"]),
                     )
-                return await self._fetch_room(
+                view = await self._fetch_room(
                     connection,
                     actor_id,
                     code,
                     require_member=False,
                 )
+                # 운영 기록이 «나가며 방장을 넘겼다»를 남긴다. payload에는 싣지 않는다
+                if view is None or not host_left:
+                    return view
+                return replace(view, host_transferred=True)
 
     async def remove_member(
         self,
@@ -1104,6 +1136,7 @@ class PostgresRoomsRepository:
                     game_mode=True,
                     total_questions=len(selected),
                     question_time_ms=question_time_ms,
+                    player_count=len(members),
                 )
 
     async def get_match(
@@ -1773,18 +1806,47 @@ class PostgresRoomsRepository:
             (_ROOM_LIFETIME, row["id"]),
         )
 
-    async def cleanup_expired_resources(self) -> None:
+    async def cleanup_expired_resources(self) -> CleanupCounts:
+        # 지우거나 넘긴 수는 운영 기록(`ops_log.cleanup`)이 한 줄로 남긴다. 무엇을 지웠는지는
+        # 싣지 않는다.
         async with self._pool.connection() as connection:
             async with connection.transaction():
-                await connection.execute("SELECT quiz_online.cleanup_expired_matches()")
-                await connection.execute(_DELETE_EXPIRED_ROOMS_SQL)
-                await connection.execute(
+                matches = await connection.execute(
+                    "SELECT quiz_online.cleanup_expired_matches() AS deleted"
+                )
+                matches_row = await matches.fetchone()
+                expired_rooms = await connection.execute(_DELETE_EXPIRED_ROOMS_SQL)
+                stale_members = await connection.execute(
                     _DELETE_STALE_MEMBERS_SQL,
                     (_MEMBER_STALE_AFTER, _MEMBER_STALE_AFTER),
                 )
-                await connection.execute(_TRANSFER_ORPHANED_HOSTS_SQL)
-                await connection.execute(_DELETE_EMPTY_ROOMS_SQL)
-                await connection.execute(_DELETE_EXPIRED_PLAYERS_SQL)
+                orphaned_hosts = await connection.execute(_TRANSFER_ORPHANED_HOSTS_SQL)
+                empty_rooms = await connection.execute(_DELETE_EMPTY_ROOMS_SQL)
+                expired_players = await connection.execute(_DELETE_EXPIRED_PLAYERS_SQL)
+                return CleanupCounts(
+                    rooms_deleted=_affected(expired_rooms) + _affected(empty_rooms),
+                    members_removed=_affected(stale_members),
+                    hosts_transferred=_affected(orphaned_hosts),
+                    matches_deleted=int(matches_row["deleted"] or 0) if matches_row else 0,
+                    players_deleted=_affected(expired_players),
+                )
+
+    async def ops_counts(self) -> RoomCounts:
+        async with self._pool.connection(timeout=5) as connection:
+            cursor = await connection.execute(_OPS_COUNTS_SQL)
+            row = await cursor.fetchone()
+        if row is None:
+            raise RepositoryFailure("ops count query returned no row")
+        return RoomCounts(
+            waiting_rooms=int(row["waiting_rooms"]),
+            playing_rooms=int(row["playing_rooms"]),
+            running_matches=int(row["running_matches"]),
+        )
+
+
+def _affected(cursor: Any) -> int:
+    # psycopg는 모르는 수를 -1로 준다
+    return max(0, int(cursor.rowcount))
 
 
 def _make_code() -> str:
