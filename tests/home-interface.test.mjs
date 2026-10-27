@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { MOBILE, lengthOf, loadStyles, node, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, lengthOf, loadStyles, node, nodeFromHtml, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -49,29 +49,37 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(homeSource, /--home-dock-h/);
   assert.match(homeSource, /window\.innerHeight <= 700/);
 
-  // 홈의 월드 배치는 홈 무대 절 하나에 있다. 예전에는 맨 끝 30절(월드 우선 화면 구성)이 이 절의 같은
-  // 선택자를 뒤에서 다시 썼는데 U49 에서 이 절로 녹였다 — 아래 «높이 700px 이하»는 이긴 값으로 본다
-  const worldFirst = between(css, '/* ── 홈 무대 기본 구조', '/* ── 화면 머리');
-  const narrowHome = between(
-    css,
-    '@media (max-width: 420px) {\n  .home-header',
-    '@media (max-height: 700px)',
-  );
-  assert.match(worldFirst, /\.home-menu \{[\s\S]*?display: contents/);
-  assert.match(worldFirst, /#open-ranking \{[\s\S]*?right: max\(/);
-  assert.doesNotMatch(worldFirst, /#open-online\s*\{/);
-  assert.match(worldFirst, /\.category-grid \{[\s\S]*?repeat\(5, minmax\(0, 1fr\)\)/);
-  assert.match(worldFirst, /\.home-primary-actions \{[\s\S]*?width: min\(568px, 100%\)/);
-  assert.match(worldFirst, /\.category-card:nth-child\(odd\):last-child \{[\s\S]*?grid-column: auto/);
+  // 홈의 월드 배치(edge HUD 입구·dock)는 파일 안의 글 위치가 아니라 index.html 의 실제 사슬에서 이긴 값으로 본다.
+  // 예전에는 맨 끝 30절(월드 우선 화면 구성)의 글 구간을 읽었는데, U49 에서 그 규칙이 홈 무대 절의 여러 블록으로
+  // 옮겨 갔다 — 이긴 값은 어느 판의 CSS 에서나 같아야 한다
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const tall = [DESKTOP, MOBILE];
+  const nav = nodeFromHtml(html, 'open-ranking').parent;
+  const actions = node('div.home-primary-actions', nodeFromHtml(html, 'home-quests'));
+  const categoryGrid = nodeFromHtml(html, 'category-grid');
+  const nicknameCard = nodeFromHtml(html, 'open-nickname');
+  for (const env of tall) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(valueOf(rules, nav, 'display', env), 'contents', `${at} .home-menu`);
+    assert.match(valueOf(rules, nodeFromHtml(html, 'open-ranking'), 'right', env), /^max\(/, `${at} #open-ranking right`);
+    assert.equal(valueOf(rules, categoryGrid, 'grid-template-columns', env), 'repeat(5, minmax(0, 1fr))', `${at} dock 분야 다섯 칸`);
+    assert.equal(
+      valueOf(rules, node('button.category-card:nth-child(odd):last-child', categoryGrid), 'grid-column', env),
+      'auto', `${at} 홀수 끝 칸도 한 칸`,
+    );
+    assert.equal(valueOf(rules, nicknameCard, 'grid-template-columns', env), '36px minmax(0, 1fr) 16px', `${at} 닉네임 칸`);
+    assert.equal(valueOf(rules, node('span.menu-card__edit', nicknameCard), 'display', env), 'block', `${at} 연필`);
+  }
+  // 두 보조 입구의 기본 크기는 64px 다 (폭 600px 이상은 72px, 420px 이하는 60px 로 바뀐다)
+  for (const id of ['open-characters', 'open-ranking']) {
+    assert.equal(valueOf(rules, nodeFromHtml(html, id), 'min-height', { ...MOBILE, width: 500, height: 900 }), '64px', `#${id} 높이`);
+  }
+  assert.equal(valueOf(rules, actions, 'width', DESKTOP), 'min(568px, 100%)');
+  assert.equal(valueOf(rules, actions, 'grid-template-columns', MOBILE), 'minmax(0, 280px)', '폭 420px 이하의 두 CTA');
+  assert.doesNotMatch(css, /#open-online\s*\{/, '온라인은 보조 HUD 입구가 아니다 — 따로 배치하지 않는다');
   assert.doesNotMatch(css, /\.menu-card:nth-child\(odd\):last-child/);
   assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
-  assert.match(worldFirst, /\.home-menu \.menu-card \{[\s\S]*?min-height: 64px/);
-  assert.match(worldFirst, /\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\) 16px/);
-  assert.match(worldFirst, /\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: block/);
-  assert.match(narrowHome, /\.home-primary-actions \{[\s\S]*?grid-template-columns: minmax\(0, 280px\)/);
-  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구가 dock 바로 위로 내려오고 브랜드는 접힌다.
-  // 같은 사실을 파일 안의 글 순서가 아니라 그 환경에서 이긴 값으로 본다 (규칙이 제 절의 여러 블록에 나뉘어 있다)
-  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구가 dock 바로 위로 내려오고 브랜드는 접힌다
   const short = { ...MOBILE, width: 390, height: 700 };
   const homeChain = node("div.home-stage#home-stage", node("section.screen[data-screen='home']"));
   const player = node('div.home-player', homeChain);

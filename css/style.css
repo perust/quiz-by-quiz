@@ -164,9 +164,15 @@ body.is-boot-file .boot__error--net {
 
 /* ── 상단 바 (설정 버튼) ──
    오른쪽 위에 고정된 edge HUD다. app-bar는 <main> 뒤에 있어 z-index 없이도 월드 위,
-   피드백·대화상자 아래에 온다. */
+   피드백·대화상자 아래에 온다.
+   max-width·margin·padding 은 :has() 를 모르는 엔진(Safari ≤15.3 · Chrome ≤104 · Firefox ≤120)의 흐름 배치다.
+   아래 fixed 규칙은 선택자 목록에 :has() 가 들어 있어 그런 엔진에서는 목록째 버려진다 — 지금 엔진에서는 늘
+   지는 선언이지만 지우면 그 엔진의 앱 바가 가운데 정렬과 안전 영역 여백을 잃는다 */
 .app-bar {
   display: none;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) 0 max(var(--page-pad), env(safe-area-inset-left));
   justify-content: flex-end;
 }
 
@@ -2191,6 +2197,8 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
   word-break: keep-all;
+  /* 논리 속성(padding-block, Safari ≤14.0)을 모르는 엔진의 대체값. 지금 엔진에서는 아래 셋에 덮인다 */
+  padding: var(--space-3);
   padding-block: var(--space-2);
   padding-inline-start: var(--space-3);
   /* 화면 워커가 머리말 오른쪽 아래에서 쉬는 동안 안내문을 덮지 않는 주차 공간 */

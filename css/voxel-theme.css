@@ -846,6 +846,14 @@ textarea {
   opacity: 0.5;
 }
 
+/* 걸어 올라선 칸은 고리(24절)에 더해 옅게 채운다. 홈 HUD 조각은 아래 쉬는 모양이 같은 명시도로 뒤에 와서
+   어두운 바탕을 지킨다 — 옅은 채움 위에서는 흰 HUD 글자가 보이지 않는다. 그 뒤의 «:focus-visible, .is-standing»
+   목록도 같은 바탕을 걸지만 :focus-visible 을 모르는 엔진(Safari ≤15.3)은 그 목록을 통째로 버리므로, 이 순서
+   (채움 → 홈 HUD 쉬는 모양)를 바꾸지 말 것 */
+.menu-card.is-standing {
+  background: var(--accent-subtle);
+}
+
 /* 홈 HUD */
 .home-player .menu-card--wide,
 .home-menu .menu-card {
@@ -3565,9 +3573,9 @@ select.is-standing {
   outline-offset: var(--focus-offset);
 }
 
-/* 분야 칸·전체 도전·dock 칸은 고리에 더해 옅게 채워 «올라섰다»가 더 잘 보이게 한다 */
-.category-card.is-standing,
-.menu-card.is-standing {
+/* 분야 칸·전체 도전은 고리에 더해 옅게 채워 «올라섰다»가 더 잘 보이게 한다. .menu-card 의 같은 채움은
+   7절(홈 HUD 쉬는 모양 바로 앞)에 있다 */
+.category-card.is-standing {
   background: var(--accent-subtle);
 }
 

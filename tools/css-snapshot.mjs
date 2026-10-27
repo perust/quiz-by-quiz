@@ -4,11 +4,22 @@
 //   node tools/css-snapshot.mjs --base <ref>    다른 git 판과 견준다 (예: main, HEAD~1)
 //   node tools/css-snapshot.mjs --verbose       다른 칸을 모두 보인다
 //   node tools/css-snapshot.mjs --no-pairs      두 선택자를 함께 맞는 증인을 빼고 빨리 본다(최종 확인에는 쓰지 않는다)
+//   node tools/css-snapshot.mjs --no-engines    구형 엔진 판을 건너뛴다(최종 확인에는 쓰지 않는다)
 //
 // 규칙을 옮기거나 지우는 정리(U49: 30절을 각 절로 녹이기, 이길 수 없는 선언 지우기)는 화면을 하나도
 // 바꾸지 않아야 한다. 테스트는 몇 요소의 몇 속성만 잠그므로, 이 도구가 요소 묶음 × 환경 × 속성을
 // 통째로 계산해 하나라도 달라지면 실패한다. 판정은 tests/css-cascade.mjs 그대로다(로드 순서·명시도·
 // !important·@media). 거기서 모르는 것(+ ~ 결합자)은 여기서도 보이지 않는다 — 그런 규칙은 손으로 본다.
+//
+// 구형 엔진 판: 브라우저는 모르는 선택자가 하나라도 든 선택자 목록을 규칙째 버리고, 모르는 속성·값의 선언은
+// 그 선언만 버린다. css-cascade 는 선택자를 하나씩 맞춰 보고 모든 선언을 읽으므로 이것을 모른다 — 그래서
+// «늘 진다»던 선언이 사실은 이긴 규칙이 버려지는 엔진의 대체값일 수 있고(:has() 목록에 덮이던 앱 바의 흐름 배치,
+// padding-block 에 덮이던 랭킹 안내의 padding), 같은 명시도의 두 규칙 순서를 바꾼 것이 그 엔진에서만 드러날 수
+// 있다(:focus-visible 목록이 버려지는 엔진의 홈 dock 칸 올라섬 바탕). 그래서 FEATURES 의 기능 하나씩, 그리고
+// ENGINES 의 실제 엔진 묶음마다 두 판에서 그 엔진이 모르는 것을 똑같이 지우고 다시 견준다. 지운 규칙에 맞는
+// 요소만 다시 계산한다(나머지는 기본 판과 같다). CSS 에 새 문법을 쓰면 FEATURES 에 한 줄 더한다.
+// 이 판이 보지 못하는 것: :is()·:where() 의 너그러운 목록 안에서만 쓰인 새 선택자(만나면 멈춘다), var() 가
+// 계산값 시점에 무효가 되는 것(선언이 버려지지 않고 unset 이 된다), FEATURES 에 없는 문법.
 //
 // 요소 묶음
 //   - index.html 의 모든 요소(nodeFromHtml 과 같은 조상 사슬). 숨김을 푼 판도 함께
@@ -17,8 +28,9 @@
 //   - 선택자마다 그것만 맞는 가장 작은 증인 사슬
 //   - src/ 가 만드는 클래스 묶음(className = '…')과 tests/*.test.mjs 의 node() 서술
 //   - 오른쪽 끝 칸이 같은 클래스를 갖는 두 선택자를 함께 맞는 증인 — 캐스케이드 순서가 갈리는 자리다
-// 환경: 폭·높이 격자(모든 중단점의 양쪽) × pointer·hover 네 가지 × 움직임 줄이기 × 강제 색상.
-//   @media 결과가 같은 환경은 한 칸으로 센다.
+// 환경: 폭·높이 격자 × pointer·hover 네 가지 × 움직임 줄이기 × 강제 색상. 격자는 두 판의 @media 에서 읽은
+//   모든 폭·높이 중단점과 그 ±1px(경계 양쪽)에 흔한 기기 크기를 더한 것이다 — 중단점을 더하면 저절로 따라온다.
+//   모든 구간의 네 모서리가 들어가므로 orientation 도 가능한 쪽을 모두 본다. @media 결과가 같은 환경은 한 칸으로 센다.
 // 속성: 어느 규칙이든 정하는 모든 속성을 단축 속성까지 풀어 낱 속성으로 본다(background 가 background-color
 //   를, padding-inline-start 가 padding-left 를 덮는다). 이긴 선언의 이름과 원문 값을 견준다(공백만 모은다).
 //   토큰은 :root 요소의 사용자 속성으로 함께 견주므로 var() 를 풀지 않아도 같다.
@@ -28,7 +40,8 @@
 //     규칙은 옮기지 않고 남겨 두는 편을 고른다. 다른 칸마다 요소의 출처([html] [pair] …)를 함께 보인다
 //   - 초기값은 모른다. `grid-column: auto` 처럼 초기값과 같은 선언을 지워도 «다름»으로 센다
 //   - 계산이 css-cascade 의 valueOf 와 같은지 실행마다 표본 수천 건을 대조한다(어긋나면 실패)
-//   - 기준 판의 CSS 는 node_modules/.cache/css-snapshot/ 에 풀어 둔다. 한 번에 1–2분 걸린다
+//   - css-cascade 가 건너뛰는 @keyframes·@font-face 는 이름마다 본문 글을 견준다(같은 이름이 둘이면 뒤의 것이 이긴다)
+//   - 기준 판의 CSS 는 node_modules/.cache/css-snapshot/ 에 풀어 둔다. 한 번에 2–3분 걸린다
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -661,10 +674,9 @@ export function buildElements(ruleSets, { pairs = true } = {}) {
 }
 
 // ── 환경 ─────────────────────────────────────────────────────────
-const WIDTHS = [320, 321, 360, 361, 375, 380, 381, 390, 400, 401, 412, 420, 421, 430, 440, 467, 480, 481, 500, 560, 561, 568,
-  576, 577, 599, 600, 639, 640, 667, 740, 768, 844, 915, 1024, 1280, 1440];
-const HEIGHTS = [320, 340, 341, 360, 361, 375, 390, 400, 412, 420, 421, 480, 481, 500, 501, 568, 640, 664, 700, 701, 768,
-  772, 773, 812, 844, 850, 851, 900, 932, 1024];
+// 흔한 기기 크기(세로·가로)와 테스트가 쓰는 크기. 중단점 쪽 값은 breakpoints() 가 @media 에서 읽는다
+const DEVICE_WIDTHS = [320, 360, 375, 390, 412, 430, 467, 568, 667, 740, 768, 844, 915, 1024, 1280, 1440];
+const DEVICE_HEIGHTS = [320, 360, 375, 390, 412, 568, 640, 664, 700, 768, 812, 844, 900, 932, 1024];
 const INPUTS = [
   { pointer: 'coarse', hover: 'none' },
   { pointer: 'fine', hover: 'hover' },
@@ -672,10 +684,30 @@ const INPUTS = [
   { pointer: 'fine', hover: 'none' },
 ];
 
-export function environments() {
+/**
+ * @media 의 폭·높이 중단점마다 그 값과 ±1px. 경계의 양쪽과 경계 자신(max-width 는 같을 때 맞다)이 모두 든다.
+ * px 밖의 단위(em 등)는 이 격자가 모르므로 멈춘다 — 조용히 넘기면 그 중단점의 한쪽을 영영 보지 않는다
+ */
+export function breakpoints(queries) {
+  const widths = new Set(DEVICE_WIDTHS);
+  const heights = new Set(DEVICE_HEIGHTS);
+  for (const query of queries) {
+    for (const match of query.matchAll(/\(\s*(?:min|max)-(width|height)\s*:\s*([^)]*?)\s*\)/g)) {
+      const px = /^(\d+(?:\.\d+)?)px$/.exec(match[2]);
+      if (!px) throw new Error(`@media ${query}: px 가 아닌 중단점(${match[2]})은 이 도구가 모른다`);
+      const value = Number(px[1]);
+      for (const near of [value - 1, value, value + 1]) (match[1] === 'width' ? widths : heights).add(near);
+    }
+  }
+  const sorted = (set) => [...set].sort((a, b) => a - b);
+  return { widths: sorted(widths), heights: sorted(heights) };
+}
+
+export function environments(queries) {
+  const { widths, heights } = breakpoints(queries);
   const list = [];
-  for (const width of WIDTHS) {
-    for (const height of HEIGHTS) {
+  for (const width of widths) {
+    for (const height of heights) {
       for (const input of INPUTS) {
         for (const reducedMotion of [false, true]) {
           for (const forcedColors of [false, true]) list.push({ width, height, ...input, reducedMotion, forcedColors });
@@ -782,14 +814,18 @@ function cellsOf(result) {
   }));
 }
 
+/** 그 판의 CSS 를 풀어 읽는다. 규칙과 원문(at-rule 견주기용)을 함께 돌려준다 */
 async function loadAt(ref) {
   const directory = `node_modules/.cache/css-snapshot/${ref.replace(/[^\w.-]/g, '_')}`;
+  const sources = [];
   for (const path of CSS_FILES) {
     const target = new URL(`${directory}/${path}`, ROOT);
     mkdirSync(new URL('.', target), { recursive: true });
-    writeFileSync(target, execFileSync('git', ['show', `${ref}:${path}`], { cwd: ROOT_PATH, encoding: 'utf8', maxBuffer: 1 << 26 }));
+    const text = execFileSync('git', ['show', `${ref}:${path}`], { cwd: ROOT_PATH, encoding: 'utf8', maxBuffer: 1 << 26 });
+    writeFileSync(target, text);
+    sources.push(text);
   }
-  return loadStyles(CSS_FILES.map((path) => `${directory}/${path}`));
+  return { rules: await loadStyles(CSS_FILES.map((path) => `${directory}/${path}`)), sources };
 }
 
 function envLabel(env) {
@@ -800,10 +836,10 @@ function envLabel(env) {
  * 두 규칙 묶음을 요소 묶음 × 환경 × 낱 속성에서 견준다.
  * 돌려주는 것: 크기, 다른 칸 목록(요소 · 환경 · 낱 속성 · 전 → 후)
  */
-export function snapshotDiff(baseRules, currentRules, { pairs = true, sample = 400, elementSet = null } = {}) {
+export function snapshotDiff(baseRules, currentRules, { pairs = true, sample = 400, elementSet = null, envQueries = null } = {}) {
   const { elements, counts, kinds } = elementSet ?? buildElements([baseRules, currentRules], { pairs });
-  const envs = environments();
   const queries = [...new Set([...baseRules, ...currentRules].flatMap((rule) => rule.media))];
+  const envs = environments(envQueries ?? queries);
   const queryIndex = new Map(queries.map((query, index) => [query, index]));
   // 환경을 @media 결과로 묶는다
   const signatures = new Map();
@@ -932,6 +968,187 @@ export function snapshotDiff(baseRules, currentRules, { pairs = true, sample = 4
   };
 }
 
+// ── 구형 엔진 ─────────────────────────────────────────────────────
+// 기능마다 그것을 모르는 엔진과, 그 엔진이 버리는 것. selector 는 선택자 목록째, property·value 는 선언 하나를
+// 버린다(둘 다 있으면 둘 다 맞는 선언만). 판은 엔진 이름이 아니라 «무엇을 버리는가»로 짠다
+export const FEATURES = {
+  has: { label: ':has()', engines: 'Safari ≤15.3 · Chrome ≤104 · Firefox ≤120', selector: /:has\(/ },
+  focusVisible: { label: ':focus-visible', engines: 'Safari ≤15.3 · Chrome ≤85 · Firefox ≤84', selector: /:focus-visible/ },
+  isWhere: { label: ':is()·:where()', engines: 'Safari ≤13.1 · Chrome ≤87 · Firefox ≤77', selector: /:(?:is|where)\(/ },
+  webkitPseudo: { label: '::-webkit- 의사 요소', engines: 'Firefox', selector: /::-webkit-/ },
+  logical: {
+    label: '논리 속성 묶음(padding-block·margin-inline·inset …)', engines: 'Safari ≤14.0 · Chrome ≤86 · Firefox ≤65',
+    property: /^(?:(?:padding|margin)-(?:block|inline)|inset(?:-(?:block|inline)(?:-start|-end)?)?)$/,
+  },
+  logicalSides: {
+    label: '논리 속성 한쪽(padding-inline-start …)', engines: 'Safari ≤12.0 · Chrome ≤86 · Firefox ≤40',
+    property: /^(?:padding|margin)-(?:block|inline)-(?:start|end)$/,
+  },
+  viewportUnits: { label: 'svh·lvh·dvh', engines: 'Safari ≤15.3 · Chrome ≤107 · Firefox ≤100', value: /\d[sld]v(?:h|w|i|b|min|max)(?![\w-])/ },
+  aspectRatio: { label: 'aspect-ratio', engines: 'Safari ≤14 · Chrome ≤87 · Firefox ≤88', property: /^aspect-ratio$/ },
+  transformProps: { label: 'translate·rotate·scale 속성', engines: 'Safari ≤14.0 · Chrome ≤103 · Firefox ≤71', property: /^(?:translate|rotate|scale)$/ },
+  scrollMargin: { label: 'scroll-margin', engines: 'Safari ≤14.0', property: /^scroll-margin/ },
+  accentColor: { label: 'accent-color', engines: 'Safari ≤15.3 · Chrome ≤92 · Firefox ≤91', property: /^accent-color$/ },
+  overflowAnywhere: { label: 'overflow-wrap: anywhere', engines: 'Safari ≤15.3', property: /^overflow-wrap$/, value: /\banywhere\b/ },
+  appearance: { label: '접두사 없는 appearance', engines: 'Safari ≤15.3', property: /^appearance$/ },
+  mask: { label: '접두사 없는 mask', engines: 'Safari ≤15.3 · Chrome ≤119', property: /^mask(?:-|$)/ },
+  userSelect: { label: '접두사 없는 user-select', engines: 'Safari', property: /^user-select$/ },
+  backdropFilter: { label: '접두사 없는 backdrop-filter', engines: 'Safari ≤17', property: /^backdrop-filter$/ },
+  scrollBehavior: { label: 'scroll-behavior', engines: 'Safari ≤15.3', property: /^scroll-behavior$/ },
+};
+
+// 기능 둘 이상이 함께 빠질 때만 드러나는 순서도 있어 실제 엔진 묶음을 따로 본다
+const SAFARI_15_3 = ['has', 'focusVisible', 'viewportUnits', 'accentColor', 'overflowAnywhere', 'appearance', 'mask', 'userSelect',
+  'backdropFilter', 'scrollBehavior'];
+export const ENGINES = [
+  ...Object.entries(FEATURES).map(([key, feature]) => ({ name: `${feature.label} (${feature.engines})`, features: [key] })),
+  { name: 'Firefox 115–120 ESR', features: ['has', 'webkitPseudo'] },
+  { name: 'Safari 15.0–15.3', features: SAFARI_15_3 },
+  { name: 'Safari 14.0', features: [...SAFARI_15_3, 'aspectRatio', 'logical', 'transformProps', 'scrollMargin'] },
+  { name: 'Chrome 93–103', features: ['has', 'viewportUnits', 'transformProps', 'mask'] },
+];
+
+/** 괄호 짝을 지키며 :is(…)·:where(…) 의 안을 비운다 — 너그러운 목록이라 그 안의 모르는 갈래는 목록을 버리지 않는다 */
+function stripForgiving(selector) {
+  let out = '';
+  for (let i = 0; i < selector.length; i += 1) {
+    const head = /^:(?:is|where)\(/.exec(selector.slice(i));
+    if (!head) {
+      out += selector[i];
+      continue;
+    }
+    let depth = 0;
+    let end = i + head[0].length - 1;
+    for (; end < selector.length; end += 1) {
+      if (selector[end] === '(') depth += 1;
+      else if (selector[end] === ')' && --depth === 0) break;
+    }
+    out += `${head[0]})`;
+    i = end;
+  }
+  return out;
+}
+
+/** 이 선택자를 pattern 의 기능을 모르는 엔진이 버리는가. 너그러운 목록 안에서만 쓰였으면 멈춘다(그 갈래만 빠진다) */
+export function selectorUses(selector, pattern) {
+  if (pattern.test(stripForgiving(selector))) return true;
+  if (pattern.test(selector)) {
+    throw new Error(`${selector}: :is()·:where() 안에서만 쓰인 새 선택자는 이 도구가 모른다 — 손으로 본다`);
+  }
+  return false;
+}
+
+function declarationUses(declaration, feature) {
+  if (!feature.property && !feature.value) return false;
+  // 사용자 속성은 아무 값이나 받는다 — 그 값을 쓰는 자리가 계산값 시점에 무효가 될 뿐이다(위 머리말)
+  if (declaration.property.startsWith('--')) return false;
+  return (!feature.property || feature.property.test(declaration.property)) && (!feature.value || feature.value.test(declaration.value));
+}
+
+/**
+ * features 를 모르는 엔진이 읽은 규칙들. 바뀐(버려지거나 선언이 빠진) 원래 규칙과 버린 선언의 낱 속성도 함께
+ * 돌려준다
+ */
+export function withoutFeatures(rules, keys) {
+  const features = keys.map((key) => FEATURES[key]);
+  const selectorPatterns = features.filter((feature) => feature.selector).map((feature) => feature.selector);
+  const kept = [];
+  const changed = [];
+  const longhands = new Set();
+  const drop = (declarations) => {
+    for (const declaration of declarations) for (const longhand of longhandsOf(declaration.property)) longhands.add(longhand);
+  };
+  for (const rule of rules) {
+    if (rule.selectors.some((selector) => selectorPatterns.some((pattern) => selectorUses(selector, pattern)))) {
+      changed.push(rule);
+      drop(rule.declarations);
+      continue;
+    }
+    const declarations = rule.declarations.filter((declaration) => !features.some((feature) => declarationUses(declaration, feature)));
+    if (declarations.length === rule.declarations.length) {
+      kept.push(rule);
+      continue;
+    }
+    changed.push(rule);
+    drop(rule.declarations.filter((declaration) => !declarations.includes(declaration)));
+    if (declarations.length) kept.push({ ...rule, declarations });
+  }
+  return { rules: kept, changed, longhands };
+}
+
+/**
+ * 규칙을 longhands 의 낱 속성만 정하는 것으로 줄인다. 낱 속성마다 이긴 선언은 따로 정해지므로, 버린 선언과
+ * 낱 속성이 겹치지 않는 칸은 기본 판과 같다 — 그 칸을 다시 풀지 않는다
+ */
+function narrowTo(rules, longhands) {
+  const out = [];
+  for (const rule of rules) {
+    const declarations = [];
+    for (const declaration of rule.declarations) {
+      const own = longhandsOf(declaration.property).filter((longhand) => longhands.has(longhand));
+      if (own.length) declarations.push({ ...declaration, longhands: own });
+    }
+    if (declarations.length) out.push({ ...rule, declarations });
+  }
+  return out;
+}
+
+/**
+ * ENGINES 마다 두 판을 그 엔진이 읽은 대로 견준다. 바뀐 규칙에 맞는 요소의, 버린 선언이 정하던 낱 속성만 다시
+ * 계산한다 — 맞는 규칙이 하나도 바뀌지 않은 요소와 그 밖의 낱 속성은 기본 판과 결과가 같고, 기본 판의 다름은
+ * 기본 판이 이미 말한다
+ */
+export function engineDiffs(baseRules, currentRules, elementSet, { engines = ENGINES } = {}) {
+  const envQueries = [...new Set([...baseRules, ...currentRules].flatMap((rule) => rule.media))];
+  return engines.map((engine) => {
+    const base = withoutFeatures(baseRules, engine.features);
+    const current = withoutFeatures(currentRules, engine.features);
+    const longhands = new Set([...base.longhands, ...current.longhands]);
+    base.rules = narrowTo(base.rules, longhands);
+    current.rules = narrowTo(current.rules, longhands);
+    const touched = [compile(base.changed), compile(current.changed)];
+    const elements = new Map();
+    for (const [key, element] of elementSet.elements) {
+      if (touched.some((compiled) => matchRules(compiled, element).length > 0)) elements.set(key, element);
+    }
+    const counts = {};
+    for (const key of elements.keys()) counts[elementSet.kinds.get(key)] = (counts[elementSet.kinds.get(key)] ?? 0) + 1;
+    const result = elements.size === 0
+      ? { elements: 0, diffs: [], checked: 0, sampleMismatch: 0 }
+      : snapshotDiff(base.rules, current.rules, { elementSet: { elements, counts, kinds: elementSet.kinds }, envQueries });
+    return { engine, changedRules: base.changed.length + current.changed.length, ...result };
+  });
+}
+
+// ── css-cascade 가 건너뛰는 at-rule ─────────────────────────────────
+/** @keyframes·@font-face 를 이름마다 본문 글(공백을 모은)로. 같은 이름이 둘이면 뒤의 것이 이기므로 둘 다 적는다 */
+function atRules(source) {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Map();
+  for (const match of text.matchAll(/@(keyframes|font-face)\s*([^{]*)\{/g)) {
+    let depth = 1;
+    let end = match.index + match[0].length;
+    for (; end < text.length && depth > 0; end += 1) {
+      if (text[end] === '{') depth += 1;
+      else if (text[end] === '}') depth -= 1;
+    }
+    const body = text.slice(match.index + match[0].length, end - 1).replace(/\s+/g, ' ').trim();
+    // @font-face 는 이름이 본문(font-family)에 있다
+    const name = match[1] === 'keyframes' ? match[2].trim() : (/font-family:\s*([^;]+)/.exec(body)?.[1].trim() ?? '');
+    const key = `@${match[1]} ${name}`;
+    out.set(key, [...(out.get(key) ?? []), body]);
+  }
+  return out;
+}
+
+/** 두 판의 at-rule 이 이름마다 같은가. 다른 것의 이름 목록 */
+export function atRuleDiffs(baseSources, currentSources) {
+  const before = atRules(baseSources.join('\n'));
+  const after = atRules(currentSources.join('\n'));
+  const names = new Set([...before.keys(), ...after.keys()]);
+  return [...names].filter((name) => JSON.stringify(before.get(name) ?? []) !== JSON.stringify(after.get(name) ?? [])).sort();
+}
+
 function report(result, { verbose }) {
   const kinds = Object.entries(result.counts).map(([kind, count]) => `${kind} ${count}`).join(', ');
   console.log(`요소 ${result.elements}개 (${kinds})`);
@@ -951,6 +1168,23 @@ function report(result, { verbose }) {
   if (shown_.length < result.diffs.length) console.log(`… ${result.diffs.length - shown_.length}개 더 (--verbose)`);
 }
 
+function reportEngines(results, { verbose }) {
+  console.log(`구형 엔진 판 ${results.length}개 (모르는 선택자의 목록·모르는 선언을 두 판에서 똑같이 버린다)`);
+  for (const result of results) {
+    const head = `- ${result.engine.name}: 바뀐 규칙 ${result.changedRules}개, 다시 계산한 요소 ${result.elements}개`;
+    if (result.diffs.length === 0 && result.sampleMismatch === 0) {
+      console.log(`${head} — 같음`);
+      continue;
+    }
+    console.log(`${head} — 달라진 칸 ${result.diffs.length}개, valueOf 어긋남 ${result.sampleMismatch}건`);
+    const shown_ = verbose ? result.diffs : result.diffs.slice(0, 12);
+    for (const diff of shown_) {
+      console.log(`    [${diff.kind}] ${diff.key}\n      ${diff.env} ${diff.longhand}: ${diff.before} → ${diff.after}`);
+    }
+    if (shown_.length < result.diffs.length) console.log(`    … ${result.diffs.length - shown_.length}개 더 (--verbose)`);
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const option = (name) => {
@@ -959,8 +1193,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   };
   const ref = option('--base') ?? 'HEAD';
   const verbose = args.includes('--verbose');
-  const [baseRules, currentRules] = await Promise.all([loadAt(ref), loadStyles(CSS_FILES)]);
-  const result = snapshotDiff(baseRules, currentRules, { pairs: !args.includes('--no-pairs') });
+  const [base, currentRules] = await Promise.all([loadAt(ref), loadStyles(CSS_FILES)]);
+  const elementSet = buildElements([base.rules, currentRules], { pairs: !args.includes('--no-pairs') });
+  const result = snapshotDiff(base.rules, currentRules, { elementSet });
   report(result, { verbose });
-  if (result.diffs.length > 0 || result.sampleMismatch > 0) process.exitCode = 1;
+  let failed = result.diffs.length > 0 || result.sampleMismatch > 0;
+
+  const atDiffs = atRuleDiffs(base.sources, CSS_FILES.map((path) => readFileSync(new URL(path, ROOT), 'utf8')));
+  console.log(atDiffs.length === 0 ? '@keyframes·@font-face 같음' : `@keyframes·@font-face 다름: ${atDiffs.join(', ')}`);
+  failed ||= atDiffs.length > 0;
+
+  if (!args.includes('--no-engines')) {
+    const engines = engineDiffs(base.rules, currentRules, elementSet);
+    reportEngines(engines, { verbose });
+    failed ||= engines.some((engine) => engine.diffs.length > 0 || engine.sampleMismatch > 0);
+  }
+  if (failed) process.exitCode = 1;
 }
