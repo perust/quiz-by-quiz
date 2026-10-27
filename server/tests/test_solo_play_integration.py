@@ -1,4 +1,4 @@
-"""혼자 푸는 온라인 판 (FR-7.13 3단계, migration 012의 solo_rooms)을 실제 PostgreSQL에서 확인한다.
+"""혼자 푸는 온라인 판 (FR-7.13 3단계, migration 013의 solo_rooms)을 실제 PostgreSQL에서 확인한다.
 
 - 홈의 분야 칸이 곧바로 판을 연다(`start_solo`). 그 방은 그 사람에게만 보이고 남은 목록에서도
   코드로도 찾지 못하며 들어오지 못한다.

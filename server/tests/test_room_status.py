@@ -125,7 +125,7 @@ def test_room_views_map_active_match_to_playing_status() -> None:
             "joined": False,
             "is_playing": is_playing,
             "in_match": is_playing,
-            # 혼자 푸는 온라인 판의 방인지 (FR-7.13 3단계, migration 012의 solo_rooms)
+            # 혼자 푸는 온라인 판의 방인지 (FR-7.13 3단계, migration 013의 solo_rooms)
             "solo": False,
             "created_at": created_at,
             "player_id": PLAYER_ID,

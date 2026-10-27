@@ -1,4 +1,4 @@
-"""빈 DB에서 v9 데이터를 만든 뒤 migration 010 → 011 → 012를 차례로 올리고 후보 API를 돌려 본다.
+"""빈 DB에서 v9 데이터를 만든 뒤 migration 010 → 011 → 012 → 013을 차례로 올리고 후보 API를 돌린다.
 
 CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.github/workflows/pages.yml).
 
@@ -8,8 +8,12 @@ CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.gith
   적어 쓰던 그 API의 문장이 그대로 통하며, 이미 있는 방·도는 판은 예전의 20초를 받는다
   (migration 011 → API → Pages).
 - 012(온라인 랭킹)도 더하기만 한다: 011의 API가 도는 동안 먼저 적용하고(그 API의 판 닫기·방 문장이
-  그대로 통하고 랭킹 표는 비어 있다), 후보 API는 012 위에서 012 전에 열린 판을 이어 가 닫을 때
-  참가자마다 기록을 남긴다 (migration 012 → API → Pages).
+  그대로 통하고 랭킹 표는 비어 있다), 012의 API(#108)가 그 판들을 닫으며 기록을 남긴다
+  (migration 012 → API → Pages).
+- 013(혼자 푸는 온라인 판)도 더하기만 한다: 012의 API가 도는 동안 먼저 적용하고(그 API의 방 문장이
+  그대로 통하고 혼자 방 표는 비어 있다), 후보 API는 013 위에서만 돈다 — 012 위에서는 readiness가
+  번호로 닫히고 방 SQL이 solo_rooms를 봐 로비부터 실패한다. 013 위에서는 013 전에 열린 판을 이어 가
+  닫을 때 참가자마다 기록을 남기고 혼자 판을 연다 (migration 013 → API → Pages).
 """
 
 from __future__ import annotations
@@ -28,7 +32,8 @@ import pytest
 from psycopg import AsyncConnection, errors
 from psycopg.types.json import Jsonb
 
-from app.domain import DEFAULT_CHARACTER_ID, validate_player, validate_room
+from app.domain import DEFAULT_CHARACTER_ID, validate_player, validate_room, validate_solo_room
+from app.main import RELEASE_SCHEMA_VERSION
 from app.migrate import (
     apply_pending,
     discover_migrations,
@@ -52,10 +57,10 @@ pytestmark = [
 _SEEDED_QUESTIONS = (("upgrade-science-000", 0), ("upgrade-science-001", 1))
 
 
-def test_v9_data_upgrades_through_010_011_and_012_and_the_candidate_continues_it() -> None:
+def test_v9_data_upgrades_through_010_to_013_and_the_candidate_continues_it() -> None:
     assert MIGRATOR_URL is not None
     assert RUNTIME_URL is not None
-    host_id, guest_id = uuid4(), uuid4()
+    host_id, guest_id, solo_id = uuid4(), uuid4(), uuid4()
     room_code = uuid4().hex[:6].upper()
     later_code = uuid4().hex[:6].upper()
 
@@ -143,7 +148,7 @@ def test_v9_data_upgrades_through_010_011_and_012_and_the_candidate_continues_it
         ).fetchone()[0] is True
 
         # ── 012: 011의 API가 도는 동안 더한다 ──
-        assert apply_pending(connection, migrations) == (12,)
+        assert apply_pending(connection, migrations[:12]) == (12,)
         assert connection.execute(
             "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
         ).fetchone()[0] == list(range(1, 13))
@@ -160,28 +165,103 @@ def test_v9_data_upgrades_through_010_011_and_012_and_the_candidate_continues_it
             (later_room_id,),
         ).fetchone()[0] == 40_000
         assert asyncio.run(_runtime_schema_version()) == 12
+        # 012는 #108의 랭킹뿐이다 — 혼자 방 표와 한 사람의 색인은 013에 있다
+        assert connection.execute(
+            "SELECT to_regclass('quiz_online.solo_rooms') IS NULL, "
+            "to_regclass('quiz_online.online_rankings_player_board_order_idx') IS NULL"
+        ).fetchone() == (True, True)
+
+    # 후보 API(013)는 012 DB 위에서 돌지 않는다
+    asyncio.run(_candidate_refuses_v12(host_id, room_code))
+
+    with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
+        # ── 013: 012의 API(#108)가 도는 동안 더한다 ──
+        assert apply_pending(connection, migrations) == (13,)
+        assert connection.execute(
+            "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
+        ).fetchone()[0] == list(range(1, 14))
+        assert connection.execute(
+            "SELECT count(*) FROM quiz_online.solo_rooms"
+        ).fetchone()[0] == 0
+        # 012의 API가 쓰던 방 문장이 그대로 통하고, 그 API가 남기는 기록도 그대로 들어간다(새 색인은
+        # 함께 갱신될 뿐이다). 그 기록은 곧바로 거둔다
+        assert connection.execute(
+            """
+            UPDATE quiz_online.rooms SET question_time_ms = 20000, updated_at = now()
+            WHERE id = %s
+            RETURNING question_time_ms
+            """,
+            (later_room_id,),
+        ).fetchone()[0] == 20_000
+        probe_match = uuid4()
+        connection.execute(
+            """
+            INSERT INTO quiz_online.online_rankings (
+                match_id, player_id, mode, category_id, score, correct_count, total_questions,
+                question_time_ms, nickname, character_id, recorded_at
+            )
+            VALUES (%s, %s, 'category', 'science', 10, 1, 10, 20000, '012API', 'slime-blue', now())
+            """,
+            (probe_match, host_id),
+        )
+        connection.execute(
+            "DELETE FROM quiz_online.online_rankings WHERE match_id = %s", (probe_match,)
+        )
+        assert asyncio.run(_runtime_schema_version()) == 13
 
     try:
-        asyncio.run(_exercise_candidate_against_v12(host_id, guest_id, room_code, match_id))
+        asyncio.run(
+            _exercise_candidate_against_v13(host_id, guest_id, solo_id, room_code, match_id)
+        )
     finally:
         with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
             connection.execute(
                 "DELETE FROM quiz_online.rooms WHERE code = ANY(%s)",
                 ([room_code, later_code],),
             )
+            # 혼자 방은 그 사람의 방이다 — 지우면 표시도 CASCADE로 함께 사라진다
             connection.execute(
-                "DELETE FROM quiz_online.players WHERE id IN (%s, %s)", (host_id, guest_id)
+                "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+                "WHERE s.room_id = r.id AND s.player_id = %s",
+                (solo_id,),
+            )
+            connection.execute(
+                "DELETE FROM quiz_online.players WHERE id IN (%s, %s, %s)",
+                (host_id, guest_id, solo_id),
             )
             # 런타임 역할은 랭킹 기록을 지우지 못한다 — 시험이 남긴 줄은 migrator가 거둔다
             connection.execute(
-                "DELETE FROM quiz_online.online_rankings WHERE player_id IN (%s, %s)",
-                (host_id, guest_id),
+                "DELETE FROM quiz_online.online_rankings WHERE player_id IN (%s, %s, %s)",
+                (host_id, guest_id, solo_id),
             )
 
 
-async def _exercise_candidate_against_v12(
+async def _candidate_refuses_v12(player_id: UUID, room_code: str) -> None:
+    """013 API를 012 DB 위에 올리면: readiness는 번호(12 ≠ 13)로 닫히고, 방 SQL은 없는 표를 본다."""
+    assert RUNTIME_URL is not None
+    repository = PostgresRoomsRepository(
+        RUNTIME_URL,
+        question_catalog=_test_catalog(),
+        max_pool_size=1,
+    )
+    await repository.open()
+    try:
+        # release readiness는 정확히 RELEASE_SCHEMA_VERSION만 ready로 답한다 — 여기서는 503이다
+        assert await repository.schema_version() == 12
+        assert RELEASE_SCHEMA_VERSION == 13
+        # 로비 목록·코드 조회(참가·소켓 티켓 앞)가 모두 solo_rooms를 본다
+        with pytest.raises(errors.UndefinedTable):
+            await repository.list_rooms(player_id)
+        with pytest.raises(errors.UndefinedTable):
+            await repository.get_access(room_code)
+    finally:
+        await repository.close()
+
+
+async def _exercise_candidate_against_v13(
     host_id: UUID,
     guest_id: UUID,
+    solo_id: UUID,
     room_code: str,
     match_id: UUID,
 ) -> None:
@@ -194,7 +274,7 @@ async def _exercise_candidate_against_v12(
     await repository.open()
     compatibility_code: str | None = None
     try:
-        assert await repository.schema_version() == 12
+        assert await repository.schema_version() == 13
 
         # 구버전 client의 gameMode:false·문항 시간 없는 방은 캐릭터 전용 20초 방이 된다
         compatibility_room = await repository.create_room(
@@ -229,7 +309,7 @@ async def _exercise_candidate_against_v12(
         assert room.question_time_ms == 20_000
         assert all(player.character_id for player in room.players)
 
-        # 011·012 전에 열린 판을 후보 API가 이어 간다 — 마감·시간 초과 모두 그 판의 20초다
+        # 011·012·013 전에 열린 판을 후보 API가 이어 간다 — 마감·시간 초과 모두 그 판의 20초다
         await _expire_phase(match_id)
         revealed = await repository.get_match(host_id, room_code)
         assert revealed.advanced is True
@@ -248,7 +328,8 @@ async def _exercise_candidate_against_v12(
         await _expire_phase(match_id)
         finished = (await repository.get_match(host_id, room_code)).match
         assert finished is not None and finished.state == "finished"
-        # 012 전에 열린 판도 후보 API가 닫았으니 참가자마다 서버가 채점한 기록이 남는다
+        # 012 전에 열린 판도 후보 API가 닫았으니 참가자마다 서버가 채점한 기록이 남는다(013의
+        # 색인도 함께 갱신된다)
         assert finished.ranking_recorded is True
         assert await _ranking_rows(match_id) == [
             # 같은 점수·같은 시각이면 최종 순위의 순서(이름 순)대로 남는다
@@ -260,6 +341,17 @@ async def _exercise_candidate_against_v12(
         assert setup.game_mode is True
         assert setup.question_time_ms == 20_000
         assert await _question_span(setup.id) == timedelta(seconds=20)
+
+        # 013의 것: 홈의 분야 칸이 곧바로 여는 혼자 판. 그 방은 그 사람에게만 보인다
+        await repository.upsert_player(solo_id, _token_hash(solo_id), validate_player("혼자", None))
+        solo = await repository.start_solo(
+            solo_id, validate_solo_room(category_id="science", question_time_ms=20_000)
+        )
+        assert solo.created is True and solo.match is not None and solo.room.solo is True
+        assert solo.room.code not in {room.code for room in await repository.list_rooms(host_id)}
+        assert await repository.own_best_scores(
+            actor_id=solo_id, owner_key=b"\x00" * 32
+        ) == dict.fromkeys(("all", "history", "science", "geography", "general", "art"))
     finally:
         await repository.close()
         if compatibility_code is not None:

@@ -4,24 +4,24 @@
 운영 호스트의 시스템 python3(3.8 이상) 하나로 돈다. 표준 라이브러리만 쓴다 — curl·jq·openssl·
 requests·websockets가 없어도 된다::
 
-    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-011 API
-    python3 deploy/oracle/smoke.py baseline-migrated   # migration 012 뒤에도 아직 도는 그 API
-    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-012 API
+    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-012 API(#108)
+    python3 deploy/oracle/smoke.py baseline-migrated   # migration 013 뒤에도 아직 도는 그 API
+    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-013 API
     python3 deploy/oracle/smoke.py candidate --resolve-to 127.0.0.1
     python3 deploy/oracle/smoke.py candidate --api http://127.0.0.1:18083
 
-한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션, 닉네임 금칙 규칙과 온라인 랭킹 읽기
-(candidate만), 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로 지나고, 끝에는 언제나 방을
-나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
+한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션(혼자 온라인 판 soloPlay는 candidate에만),
+닉네임 금칙 규칙과 온라인 랭킹 읽기, 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로 지나고,
+끝에는 언제나 방을 나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
 멈췄어도 그렇다. 단계마다 ``ok <step>: ...`` 또는 ``FAIL <step>: <reason>`` 한 줄이고, 다시 묻는
 것은 stderr에 적는다. 종료 코드는 모든 줄이 ``ok``일 때만 0이다(그 밖에는 1, Ctrl-C 뒤 130,
 SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티켓·응답 본문은 출력하지 않고
 상태 코드·오류 코드·확인한 필드만 적는다.
 
-``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 012인데 011 API가
+``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 013인데 012 API가
 아직 돈다. 그 API의 gate는 503 ``migration-required``로 닫혀 있는 것이 정상이므로 이 모드는 그
-답만 ok로 보고, 방과 소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지 않는다 — 이
-점검은 판을 열지 않으므로 랭킹 기록도 남기지 않는다.
+답만 ok로 보고, 세션·닉네임·랭킹·방·소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지
+않는다 — 이 점검은 판도 혼자 판도 열지 않으므로 랭킹 기록도 혼자 방도 남기지 않는다.
 
 ``--resolve-to IP``는 TCP만 그 IP로 붙고 Host 헤더와 TLS SNI·인증서 검증은 URL 호스트로 한다
 (제 공인 주소로 돌아오지 못하는 호스트의 hairpin NAT). ``http://``는 브라우저 화면처럼 루프백
@@ -58,7 +58,7 @@ CANDIDATE = "candidate"
 MODES = (BASELINE, MIGRATED_BASELINE, CANDIDATE)
 # 모드마다 공개 release gate가 답해야 하는 migration 판
 # (server/app/main.py의 RELEASE_SCHEMA_VERSION)
-SCHEMA_VERSIONS = {BASELINE: 11, CANDIDATE: 12}
+SCHEMA_VERSIONS = {BASELINE: 12, CANDIDATE: 13}
 # DB가 그 API의 판이 아니면 gate가 이 오류 코드의 503으로 닫힌다. baseline-migrated는 이것만 받는다.
 MIGRATION_REQUIRED_CODE = "migration-required"
 WEBSOCKET_PROTOCOL = "qbb.v1"
@@ -68,7 +68,7 @@ OPCODE_TEXT = 0x1
 OPCODE_CLOSE = 0x8
 CLOSE_NORMAL = 1000
 # 브라우저가 소켓을 열자마자 보내는 움직임과 같은 모양이다(src/online/network-rooms.ts의
-# movementPayload). viewport 없는 옛 모양이라 011·012 API가 모두 받는다.
+# movementPayload). viewport 없는 옛 모양이라 012·013 API가 모두 받는다.
 PROBE_MOVEMENT = {"type": "movement", "x": 0.5, "y": 0.5, "moving": False}
 # 소켓에서 움직임이 되돌아오고 close에 답이 오기를 각각 이만큼까지 기다린다.
 WEBSOCKET_REPLY_SECONDS = 3.0
@@ -625,15 +625,16 @@ class Smoke:
         interrupted: KeyboardInterrupt | None = None
         try:
             # release gate가 틀려도 나머지를 본다 — 무엇이 더 깨졌는지 한 번에 보이게 한다.
-            # migration 012 직후의 011 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
+            # migration 013 직후의 012 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
             self._step("readiness", self.readiness)
             self._step("session", self.session)
-            # 닉네임 금칙 규칙과 공개 랭킹 읽기는 migration 012 API의 것이다. 판을 열지 않으므로
-            # 랭킹을 쓰지 않고, 거절된 닉네임은 프로필을 바꾸지 않는다
-            needs_session = [("nickname", self.nickname), ("rankings", self.rankings)]
-            if not self.candidate:
-                needs_session = []
-            needs_session.append(("room", self.create_room))
+            # 닉네임 금칙 규칙과 공개 랭킹 읽기는 migration 012 API부터의 것이라 이 경계의 세 모드가
+            # 모두 본다. 판을 열지 않으므로 랭킹을 쓰지 않고, 거절된 닉네임은 프로필을 바꾸지 않는다
+            needs_session = [
+                ("nickname", self.nickname),
+                ("rankings", self.rankings),
+                ("room", self.create_room),
+            ]
             for name, action in needs_session:
                 if not self.session_ready:
                     self.report.fail(name, "not run (no session)")
@@ -706,11 +707,11 @@ class Smoke:
             problems = cors_problems(reply)
             if problems:
                 raise Failure("; ".join(problems))
-            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 012)"
+            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 013)"
         if migration_required and self.mode == BASELINE:
             raise Failure(
                 f"{status_text(reply)}, expected 200 "
-                f"(after migration 012 run {MIGRATED_BASELINE} instead)"
+                f"(after migration 013 run {MIGRATED_BASELINE} instead)"
             )
         expect_status(reply, 200)
         version = SCHEMA_VERSIONS[self.mode]
@@ -732,15 +733,15 @@ class Smoke:
             raise Failure("playerId is not this identity")
         self.session_ready = True
         problems = cors_problems(reply)
-        # migration 012 API는 끝난 판을 서버 랭킹에 남기고(rankings) 홈의 혼자 온라인 판을 연다고
-        # (soloPlay, FR-7.13 3단계) 알린다. #108만의 API도 같은 schemaVersion 12라 soloPlay가 그 둘을 가른다
-        if self.candidate:
-            problems += field_problems(session, {"rankings": True, "soloPlay": True})
+        # migration 012 API부터 끝난 판을 서버 랭킹에 남긴다고(rankings) 알리고, 013 API는 홈의 혼자
+        # 온라인 판도 연다고(soloPlay, FR-7.13 3단계) 알린다. 012 API(#108)에는 soloPlay가 없다
+        solo_play: object = True if self.candidate else _MISSING
+        problems += field_problems(session, {"rankings": True, "soloPlay": solo_play})
         if problems:
             raise Failure("; ".join(problems))
         if self.candidate:
             return "HTTP 200 playerId is this identity, rankings true, soloPlay true"
-        return "HTTP 200 playerId is this identity"
+        return "HTTP 200 playerId is this identity, rankings true, no soloPlay"
 
     def nickname(self) -> str:
         reply = self.call(
@@ -831,7 +832,7 @@ class Smoke:
 
     def create_room(self) -> str:
         self.room_requested = True
-        # questionTimeMs를 보내지 않는다 — 구버전 화면처럼 보내지 않은 방은 011·012 API 모두 20초다.
+        # questionTimeMs를 보내지 않는다 — 구버전 화면처럼 보내지 않은 방은 012·013 API 모두 20초다.
         reply = self.call(
             "POST",
             "/v1/rooms",
@@ -844,7 +845,7 @@ class Smoke:
         if not isinstance(code, str) or not _ROOM_CODE.fullmatch(code):
             raise Failure("room code is missing or malformed")
         self.room_code = code
-        # 011 API부터의 방 모양이다. 이 경계(012)의 baseline도 그 API라 모든 모드가 본다
+        # 011 API부터의 방 모양이다. 이 경계(013)의 baseline(012 API)도 갖고 있어 모든 모드가 본다
         want: dict[str, object] = {
             "capacity": 2,
             "isPublic": True,
@@ -1050,9 +1051,9 @@ def main(argv: list[str] | None = None) -> int:
         "mode",
         choices=MODES,
         help=(
-            "baseline: the serving migration-011 API; "
-            "baseline-migrated: that API after migration 012 ran (gate 503 migration-required); "
-            "candidate: the migration-012 API"
+            "baseline: the serving migration-012 API; "
+            "baseline-migrated: that API after migration 013 ran (gate 503 migration-required); "
+            "candidate: the migration-013 API"
         ),
     )
     parser.add_argument("--api", default=DEFAULT_API, help=f"API base URL (default {DEFAULT_API})")

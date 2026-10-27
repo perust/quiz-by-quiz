@@ -90,13 +90,11 @@ from .room_versions import RoomVersions
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
-# 이 API가 읽고 쓰는 마지막 migration. 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하고(닫는
+# 이 API가 읽고 쓰는 마지막 migration. 013(혼자 푸는 온라인 판)의 표가 없으면 로비·방·참가를 읽지
+# 못하고(방 SQL이 solo_rooms를 본다) 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하며(닫는
 # transaction이 기록을 남긴다) 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지 못하므로
-# 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md). 012는 아직
-# 어디에도 올리지 않은 채 혼자 방 표(FR-7.13 3단계)를 더해 고쳤다 — #108만의 012도 같은 12라
-# readiness는 그 표도 본다(`solo_rooms_ready`). #108만의 012 위에서는 503
-# `migration-required`다.
-RELEASE_SCHEMA_VERSION = 12
+# 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
+RELEASE_SCHEMA_VERSION = 13
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
@@ -1750,8 +1748,7 @@ def create_app(
         if wait is not None:
             raise _rate_limited("요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         version = await repo.schema_version()
-        # 번호가 같아도 #108만의 012(혼자 방 표가 없다)면 이 API는 방을 읽지 못한다 — 닫힌 채 둔다
-        if version != RELEASE_SCHEMA_VERSION or not await repo.solo_rooms_ready():
+        if version != RELEASE_SCHEMA_VERSION:
             raise _error(
                 503,
                 "migration-required",

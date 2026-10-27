@@ -1,9 +1,9 @@
 """Read-only release checks for the operator (``python -m app.release_check``).
 
-``db --expect 11|12`` runs inside the ``quiz-by-quiz-migrate`` service, before and after
-migration 012 (deploy/oracle/README.md, "Fail-closed staging order"; ``--expect 10`` is the
-check before the earlier migration 011). ``bank`` runs inside the ``quiz-by-quiz-api`` service,
-which mounts the private online bank.
+``db --expect 12|13`` runs inside the ``quiz-by-quiz-migrate`` service, before and after
+migration 013 (deploy/oracle/README.md, "Fail-closed staging order"; ``--expect 10`` and
+``--expect 11`` are the checks before the earlier migrations 011 and 012). ``bank`` runs inside
+the ``quiz-by-quiz-api`` service, which mounts the private online bank.
 
 Every line is ``OK``, ``FAIL``, ``WARN`` or ``INFO`` followed by a check name, and the exit
 status is 0 exactly when no line is ``FAIL``. Nothing here writes to the database, reads
@@ -46,7 +46,7 @@ from .question_catalog import (
 
 Status = Literal["OK", "FAIL", "WARN", "INFO"]
 
-EXPECTABLE_VERSIONS = (10, 11, 12)
+EXPECTABLE_VERSIONS = (10, 11, 12, 13)
 ONLINE_ID_PREFIX = "online-"
 # 판의 문항 기록 match_questions.question_id가 varchar(64)다(002). 더 긴 id도 catalog는 받아 API가
 # 뜨지만, 그 문항을 뽑은 판은 INSERT에서 막혀 시작하지 못한다.
@@ -82,7 +82,7 @@ _QUESTION_TIME_CONSTRAINTS = (
     ("match_answers", "match_answers_elapsed_ms_range_check"),
 )
 # match_answers.elapsed_ms의 상한. 002의 이름 없는 열 CHECK는 20초, 011이 40초로 넓힌다.
-_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000, 12: 40_000}
+_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000, 12: 40_000, 13: 40_000}
 
 # 012가 더하는 온라인 랭킹 표. 열 → (형식, NOT NULL, 저장 생성 열인가, identity인가).
 _RANKINGS_TABLE = "online_rankings"
@@ -118,17 +118,18 @@ _RANKINGS_INDEXES = (
     "online_rankings_board_order_idx",
     "online_rankings_board_week_order_idx",
     "online_rankings_recorded_at_idx",
-    # 한 사람의 판마다 최고 기록·기록 내보내기 (FR-7.13 3단계)
-    "online_rankings_player_board_order_idx",
 )
+# 013이 같은 표에 더하는 색인: 한 사람의 판마다 최고 기록·기록 내보내기 (FR-7.13 3단계).
+# 012(#108)의 DB에는 없어야 한다.
+_SOLO_PLAY_INDEXES = ("online_rankings_player_board_order_idx",)
 _RANKINGS_PRUNE_FUNCTION = "quiz_online.prune_online_rankings()"
 # 런타임 역할은 기록을 남기고 읽기만 한다. 나머지는 표 단위로도 열 단위로도 없어야 한다.
 _RANKINGS_GRANTED = ("SELECT", "INSERT")
 _RANKINGS_COLUMN_DENIED = ("UPDATE", "REFERENCES")
 _RANKINGS_TABLE_DENIED = ("DELETE", "TRUNCATE", "TRIGGER")
 
-# 012가 더하는 혼자 방 표시 (FR-7.13 3단계). 방 하나에 하나, 사람 하나에 하나이고 방과 함께
-# 지워진다.
+# 013이 더하는 혼자 방 표시 (FR-7.13 3단계). 방 하나에 하나, 사람 하나에 하나이고 방과 함께
+# 지워진다. 012(#108)의 DB에는 없어야 한다.
 _SOLO_TABLE = "solo_rooms"
 _SOLO_RELATION = f"quiz_online.{_SOLO_TABLE}"
 _SOLO_COLUMNS: dict[str, tuple[str, bool, bool, bool]] = {
@@ -366,6 +367,11 @@ SELECT count(*), count(DISTINCT board), min(recorded_at) IS NOT NULL
 FROM quiz_online.online_rankings
 """
 
+_SOLO_ROOMS_ROWS_SQL = """
+SELECT count(*)
+FROM quiz_online.solo_rooms
+"""
+
 _TABLE_PRIVILEGES_SQL = """
 SELECT privilege, pg_catalog.has_table_privilege(%s::name, %s::text, privilege)
 FROM unnest(%s::text[]) AS privilege
@@ -416,6 +422,7 @@ def run_database_checks(
     require_idle: bool = False,
     require_default_question_time: bool = False,
     require_empty_rankings: bool = False,
+    require_empty_solo_rooms: bool = False,
 ) -> list[Check]:
     """Connect as the migration owner, force read-only transactions and run every check."""
     try:
@@ -448,6 +455,7 @@ def run_database_checks(
             require_idle=require_idle,
             require_default_question_time=require_default_question_time,
             require_empty_rankings=require_empty_rankings,
+            require_empty_solo_rooms=require_empty_solo_rooms,
         )
 
 
@@ -458,6 +466,7 @@ def check_database(
     require_idle: bool = False,
     require_default_question_time: bool = False,
     require_empty_rankings: bool = False,
+    require_empty_solo_rooms: bool = False,
 ) -> list[Check]:
     """Run the release checks, each in its own verified read-only transaction.
 
@@ -466,7 +475,10 @@ def check_database(
     candidate API, when only the migration-010 API (which never writes the column) serves.
     ``require_empty_rankings`` (``--expect 12`` only) fails while the ranking table holds a
     row — the window between migration 012 and its candidate API, when only the
-    migration-011 API (which never writes the table) serves.
+    migration-011 API (which never writes the table) serves. ``require_empty_solo_rooms``
+    (``--expect 13`` only) fails while a solo room exists — the window between migration 013
+    and its candidate API, when only the migration-012 API (which never writes the table)
+    serves.
     """
     if expect not in EXPECTABLE_VERSIONS:
         raise ValueError(f"expect must be one of {EXPECTABLE_VERSIONS}")
@@ -474,6 +486,8 @@ def check_database(
         raise ValueError("require_default_question_time needs expect 11")
     if require_empty_rankings and expect != 12:
         raise ValueError("require_empty_rankings needs expect 12")
+    if require_empty_solo_rooms and expect != 13:
+        raise ValueError("require_empty_solo_rooms needs expect 13")
 
     session = _run(connection, "session", _check_session)
     if any(check.status == "FAIL" for check in session):
@@ -502,13 +516,20 @@ def check_database(
     if expect >= 12:
         checks += [
             ("rankings-constraints", _check_rankings_constraints),
-            ("rankings-indexes", _check_rankings_indexes),
+            ("rankings-indexes", lambda conn: _check_rankings_indexes(conn, expect)),
             ("rankings-retention", _check_rankings_retention),
             (
                 "rankings-records",
                 lambda conn: _check_rankings_records(conn, require_empty_rankings),
             ),
+        ]
+    if expect >= 13:
+        checks += [
             ("solo-rooms-constraints", _check_solo_rooms_constraints),
+            (
+                "solo-rooms-records",
+                lambda conn: _check_solo_rooms_records(conn, require_empty_solo_rooms),
+            ),
         ]
     checks += [
         ("runtime-role", _check_runtime_role),
@@ -519,6 +540,7 @@ def check_database(
         checks.append(("runtime-question-time-access", _check_runtime_question_time_access))
     if expect >= 12:
         checks.append(("runtime-rankings-access", _check_runtime_rankings_access))
+    if expect >= 13:
         checks.append(("runtime-solo-rooms-access", _check_runtime_solo_rooms_access))
     checks += [
         ("logging", _check_logging),
@@ -900,7 +922,8 @@ def _check_rankings_constraints(connection: Connection) -> Iterable[Check]:
         )
 
 
-def _check_rankings_indexes(connection: Connection) -> Iterable[Check]:
+def _check_rankings_indexes(connection: Connection, expect: int) -> Iterable[Check]:
+    """012의 색인 셋. 013부터는 그 표에 더한 한 사람의 색인도 보고, 012에서는 그것이 없어야 한다."""
     name = "rankings-indexes"
     if not _rankings_table_exists(connection):
         yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
@@ -909,15 +932,26 @@ def _check_rankings_indexes(connection: Connection) -> Iterable[Check]:
         str(index): bool(valid)
         for index, valid in connection.execute(_INDEXES_SQL, (_RANKINGS_RELATION,)).fetchall()
     }
+    required = _RANKINGS_INDEXES + (_SOLO_PLAY_INDEXES if expect >= 13 else ())
     problems = [
         f"{index} is {'missing' if index not in indexes else 'not valid'}"
-        for index in _RANKINGS_INDEXES
+        for index in required
         if not indexes.get(index, False)
     ]
+    early = [index for index in _SOLO_PLAY_INDEXES if expect < 13 and index in indexes]
+    if early:
+        problems.append(f"migration 013 index already exists: {', '.join(early)}")
     if problems:
         yield Check("FAIL", name, "; ".join(problems))
+    elif expect < 13:
+        yield Check(
+            "OK",
+            name,
+            f"{', '.join(required)} valid; {', '.join(_SOLO_PLAY_INDEXES)} absent, "
+            f"as at migration {expect}",
+        )
     else:
-        yield Check("OK", name, f"{', '.join(_RANKINGS_INDEXES)} valid")
+        yield Check("OK", name, f"{', '.join(required)} valid")
 
 
 def _check_rankings_retention(connection: Connection) -> Iterable[Check]:
@@ -967,12 +1001,12 @@ def _solo_rooms_table_exists(connection: Connection) -> bool:
 
 
 def _check_solo_rooms_table(connection: Connection, expect: int) -> Iterable[Check]:
-    """혼자 방 표시 표 (FR-7.13 3단계, migration 012). 012 전에는 없어야 한다."""
+    """혼자 방 표시 표 (FR-7.13 3단계, migration 013). 013 전에는 없어야 한다."""
     name = "solo-rooms-table"
     exists = _solo_rooms_table_exists(connection)
-    if expect < 12:
+    if expect < 13:
         if exists:
-            yield Check("FAIL", name, f"migration 012 table already exists: {_SOLO_RELATION}")
+            yield Check("FAIL", name, f"migration 013 table already exists: {_SOLO_RELATION}")
         else:
             yield Check("OK", name, f"{_SOLO_RELATION} absent, as at migration {expect}")
         return
@@ -1031,6 +1065,27 @@ def _check_solo_rooms_constraints(connection: Connection) -> Iterable[Check]:
         yield Check(
             "OK", name, f"room_id cascades from quiz_online.rooms, {_SOLO_UNIQUE} present"
         )
+
+
+def _check_solo_rooms_records(connection: Connection, require_empty: bool) -> Iterable[Check]:
+    name = "solo-rooms-records"
+    if not _solo_rooms_table_exists(connection):
+        yield Check("FAIL", name, f"{_SOLO_RELATION} is missing")
+        return
+    rows = int(_fetchone(connection, _SOLO_ROOMS_ROWS_SQL)[0])
+    detail = f"{rows} solo rooms"
+    # 013 뒤 후보 API로 바꾸기 전에는 012의 API(#108)만 돈다. 그 API는 이 표를 모르므로 혼자 방이
+    # 있으면 후보 API가 너무 일찍 돌았다는 뜻이다(README 3단계).
+    if require_empty and rows:
+        yield Check(
+            "FAIL",
+            name,
+            f"{detail}; --require-empty-solo-rooms needs 0 (only the candidate API creates them)",
+        )
+    elif require_empty:
+        yield Check("OK", name, f"{detail}; empty")
+    else:
+        yield Check("INFO", name, detail)
 
 
 def _check_runtime_solo_rooms_access(connection: Connection) -> Iterable[Check]:
@@ -1592,8 +1647,17 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "fail while the online ranking table holds a record "
-            "(after migration 012, before the candidate API replaces the migration-011 API; "
+            "(after migration 012, before its candidate API replaces the migration-011 API; "
             "needs --expect 12)"
+        ),
+    )
+    database.add_argument(
+        "--require-empty-solo-rooms",
+        action="store_true",
+        help=(
+            "fail while a solo room exists "
+            "(after migration 013, before the candidate API replaces the migration-012 API; "
+            "needs --expect 13)"
         ),
     )
     commands.add_parser("bank", help="check the private online question bank at QUESTION_BANK_DIR")
@@ -1614,6 +1678,12 @@ def main(
         parser.error("--require-default-question-time needs --expect 11")
     if arguments.command == "db" and arguments.require_empty_rankings and arguments.expect != 12:
         parser.error("--require-empty-rankings needs --expect 12")
+    if (
+        arguments.command == "db"
+        and arguments.require_empty_solo_rooms
+        and arguments.expect != 13
+    ):
+        parser.error("--require-empty-solo-rooms needs --expect 13")
     source = os.environ if environment is None else environment
     try:
         if arguments.command == "db":
@@ -1623,6 +1693,7 @@ def main(
                 require_idle=arguments.require_idle,
                 require_default_question_time=arguments.require_default_question_time,
                 require_empty_rankings=arguments.require_empty_rankings,
+                require_empty_solo_rooms=arguments.require_empty_solo_rooms,
             )
         else:
             checks = run_bank_checks(source)

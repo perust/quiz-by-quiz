@@ -497,18 +497,6 @@ class PostgresRoomsRepository:
             return 0
         return int(row["schema_version"])
 
-    async def solo_rooms_ready(self) -> bool:
-        """012의 혼자 방 표가 있는가. #108만의 012(같은 번호, 이 표가 없다) 위에서는 False다."""
-        try:
-            async with self._pool.connection(timeout=3) as connection:
-                cursor = await connection.execute(
-                    "SELECT to_regclass('quiz_online.solo_rooms') IS NOT NULL AS ready"
-                )
-                row = await cursor.fetchone()
-        except errors.Error:
-            return False
-        return bool(row and row["ready"])
-
     async def upsert_player(
         self,
         player_id: UUID,

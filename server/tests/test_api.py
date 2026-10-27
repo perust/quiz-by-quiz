@@ -94,10 +94,8 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 12
+        self.current_schema_version = 13
         self.schema_version_calls = 0
-        # 012의 혼자 방 표가 있는가 (FR-7.13 3단계). #108만의 012면 False다
-        self.solo_rooms_table = True
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
         self.transfer_requested = threading.Event()
@@ -126,9 +124,6 @@ class FakeRepository:
     async def schema_version(self) -> int:
         self.schema_version_calls += 1
         return self.current_schema_version
-
-    async def solo_rooms_ready(self) -> bool:
-        return self.solo_rooms_table
 
     async def upsert_player(
         self,
@@ -329,7 +324,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_12() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_13() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -337,30 +332,18 @@ def test_release_readiness_requires_character_only_contract_and_migration_12() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 12,
+            "schemaVersion": 13,
         }
 
-        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가 없다. 이 API는
-        # 그 위에서 방을 읽거나 판을 닫지 못한다(닫는 transaction이 랭킹을 남긴다)
-        for older in (9, 10, 11):
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가, 012(#108)의
+        # DB에는 혼자 방 표가 없다. 이 API는 그 위에서 방을 읽거나(방 SQL이 solo_rooms를 본다) 판을
+        # 닫지 못한다(닫는 transaction이 랭킹을 남긴다). 번호만 보면 된다 — 013이 따로 있어 12는
+        # 언제나 #108의 스키마다
+        for older in (9, 10, 11, 12):
             repository.current_schema_version = older
             blocked = client.get("/v1/release-readiness")
             assert blocked.status_code == 503
             assert blocked.json()["detail"]["code"] == "migration-required"
-
-
-def test_release_readiness_stays_closed_on_a_rankings_only_migration_12() -> None:
-    # 012를 제자리에서 고쳐 혼자 방 표를 더했다 — #108만의 012도 번호는 12다. 이 API는 그
-    # 위에서 방을 읽지 못하므로(방 SQL이 solo_rooms를 본다) 번호가 같아도 닫힌 채 둔다.
-    # Pages gate가 지나가지 않는다
-    repository = FakeRepository()
-    repository.solo_rooms_table = False
-    with make_client(repository) as client:
-        blocked = client.get("/v1/release-readiness")
-        assert blocked.status_code == 503
-        assert blocked.json()["detail"]["code"] == "migration-required"
-        repository.solo_rooms_table = True
-        assert client.get("/v1/release-readiness").status_code == 200
 
 
 def test_release_readiness_database_queries_are_rate_limited() -> None:

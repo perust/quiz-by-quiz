@@ -32,7 +32,7 @@ uptime = load_uptime()
 API = uptime.DEFAULT_API
 PAGES = uptime.DEFAULT_PAGES
 READINESS_URL = API + "/v1/release-readiness"
-READY = {"status": "ready", "contract": "character-only-v1", "schemaVersion": 12}
+READY = {"status": "ready", "contract": "character-only-v1", "schemaVersion": 13}
 PAGE = (
     '<!doctype html><html><head><meta charset="utf-8">'
     f'<meta name="quiz-api-base" content="{API}"></head><body></body></html>'
@@ -152,11 +152,11 @@ class CheckTest(unittest.TestCase):
         lines, recorder = run_check(transport)
 
         self.assertEqual(lines[0], "quiz-by-quiz uptime check 2026-10-27T03:15:00Z")
-        self.assertIn("expected schemaVersion >= 12 (pages.yml backend-ready)", lines)
+        self.assertIn("expected schemaVersion >= 13 (pages.yml backend-ready)", lines)
         self.assertEqual(
             line_for(lines, "readiness"),
-            "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12 "
-            "(want >= 12), CORS ok, 0.20s",
+            "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 13 "
+            "(want >= 13), CORS ok, 0.20s",
         )
         self.assertEqual(
             line_for(lines, "pages"),
@@ -169,7 +169,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(transport.calls[0][1]["Origin"], "https://perust.github.io")
 
     def test_a_newer_schema_version_still_passes(self):
-        newer = dict(READY, schemaVersion=13)
+        newer = dict(READY, schemaVersion=14)
         transport = FakeTransport({READINESS_URL: [readiness(newer)], PAGES: [page()]})
         lines, _ = run_check(transport)
         self.assertEqual(lines[-1], "verdict: ok")
@@ -242,9 +242,9 @@ class CheckTest(unittest.TestCase):
         cases = {
             "status": dict(READY, status="starting"),
             "contract": dict(READY, contract="legacy"),
-            "older": dict(READY, schemaVersion=11),
+            "older": dict(READY, schemaVersion=12),
             "bool": dict(READY, schemaVersion=True),
-            "text": dict(READY, schemaVersion="12"),
+            "text": dict(READY, schemaVersion="13"),
         }
         for name, payload in cases.items():
             with self.subTest(case=name):
@@ -252,10 +252,10 @@ class CheckTest(unittest.TestCase):
                 lines, _ = run_check(transport)
                 self.assertTrue(line_for(lines, "readiness").startswith("FAIL readiness: HTTP 200"))
         transport = FakeTransport(
-            {READINESS_URL: [readiness(dict(READY, schemaVersion=11))], PAGES: [page()]}
+            {READINESS_URL: [readiness(dict(READY, schemaVersion=12))], PAGES: [page()]}
         )
         lines, _ = run_check(transport)
-        self.assertIn("schemaVersion=11 (want >= 12)", line_for(lines, "readiness"))
+        self.assertIn("schemaVersion=12 (want >= 13)", line_for(lines, "readiness"))
 
     def test_a_slow_response_counts_as_a_failed_attempt(self):
         transport = FakeTransport(

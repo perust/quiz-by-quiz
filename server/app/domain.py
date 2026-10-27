@@ -15,7 +15,7 @@ ALLOWED_QUESTION_TIMES_MS = frozenset({DEFAULT_QUESTION_TIME_MS, 40_000})
 # 사람도 온라인 방을 만들어 푼다(소유자 방향: 언젠가 혼자 하기를 온라인 방 하나로 모은다). 방·세션
 # 응답이 `minPlayers`로 싣는다. 이 값을 모르는 이전 API는 둘이었다(화면은 없으면 2로 읽는다).
 MIN_MATCH_PLAYERS = 1
-# 혼자 푸는 온라인 판의 방 (FR-7.13 3단계, migration 012의 solo_rooms). 홈의 분야 칸이 곧바로 연다 —
+# 혼자 푸는 온라인 판의 방 (FR-7.13 3단계, migration 013의 solo_rooms). 홈의 분야 칸이 곧바로 연다 —
 # 로비 목록에 남에게 보이지 않고 남이 들어오지 못한다. 방 표의 정원 CHECK(2명부터)를 지키려고 가장
 # 작은 정원을 쓴다. 이름은 그 사람에게만 보인다(홈의 «풀던 혼자 판» 줄은 이름 대신 제 말을 쓴다).
 SOLO_ROOM_NAME = "혼자 하기"

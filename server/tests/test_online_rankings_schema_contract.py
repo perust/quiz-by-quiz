@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.main import RELEASE_SCHEMA_VERSION
 from app.migrate import discover_migrations
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations"
@@ -18,20 +17,12 @@ def _sql() -> str:
     return " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
 
 
-def _create_table(name: str) -> str:
-    """CREATE TABLE 한 문장(정규화한 글). 표마다 따로 견준다."""
-    sql = _sql()
-    start = sql.index(f"create table quiz_online.{name} (")
-    return sql[start : sql.index(");", start) + 2]
-
-
-def test_rankings_are_the_twelfth_contiguous_migration_and_the_release_gate() -> None:
+def test_rankings_are_the_twelfth_contiguous_migration() -> None:
     migrations = discover_migrations(MIGRATIONS)
 
-    assert [migration.version for migration in migrations] == list(range(1, 13))
-    assert migrations[-1].path.name == "012_online_rankings.sql"
-    # 공개 release gate가 기다리는 판이 이 migration이다 (deploy/oracle/README.md)
-    assert RELEASE_SCHEMA_VERSION == 12
+    # 013(혼자 푸는 온라인 판)이 뒤를 잇는다 — 012는 열두 번째 자리에 그대로 있다
+    assert [migration.version for migration in migrations][:12] == list(range(1, 13))
+    assert migrations[11].path.name == "012_online_rankings.sql"
     sql = _sql()
     assert sql.startswith("-- ") and "begin;" in sql and sql.rstrip().endswith("commit;")
     assert "insert into quiz_online.schema_migrations (version) values (12)" in sql
@@ -41,8 +32,7 @@ def test_rankings_are_the_twelfth_contiguous_migration_and_the_release_gate() ->
 def test_migration_only_adds_and_never_touches_existing_tables() -> None:
     sql = _sql()
 
-    # 011의 API가 도는 동안 먼저 올린다 — 이미 있는 표를 바꾸거나 지우지 않는다. 혼자 푸는 온라인 판
-    # (FR-7.13 3단계)도 방 표에 열을 더하지 않고 표시 표를 따로 둔다
+    # 011의 API가 도는 동안 먼저 올린다 — 이미 있는 표를 바꾸거나 지우지 않는다
     for forbidden in (
         "alter table",
         "drop ",
@@ -50,9 +40,21 @@ def test_migration_only_adds_and_never_touches_existing_tables() -> None:
         "delete from quiz_online.rooms",
     ):
         assert forbidden not in sql, forbidden
-    assert sql.count("create table") == 2
+    assert sql.count("create table") == 1
     assert "create table quiz_online.online_rankings" in sql
-    assert "create table quiz_online.solo_rooms" in sql
+
+
+def test_migration_stays_the_rankings_only_text_of_108() -> None:
+    """012는 #108의 글 그대로다. 혼자 판(FR-7.13 3단계)의 표·색인은 013에 있다.
+
+    한때 아직 올리지 않은 012에 접어 넣었다. migrator는 번호만 보므로 #108의 012가 먼저 올라간
+    DB에서는 고친 012가 영영 돌지 않는다 — 같은 번호가 두 스키마를 뜻하게 하지 않는다.
+    """
+    sql = _sql()
+
+    assert "solo_rooms" not in sql
+    assert "online_rankings_player_board_order_idx" not in sql
+    assert sql.count("create index") == 3
 
 
 def test_record_shape_is_the_server_graded_result_of_one_match_player() -> None:
@@ -74,7 +76,7 @@ def test_record_shape_is_the_server_graded_result_of_one_match_player() -> None:
         assert column in sql, column
     # 판·사람마다 한 번. 외래 키는 없다 — players·matches는 몇 시간 만에 지워진다
     assert "constraint online_rankings_match_player_key unique (match_id, player_id)" in sql
-    assert "references" not in _create_table("online_rankings")
+    assert "references" not in sql
     # 브라우저가 보고한 점수가 아니라 정답 수에서 나온 점수만 받는다(정답당 10점)
     assert "score = correct_count * 10" in sql
     assert "correct_count between 0 and total_questions" in sql
@@ -124,10 +126,9 @@ def test_runtime_role_only_records_and_reads_and_prunes_through_a_fixed_function
     sql = _sql()
 
     assert "grant select, insert on table quiz_online.online_rankings to quiz_by_quiz_app" in sql
-    assert "grant select, insert on table quiz_online.solo_rooms to quiz_by_quiz_app" in sql
     for forbidden in ("grant all", "update on", "delete on", "truncate", "schema_migrations to"):
         assert forbidden not in sql, forbidden
-    assert sql.count("grant ") == 3
+    assert sql.count("grant ") == 2
     assert "create function quiz_online.prune_online_rankings() returns integer" in sql
     assert "security definer set search_path = pg_catalog, quiz_online" in sql
     assert "revoke all on function quiz_online.prune_online_rankings() from public" in sql
@@ -145,27 +146,3 @@ def test_runtime_role_only_records_and_reads_and_prunes_through_a_fixed_function
     assert "returns integer language sql volatile" in sql
     # 인자가 없다 — 런타임 역할이 기간이나 개수를 바꿀 수 없다
     assert "prune_online_rankings()" in sql and "prune_online_rankings(integer" not in sql
-
-
-def test_solo_rooms_mark_a_room_for_one_player_and_vanish_with_it() -> None:
-    """혼자 푸는 온라인 판의 방 (FR-7.13 3단계). 방 하나·사람 하나에 하나이고 방과 함께 지워진다."""
-    table = _create_table("solo_rooms")
-
-    assert (
-        "room_id uuid primary key references quiz_online.rooms(id) on delete cascade" in table
-    )
-    assert "player_id uuid not null" in table
-    assert "constraint solo_rooms_one_per_player unique (player_id)" in table
-    # players는 몇 시간 만에 지워진다 — 사람에게는 외래 키를 걸지 않는다(방이 사라지면 표시도
-    # 사라진다)
-    assert table.count("references") == 1
-
-
-def test_own_best_and_export_read_one_players_rows_through_an_index() -> None:
-    """내 최고 점수·최고 기록 비교·기록 내보내기(FR-7.13 3단계)는 그 사람 줄만 읽는다."""
-    sql = _sql()
-
-    assert (
-        "create index online_rankings_player_board_order_idx on quiz_online.online_rankings "
-        "(player_id, board, score desc, recorded_at asc, id asc)"
-    ) in sql

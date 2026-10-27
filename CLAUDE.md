@@ -919,7 +919,7 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
 
 **로비 목록은 30초마다 조용히 다시 읽는다** (WP-E, `ui/lobby-refresh.ts`). 한때 «주기적으로 다시 읽지 않는다»였다 — 같은
 와이파이의 여럿이 IP당 120/60초를 나눠 썼다. N01이 몫을 사람마다 120/60초·IP 1,500/60초로 나눈 뒤로는 한 교실 서른 명이
-모두 로비에 있어도 분당 60번(IP 몫의 4%)이다. N01은 #106의 API에 있고 Pages gate가 그 위(`schemaVersion: 12`)를 보므로 이 화면이
+모두 로비에 있어도 분당 60번(IP 몫의 4%)이다. N01은 #106의 API에 있고 Pages gate가 그 위(`schemaVersion: 13`)를 보므로 이 화면이
 010 API와 함께 나가지 않는다(새 응답 필드로 가릴 것이 없다). 그래도 «보일 때만, 한 번에 하나, 실패하면 물러선다»를 지킨다.
 - **로비가 보이고 문서가 보이고 방 목록 칸이 열려 있을 때만.** 시계는 `activate()`(화면이 보인 뒤)에 켜고 `hide()`(closers)와 참가·
   만들기로 대기실에 가는 길(`invalidateScreenOwnership`)에서 끈다. `visibilitychange`로 숨으면 시계를 거두고, 돌아오면 밀린 차례를
@@ -1158,8 +1158,8 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
   쓴 시간 상한이 모두 그 판의 값이다(`postgres.py`에 고정 20초가 남지 않는다). 방·판 snapshot이 `questionTimeMs`로 싣는다
 - `011_room_question_time.sql`이 그 열(기본 20000, 20000·40000만)과 40초까지 넓힌 `elapsed_ms` 범위를 더한다. 더하기만 하므로
   배포는 **migration 011 → API → Pages**였다(#106, `deploy/oracle/README.md`의 앞선 경계). 이 client는 만들기에 `questionTimeMs`를
-  보내 010의 API(모르는 필드를 거절한다)와 함께 나가면 방을 못 만든다 — Pages workflow가 막는다. 지금의 gate는 그 위의 012다(아래
-  «온라인 랭킹»)
+  보내 010의 API(모르는 필드를 거절한다)와 함께 나가면 방을 못 만든다 — Pages workflow가 막는다. 지금의 gate는 그 위의 013이다(아래
+  «혼자 푸는 온라인 판»)
 - 문항 시간을 모르는 이전 서버의 방은 20초로 읽고, 있는데 20초·40초가 아니면(null 포함) 믿지 않는다. 로컬 방(`local-rooms.ts`)도
   같은 목록만 담고 예전에 저장된 방은 20초로 읽는다
 - 좁은 화면(480px 미만)에서는 세 칸이 «예술과문화»·«전체 도전»을 ↻ 표식 자리와 함께 담지 못해 두 칸씩 놓고 문항 시간이 한 줄을
@@ -1536,11 +1536,12 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   홈의 분야 칸과 같은 `playRound`), 온라인 범위에 내 서버 기록의 「기록 내보내기」가 있다(위 «기록 내보내기 (N02)»)
 - **온라인 결과**(`ui/online-result.ts`): `rankingRecorded`가 true일 때만 요약 아래 «이 판의 점수가 온라인 랭킹에 기록됐어요»와 행동 줄의
   「온라인 랭킹 보기」를 보인다. 남지 않은 기록을 남았다고 하지 않는다. 그 화면을 떠나므로 방 소켓은 closers가 놓는다
-- **배포는 migration 012 → API → Pages**이고 공개 release gate는 `schemaVersion: 12`다(`deploy/oracle/README.md`). 011의 API(#106·#107)는
-  표를 모른 채 012가 도는 동안에도 돌고(그 사이 닫힌 판은 기록되지 않는다) 그 gate는 503 `migration-required`로 닫힌다. 012의 API는 011
-  DB 위에서 판을 닫지 못하고(닫는 판만 sweep마다 다시 미뤄진다, 위 savepoint) 끝난 판 읽기가 모두 실패한다. 화면은 랭킹을 모르는 API와도
-  돌지만 Pages workflow는 12를 기다린다 — «기록됐어요»가 늘 기록하는 API 위에 있게. 아직 010인 운영 DB의 011 경계는 #107의 소스로
-  돈다 — 이 후보의 `app.migrate`는 011에서 멈추지 못하고(11, 12를 함께 단다) `smoke.py`에는 010 baseline이 없다(`deploy/oracle/README.md`)
+- **배포는 migration 012 → API → Pages**였고 그 release gate는 `schemaVersion: 12`였다(#108, `deploy/oracle/README.md`의 앞선 경계). 011의
+  API(#106·#107)는 표를 모른 채 012가 도는 동안에도 돌고(그 사이 닫힌 판은 기록되지 않는다) 그 gate는 503 `migration-required`로 닫힌다.
+  012의 API는 011 DB 위에서 판을 닫지 못하고(닫는 판만 sweep마다 다시 미뤄진다, 위 savepoint) 끝난 판 읽기가 모두 실패한다. 화면은 랭킹을
+  모르는 API와도 돌지만 #108의 Pages workflow는 12를 기다렸다 — «기록됐어요»가 늘 기록하는 API 위에 있게. 지금의 gate는 그 위의 013이다(아래
+  «혼자 푸는 온라인 판»). 아직 010인 운영 DB의 011 경계는 #107의, 그 뒤 012 경계는 #108의 소스로 돈다 — 이 후보의 `app.migrate`는 011·012에서
+  멈추지 못하고(11, 12, 13 / 12, 13을 함께 단다) `smoke.py`에는 010·011 baseline이 없다(`deploy/oracle/README.md`)
 - 기록 내보내기(N02)의 서버 기록 이전(PRD FR-7.13 2단계의 남은 일)은 3단계와 함께 했다 — 위 «기록 내보내기 (N02)»와 아래
   «혼자 푸는 온라인 판»
 
@@ -1593,24 +1594,29 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   정리가 지운다, 다음 판이 그 방을 다시 쓴다)이고, 고르면 `app.ts`의 `leaveSoloResult`와 홈의 `myRooms` 정리(끝난 혼자 방을 나가는 줄)를 함께 고친다
 - **서버** (`POST /v1/solo`, `deploy/oracle/README.md`의 «Solo online play»): 그 사람의 혼자 방을 다시 쓰거나(분야·문항 시간·닉네임은 이번 값)
   만들고 같은 transaction에서 판을 연다(`start_solo` → «게임 시작»과 같은 `_start_locked_match` — 같은 방의 지난 판을 피하는 출제(N08)가 「다시
-  하기」 사이에 그대로 선다). 혼자 방은 migration 012의 `solo_rooms` 표시가 붙은 보통 방(정원 2·공개·비밀번호 없음)이고 **그 방의 사람에게만
+  하기」 사이에 그대로 선다). 혼자 방은 migration 013의 `solo_rooms` 표시가 붙은 보통 방(정원 2·공개·비밀번호 없음)이고 **그 방의 사람에게만
   보인다** — 남의 로비 목록·코드 조회에 없고, 남의 참가는 «없는 방»(404)이다. 표시는 방과 함께 지워지고(CASCADE) 사람마다 하나다(UNIQUE). 몫은
   사람 12·주소 120·프로세스 600/분, 운영 기록은 `solo_started` 한 줄이다. **«홈으로»가 방을 지워 홈에서 고른 판마다 새 방이라, 새로 만들 때만
   두 상한을 더 본다** — 혼자 방의 동시 한도(`SOLO_ROOM_CEILING` 1,200, 넘으면 503 `solo-busy` → 화면은 연습)와 만드는 몫(주소 720·프로세스
   2,400/시간, 넘으면 429). 다시 쓰는 판은 둘 다 먹지 않는다. 버리는 신분을 마구 만들어도 방·판이 끝없이 늘지 않는다(리뷰에서 실제로 나왔다 —
   방 만들기의 100/시간 몫을 타지 않아 한 주소가 한 시간에 판 수천 개를 함께 돌릴 수 있었다). 내 최고 기록(`GET /v1/rankings/mine`, `excludeMatch`)과 내 기록
   (`GET /v1/rankings/mine/records`)은 player id와 주인 열쇠가 모두 같은 기록만 읽고 신분을 싣지 않는다(위 «온라인 랭킹»의 `isMine`과 같다)
-- **배포**: 서버 변화(표·색인)는 아직 어디에도 올리지 않은 migration 012에 접어 넣었다 — #108의 랭킹과 **같은 API 후보**로 나간다(경계는 그대로
-  migration 012 → API → Pages). 이 화면은 `soloPlay`를 모르는 API와 함께 돌아도 오늘의 혼자 하기라 Pages가 먼저 나가도 깨지지 않는다.
-  **이 PR이 열려 있는 동안 #108만 따로 내보내지 않는다** — 012를 제자리에서 고쳐 같은 번호(12)가 두 스키마를 뜻하고, migrator는 번호만 보아
-  #108의 012 위에서 이 012를 다시 돌리지 않는다. 그 DB에서 이 API는 방 SQL이 `solo_rooms`를 봐서 로비·방·참가가 모두 실패한다. 그래서
-  readiness가 번호와 함께 그 표도 본다(`solo_rooms_ready`, 없으면 503 `migration-required` — Pages gate가 지나가지 않는다). 이미 #108만의 012가
-  올라갔으면 혼자 방 표·권한·색인을 새 013으로 옮기고 gate를 13으로 올린다(`deploy/oracle/README.md` «Fail-closed staging order»)
+- **배포는 migration 013 → API → Pages**이고 공개 release gate는 `schemaVersion: 13`이다(`deploy/oracle/README.md` «Fail-closed staging order»).
+  서버 변화(혼자 방 표시 `solo_rooms`와 그 권한, 내 기록 색인 `online_rankings_player_board_order_idx`)는 모두 `013_solo_play.sql`에 있고 012는
+  #108의 글 그대로다. 한때 아직 올리지 않은 012에 접어 넣었는데, 같은 번호(12)가 두 스키마를 뜻하면 번호만 보는 migrator가 #108의 012가 먼저
+  올라간 DB에서 고친 012를 영영 돌리지 않는다. 그래서 #108은 제 경계(012)로 따로 나가고 이 PR은 그 위의 013으로 나간다 — 012를 다시 고치지
+  않는다(`server/tests/test_online_rankings_schema_contract.py`가 012에 혼자 판의 것이 없음을 잠근다). 012의 API(#108)는 표·색인을 모른 채
+  013이 도는 동안에도 돌고 그 gate는 503 `migration-required`로 닫힌다. 013의 API는 012 DB 위에서 돌지 않는다 — readiness가 번호(13)로
+  닫히고, 방 SQL이 `solo_rooms`를 봐 로비·방·만들기·참가·소켓 티켓·`POST /v1/solo`가 실패한다. 이 화면은 `soloPlay`를 모르는 API와 함께
+  돌아도 오늘의 혼자 하기라 깨지지 않지만 Pages workflow는 13을 기다린다. 012 API로 되돌릴 때는 그 API가 다시 돌기 전에 남은 혼자 방을
+  지운다(README «Solo online play»의 Rollback — 그 API에는 남의 목록에 보이는 보통 방이다). `release_check db --expect 13
+  --require-empty-solo-rooms`가 단계 3에서 혼자 방이 아직 없음을, `smoke.py candidate`가 단계 4에서 `soloPlay`를 본다
 - 화면 점검(`tools/check-screens.js` ㉓)은 홈이 무엇을 여는지 먼저 본다 — 연습(서버 없이 연 사본)이면 로컬 퀴즈 점검을 그대로 돌리되 결과가 기록되지
   않는 것을 보고, 로컬 API를 가리키는 사본이면 혼자 판의 흐름만 본다. **운영 API를 가리키는 페이지에서는 아무것도 누르지 않고 멈춘다**
 - `tests/online-solo-play.test.mjs`(저장소·두 결정·호환·화면의 말·흐름), `tests/home-first-visit.test.mjs`(dock 줄의 «연결 중…»·포커스),
   `tests/ranking-empty-state.test.mjs`(연습의 빈 탭), `server/tests/test_solo_play_api.py`·`test_solo_play_integration.py`(서버 — 동시 한도·만드는
-  몫 포함), `server/tests/test_api.py`(#108만의 012 위의 readiness)
+  몫 포함), `server/tests/test_solo_play_schema_contract.py`(013의 계약), `test_character_only_migration_integration.py`(012 → 013 업그레이드와
+  012 DB 위의 후보 API), `test_release_check.py`(`--expect 12`가 013의 것이 없는 #108의 DB를, `--expect 13`이 혼자 방 표·색인·권한을 본다)
 
 ## 문제 데이터
 

@@ -43,7 +43,7 @@ class RoomView:
     # 이 요청(나가기)이 방장 자리를 넘겼는가. 운영 기록(`ops_log.host_transferred`)만 읽는다 —
     # 방 payload에는 싣지 않는다.
     host_transferred: bool = False
-    # 혼자 푸는 온라인 판의 방인가 (FR-7.13 3단계, migration 012의 solo_rooms). 그 사람에게만
+    # 혼자 푸는 온라인 판의 방인가 (FR-7.13 3단계, migration 013의 solo_rooms). 그 사람에게만
     # 보이고 남이 들어오지 못한다. payload는 true일 때만 `solo`를 싣는다.
     solo: bool = False
 
@@ -417,11 +417,6 @@ class RoomsRepository(Protocol):
     async def health(self) -> bool: ...
 
     async def schema_version(self) -> int: ...
-
-    # 이 API가 쓰는 012의 혼자 방 표(`quiz_online.solo_rooms`)가 있는가. 012를 제자리에서 고쳐
-    # #108의 012와 이 PR의 012가 같은 번호(12)다 — 번호만 보는 release readiness가 #108의 012 위에서
-    # ready를 말하지 않게 함께 본다 (deploy/oracle/README.md «Fail-closed staging order»)
-    async def solo_rooms_ready(self) -> bool: ...
 
     async def upsert_player(
         self,
