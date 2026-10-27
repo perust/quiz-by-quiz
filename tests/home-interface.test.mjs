@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { MOBILE, lengthOf, loadStyles, node, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, lengthOf, loadStyles, node, nodeFromHtml, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -49,33 +49,58 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(homeSource, /--home-dock-h/);
   assert.match(homeSource, /window\.innerHeight <= 700/);
 
-  const worldFirst = between(css, '/* ── 30. 월드 우선 화면 구성', '@media (max-height: 700px)');
-  const narrowHome = between(
-    css,
-    '@media (max-width: 420px) {\n  .home-header',
-    '@media (max-width: 360px)',
-  );
-  assert.match(worldFirst, /\.home-menu \{[\s\S]*?display: contents/);
-  assert.match(worldFirst, /#open-ranking \{[\s\S]*?right: max\(/);
-  assert.doesNotMatch(worldFirst, /#open-online\s*\{/);
-  assert.match(worldFirst, /\.category-grid \{[\s\S]*?repeat\(5, minmax\(0, 1fr\)\)/);
-  assert.match(worldFirst, /\.home-primary-actions \{[\s\S]*?width: min\(568px, 100%\)/);
-  assert.match(worldFirst, /\.category-card:nth-child\(odd\):last-child \{[\s\S]*?grid-column: auto/);
+  // 홈의 월드 배치(edge HUD 입구·dock)는 파일 안의 글 위치가 아니라 index.html 의 실제 사슬에서 이긴 값으로 본다.
+  // 예전에는 맨 끝 30절(월드 우선 화면 구성)의 글 구간을 읽었는데, U49 에서 그 규칙이 홈 무대 절의 여러 블록으로
+  // 옮겨 갔다 — 이긴 값은 어느 판의 CSS 에서나 같아야 한다
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const tall = [DESKTOP, MOBILE];
+  const nav = nodeFromHtml(html, 'open-ranking').parent;
+  const actions = node('div.home-primary-actions', nodeFromHtml(html, 'home-quests'));
+  const categoryGrid = nodeFromHtml(html, 'category-grid');
+  const nicknameCard = nodeFromHtml(html, 'open-nickname');
+  for (const env of tall) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(valueOf(rules, nav, 'display', env), 'contents', `${at} .home-menu`);
+    assert.match(valueOf(rules, nodeFromHtml(html, 'open-ranking'), 'right', env), /^max\(/, `${at} #open-ranking right`);
+    assert.equal(valueOf(rules, categoryGrid, 'grid-template-columns', env), 'repeat(5, minmax(0, 1fr))', `${at} dock 분야 다섯 칸`);
+    assert.equal(
+      valueOf(rules, node('button.category-card:nth-child(odd):last-child', categoryGrid), 'grid-column', env),
+      'auto', `${at} 홀수 끝 칸도 한 칸`,
+    );
+    assert.equal(valueOf(rules, nicknameCard, 'grid-template-columns', env), '36px minmax(0, 1fr) 16px', `${at} 닉네임 칸`);
+    assert.equal(valueOf(rules, node('span.menu-card__edit', nicknameCard), 'display', env), 'block', `${at} 연필`);
+  }
+  // 두 보조 입구의 기본 크기는 64px 다 (폭 600px 이상은 72px, 420px 이하는 60px 로 바뀐다)
+  for (const id of ['open-characters', 'open-ranking']) {
+    assert.equal(valueOf(rules, nodeFromHtml(html, id), 'min-height', { ...MOBILE, width: 500, height: 900 }), '64px', `#${id} 높이`);
+  }
+  assert.equal(valueOf(rules, actions, 'width', DESKTOP), 'min(568px, 100%)');
+  assert.equal(valueOf(rules, actions, 'grid-template-columns', MOBILE), 'minmax(0, 280px)', '폭 420px 이하의 두 CTA');
+  assert.doesNotMatch(css, /#open-online\s*\{/, '온라인은 보조 HUD 입구가 아니다 — 따로 배치하지 않는다');
   assert.doesNotMatch(css, /\.menu-card:nth-child\(odd\):last-child/);
   assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
-  assert.match(worldFirst, /\.home-menu \.menu-card \{[\s\S]*?min-height: 64px/);
-  assert.match(worldFirst, /\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\) 16px/);
-  assert.match(worldFirst, /\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: block/);
-  assert.match(narrowHome, /\.home-primary-actions \{[\s\S]*?grid-template-columns: minmax\(0, 280px\)/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-player \{[\s\S]*?width: 120px[\s\S]*?\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\)[\s\S]*?\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: none/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?#open-characters,[\s\S]*?bottom: calc\(var\(--home-dock-h/);
+  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구가 dock 바로 위로 내려오고 브랜드는 접힌다
+  const short = { ...MOBILE, width: 390, height: 700 };
+  const homeChain = node("div.home-stage#home-stage", node("section.screen[data-screen='home']"));
+  const player = node('div.home-player', homeChain);
+  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
+  assert.equal(valueOf(rules, player, 'width', short), '120px');
+  assert.equal(valueOf(rules, nickname, 'grid-template-columns', short), '36px minmax(0, 1fr)');
+  assert.equal(valueOf(rules, node('span.menu-card__edit', nickname), 'display', short), 'none');
+  const shortcutsNav = node('nav.home-menu', homeChain);
+  for (const id of ['open-characters', 'open-ranking']) {
+    const entry = node(`button.menu-card#${id}`, shortcutsNav);
+    assert.equal(valueOf(rules, entry, 'top', short), 'auto', `${id} top`);
+    assert.match(valueOf(rules, entry, 'bottom', short), /^calc\(var\(--home-dock-h/, `${id} bottom`);
+  }
+  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'position', short), 'absolute');
+  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'width', short), '1px');
   assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
   assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
   assert.match(css, /\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--home-dock-h/);
   // 두 줄 dock의 짧은 가로 홈은 가운데 anchor다 — 높이 421–480px도 두 줄이다 (layout-01)
   assert.match(css, /@media \(pointer: coarse\) and \(max-height: 480px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
   assert.match(homeSource, /new MutationObserver\(syncDockHeight\)/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-header \{[\s\S]*?position: absolute;[\s\S]*?width: 1px/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
   assert.match(css, /\.home-note \{[\s\S]*?bottom: calc\(var\(--home-dock-h/);
   assert.match(css, /body:has\(\.home-note:not\(\[hidden\]\)\) #home-character \{\s*display: none/);
