@@ -410,11 +410,12 @@
     const 분야상자 = document.getElementById('category-grid').getBoundingClientRect();
     결과.push({
       자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
+      // 서버 방에 아직 들어가 있으면 줄이 이미 떠 있어 «펼치면 커진다»를 견줄 수 없다. 그때는 겹침만 본다
       통과: (줄이분야옆
         ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
-        : 줄뒤dock > 줄전dock)
+        : 줄뒤dock > 줄전dock || !원래복귀줄.숨김)
         && 줄뒤겹침.length === 0,
-      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
+      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px${원래복귀줄.숨김 ? '' : ' (줄이 이미 떠 있었다)'} · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
     });
     복귀줄.hidden = 원래복귀줄.숨김;
     복귀줄글.textContent = 원래복귀줄.글;
@@ -423,11 +424,13 @@
       const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
       const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
       const dock상자 = 홈조각.dock.getBoundingClientRect();
+      // 서버 방에 아직 들어가 있으면 방 복귀 줄이 dock 맨 위에 한 줄을 더한다(U35). 그 줄을 빼고 한 줄 dock 을 잰다
+      const 복귀줄몫 = 복귀줄.hidden ? 0 : 분야줄.top - dock상자.top;
       결과.push({
         자리: '홈', 이름: '짧은 가로: 분야와 온라인·전체 도전이 dock 한 줄에 있다',
         통과: Math.abs(분야줄.top - 주행동줄.top) <= 1 && 분야줄.right <= 주행동줄.left + 1
-          && dock상자.height <= innerHeight / 4,
-        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px / 화면 ${innerHeight}px`,
+          && dock상자.height - 복귀줄몫 <= innerHeight / 4,
+        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px${복귀줄몫 ? ` (복귀 줄 ${Math.round(복귀줄몫)}px 포함)` : ''} / 화면 ${innerHeight}px`,
       });
       const 브랜드상자 = 홈조각.브랜드.getBoundingClientRect();
       결과.push({
@@ -1230,6 +1233,30 @@
       점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
       localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
     }
+    // 서버 방이면 **로컬 API(localhost)일 때만** 두 번째 신분으로 진짜 참가시키고 끝에 내보낸다. 운영 API 에는
+    // 손님을 넣지 않는다 — 그때는 이 점검을 «건너뜀»으로 남긴다(통과로 숨기지 않고 이름에 적는다)
+    const API기준 = document.querySelector('meta[name="quiz-api-base"]')?.content.trim() ?? '';
+    const 로컬API = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(API기준);
+    let 서버손님 = null;
+    if (!점검방 && 로컬API) {
+      const 방코드 = document.getElementById('waiting-code')?.textContent.trim() ?? '';
+      const 토큰 = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const 머리 = { Authorization: `Bearer ${토큰}`, 'X-Player-Id': crypto.randomUUID(), 'Content-Type': 'application/json' };
+      const 세션 = await fetch(`${API기준}/v1/session`, { method: 'PUT', headers: 머리, body: JSON.stringify({ nickname: '점검손님', characterId: 'slime-blue' }) });
+      const 참가 = 세션.ok
+        ? await fetch(`${API기준}/v1/rooms/${방코드}/join`, { method: 'POST', headers: 머리, body: JSON.stringify({ password: null }) })
+        : null;
+      서버손님 = { 방코드, 머리, 들어옴: Boolean(참가?.ok) };
+      await 잠깐(800); // room-invalidated 를 받은 대기실이 방을 다시 읽는다
+    }
+    손님점검: {
+    if (!점검방 && !서버손님?.들어옴) {
+      결과.push({
+        자리: '대기실', 이름: '(건너뜀) 액자의 말 숨기기·내보내기 — 로컬 방도 로컬 API 도 아니라 점검 손님을 넣지 않았다',
+        통과: true, 무엇: API기준 || '(메타 없음)',
+      });
+      break 손님점검;
+    }
     // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
     await 눌러('setting-category', 400);
     const [숨기기] = 액자버튼('mute');
@@ -1291,7 +1318,12 @@
       localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
       await 눌러('setting-category', 400);
     }
+    if (서버손님?.들어옴) {
+      await fetch(`${API기준}/v1/rooms/${서버손님.방코드}/members/me`, { method: 'DELETE', headers: 서버손님.머리 });
+      await 잠깐(400);
+    }
     살펴본곳.push('대기실 액자 버튼');
+    }
 
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
