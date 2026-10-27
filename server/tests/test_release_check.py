@@ -1,43 +1,59 @@
 """운영자 점검 도구(`python -m app.release_check`)를 확인한다.
 
-bank는 임시 디렉터리에서 돈다. db는 `python -m app.migrate`를 마친 MIGRATOR_DATABASE_URL에서 돌고,
-그 값이 없으면 다른 integration test처럼 건너뛴다. migration 10의 DB는 같은 DB 안에서 001..010을
-한 transaction으로 다시 깔아 만들고 끝나면 되돌린다 — 다른 DB나 schema를 만들지 않는다.
+bank는 임시 디렉터리에서 돈다. db는 `python -m app.migrate`를 마친
+RELEASE_CHECK_TEST_DATABASE_URL(migrator 권한의 버려도 되는 test DB)에서 돌고, 그 값이 없으면
+건너뛴다. 운영의 MIGRATOR_DATABASE_URL은 읽지 않는다 — 아래 test는 같은 DB 안에서 schema를
+지우고 001..010을 한 transaction으로 다시 깔았다가 되돌리고(그동안 모든 quiz_online 표를
+ACCESS EXCLUSIVE로 쥔다) app.migrate의 advisory lock도 쥔다. 그 값을 내보낸 채 pytest를
+돌렸다고 운영 DB에 닿으면 안 된다. 다른 DB나 schema는 만들지 않는다.
 """
 
 from __future__ import annotations
 
 import ast
 import hashlib
+import itertools
 import json
 import os
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
 from app import release_check
 from app.config import PUBLIC_PAGES_DATA_DIR
-from app.migrate import _ADVISORY_LOCK_KEY, discover_migrations
+from app.migrate import _ADVISORY_LOCK_KEY, _RUNTIME_ROLE_NAME, discover_migrations
 from app.release_check import Check, check_database, evaluate_logging, evaluate_logging_overrides
 
 CATEGORIES = ("history", "science", "geography", "general", "art")
+ROOT = Path(__file__).parents[2]
 SOURCE = Path(release_check.__file__).read_text(encoding="utf-8")
-MIGRATOR_URL = os.getenv("MIGRATOR_DATABASE_URL")
+# test 전용 이름이다. CI는 app.migrate를 마친 뒤의 전체 pytest에만 넘긴다
+# (.github/workflows/pages.yml).
+TEST_MIGRATOR_URL = os.getenv("RELEASE_CHECK_TEST_DATABASE_URL")
+needs_database = pytest.mark.skipif(
+    not TEST_MIGRATOR_URL, reason="RELEASE_CHECK_TEST_DATABASE_URL is not set"
+)
 
 # 문항 내용이 출력에 새는지 보려고 모든 글에 이 표식을 붙인다.
 _CONTENT_MARK = "PRIVATE-CONTENT"
-# 세션을 여는 SET 셋. 이 밖의 문장은 SELECT·SHOW뿐이어야 한다.
+# 세션을 여는 SET 셋과, 점검마다 transaction을 여는 SET 하나. 이 밖의 문장은
+# SELECT·SHOW뿐이어야 한다.
 _SESSION_SETS = (
     "SET default_transaction_read_only = on",
     "SET statement_timeout = '15s'",
     "SET lock_timeout = '5s'",
 )
+_READ_ONLY_TRANSACTION = "SET TRANSACTION READ ONLY"
+_READ_ONLY_GUARD = "SELECT current_setting('transaction_read_only')"
+_NOT_READ_ONLY = "transaction is not read-only; no check was run"
 _WRITE_WORDS = re.compile(
     r"\b(insert|update|delete|merge|alter|create|drop|grant|revoke|truncate|copy|comment|"
     r"vacuum|analyze|reindex|cluster|refresh|lock|call|do|nextval|setval|set_config|"
@@ -117,6 +133,7 @@ def test_bank_accepts_a_private_online_bank_without_printing_content(
     assert all(state in {"OK", "INFO"} for states in lines.values() for state in states)
     for category in CATEGORIES:
         assert f"OK category-{category} 10 questions" in output
+    assert "OK id-length all 50 ids fit 64 characters" in output
     assert "OK id-prefix all 50 ids start with online-" in output
     assert "OK id-format" in output
     assert output.splitlines()[-1] == "OK result 0 FAIL, 0 WARN"
@@ -136,23 +153,94 @@ def test_bank_fails_a_category_shorter_than_a_round(
     _assert_no_content(output, ids)
 
 
-def test_bank_fails_ids_without_the_online_prefix(
+def test_bank_fails_ids_in_the_public_pages_form(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # 공개 Pages와 같은 모양의 ID다. 그대로 쓰면 공개 은행에서 답을 찾을 수 있다.
+    # 공개 Pages와 같은 모양의 ID다. 다른 분야 파일에 있어도 같은 모양이면 센다.
+    def make_id(category: str, number: int) -> str | None:
+        if number < 3:
+            return f"{category}-{number:03d}"
+        if category == "art" and number == 3:
+            return "history-9003"
+        return None
+
+    ids = _write_bank(tmp_path / "bank", make_id=make_id)
+
+    status, output = _run_bank(tmp_path / "bank", capsys)
+
+    assert status == 1
+    assert "FAIL id-prefix 16 of 50 ids have the public Pages form <category>-<digits>" in output
+    assert "WARN id-format 16 of 50 ids" in output
+    assert [line for line in output.splitlines() if line.startswith("FAIL ")] == [
+        line for line in output.splitlines() if line.startswith("FAIL id-prefix ")
+    ] + ["FAIL result 1 FAIL, 1 WARN"]
+    _assert_no_content(output, ids)
+
+
+def test_bank_warns_on_other_ids_without_the_online_prefix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 계약은 online-을 예로만 든다. 공개 번호 모양이 아니면 막지 않고 알린다.
     ids = _write_bank(
         tmp_path / "bank",
         make_id=lambda category, number: (
-            f"{category}-{number:03d}" if number < 3 else f"online-{category}-{number:03d}"
+            f"qbq-{category}-{number:03d}" if number == 0 else f"online-{category}-{number:03d}"
+        ),
+    )
+
+    status, output = _run_bank(tmp_path / "bank", capsys)
+
+    assert status == 0
+    assert "WARN id-prefix 5 of 50 ids lack the online- prefix" in output
+    assert "WARN id-format 5 of 50 ids" in output
+    assert output.splitlines()[-1] == "OK result 0 FAIL, 2 WARN"
+    _assert_no_content(output, ids)
+
+
+def test_bank_fails_ids_longer_than_the_match_question_column(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # online-history-(15자) + 숫자 50자 = 65자. 모양은 맞아 id-format은 통과한다. 64자는 들어간다.
+    too_long = "online-history-" + "7" * 50
+    fits = "online-science-" + "7" * 49
+    assert (len(too_long), len(fits)) == (65, 64)
+    ids = _write_bank(
+        tmp_path / "bank",
+        make_id=lambda category, number: (
+            {"history": too_long, "science": fits}.get(category) if number == 0 else None
         ),
     )
 
     status, output = _run_bank(tmp_path / "bank", capsys)
 
     assert status == 1
-    assert "FAIL id-prefix 15 of 50 ids lack the online- prefix" in output
-    assert "WARN id-format 15 of 50 ids" in output
+    assert (
+        "FAIL id-length 1 of 50 ids exceed 64 characters "
+        "(match_questions.question_id is varchar(64); a match that draws one cannot start)"
+    ) in output
+    assert [line for line in output.splitlines() if line.startswith("FAIL ")] == [
+        line for line in output.splitlines() if line.startswith("FAIL id-length ")
+    ] + ["FAIL result 1 FAIL, 0 WARN"]
     _assert_no_content(output, ids)
+
+
+def test_question_id_limit_matches_the_match_questions_column() -> None:
+    # 열을 넓히거나 줄이는 migration이 오면 이 한도도 함께 고친다.
+    texts = {
+        migration.path.name: migration.path.read_text(encoding="utf-8")
+        for migration in discover_migrations()
+    }
+    definitions = [
+        (name, match)
+        for name, text in texts.items()
+        for match in re.findall(r"question_id\s+varchar\((\d+)\)", text, flags=re.IGNORECASE)
+    ]
+    assert definitions == [("002_matches.sql", str(release_check.QUESTION_ID_MAX_LENGTH))]
+    assert [
+        name
+        for name, text in texts.items()
+        if re.search(r"ALTER\s+COLUMN\s+question_id\b", text, flags=re.IGNORECASE)
+    ] == []
 
 
 def test_bank_warns_on_ids_that_carry_more_than_a_number(
@@ -223,7 +311,7 @@ def test_bank_refuses_the_directory_the_api_treats_as_public(
     assert status == 1
     assert "public Pages data/ directory; the API refuses to start on it" in output
     assert _lines(output)["bank-dir"] == ["FAIL"]
-    assert "FAIL id-prefix 50 of 50 ids" in output
+    assert "FAIL id-prefix 50 of 50 ids have the public Pages form" in output
     _assert_no_content(output, ids)
 
 
@@ -315,11 +403,128 @@ def test_db_connection_failure_prints_neither_the_url_nor_the_driver_message(
     assert environment.read == {"MIGRATOR_DATABASE_URL"}
 
 
-@pytest.mark.parametrize("argv", [["db"], ["db", "--expect", "9"], ["db", "--expect", "12"]])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["db"],
+        ["db", "--expect", "9"],
+        ["db", "--expect", "12"],
+        # 011 전에는 question_time_ms가 없다. 그 요구는 --expect 11에만 뜻이 있다
+        ["db", "--expect", "10", "--require-default-question-time"],
+    ],
+)
 def test_db_accepts_only_an_explicit_expect_of_10_or_11(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         release_check.main(argv, {})
     assert raised.value.code == 2
+
+
+class _Rows:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self._rows = rows
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return self._rows
+
+
+class _ScriptedConnection:
+    """No server: answers the read-only guard from a script and records every statement.
+
+    Anything past the guard and the session row means a check ran, which must not happen
+    on a transaction the server reports as read-write, so it fails the test outright.
+    """
+
+    def __init__(self, read_only: Iterable[str]) -> None:
+        self._read_only = iter(read_only)
+        self.statements: list[str] = []
+        self.transactions = 0
+
+    def execute(self, statement: Any, params: Any = None) -> _Rows:
+        normalized = " ".join(str(statement).split())
+        self.statements.append(normalized)
+        if normalized == _READ_ONLY_TRANSACTION:
+            return _Rows([])
+        if normalized == _READ_ONLY_GUARD:
+            return _Rows([(next(self._read_only),)])
+        if normalized == " ".join(release_check._SESSION_SQL.split()):
+            return _Rows([("migrator", "quiz_by_quiz", "16.4")])
+        raise AssertionError(f"a check ran on a read-write transaction: {normalized}")
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        self.transactions += 1
+        yield
+
+
+def test_db_runs_nothing_when_the_session_is_not_read_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    connection = _ScriptedConnection(["off"])
+
+    checks = check_database(connection, expect=11)
+
+    assert checks == [Check("FAIL", "session", _NOT_READ_ONLY)]
+    assert connection.statements == [_READ_ONLY_TRANSACTION, _READ_ONLY_GUARD]
+    assert release_check.report(checks) == 1
+    assert capsys.readouterr().out == (
+        f"FAIL session {_NOT_READ_ONLY}\nFAIL result 1 FAIL, 0 WARN\n"
+    )
+
+
+def test_db_verifies_read_only_in_every_check_transaction() -> None:
+    # 첫 transaction만 read-only인 연결이다 — 세션 값이 이어지지 않는 transaction pooling
+    # proxy 뒤처럼.
+    connection = _ScriptedConnection(itertools.chain(["on"], itertools.repeat("off")))
+
+    checks = check_database(connection, expect=11, require_idle=True)
+
+    assert checks[0].status == "OK" and checks[0].name == "session"
+    assert len(checks) == connection.transactions > 10
+    assert {(check.status, check.detail) for check in checks[1:]} == {("FAIL", _NOT_READ_ONLY)}
+    session_statements = [
+        _READ_ONLY_TRANSACTION,
+        _READ_ONLY_GUARD,
+        " ".join(release_check._SESSION_SQL.split()),
+    ]
+    assert connection.statements == session_statements + [
+        _READ_ONLY_TRANSACTION,
+        _READ_ONLY_GUARD,
+    ] * (connection.transactions - 1)
+
+
+def test_db_session_that_cannot_be_configured_runs_no_check(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    statements: list[str] = []
+
+    class _RefusingConnection:
+        def __enter__(self) -> _RefusingConnection:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def execute(self, statement: Any, params: Any = None) -> None:
+            statements.append(str(statement))
+            raise psycopg.OperationalError("SET refused for migrator-secret@db.internal")
+
+        def transaction(self) -> Any:  # pragma: no cover - must never be reached
+            raise AssertionError("a check transaction was opened")
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: _RefusingConnection())
+
+    status = release_check.main(
+        ["db", "--expect", "11"], {"MIGRATOR_DATABASE_URL": "postgresql://unused"}
+    )
+
+    assert status == 1
+    assert capsys.readouterr().out == (
+        "FAIL session could not configure (OperationalError)\nFAIL result 1 FAIL, 0 WARN\n"
+    )
+    assert statements == ["SET default_transaction_read_only = on"]
 
 
 _BASELINE_LOGGING = {
@@ -437,11 +642,12 @@ def test_module_source_issues_only_read_statements() -> None:
         normalized = " ".join(statement.split())
         keyword = normalized.split(" ", 1)[0].upper()
         if keyword == "SET":
-            assert normalized in _SESSION_SETS
+            assert normalized in (*_SESSION_SETS, _READ_ONLY_TRANSACTION)
         else:
             assert keyword in {"SELECT", "SHOW"}, normalized
         assert _WRITE_WORDS.search(normalized) is None, normalized
     assert "SET default_transaction_read_only = on" in executed
+    assert _READ_ONLY_TRANSACTION in executed and _READ_ONLY_GUARD in executed
 
 
 def test_module_never_reads_the_runtime_password_or_runs_migrations() -> None:
@@ -462,9 +668,8 @@ def test_module_never_reads_the_runtime_password_or_runs_migrations() -> None:
 
 
 def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> None:
-    root = Path(__file__).parents[2]
-    guide = (root / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
-    compose = (root / "deploy" / "oracle" / "compose.quiz-by-quiz.yaml").read_text(encoding="utf-8")
+    guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
+    compose = (ROOT / "deploy" / "oracle" / "compose.quiz-by-quiz.yaml").read_text(encoding="utf-8")
     command = "/app/.venv/bin/python -m app.release_check"
     lines = guide.splitlines()
 
@@ -473,7 +678,8 @@ def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> Non
 
     database = documented(f"{command} db --expect 10")
     assert "run --rm --no-deps quiz-by-quiz-migrate" in database
-    assert "the same command with `--expect 11`" in guide
+    # 3단계의 011 뒤 점검은 후보 API가 아직 돌지 않았음(모두 20000)까지 exit status로 요구한다
+    assert "the same command with `--expect 11 --require-default-question-time`" in guide
     assert "--require-idle" in guide
     bank = documented(f"{command} bank")
     assert "run --rm --no-deps quiz-by-quiz-api" in bank
@@ -483,10 +689,24 @@ def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> Non
     assert "MIGRATOR_DATABASE_URL:" in migrate_service
     assert "QUESTION_BANK_DIR: /run/quiz-by-quiz/online-bank" in api_service
     assert "target: /run/quiz-by-quiz/online-bank" in api_service
-    dockerfile = (root / "server" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "server" / "Dockerfile").read_text(encoding="utf-8")
     runtime_stage = dockerfile.split("FROM base AS runtime", 1)[1]
     assert "COPY --chown=app:app server/app ./app" in runtime_stage
     assert "COPY --chown=app:app server/migrations ./migrations" in runtime_stage
+
+
+def test_ci_hands_the_database_tests_a_test_only_url() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+
+    # app.migrate 뒤의 전체 pytest 한 줄에만 넘긴다(MIGRATION_UPGRADE_DATABASE_URL과 같은 방식)
+    assert (
+        "          uv run --locked python -m app.migrate\n"
+        '          RELEASE_CHECK_TEST_DATABASE_URL="$MIGRATOR_DATABASE_URL" \\\n'
+        "            uv run --locked python -m pytest -q\n"
+    ) in workflow
+    assert workflow.count("RELEASE_CHECK_TEST_DATABASE_URL") == 1
+    # 도구 자신은 test 이름을 모른다 — 운영에서는 MIGRATOR_DATABASE_URL만 읽는다
+    assert "RELEASE_CHECK_TEST_DATABASE_URL" not in SOURCE
 
 
 # ── db against PostgreSQL ──────────────────────────────────────────────────────
@@ -527,12 +747,22 @@ def recorded_statements(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not MIGRATOR_URL, reason="MIGRATOR_DATABASE_URL is not set")
+@needs_database
 def test_latest_database_passes_expect_11_with_only_read_statements(
-    recorded_statements: list[str], capsys: pytest.CaptureFixture[str]
+    recorded_statements: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert MIGRATOR_URL is not None
-    environment = _RecordingEnvironment({"MIGRATOR_DATABASE_URL": MIGRATOR_URL})
+    assert TEST_MIGRATOR_URL is not None
+    environment = _RecordingEnvironment({"MIGRATOR_DATABASE_URL": TEST_MIGRATOR_URL})
+    runs: list[str] = []
+    real_run = release_check._run
+
+    def counting_run(connection: Any, name: str, check: Any) -> list[Check]:
+        runs.append(name)
+        return real_run(connection, name, check)
+
+    monkeypatch.setattr(release_check, "_run", counting_run)
 
     status = release_check.main(["db", "--expect", "11"], environment)
 
@@ -550,24 +780,32 @@ def test_latest_database_passes_expect_11_with_only_read_statements(
     assert "OK log_statement none" in output
     assert "INFO active-matches" in output and "INFO recent-members" in output
     # 접속 문자열도, 그 안의 비밀번호도 출력하지 않는다
-    password = conninfo_to_dict(MIGRATOR_URL).get("password")
-    assert MIGRATOR_URL not in output
+    password = conninfo_to_dict(TEST_MIGRATOR_URL).get("password")
+    assert TEST_MIGRATOR_URL not in output
     assert not password or str(password) not in output
     assert environment.read == {"MIGRATOR_DATABASE_URL"}
 
-    # 실제로 보낸 문장: 세션을 read-only로 만드는 SET이 먼저, 나머지는 읽기뿐이다
+    # 실제로 보낸 문장: 세션을 read-only로 만드는 SET이 먼저, 그다음 점검마다 READ ONLY로 연
+    # transaction과 그 확인, 나머지는 읽기뿐이다
     assert recorded_statements[: len(_SESSION_SETS)] == list(_SESSION_SETS)
-    for statement in recorded_statements[len(_SESSION_SETS) :]:
-        keyword = " ".join(statement.split()).split(" ", 1)[0].upper()
-        assert keyword in {"SELECT", "SHOW"}, statement
+    rest = [" ".join(statement.split()) for statement in recorded_statements[len(_SESSION_SETS) :]]
+    opened = [index for index, statement in enumerate(rest) if statement == _READ_ONLY_TRANSACTION]
+    assert opened[0] == 0
+    assert len(opened) == len(runs) > 15
+    assert all(rest[index + 1] == _READ_ONLY_GUARD for index in opened)
+    for statement in rest:
+        if statement != _READ_ONLY_TRANSACTION:
+            assert statement.split(" ", 1)[0].upper() in {"SELECT", "SHOW"}, statement
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not MIGRATOR_URL, reason="MIGRATOR_DATABASE_URL is not set")
+@needs_database
 def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> None:
-    assert MIGRATOR_URL is not None
+    assert TEST_MIGRATOR_URL is not None
 
-    status = release_check.main(["db", "--expect", "10"], {"MIGRATOR_DATABASE_URL": MIGRATOR_URL})
+    status = release_check.main(
+        ["db", "--expect", "10"], {"MIGRATOR_DATABASE_URL": TEST_MIGRATOR_URL}
+    )
 
     output = capsys.readouterr().out
     assert status == 1
@@ -580,34 +818,115 @@ def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> 
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not MIGRATOR_URL, reason="MIGRATOR_DATABASE_URL is not set")
+@needs_database
+def test_every_check_transaction_is_read_only_even_without_the_session_setting() -> None:
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        # 세션 SET 없이 연 연결이다. 그래도 점검의 transaction은 서버가 쓰기를 막는다
+        default = connection.execute("SHOW default_transaction_read_only").fetchone()
+        assert default is not None and default[0] == "off"
+
+        def attempt_write(conn: Any) -> Iterator[Check]:
+            # 고치는 행이 없는 UPDATE다. read-only가 아니어도 아무것도 바꾸지 않는다
+            conn.execute("UPDATE quiz_online.schema_migrations SET version = version WHERE false")
+            yield Check("OK", "probe", "wrote")
+
+        checks = release_check._run(connection, "probe", attempt_write)
+
+    assert checks == [Check("FAIL", "probe", "query failed (ReadOnlySqlTransaction 25006)")]
+
+
+@pytest.mark.integration
+@needs_database
 def test_a_running_migrator_is_reported_without_failing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert MIGRATOR_URL is not None
-    with psycopg.connect(MIGRATOR_URL, autocommit=True) as migrator:
+    assert TEST_MIGRATOR_URL is not None
+    environment = {"MIGRATOR_DATABASE_URL": TEST_MIGRATOR_URL}
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as migrator:
         migrator.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
         try:
-            held = release_check.main(
-                ["db", "--expect", "11"], {"MIGRATOR_DATABASE_URL": MIGRATOR_URL}
-            )
+            held = release_check.main(["db", "--expect", "11"], environment)
             held_output = capsys.readouterr().out
         finally:
             migrator.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
 
     assert held == 0
     assert "WARN migration-lock held by another session: app.migrate is running" in held_output
-    release_check.main(["db", "--expect", "11"], {"MIGRATOR_DATABASE_URL": MIGRATOR_URL})
+    release_check.main(["db", "--expect", "11"], environment)
     assert "OK migration-lock not held" in capsys.readouterr().out
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not MIGRATOR_URL, reason="MIGRATOR_DATABASE_URL is not set")
+@needs_database
+def test_question_times_must_stay_at_the_default_until_the_candidate_api_runs() -> None:
+    """011 뒤 후보 API로 바꾸기 전(README 3단계)에는 모든 방·판이 20000이다.
+
+    40000은 그 순서를 어긴 흔적이다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        # 둘 다 되돌린다. 다른 test가 남긴 방·판도 이 transaction 안에서만 기본값으로 돌린다
+        with connection.transaction(force_rollback=True):
+            _reset_question_times(connection)
+            _seed_room(connection, question_time_ms=20_000)
+            at_default = check_database(connection, expect=11, require_default_question_time=True)
+        with connection.transaction(force_rollback=True):
+            _reset_question_times(connection)
+            _seed_room(connection, question_time_ms=20_000)
+            _seed_room(connection, question_time_ms=40_000)
+            too_early = check_database(connection, expect=11, require_default_question_time=True)
+            after_step_4 = check_database(connection, expect=11)
+
+    assert [check.render() for check in at_default if check.status == "FAIL"] == []
+    values = next(check for check in at_default if check.name == "question-time-values")
+    assert values.status == "OK" and values.detail.endswith("; every row at 20000")
+
+    assert [check.name for check in too_early if check.status == "FAIL"] == ["question-time-values"]
+    early = next(check for check in too_early if check.name == "question-time-values")
+    assert "rooms 20000=" in early.detail and " 40000=1;" in early.detail
+    assert "--require-default-question-time needs every row at 20000" in early.detail
+
+    # 후보 API가 돈 뒤에는 40000이 정상이다
+    assert _statuses(after_step_4)["question-time-values"] == "INFO"
+    assert [check.name for check in after_step_4 if check.status == "FAIL"] == []
+
+
+@pytest.mark.integration
+@needs_database
+def test_a_column_grant_on_the_ledger_fails_runtime_ledger_access() -> None:
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                sql.SQL("GRANT SELECT (version) ON quiz_online.schema_migrations TO {}").format(
+                    sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            # 표 단위 검사는 이 열 권한을 세지 않는다 — 그래서 열 권한까지 보는 함수로 본다
+            privileges = connection.execute(
+                "SELECT has_table_privilege(%s, 'quiz_online.schema_migrations', 'SELECT'),"
+                " has_any_column_privilege(%s, 'quiz_online.schema_migrations', 'SELECT')",
+                (_RUNTIME_ROLE_NAME, _RUNTIME_ROLE_NAME),
+            ).fetchone()
+            assert privileges == (False, True)
+            checks = check_database(connection, expect=11)
+
+    assert [check.render() for check in checks if check.status == "FAIL"] == [
+        f"FAIL runtime-ledger-access {_RUNTIME_ROLE_NAME} holds SELECT on "
+        "quiz_online.schema_migrations (table or column grant)"
+    ]
+
+
+@pytest.mark.integration
+@needs_database
 def test_migration_10_database_passes_expect_10_and_fails_expect_11() -> None:
     """001..010만 깐 DB를 같은 DB 안의 한 transaction에서 만들고 점검한 뒤 되돌린다."""
-    assert MIGRATOR_URL is not None
+    assert TEST_MIGRATOR_URL is not None
     migrations = discover_migrations()
-    with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
         connection.execute("SET lock_timeout = '10s'")
         with connection.transaction(force_rollback=True):
             connection.execute("DROP SCHEMA quiz_online CASCADE")
@@ -671,7 +990,15 @@ def _migration_body(path: Path) -> str:
     return "\n".join(line for line in lines if line not in {"BEGIN;", "COMMIT;"})
 
 
-def _seed_active_match(connection: psycopg.Connection[Any]) -> None:
+def _reset_question_times(connection: psycopg.Connection[Any]) -> None:
+    connection.execute("UPDATE quiz_online.rooms SET question_time_ms = 20000")
+    connection.execute("UPDATE quiz_online.matches SET question_time_ms = 20000")
+
+
+def _seed_room(
+    connection: psycopg.Connection[Any], *, question_time_ms: int | None = None
+) -> tuple[UUID, UUID]:
+    """A host and their room; ``question_time_ms`` only on a migration-011 schema."""
     player_id = uuid4()
     connection.execute(
         """
@@ -680,26 +1007,44 @@ def _seed_active_match(connection: psycopg.Connection[Any]) -> None:
         """,
         (player_id, hashlib.sha256(player_id.bytes).digest()),
     )
-    room_row = connection.execute(
-        """
-        INSERT INTO quiz_online.rooms (code, name, capacity, is_public, host_player_id)
-        VALUES (%s, '점검 방', 2, true, %s)
-        RETURNING id
-        """,
-        (uuid4().hex[:6].upper(), player_id),
-    ).fetchone()
+    code = uuid4().hex[:6].upper()
+    if question_time_ms is None:
+        room_row = connection.execute(
+            """
+            INSERT INTO quiz_online.rooms (code, name, capacity, is_public, host_player_id)
+            VALUES (%s, '점검 방', 2, true, %s)
+            RETURNING id
+            """,
+            (code, player_id),
+        ).fetchone()
+    else:
+        room_row = connection.execute(
+            """
+            INSERT INTO quiz_online.rooms (
+                code, name, capacity, is_public, host_player_id, question_time_ms
+            )
+            VALUES (%s, '점검 방', 2, true, %s, %s)
+            RETURNING id
+            """,
+            (code, player_id, question_time_ms),
+        ).fetchone()
     assert room_row is not None
+    return player_id, room_row[0]
+
+
+def _seed_active_match(connection: psycopg.Connection[Any]) -> None:
+    player_id, room_id = _seed_room(connection)
     connection.execute(
         """
         INSERT INTO quiz_online.room_members (room_id, player_id, nickname, character_id)
         VALUES (%s, %s, '점검방장', 'slime-blue')
         """,
-        (room_row[0], player_id),
+        (room_id, player_id),
     )
     connection.execute(
         """
         INSERT INTO quiz_online.matches (room_id, total_questions, deadline_at, expires_at)
         VALUES (%s, 10, now() + interval '20 seconds', now() + interval '2 hours')
         """,
-        (room_row[0],),
+        (room_id,),
     )

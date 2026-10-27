@@ -304,12 +304,15 @@ PostgreSQL, or platform resources.
 `python -m app.release_check` ships in the runtime image and replaces the
 hand-written SQL and shell checks of the staging order. It runs through the
 existing services, so it needs no new secret or mount. It never writes to the
-database (every transaction is `default_transaction_read_only`), never reads
-`QUIZ_DB_PASSWORD` or touches the runtime role, and never prints a connection
-string, question content, or question id. Each line is `OK`, `FAIL`, `WARN`, or
-`INFO` plus a check name, the last line is the verdict, and the exit status is
-0 only when no line is `FAIL`. Stop on a non-zero exit. In the commands below,
-`docker compose …` is the platform base rendered with this overlay.
+database (the session sets `default_transaction_read_only`, and every check
+runs in its own transaction opened `READ ONLY` and verified before the check
+sends anything, so it holds even where a session setting would not carry over),
+never reads `QUIZ_DB_PASSWORD` or touches the runtime role, and never prints a
+connection string, question content, or question id. Each line is `OK`,
+`FAIL`, `WARN`, or `INFO` plus a check name, the last line is the verdict, and
+the exit status is 0 only when no line is `FAIL`. Stop on a non-zero exit. In
+the commands below, `docker compose …` is the platform base rendered with this
+overlay.
 
 - **Step 3, before the migration** (candidate image, migration-010 API still
   serving):
@@ -327,23 +330,32 @@ string, question content, or question id. Each line is `OK`, `FAIL`, `WARN`, or
   migrator holds the advisory lock, and `active-matches`/`recent-members` report
   activity as `INFO`; add `--require-idle` to fail while a match is running or
   revealing.
-- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 11`.
+- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 11 --require-default-question-time`.
   It requires ledger 1–11, both `question_time_ms` columns as `integer NOT NULL
   DEFAULT 20000`, validated `rooms_question_time_check`,
   `matches_question_time_check` and `match_answers_elapsed_ms_range_check`,
   exactly one `elapsed_ms` check of 0..40000, and the runtime role's effective
   `SELECT`/`INSERT`/`UPDATE` on `question_time_ms` (the 004 table grants cover
-  it) still without ledger access. `question-time-values` counts the stored
-  values and fails on anything but `20000`/`40000`; before step 4 only `20000`
-  can appear.
+  it) still without ledger access (table or column grants). `question-time-values`
+  counts the stored values and fails on anything but `20000`/`40000`;
+  `--require-default-question-time` also fails on `40000`, because until step 4
+  only the migration-010 API serves and it never writes the column, so a
+  `40000` means the candidate API ran too early. After step 4 run `--expect 11`
+  without it: `40000` rooms are then expected and only counted (`INFO`).
 - **Step 4, the private bank** (after building the candidate API image, before
   replacing the container):
   `docker compose … run --rm --no-deps quiz-by-quiz-api /app/.venv/bin/python -m app.release_check bank`.
   It loads `QUESTION_BANK_DIR` exactly as the API does and prints counts only:
   questions per category (`FAIL` below the 10 a category round needs), ids
-  without the `online-` prefix (`FAIL` — a copy of the public Pages bank keeps
-  its public ids), ids that are not `online-<category>-<digits>` (`WARN`, ids
-  reach public issue reports), any `CatalogError` with its class and message (a
-  known id in the message is shown as `<id>`), the public `data/` path (`FAIL`),
-  and other-user access to the mount (`WARN`). A serving API answers the same
-  through `docker compose … exec quiz-by-quiz-api …`.
+  longer than 64 characters (`FAIL` — `match_questions.question_id` is
+  `varchar(64)`, so the API would start but a match that draws one could not),
+  ids in the public Pages form `<category>-<digits>` (`FAIL` — kept public ids
+  mark a likely copy of the public bank and make issue reports collide with
+  public question numbers), other ids without the `online-` prefix (`WARN`),
+  ids that are not `online-<category>-<digits>` (`WARN`, ids reach public issue
+  reports), any `CatalogError` with its class and message (a known id in the
+  message is shown as `<id>`), the public `data/` path (`FAIL`), and other-user
+  access to the mount (`WARN`). It cannot see whether the content was copied
+  from the public bank; `ONLINE_QUESTION_BANK.md` forbids that whatever the ids
+  are, so the approved-bank hash of step 1 stays the gate for that. A serving
+  API answers the same through `docker compose … exec quiz-by-quiz-api …`.

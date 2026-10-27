@@ -7,6 +7,8 @@ the ``quiz-by-quiz-api`` service, which mounts the private online bank.
 Every line is ``OK``, ``FAIL``, ``WARN`` or ``INFO`` followed by a check name, and the exit
 status is 0 exactly when no line is ``FAIL``. Nothing here writes to the database, reads
 the runtime-role password, or prints a connection string, question content or question id.
+Every check runs in its own transaction, opened ``READ ONLY`` and verified before the check
+sends anything.
 """
 
 from __future__ import annotations
@@ -45,6 +47,13 @@ Status = Literal["OK", "FAIL", "WARN", "INFO"]
 
 EXPECTABLE_VERSIONS = (10, 11)
 ONLINE_ID_PREFIX = "online-"
+# 판의 문항 기록 match_questions.question_id가 varchar(64)다(002). 더 긴 id도 catalog는 받아 API가
+# 뜨지만, 그 문항을 뽑은 판은 INSERT에서 막혀 시작하지 못한다.
+QUESTION_ID_MAX_LENGTH = 64
+# 공개 Pages data/의 문항 번호 모양(<분야>-<숫자>, tools/check_bank.py). 그 번호를 그대로 쓴 은행은
+# 공개 은행의 사본일 가능성이 크고, «이 문제 이상해요» 신고가 공개 문항 번호와 겹친다. 분야는 파일과
+# 상관없이 다섯 모두를 본다. 내용이 사본인지는 이 검사가 알 수 없다 — 계약이 번호와 상관없이 금한다.
+_PUBLIC_PAGES_ID = re.compile(rf"(?:{'|'.join(map(re.escape, CATEGORY_IDS))})-[0-9]+")
 # 접속 중으로 셀 참가자. 대기실·판은 몇 초마다 last_seen_at을 새로 쓴다.
 RECENT_MEMBER_WINDOW = timedelta(minutes=2)
 _APPLICATION_NAME = "quiz-by-quiz-release-check"
@@ -64,7 +73,8 @@ _CHARACTER_ID_TABLES = ("players", "room_members", "match_players")
 _QUESTION_TIME_TABLES = ("rooms", "matches")
 _QUESTION_TIME_COLUMN = "question_time_ms"
 _QUESTION_TIME_DEFAULT = "20000"
-_QUESTION_TIME_VALUES = frozenset({20_000, 40_000})
+_DEFAULT_QUESTION_TIME_MS = 20_000
+_QUESTION_TIME_VALUES = frozenset({_DEFAULT_QUESTION_TIME_MS, 40_000})
 _QUESTION_TIME_CONSTRAINTS = (
     ("rooms", "rooms_question_time_check"),
     ("matches", "matches_question_time_check"),
@@ -73,9 +83,13 @@ _QUESTION_TIME_CONSTRAINTS = (
 # match_answers.elapsed_ms의 상한. 002의 이름 없는 열 CHECK는 20초, 011이 40초로 넓힌다.
 _ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000}
 
-# 런타임 역할은 migration 기록을 읽지도 쓰지도 못한다(004). 011은 따로 GRANT하지 않고 004의 표 단위
-# 권한이 새 열을 덮는다 — 그래서 열 권한은 has_column_privilege로 실효 권한을 본다.
-_LEDGER_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+# 런타임 역할은 migration 기록을 읽지도 쓰지도 못한다(004). has_table_privilege는 표 단위
+# 권한만 세므로 GRANT SELECT (version) 같은 열 권한을 놓친다 — 열에 줄 수 있는 넷은
+# has_any_column_privilege로, 표에만 있는 셋은 has_table_privilege로 본다.
+_LEDGER_COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
+_LEDGER_TABLE_PRIVILEGES = ("DELETE", "TRUNCATE", "TRIGGER")
+# 011은 따로 GRANT하지 않고 004의 표 단위 권한이 새 열을 덮는다 — 그래서 열 권한은
+# has_column_privilege로 실효 권한을 본다.
 _QUESTION_TIME_PRIVILEGES = ("SELECT", "INSERT", "UPDATE")
 _SCHEMA_VERSION_FUNCTION = "quiz_online.character_only_schema_version()"
 
@@ -92,11 +106,16 @@ _LOGGING_SETTINGS = (
 )
 _ALTER_ROLE_LOG_REASON = "a failed ALTER ROLE ... PASSWORD could be logged with the password"
 
+# 세션 값(default_transaction_read_only)을 첫 transaction에서 한 번 보는 것으로는 그 뒤를 보증하지
+# 못한다 — transaction pooling proxy 뒤라면 transaction마다 다른 server 연결로 갈 수 있다. 그래서
+# 점검마다 transaction을 READ ONLY로 열고, 정말 그런지 본 뒤에야 점검 문장을 보낸다.
+_READ_ONLY_TRANSACTION_SQL = "SET TRANSACTION READ ONLY"
+_READ_ONLY_GUARD_SQL = "SELECT current_setting('transaction_read_only')"
+
 _SESSION_SQL = """
 SELECT current_user::text,
        current_database()::text,
-       current_setting('server_version'),
-       current_setting('transaction_read_only')
+       current_setting('server_version')
 """
 
 _LEDGER_SQL = """
@@ -178,6 +197,10 @@ SELECT pg_catalog.has_function_privilege(%s::name, %s::text, 'EXECUTE')
 """
 
 _LEDGER_PRIVILEGES_SQL = """
+SELECT privilege,
+       pg_catalog.has_any_column_privilege(%s::name, 'quiz_online.schema_migrations', privilege)
+FROM unnest(%s::text[]) AS privilege
+UNION ALL
 SELECT privilege,
        pg_catalog.has_table_privilege(%s::name, 'quiz_online.schema_migrations', privilege)
 FROM unnest(%s::text[]) AS privilege
@@ -270,6 +293,7 @@ def run_database_checks(
     *,
     expect: int,
     require_idle: bool = False,
+    require_default_question_time: bool = False,
 ) -> list[Check]:
     """Connect as the migration owner, force read-only transactions and run every check."""
     try:
@@ -290,13 +314,18 @@ def run_database_checks(
 
     with connection:
         try:
-            # autocommit이라 세 SET은 세션 값이 된다. 이 뒤로 여는 transaction은 모두 read-only다.
+            # autocommit이라 세 SET은 세션 값이 된다. 점검마다 transaction도 READ ONLY로 연다(_run).
             connection.execute("SET default_transaction_read_only = on")
             connection.execute("SET statement_timeout = '15s'")
             connection.execute("SET lock_timeout = '5s'")
         except psycopg.Error as error:
             return [Check("FAIL", "session", f"could not configure ({_describe(error)})")]
-        return check_database(connection, expect=expect, require_idle=require_idle)
+        return check_database(
+            connection,
+            expect=expect,
+            require_idle=require_idle,
+            require_default_question_time=require_default_question_time,
+        )
 
 
 def check_database(
@@ -304,10 +333,18 @@ def check_database(
     *,
     expect: int,
     require_idle: bool = False,
+    require_default_question_time: bool = False,
 ) -> list[Check]:
-    """Run the release checks on a connection whose transactions are already read-only."""
+    """Run the release checks, each in its own verified read-only transaction.
+
+    ``require_default_question_time`` (``--expect 11`` only) fails while any room or match
+    holds a question time other than 20000 — the window between migration 011 and the
+    candidate API, when only the migration-010 API (which never writes the column) serves.
+    """
     if expect not in EXPECTABLE_VERSIONS:
         raise ValueError(f"expect must be one of {EXPECTABLE_VERSIONS}")
+    if require_default_question_time and expect < 11:
+        raise ValueError("require_default_question_time needs expect 11")
 
     session = _run(connection, "session", _check_session)
     if any(check.status == "FAIL" for check in session):
@@ -325,7 +362,12 @@ def check_database(
         ("elapsed-ms-check", lambda conn: _check_elapsed_ms(conn, expect)),
     ]
     if expect >= 11:
-        checks.append(("question-time-values", _check_question_time_values))
+        checks.append(
+            (
+                "question-time-values",
+                lambda conn: _check_question_time_values(conn, require_default_question_time),
+            )
+        )
     checks += [
         ("runtime-role", _check_runtime_role),
         ("runtime-schema-version-access", _check_runtime_function_access),
@@ -348,9 +390,17 @@ def check_database(
 
 
 def _run(connection: Connection, name: str, check: CheckFunction) -> list[Check]:
-    """One check per transaction (or savepoint), so a failed query cannot abort the rest."""
+    """One check per transaction (or savepoint), so a failed query cannot abort the rest.
+
+    The transaction is made ``READ ONLY`` and verified before the check runs, so read-only
+    does not rest on the session setting surviving from the first transaction. If the
+    server still reports read-write, the check sends nothing and becomes a ``FAIL``.
+    """
     try:
         with connection.transaction():
+            connection.execute(_READ_ONLY_TRANSACTION_SQL)
+            if _fetchone(connection, _READ_ONLY_GUARD_SQL)[0] != "on":
+                raise _NotReadOnly
             return list(check(connection))
     except _NotReadOnly:
         return [Check("FAIL", name, "transaction is not read-only; no check was run")]
@@ -372,9 +422,8 @@ def _fetchone(connection: Connection, statement: str, params: Sequence[object] =
 
 
 def _check_session(connection: Connection) -> Iterable[Check]:
-    user, database, server_version, read_only = _fetchone(connection, _SESSION_SQL)
-    if read_only != "on":
-        raise _NotReadOnly
+    # 여기 왔으면 _run이 이 transaction의 read-only를 이미 확인했다.
+    user, database, server_version = _fetchone(connection, _SESSION_SQL)
     yield Check(
         "OK",
         "session",
@@ -586,7 +635,7 @@ def _check_elapsed_ms(connection: Connection, expect: int) -> Iterable[Check]:
         yield Check("OK", "elapsed-ms-check", f"{name} allows 0..{upper}")
 
 
-def _check_question_time_values(connection: Connection) -> Iterable[Check]:
+def _check_question_time_values(connection: Connection, require_default: bool) -> Iterable[Check]:
     missing = _missing_question_time_columns(connection)
     if missing:
         yield Check("FAIL", "question-time-values", f"missing column: {missing}")
@@ -604,8 +653,21 @@ def _check_question_time_values(connection: Connection) -> Iterable[Check]:
     )
     if any(unexpected.values()):
         yield Check("FAIL", "question-time-values", f"values other than 20000/40000: {summary}")
-    else:
+    elif not require_default:
         yield Check("INFO", "question-time-values", summary)
+    # 011 뒤 후보 API로 바꾸기 전에는 010의 API만 돈다. 그 API는 이 열을 쓰지 않으므로
+    # 40000이 있으면 후보 API가 너무 일찍 돌았다는 뜻이다(README 3단계).
+    elif any(
+        value != _DEFAULT_QUESTION_TIME_MS for counter in counts.values() for value in counter
+    ):
+        yield Check(
+            "FAIL",
+            "question-time-values",
+            f"{summary}; --require-default-question-time needs every row at 20000 "
+            "(only the candidate API writes 40000)",
+        )
+    else:
+        yield Check("OK", "question-time-values", f"{summary}; every row at 20000")
 
 
 def _check_runtime_role(connection: Connection) -> Iterable[Check]:
@@ -664,14 +726,21 @@ def _check_runtime_ledger_access(connection: Connection) -> Iterable[Check]:
         yield Check("FAIL", name, "quiz_online.schema_migrations is missing")
         return
     rows = connection.execute(
-        _LEDGER_PRIVILEGES_SQL, (_RUNTIME_ROLE_NAME, list(_LEDGER_PRIVILEGES))
+        _LEDGER_PRIVILEGES_SQL,
+        (
+            _RUNTIME_ROLE_NAME,
+            list(_LEDGER_COLUMN_PRIVILEGES),
+            _RUNTIME_ROLE_NAME,
+            list(_LEDGER_TABLE_PRIVILEGES),
+        ),
     ).fetchall()
     held = [str(privilege) for privilege, granted in rows if granted]
     if held:
         yield Check(
             "FAIL",
             name,
-            f"{_RUNTIME_ROLE_NAME} holds {', '.join(held)} on quiz_online.schema_migrations",
+            f"{_RUNTIME_ROLE_NAME} holds {', '.join(held)} on quiz_online.schema_migrations "
+            "(table or column grant)",
         )
     else:
         yield Check(
@@ -900,14 +969,47 @@ def run_bank_checks(environment: Mapping[str, str]) -> list[Check]:
         for category, questions in catalog.by_category.items()
         for question in questions
     ]
+    too_long = sum(1 for _, question_id in ids if len(question_id) > QUESTION_ID_MAX_LENGTH)
+    column = f"match_questions.question_id is varchar({QUESTION_ID_MAX_LENGTH})"
+    if too_long:
+        checks.append(
+            Check(
+                "FAIL",
+                "id-length",
+                f"{too_long} of {len(ids)} ids exceed {QUESTION_ID_MAX_LENGTH} characters "
+                f"({column}; a match that draws one cannot start)",
+            )
+        )
+    else:
+        checks.append(
+            Check(
+                "OK",
+                "id-length",
+                f"all {len(ids)} ids fit {QUESTION_ID_MAX_LENGTH} characters ({column})",
+            )
+        )
+
+    # 계약(ONLINE_QUESTION_BANK.md)은 online- 접두사를 예로만 든다. 공개 번호 모양만 막고
+    # 나머지는 알린다.
     unprefixed = sum(1 for _, question_id in ids if not question_id.startswith(ONLINE_ID_PREFIX))
-    if unprefixed:
+    public_shaped = sum(1 for _, question_id in ids if _PUBLIC_PAGES_ID.fullmatch(question_id))
+    if public_shaped:
         checks.append(
             Check(
                 "FAIL",
                 "id-prefix",
+                f"{public_shaped} of {len(ids)} ids have the public Pages form "
+                "<category>-<digits> (a kept public id marks a likely copy of the public bank, "
+                "and its issue reports collide with public question numbers)",
+            )
+        )
+    elif unprefixed:
+        checks.append(
+            Check(
+                "WARN",
+                "id-prefix",
                 f"{unprefixed} of {len(ids)} ids lack the {ONLINE_ID_PREFIX} prefix "
-                "(public Pages ids would let players look answers up)",
+                "the bank contract uses",
             )
         )
     else:
@@ -1011,6 +1113,15 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fail while any match is running or revealing",
     )
+    database.add_argument(
+        "--require-default-question-time",
+        action="store_true",
+        help=(
+            "fail while any room or match has a question time other than 20000 "
+            "(after migration 011, before the candidate API replaces the migration-010 API; "
+            "needs --expect 11)"
+        ),
+    )
     commands.add_parser("bank", help="check the private online question bank at QUESTION_BANK_DIR")
     return parser
 
@@ -1019,12 +1130,22 @@ def main(
     argv: Sequence[str] | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> int:
-    arguments = _parser().parse_args(argv)
+    parser = _parser()
+    arguments = parser.parse_args(argv)
+    if (
+        arguments.command == "db"
+        and arguments.require_default_question_time
+        and arguments.expect != 11
+    ):
+        parser.error("--require-default-question-time needs --expect 11")
     source = os.environ if environment is None else environment
     try:
         if arguments.command == "db":
             checks = run_database_checks(
-                source, expect=arguments.expect, require_idle=arguments.require_idle
+                source,
+                expect=arguments.expect,
+                require_idle=arguments.require_idle,
+                require_default_question_time=arguments.require_default_question_time,
             )
         else:
             checks = run_bank_checks(source)
