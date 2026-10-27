@@ -43,6 +43,24 @@ def ws_protocols(ticket: str) -> list[str]:
     return [WS_PROTOCOL, f"qbb.ticket.{ticket}"]
 
 
+def plain_room_event(event: dict[str, object]) -> dict[str, object]:
+    """room-invalidated의 판 번호(fan-out 줄이기)를 확인하고 뗀다.
+
+    이 테스트가 보는 것은 그 밖이다.
+    """
+    if event.get("type") != "room-invalidated":
+        return event
+    epoch = event.get("roomEpoch")
+    version = event.get("roomVersion")
+    assert isinstance(epoch, str) and epoch
+    assert type(version) is int and version > 0
+    return {
+        key: value
+        for key, value in event.items()
+        if key not in {"roomEpoch", "roomVersion", "readyChange"}
+    }
+
+
 def room_view(**changes: Any) -> RoomView:
     base = RoomView(
         code="ABC234",
@@ -1546,7 +1564,7 @@ def test_presence_sweep_transfers_an_absent_host_and_invalidates_remaining_scree
             event = stayer_socket.receive_json()
 
     assert repository.transfer_calls[0] == {"ABC234": frozenset({leaver_id})}
-    assert event == {"type": "room-invalidated"}
+    assert plain_room_event(event) == {"type": "room-invalidated"}
 
 
 def _issue_tickets(
@@ -1592,7 +1610,7 @@ def test_presence_sweep_keeps_retrying_an_absent_host_until_someone_can_take_ove
 
             clock.now += 61
             # 끊김이 처음 보일 때 한 번 다시 읽게 한다. 넘길 사람이 없어 넘기지는 못했다.
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             wait_until(
                 lambda: len(repository.transfer_calls) >= 3,
                 "the sweep stopped looking at a room whose host is still absent",
@@ -1605,7 +1623,7 @@ def test_presence_sweep_keeps_retrying_an_absent_host_until_someone_can_take_ove
                 lambda: repository.transferred_codes == {"ABC234"},
                 "a member who joined after the failed transfer never became host",
             )
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
 
     assert repository.transferred_codes == {"ABC234"}
     assert all(
@@ -1643,7 +1661,7 @@ def test_presence_sweep_forgets_members_that_the_room_no_longer_has() -> None:
             wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
 
             clock.now += 61
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             assert hub.absent_actors("ABC234") == frozenset({leaver_id})
 
             # 정리가 끊긴 사람을 방에서 뺐다. 남은 화면도 다시 읽는다.
@@ -1652,7 +1670,7 @@ def test_presence_sweep_forgets_members_that_the_room_no_longer_has() -> None:
                 lambda: hub.absent_actors("ABC234") == frozenset(),
                 "the sweep kept the presence record of a removed member",
             )
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             # 같은 방에 다시 들어오면 처음 본 사람처럼 새 유예로 센다.
             assert hub.is_present("ABC234", leaver_id)
 
@@ -1748,7 +1766,7 @@ def test_host_removes_a_long_disconnected_member_and_they_hear_why_when_they_ret
             removed = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
             assert removed.status_code == 200
             assert [player["id"] for player in removed.json()["players"]] == [str(host_id)]
-            assert host_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(host_socket.receive_json()) == {"type": "room-invalidated"}
 
         assert repository.remove_calls[-1] == (host_id, "ABC234", ghost_id, frozenset({ghost_id}))
         # 끊김 기록은 멤버십과 함께 끝난다.
@@ -1855,7 +1873,7 @@ def test_host_kicks_a_connected_member_who_is_told_at_once_and_kept_out_for_a_wh
                 with pytest.raises(WebSocketDisconnect) as closed:
                     guest_socket.receive_json()
                 assert closed.value.code == 4403
-            assert host_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(host_socket.receive_json()) == {"type": "room-invalidated"}
 
         assert repository.remove_allow_connected == [False, True, True]
         assert repository.remove_calls[-1][:3] == (host_id, "ABC234", guest_id)

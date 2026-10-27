@@ -73,6 +73,7 @@ from .repository import (
     StandingAnswer,
     TokenConflict,
 )
+from .room_versions import RoomVersions
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,13 @@ WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
 MOVEMENT_VIEWPORT_CAPABILITY = "sender-css-pixels-v1"
 WAITING_ROOM_SEAT_CAPABILITY = "waiting-room-seat-v1"
+# 이동에 공유 무대 좌표(`stage`·`stageX`·`stageY`, U31)를 실어도 된다는 표시. 화면은
+# 티켓이 이 값을 줄 때만 싣는다 — 이전 API(#106)의 `_movement_message`는 모르는 키가
+# 섞인 이동을 통째로 버린다.
+MOVEMENT_STAGE_CAPABILITY = "stage-unit-v1"
+# 걷는 캐릭터가 서는 공유 무대. 대기실 라운지와 온라인 퀴즈의 2×2 바닥
+# (src/online/movement-contract.ts)
+MOVEMENT_STAGE_IDS = frozenset({"lounge", "arena"})
 # 방 소켓이 발밑 칸 초안(`standing-answer`)을 받는다 (U13). 이 값을 모르는 이전 API는
 # 모르는 메시지를 버리기만 하지만(아래 receive 루프), 화면은 티켓이 이 값을 줄 때만 보낸다 —
 # 소켓마다 다시 묻는다.
@@ -158,9 +166,46 @@ def _websocket_ticket(websocket: WebSocket) -> str | None:
     return ticket
 
 
-def _movement_message(
-    message: str,
-) -> tuple[float, float, bool, int | None, int | None, str | None] | None:
+@dataclass(frozen=True)
+class _Movement:
+    """받아서 그대로 방송할 이동 하나. 누구의 것인지는 소켓 티켓이 정한다."""
+
+    x: float
+    y: float
+    moving: bool
+    viewport_width: int | None = None
+    viewport_height: int | None = None
+    seat_id: str | None = None
+    # 공유 무대 좌표 (U31). 셋이 함께 있거나 함께 없다
+    stage: str | None = None
+    stage_x: float | None = None
+    stage_y: float | None = None
+
+
+def _unit_number(value: object) -> float | None:
+    """0~1의 유한한 수. bool은 수가 아니다."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not math.isfinite(number) or not 0 <= number <= 1:
+        return None
+    return number
+
+
+_LEGACY_MOVEMENT_KEYS = frozenset({"type", "x", "y", "moving"})
+_VIEWPORT_MOVEMENT_KEYS = _LEGACY_MOVEMENT_KEYS | {"viewportWidth", "viewportHeight"}
+_STAGE_MOVEMENT_KEYS = frozenset({"stage", "stageX", "stageY"})
+# 받는 모양은 다섯뿐이다. 무대 좌표는 viewport 크기를 보내는 화면만 싣는다(받는다고 알린 소켓에서만)
+_MOVEMENT_KEY_SETS = (
+    _LEGACY_MOVEMENT_KEYS,
+    _VIEWPORT_MOVEMENT_KEYS,
+    _VIEWPORT_MOVEMENT_KEYS | {"seatId"},
+    _VIEWPORT_MOVEMENT_KEYS | _STAGE_MOVEMENT_KEYS,
+    _VIEWPORT_MOVEMENT_KEYS | {"seatId"} | _STAGE_MOVEMENT_KEYS,
+)
+
+
+def _movement_message(message: str) -> _Movement | None:
     """Return one strict, bounded movement payload without trusting client identity."""
     if len(message) > 256:
         return None
@@ -171,28 +216,16 @@ def _movement_message(
     if not isinstance(value, dict):
         return None
     keys = set(value)
-    legacy_keys = {"type", "x", "y", "moving"}
-    viewport_keys = legacy_keys | {"viewportWidth", "viewportHeight"}
-    viewport_seat_keys = viewport_keys | {"seatId"}
-    if keys not in (legacy_keys, viewport_keys, viewport_seat_keys):
+    if keys not in _MOVEMENT_KEY_SETS:
         return None
     if value["type"] != "movement" or type(value["moving"]) is not bool:
         return None
-    x = value["x"]
-    y = value["y"]
-    if (
-        isinstance(x, bool)
-        or not isinstance(x, (int, float))
-        or isinstance(y, bool)
-        or not isinstance(y, (int, float))
-    ):
+    x = _unit_number(value["x"])
+    y = _unit_number(value["y"])
+    if x is None or y is None:
         return None
-    x = float(x)
-    y = float(y)
-    if not math.isfinite(x) or not math.isfinite(y) or not 0 <= x <= 1 or not 0 <= y <= 1:
-        return None
-    if keys == legacy_keys:
-        return x, y, value["moving"], None, None, None
+    if keys == _LEGACY_MOVEMENT_KEYS:
+        return _Movement(x=x, y=y, moving=value["moving"])
     viewport_width = value["viewportWidth"]
     viewport_height = value["viewportHeight"]
     if (
@@ -203,7 +236,7 @@ def _movement_message(
     ):
         return None
     seat_id: str | None = None
-    if keys == viewport_seat_keys:
+    if "seatId" in keys:
         candidate = value["seatId"]
         if (
             not isinstance(candidate, str)
@@ -212,7 +245,54 @@ def _movement_message(
         ):
             return None
         seat_id = candidate
-    return x, y, value["moving"], viewport_width, viewport_height, seat_id
+    stage: str | None = None
+    stage_x: float | None = None
+    stage_y: float | None = None
+    if "stage" in keys:
+        stage_candidate = value["stage"]
+        stage_x = _unit_number(value["stageX"])
+        stage_y = _unit_number(value["stageY"])
+        if (
+            not isinstance(stage_candidate, str)
+            or stage_candidate not in MOVEMENT_STAGE_IDS
+            or stage_x is None
+            or stage_y is None
+        ):
+            return None
+        stage = stage_candidate
+    return _Movement(
+        x=x,
+        y=y,
+        moving=value["moving"],
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
+        seat_id=seat_id,
+        stage=stage,
+        stage_x=stage_x,
+        stage_y=stage_y,
+    )
+
+
+def _movement_event(movement: _Movement, actor_id: UUID, sequence: int) -> dict[str, object]:
+    """방 전원에게 보낼 이동. 받은 키만 싣는다 — 이전 화면은 모르는 키를 보지 않는다."""
+    event: dict[str, object] = {
+        "type": "movement",
+        "playerId": str(actor_id),
+        "x": movement.x,
+        "y": movement.y,
+        "moving": movement.moving,
+        "sequence": sequence,
+    }
+    if movement.viewport_width is not None and movement.viewport_height is not None:
+        event["viewportWidth"] = movement.viewport_width
+        event["viewportHeight"] = movement.viewport_height
+    if movement.seat_id is not None:
+        event["seatId"] = movement.seat_id
+    if movement.stage is not None:
+        event["stage"] = movement.stage
+        event["stageX"] = movement.stage_x
+        event["stageY"] = movement.stage_y
+    return event
 
 
 def _standing_answer_message(message: str) -> tuple[UUID, int, int | None] | None:
@@ -601,6 +681,24 @@ class EventHub:
         changed = frozenset(code for code, _ in absent ^ self._announced_absent)
         self._announced_absent = absent
         return changed
+
+    def presence_settled(self, code: str) -> bool:
+        """이 방의 접속 상태 변화가 모두 방송됐는가 (room-invalidated 줄이기).
+
+        유예를 넘겨 끊겼는데 아직 sweep이 알리지 않았거나, 알린 뒤 다시 붙었으면 False다. 그동안
+        방 snapshot의 `connected`는 이미 달라져 있다 — 준비 토글을 GET 없이 고치게 하면 화면이 낡은
+        접속 상태를 이어 쓰므로, 그때는 고칠 거리(`readyChange`)를 싣지 않아 모두 다시 읽게 한다.
+        """
+        now = self._clock()
+        for actor_room in self._absent_since:
+            if actor_room[0] == code and (
+                self._is_absent(actor_room, now) != (actor_room in self._announced_absent)
+            ):
+                return False
+        return not any(
+            actor_room[0] == code and actor_room not in self._absent_since
+            for actor_room in self._announced_absent
+        )
 
     def absent_by_room(self) -> dict[str, frozenset[UUID]]:
         """유예를 넘겨 끊긴 참가자가 있는 방마다 그 참가자들. presence sweep이 매번 다시 본다."""
@@ -1101,6 +1199,7 @@ def create_app(
     event_hub: EventHub | None = None,
     removed_members: RemovedMembers | None = None,
     standing_answers: StandingAnswers | None = None,
+    room_versions: RoomVersions | None = None,
     ops_summary_interval_seconds: float = ops_log.SUMMARY_INTERVAL_SECONDS,
 ) -> FastAPI:
     if (
@@ -1143,6 +1242,7 @@ def create_app(
     hub = event_hub or EventHub()
     removed = removed_members or RemovedMembers()
     standing = standing_answers if standing_answers is not None else StandingAnswers()
+    versions = room_versions if room_versions is not None else RoomVersions()
     ingress_limiter = AtomicMultiWindowLimiter()
     authenticated_ingress_limiter = AtomicMultiWindowLimiter()
     join_limiter = AtomicMultiWindowLimiter()
@@ -1159,9 +1259,14 @@ def create_app(
     ops_log.install()
     request_window = ops_log.RequestWindow()
 
-    def room_payload(room: RoomView) -> dict[str, object]:
-        """DB snapshot에 hub가 아는 접속 상태를 얹어 내보낸다."""
-        return _room_payload(
+    def room_payload(room: RoomView, label: int | None = None) -> dict[str, object]:
+        """DB snapshot에 hub가 아는 접속 상태를 얹어 내보낸다.
+
+        `label`은 DB를 읽기 **전에** 읽은 판 번호(`versions.label()`)다. 붙이면 화면이
+        «이 번호까지 알린 변화를 담은 방»으로 믿고 그 번호 이하의 room-invalidated를 다시
+        읽지 않는다. 이전 화면은 두 키를 모르고 지나간다.
+        """
+        payload = _room_payload(
             replace(
                 room,
                 players=tuple(
@@ -1170,6 +1275,33 @@ def create_app(
                 ),
             )
         )
+        if label is not None:
+            payload["roomEpoch"] = versions.epoch
+            payload["roomVersion"] = label
+        return payload
+
+    def room_invalidated(
+        version: int,
+        *,
+        ready_change: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """방 전원이 다시 읽을 까닭.
+
+        번호와 묶음 이름은 더하기만 한 키라 이전 화면은 예전처럼 다시 읽는다.
+        """
+        event: dict[str, object] = {
+            "type": "room-invalidated",
+            "roomEpoch": versions.epoch,
+            "roomVersion": version,
+        }
+        if ready_change is not None:
+            event["readyChange"] = ready_change
+        return event
+
+    async def announce_room(code: str) -> None:
+        """방이 바뀌었다(commit 뒤). 번호를 올리고 방 전원에게 알린다."""
+        version, _ = versions.bump(code)
+        await hub.broadcast(code, room_invalidated(version))
 
     def match_absent_ids(code: str, actor_id: UUID) -> frozenset[UUID]:
         """«모두 답했다»의 분모에서 뺄 참가자 (U32). 지금 요청한 사람은 끊긴 사람이 아니다.
@@ -1249,7 +1381,7 @@ def create_app(
                     await hub.broadcast(advance.code, {"type": "match-invalidated"})
                     if advance.finished:
                         # 방이 다시 기다리는 방이 됐다. 판에서 빠진 멤버의 대기실이 다시 읽는다.
-                        await hub.broadcast(advance.code, {"type": "room-invalidated"})
+                        await announce_room(advance.code)
 
         async def sweep_expired_resources() -> None:
             while True:
@@ -1257,6 +1389,9 @@ def create_app(
                 try:
                     cleaned = await repo.cleanup_expired_resources()
                     if isinstance(cleaned, CleanupCounts) and cleaned.changed:
+                        # 어느 방이 바뀌었는지 모른다(방송도 하지 않는다). 모든 방의 번호를 올려
+                        # 다음 준비 토글을 GET 없이 고치지 못하게 한다 — 화면이 다시 읽는다.
+                        versions.bump_all()
                         ops_log.cleanup(cleaned)
                     await hub.revalidate(repo.is_member)
                 except asyncio.CancelledError:
@@ -1314,7 +1449,7 @@ def create_app(
                                     code,
                                     exc_info=True,
                                 )
-                        await hub.broadcast(code, {"type": "room-invalidated"})
+                        await announce_room(code)
                         if advanced:
                             await hub.broadcast(code, {"type": "match-invalidated"})
                 except asyncio.CancelledError:
@@ -1578,6 +1713,7 @@ def create_app(
                     "비밀번호 작업이 많아요. 잠시 뒤 다시 시도해 주세요.",
                     headers={"Retry-After": "1"},
                 ) from error
+        label = versions.label()
         room = await repo.create_room(actor_id, spec, password_hash)
         ops_log.room_created(
             room.code,
@@ -1586,7 +1722,7 @@ def create_app(
             question_time_ms=room.question_time_ms,
             locked=room.has_password,
         )
-        return room_payload(room)
+        return room_payload(room, label)
 
     @app.get("/v1/rooms/{raw_code}")
     async def get_room(
@@ -1597,6 +1733,8 @@ def create_app(
             code = normalize_code(raw_code)
         except DomainError as error:
             raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        # 번호는 DB를 읽기 전에 읽는다 — 이 번호까지 알린 변화는 이미 commit됐다
+        label = versions.label()
         room = await repo.get_room(actor_id, code)
         if room is None:
             removal = removed.reason(code, actor_id)
@@ -1604,7 +1742,7 @@ def create_app(
                 # 방장이 나를 내보냈다. «없는 방»으로 돌려보내면 방이 사라진 줄 안다 (U24)
                 raise _removed_error(404, removal)
             raise _error(404, "not-found", "그런 코드의 방이 없어요.")
-        return room_payload(room)
+        return room_payload(room, label)
 
     @app.post("/v1/rooms/{raw_code}/join")
     async def join_room(
@@ -1681,6 +1819,7 @@ def create_app(
                 if not verified:
                     raise _error(403, "wrong-password", "비밀번호가 맞지 않아요.")
 
+        label = versions.label()
         try:
             room = await repo.join_room(actor_id, code)
         except RoomNotFound as error:
@@ -1701,8 +1840,8 @@ def create_app(
             hub.forget_presence(code, actor_id)
             # 내보내졌던 사람이 다시 들어왔다. 다음에 나가도 «내보냈다»로 듣지 않는다.
             removed.forget(code, actor_id)
-        await hub.broadcast(code, {"type": "room-invalidated"})
-        return room_payload(room)
+        await announce_room(code)
+        return room_payload(room, label)
 
     @app.delete("/v1/rooms/{raw_code}/members/me", status_code=204)
     async def leave_room(
@@ -1749,12 +1888,14 @@ def create_app(
         hub.forget_presence(code, actor_id)
         standing.forget_member(code, actor_id)
         if room is None:
-            # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다.
+            # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다. 번호는 올려 둔다 —
+            # 같은 코드로 새 방이 생겨도 이 방의 번호를 이어 믿지 않는다.
+            versions.bump(code)
             hub.retain_presence(code, None)
             removed.forget_room(code)
             standing.forget_room(code)
         else:
-            await hub.broadcast(code, {"type": "room-invalidated"})
+            await announce_room(code)
         return Response(status_code=204)
 
     @app.delete("/v1/rooms/{raw_code}/members/{raw_player_id}")
@@ -1798,6 +1939,7 @@ def create_app(
             raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         if player_id == actor_id:
             raise _error(400, "invalid-target", "방을 떠나려면 나가기를 눌러 주세요.")
+        label = versions.label()
         try:
             room = await repo.remove_member(
                 actor_id,
@@ -1836,8 +1978,8 @@ def create_app(
         await hub.disconnect_actor(code, player_id)
         hub.forget_presence(code, player_id)
         standing.forget_member(code, player_id)
-        await hub.broadcast(code, {"type": "room-invalidated"})
-        return room_payload(room)
+        await announce_room(code)
+        return room_payload(room, label)
 
     @app.patch("/v1/rooms/{raw_code}")
     async def update_room(
@@ -1881,6 +2023,7 @@ def create_app(
             except DomainError as error:
                 raise _error(400, error.code, str(error)) from error
 
+        label = versions.label()
         try:
             room = await repo.update_room(actor_id, code, patch)
         except RoomNotFound as error:
@@ -1895,8 +2038,8 @@ def create_app(
                 "game-in-progress",
                 "진행 중에는 방 설정을 바꿀 수 없어요.",
             ) from error
-        await hub.broadcast(code, {"type": "room-invalidated"})
-        return room_payload(room)
+        await announce_room(code)
+        return room_payload(room, label)
 
     @app.put("/v1/rooms/{raw_code}/ready")
     async def set_ready(
@@ -1921,18 +2064,35 @@ def create_app(
         )
         if wait is not None:
             raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
-        try:
-            room = await repo.set_ready(actor_id, code, body.is_ready)
-        except (RoomNotFound, NotMember) as error:
-            raise _error(403, "not-member", "먼저 방에 참가해 주세요.") from error
-        except MatchInProgress as error:
-            raise _error(
-                409,
-                "game-in-progress",
-                "진행 중에는 준비 상태를 바꿀 수 없어요.",
-            ) from error
-        await hub.broadcast(code, {"type": "room-invalidated"})
-        return room_payload(room)
+        # 준비를 바꾸는 쓰기는 방마다 하나씩 commit하고 그 차례대로 번호를 받는다
+        # (room_versions.py). 그래야 «바로 앞 번호 + 이 사람의 준비»로 고친 화면이 늦게
+        # commit된 값을 덮어쓰지 않는다.
+        async with versions.writing(code):
+            label = versions.label()
+            try:
+                room = await repo.set_ready(actor_id, code, body.is_ready)
+            except (RoomNotFound, NotMember) as error:
+                raise _error(403, "not-member", "먼저 방에 참가해 주세요.") from error
+            except MatchInProgress as error:
+                raise _error(
+                    409,
+                    "game-in-progress",
+                    "진행 중에는 준비 상태를 바꿀 수 없어요.",
+                ) from error
+            version, previous = versions.bump(code)
+        # 가장 잦은 방 변화라 고칠 거리를 함께 싣는다. 받은 화면의 방이 정확히
+        # `previousVersion` 뒤의 것이면 GET 없이 이 사람의 준비만 고친다. 접속 상태 변화가
+        # 아직 방송되지 않았으면 싣지 않는다 — 그 방의 `connected`가 이미 달라져 있어 모두
+        # 다시 읽어야 한다.
+        ready_change: dict[str, object] | None = None
+        if hub.presence_settled(code):
+            ready_change = {
+                "previousVersion": previous,
+                "playerId": str(actor_id),
+                "isReady": body.is_ready,
+            }
+        await hub.broadcast(code, room_invalidated(version, ready_change=ready_change))
+        return room_payload(room, label)
 
     @app.post("/v1/rooms/{raw_code}/chat", status_code=202)
     async def send_chat(
@@ -1997,24 +2157,29 @@ def create_app(
         )
         if wait is not None:
             raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
-        try:
-            match = await repo.start_game(
-                actor_id,
-                code,
-                absent_player_ids=hub.absent_actors(code),
-            )
-        except RoomNotFound as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
-        except NotHost as error:
-            raise _error(403, "not-host", "방장만 게임을 시작할 수 있어요.") from error
-        except MatchNotReady as error:
-            raise _error(
-                409,
-                "not-ready",
-                "방장 말고 연결된 참가자가 모두 준비해야 시작할 수 있어요.",
-            ) from error
-        except MatchInProgress as error:
-            raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+        # 판 시작은 모두의 준비를 되돌리고 방을 «게임 중»으로 바꾼다. room-invalidated 대신
+        # game-started만 보내지만 번호는 올린다 — 다음 준비 토글을 시작 전의 방에 덧대어
+        # 고치지 못하게 한다. 준비 쓰기와 같은 차례에 선다(room_versions.py).
+        async with versions.writing(code):
+            try:
+                match = await repo.start_game(
+                    actor_id,
+                    code,
+                    absent_player_ids=hub.absent_actors(code),
+                )
+            except RoomNotFound as error:
+                raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+            except NotHost as error:
+                raise _error(403, "not-host", "방장만 게임을 시작할 수 있어요.") from error
+            except MatchNotReady as error:
+                raise _error(
+                    409,
+                    "not-ready",
+                    "방장 말고 연결된 참가자가 모두 준비해야 시작할 수 있어요.",
+                ) from error
+            except MatchInProgress as error:
+                raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+            versions.bump(code)
         ops_log.match_started(
             code,
             players=match.player_count,
@@ -2052,7 +2217,7 @@ def create_app(
             await hub.broadcast(code, {"type": "match-invalidated", "matchId": str(match.id)})
             if match.state == "finished":
                 # 이 읽기가 판을 닫았다. 방의 status가 바뀌었으니 대기실도 다시 읽게 한다.
-                await hub.broadcast(code, {"type": "room-invalidated"})
+                await announce_room(code)
         return payload
 
     @app.post("/v1/rooms/{raw_code}/match/answers")
@@ -2146,6 +2311,7 @@ def create_app(
             "ticket": ticket_store.issue(actor_id, code),
             "movementViewport": MOVEMENT_VIEWPORT_CAPABILITY,
             "movementSeat": WAITING_ROOM_SEAT_CAPABILITY,
+            "movementStage": MOVEMENT_STAGE_CAPABILITY,
             "standingAnswer": STANDING_ANSWER_CAPABILITY,
         }
 
@@ -2224,23 +2390,9 @@ def create_app(
                 movement = _movement_message(message)
                 if movement is None:
                     continue
-                x, y, moving, viewport_width, viewport_height, seat_id = movement
-                event: dict[str, object] = {
-                    "type": "movement",
-                    "playerId": str(actor_id),
-                    "x": x,
-                    "y": y,
-                    "moving": moving,
-                    "sequence": next(movement_sequences),
-                }
-                if viewport_width is not None and viewport_height is not None:
-                    event["viewportWidth"] = viewport_width
-                    event["viewportHeight"] = viewport_height
-                if seat_id is not None:
-                    event["seatId"] = seat_id
                 await hub.broadcast(
                     code,
-                    event,
+                    _movement_event(movement, actor_id, next(movement_sequences)),
                 )
         except (RuntimeError, WebSocketDisconnect):
             pass

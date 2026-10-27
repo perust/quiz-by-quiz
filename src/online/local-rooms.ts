@@ -19,9 +19,12 @@ import {
   onlineQuestionTimeOrDefault, uniqueNickname,
 } from './rules.js';
 import {
+  isMovementStageId,
   isWaitingRoomSeatId,
+  type MovementStage,
   type MovementViewport,
   type WaitingRoomSeatId,
+  validMovementStageUnit,
   validMovementViewportDimension,
 } from './movement-contract.js';
 import type {
@@ -458,14 +461,17 @@ export const localRooms = {
 
   /** local adapter도 network와 같은 bounded movement event를 되돌려 준다. */
   sendMovement({
-    code, x, y, moving, viewportWidth, viewportHeight, seatId,
+    code, x, y, moving, viewportWidth, viewportHeight, seatId, stage, stageX, stageY,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
     seatId?: WaitingRoomSeatId;
-  } & MovementViewport): boolean {
+    // 이 브라우저 안의 방은 받은 그대로 되돌려 준다. 무대만 움직인 이동도 같다
+    onlyIfChanged?: true;
+  } & MovementViewport & Partial<MovementStage>): boolean {
+    const hasStage = stage !== undefined || stageX !== undefined || stageY !== undefined;
     if (
       !Number.isFinite(x) || x < 0 || x > 1
       || !Number.isFinite(y) || y < 0 || y > 1
@@ -473,6 +479,9 @@ export const localRooms = {
       || (seatId !== undefined && (!isWaitingRoomSeatId(seatId) || moving))
       || !validMovementViewportDimension(viewportWidth)
       || !validMovementViewportDimension(viewportHeight)
+      || (hasStage && (
+        !isMovementStageId(stage) || !validMovementStageUnit(stageX) || !validMovementStageUnit(stageY)
+      ))
     ) return false;
     const key = normalizeCode(code);
     const room = readAll().find((candidate) => candidate.code === key);
@@ -487,6 +496,7 @@ export const localRooms = {
       viewportWidth,
       viewportHeight,
       ...(seatId !== undefined ? { seatId } : {}),
+      ...(hasStage ? { stage, stageX, stageY } : {}),
       sequence: movementSequence,
       connectionGeneration: 0,
     });

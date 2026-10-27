@@ -48,6 +48,7 @@ import { safeStorage } from '../storage/safe-storage.js';
 import type { CategoryId, OnlineQuestionTime } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
+  MovementStage,
   MovementViewport,
   WaitingRoomSeatId,
 } from './movement-contract.js';
@@ -370,6 +371,13 @@ export type RoomEvent =
     /** 구형 event에는 없다. 있으면 송신자의 CSS-pixel 이동량을 복원한다. */
     viewportWidth?: number;
     viewportHeight?: number;
+    /**
+     * 공유 무대 좌표 (U31). 보낸 사람의 발이 무대(대기실 라운지·온라인 퀴즈 바닥) 안에 있었고 서버가 받는다고
+     * 알렸을 때만 셋이 함께 온다. 같은 무대를 보이는 화면은 제 무대의 같은 자리에 세운다.
+     */
+    stage?: MovementStage['stage'];
+    stageX?: number;
+    stageY?: number;
     /** server process 안에서 movement마다 증가한다. */
     sequence: number;
     /** 이 browser의 socket generation. reconnect 전의 늦은 event를 가둔다. */
@@ -437,14 +445,22 @@ export interface RoomStore {
   /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */
   setReady(spec: { code: string; isReady: boolean }): Promise<ReadyResult>;
   sendChat(spec: { code: string; text: string; player?: PlayerInfo }): Promise<{ ok: boolean }>;
-  /** 0~1 좌표와 송신 viewport. player identity는 socket ticket에서 정한다. */
+  /**
+   * 0~1 좌표와 송신 viewport. player identity는 socket ticket에서 정한다. 공유 무대 좌표(U31)는 셋이 함께일
+   * 때만 받고, 서버가 받는다고 알린 소켓에만 싣는다 — 모르는 서버(#106)에는 예전 모양 그대로 보낸다.
+   */
   sendMovement(spec: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
     seatId?: WaitingRoomSeatId;
-  } & MovementViewport): boolean;
+    /**
+     * 무대가 움직였을 뿐이다(스크롤, U31). 이 소켓에 실을 줄이 지난번에 보낸 줄과 같으면 보내지 않는다 —
+     * 무대 좌표를 싣지 않는 서버(#106)에 같은 이동을 되풀이하지 않는다. 기억해 둔 마지막 이동은 고친다.
+     */
+    onlyIfChanged?: true;
+  } & MovementViewport & Partial<MovementStage>): boolean;
   /**
    * 발밑 칸 초안 (U13). `sendMovement`처럼 방 소켓으로 보내는 best-effort이고, 그 소켓의 서버가 받는다고
    * 알렸을 때만(ws-ticket의 capability) 보낸다 — 모르는 서버에는 한 글자도 보내지 않는다. 소켓이 닫혀 있으면

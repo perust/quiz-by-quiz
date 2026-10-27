@@ -34,12 +34,16 @@ import type {
   Unsubscribe,
 } from './adapter.js';
 import {
+  isMovementStageId,
   isWaitingRoomSeatId,
   MAX_STANDING_ANSWER_POSITION,
+  MOVEMENT_STAGE_CAPABILITY,
   MOVEMENT_VIEWPORT_CAPABILITY,
+  type MovementStage,
   type MovementViewport,
   STANDING_ANSWER_CAPABILITY,
   type WaitingRoomSeatId,
+  validMovementStageUnit,
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
@@ -89,6 +93,50 @@ const PING_INTERVAL_MS = 25_000;
 const RECONNECT_DELAY_MS = 1_000;
 const WEBSOCKET_PROTOCOL = 'qbb.v1';
 const WEBSOCKET_TICKET_PREFIX = 'qbb.ticket.';
+/** 서버 프로세스의 판 번호 묶음 이름. 다시 띄우면 바뀐다 — 다른 묶음의 번호끼리는 견주지 않는다 */
+const ROOM_EPOCH_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * 방 snapshot의 판 번호 (room-invalidated 줄이기). 서버는 방이 바뀔 때마다 프로세스 전체에서 하나씩 오르는
+ * 번호를 붙여 알리고, snapshot에는 DB를 읽기 **전에** 읽은 번호를 붙인다 — 그래서 번호 v가 붙은 snapshot은
+ * v까지 알린 변화를 모두 담는다. 번호를 모르는 이전 API(#106)는 보내지 않고, 그때는 예전처럼 늘 다시 읽는다.
+ */
+interface RoomStamp {
+  epoch: string;
+  version: number;
+}
+
+/** 준비 토글 하나 (가장 잦은 방 변화). 받은 쪽의 방이 정확히 `previousVersion` 뒤의 것이면 GET 없이 고친다 */
+interface ReadyChange {
+  previousVersion: number;
+  playerId: string;
+  isReady: boolean;
+}
+
+function parseRoomStamp(value: unknown): RoomStamp | null {
+  if (!isObject(value)) return null;
+  const { roomEpoch, roomVersion } = value;
+  if (typeof roomEpoch !== 'string' || !ROOM_EPOCH_PATTERN.test(roomEpoch)) return null;
+  if (!Number.isSafeInteger(roomVersion) || (roomVersion as number) < 0) return null;
+  // 바로 위에서 0 이상의 안전한 정수인 것을 확인했다
+  return { epoch: roomEpoch, version: roomVersion as number };
+}
+
+/** 깨졌거나 모르는 모양이면 null — 그때는 고치지 않고 다시 읽는다 */
+function parseReadyChange(value: unknown, version: number): ReadyChange | null {
+  if (!isObject(value)) return null;
+  const { previousVersion, playerId, isReady } = value;
+  if (
+    !Number.isSafeInteger(previousVersion)
+    || (previousVersion as number) < 0
+    || (previousVersion as number) >= version
+    || typeof playerId !== 'string'
+    || !UUID_PATTERN.test(playerId)
+    || typeof isReady !== 'boolean'
+  ) return null;
+  // 바로 위에서 version보다 작은 0 이상의 안전한 정수인 것을 확인했다
+  return { previousVersion: previousVersion as number, playerId, isReady };
+}
 
 interface BrowserIdentity {
   id: string;
@@ -107,6 +155,10 @@ interface MovementChannel {
   socket: WebSocketLike | null;
   supportsViewport: boolean;
   supportsSeat: boolean;
+  /** 이 소켓의 서버가 공유 무대 좌표(U31)를 받는다고 알렸는가. 소켓마다 다시 묻는다 */
+  supportsStage: boolean;
+  /** 이 소켓에 마지막으로 실은 이동 줄. 무대만 움직인 이동(`onlyIfChanged`)이 같은 줄을 되풀이하지 않게 한다 */
+  lastSentMovement: string | null;
   /** 이 소켓의 서버가 발밑 칸 초안을 받는다고 알렸는가 (U13). 소켓마다 다시 묻는다 */
   supportsStandingAnswer: boolean;
   /** 마지막으로 보낸(보내려던) 초안. 소켓이 다시 붙으면 다시 보낸다 — 지우기(null)도 */
@@ -117,7 +169,7 @@ interface MovementChannel {
     y: number;
     moving: boolean;
     seatId?: WaitingRoomSeatId;
-  } & MovementViewport) | null;
+  } & MovementViewport & Partial<MovementStage>) | null;
 }
 
 export interface NetworkRoomStoreOptions {
@@ -685,6 +737,18 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     if (channel.supportsViewport && channel.supportsSeat && latest.seatId) {
       payload.seatId = latest.seatId;
     }
+    // 무대 좌표는 받는다고 알린 서버에만 싣는다. #106의 API는 모르는 키가 섞인 이동을 통째로 버린다
+    if (
+      channel.supportsViewport
+      && channel.supportsStage
+      && latest.stage !== undefined
+      && latest.stageX !== undefined
+      && latest.stageY !== undefined
+    ) {
+      payload.stage = latest.stage;
+      payload.stageX = latest.stageX;
+      payload.stageY = latest.stageY;
+    }
     return payload;
   }
 
@@ -879,12 +943,16 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
   async function fetchRoomSnapshot(code: string): Promise<{
     room: PublicRoom | null;
+    /** 서버가 붙인 판 번호. 이전 API이거나 깨졌으면 null */
+    stamp: RoomStamp | null;
     requestGeneration: number;
   }> {
     const requestGeneration = beginRoomSnapshotRequest();
     try {
+      const value = await request(`/v1/rooms/${encodeURIComponent(code)}`);
       return {
-        room: parseRoom(await request(`/v1/rooms/${encodeURIComponent(code)}`)),
+        room: parseRoom(value),
+        stamp: parseRoomStamp(value),
         requestGeneration,
       };
     } catch (error) {
@@ -892,7 +960,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       const kind = error instanceof ApiFailure ? removalKind(error.code) : null;
       if (kind) throw new RemovedFromRoom(kind);
       if (error instanceof ApiFailure && error.status === 404) {
-        return { room: null, requestGeneration };
+        return { room: null, stamp: null, requestGeneration };
       }
       throw error;
     }
@@ -1046,15 +1114,18 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   }
 
   function sendMovement({
-    code: rawCode, x, y, moving, viewportWidth, viewportHeight, seatId,
+    code: rawCode, x, y, moving, viewportWidth, viewportHeight, seatId, stage, stageX, stageY,
+    onlyIfChanged,
   }: {
     code: string;
     x: number;
     y: number;
     moving: boolean;
     seatId?: WaitingRoomSeatId;
-  } & MovementViewport): boolean {
+    onlyIfChanged?: true;
+  } & MovementViewport & Partial<MovementStage>): boolean {
     const code = normalizeCode(rawCode);
+    const hasStage = stage !== undefined || stageX !== undefined || stageY !== undefined;
     if (
       !CODE_PATTERN.test(code)
       || !Number.isFinite(x) || x < 0 || x > 1
@@ -1063,18 +1134,27 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       || (seatId !== undefined && (!isWaitingRoomSeatId(seatId) || moving))
       || !validMovementViewportDimension(viewportWidth)
       || !validMovementViewportDimension(viewportHeight)
+      || (hasStage && (
+        !isMovementStageId(stage) || !validMovementStageUnit(stageX) || !validMovementStageUnit(stageY)
+      ))
     ) return false;
     const channel = movementChannels.get(code);
     if (!channel) return false;
     channel.latest = {
       type: 'movement', x, y, moving, viewportWidth, viewportHeight,
       ...(seatId !== undefined ? { seatId } : {}),
+      // 바로 위에서 셋이 함께 맞는 것을 확인했다
+      ...(hasStage ? { stage, stageX, stageY } as MovementStage : {}),
     };
     if (channel.socket?.readyState !== 1) return false;
     try {
       const payload = movementPayload(channel);
       if (!payload) return false;
-      channel.socket.send(JSON.stringify(payload));
+      const line = JSON.stringify(payload);
+      // 무대만 움직였는데 이 소켓이 무대를 싣지 않으면 줄이 지난번과 같다 — 되풀이하지 않는다
+      if (onlyIfChanged && line === channel.lastSentMovement) return false;
+      channel.socket.send(line);
+      channel.lastSentMovement = line;
       return true;
     } catch {
       channel.socket.close();
@@ -1133,10 +1213,23 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     let roomRefreshInFlight = false;
     /** 그 사이 무효화가 또 왔는가. 몇 번이 오든 끝난 뒤 한 번만 더 읽는다. */
     let roomRefreshQueued = false;
+    /**
+     * 이 구독이 마지막으로 화면에 넘긴 방과 그 판 번호. 번호를 모르면(이전 API·깨진 값) null — 그때는
+     * 무효화마다 예전처럼 다시 읽는다. 저장소의 다른 길(준비·설정 응답)은 여기를 고치지 않는다 — 그 응답은
+     * 부른 화면만 받고 이 구독의 화면(대기실·매치·결과)에는 가지 않는다.
+     */
+    let delivered: { room: PublicRoom; stamp: RoomStamp } | null = null;
+    /**
+     * 다음 재조회가 담아야 할 것. 판 번호면 «그 번호까지 담긴 방», `any`면 번호를 모르는 무효화나 재연결이라
+     * 반드시 읽는다. 이미 넘긴 방이 그 번호를 담고 있으면 읽지 않는다.
+     */
+    let refreshWanted: RoomStamp | 'any' | null = null;
     const movementChannel: MovementChannel = {
       socket: null,
       supportsViewport: false,
       supportsSeat: false,
+      supportsStage: false,
+      lastSentMovement: null,
       supportsStandingAnswer: false,
       latestStanding: null,
       latest: null,
@@ -1182,6 +1275,23 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       handler({ type: 'removed', kind });
     }
 
+    /** 이미 넘긴 방이 그 판 번호까지 담는가. 다른 묶음(서버를 다시 띄웠다)의 번호는 견줄 수 없다 */
+    function deliveredCovers(stamp: RoomStamp): boolean {
+      return delivered !== null
+        && delivered.stamp.epoch === stamp.epoch
+        && delivered.stamp.version >= stamp.version;
+    }
+
+    /** 기다리는 재조회 둘을 하나로. 하나라도 번호를 모르거나 묶음이 다르면 반드시 읽는다 */
+    function mergeRefreshWanted(
+      current: RoomStamp | 'any' | null,
+      next: RoomStamp | 'any',
+    ): RoomStamp | 'any' {
+      if (current === null) return next;
+      if (current === 'any' || next === 'any' || current.epoch !== next.epoch) return 'any';
+      return current.version >= next.version ? current : next;
+    }
+
     /**
      * 방 GET 하나. 요청 한도(429)에 걸리면 Retry-After(상한 약 3초)와 jitter를 두고 **한 번만** 다시
      * 보낸다 (N01) — 조용히 버리면 준비·입장 변화가 다음 무효화까지 화면에 오지 않는다. 그사이 구독이
@@ -1213,11 +1323,24 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         }
         throw error;
       }
-      const { room, requestGeneration } = snapshot;
+      const { room, stamp, requestGeneration } = snapshot;
       if (stopped || connectionGeneration !== generation) return;
       if (requestGeneration < latestDeliveredRoomGeneration) return;
       if (requestGeneration < mutationState.committedGeneration) return;
+      if (
+        stamp !== null
+        && delivered !== null
+        && delivered.stamp.epoch === stamp.epoch
+        && delivered.stamp.version > stamp.version
+      ) {
+        // 이미 넘긴 방보다 앞선 번호다 — 그 뒤의 변화를 담았는지 모른다. 넘기지 않고 한 번 더 읽는다
+        // (새 요청의 번호는 넘긴 번호보다 작을 수 없어 되풀이되지 않는다)
+        refreshWanted = 'any';
+        roomRefreshQueued = true;
+        return;
+      }
       latestDeliveredRoomGeneration = requestGeneration;
+      delivered = room && stamp ? { room, stamp } : null;
       if (room) handler({ type: 'room', room });
     }
 
@@ -1226,10 +1349,13 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
      * 전원이 GET을 보내므로, 준비 토글이 몰리면 무효화마다 한 번씩 읽는 것만으로 IP·프로세스
      * 요청 한도를 먼저 먹는다. 날아가는 요청이 있으면 표시만 해 두고, 끝나면 최신 상태를
      * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 요청 한도(429)면 한 번 다시 보내고(N01), 그래도
-     * 실패하면 다음 무효화·재연결이 다시 맞춘다.
+     * 실패하면 다음 무효화·재연결이 다시 맞춘다. `wanted`가 판 번호면 그 번호까지 담긴 방이 필요한
+     * 것이고, 합친 후속 조회 차례에 이미 받은 방이 그 번호를 담았으면 읽지 않는다. 재연결·번호 없는
+     * 무효화는 `any`라 늘 읽는다.
      */
-    function requestRoomRefresh(): void {
+    function requestRoomRefresh(wanted: RoomStamp | 'any' = 'any'): void {
       if (stopped) return;
+      refreshWanted = mergeRefreshWanted(refreshWanted, wanted);
       if (roomRefreshInFlight) {
         roomRefreshQueued = true;
         return;
@@ -1239,12 +1365,57 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         try {
           do {
             roomRefreshQueued = false;
+            const reason = refreshWanted;
+            refreshWanted = null;
+            // 그사이 받은 방이 이미 그 번호를 담았다 — 합친 후속 조회가 할 일이 없다
+            if (reason === null || (reason !== 'any' && deliveredCovers(reason))) continue;
             await refreshRoom(generation).catch(() => undefined);
           } while (roomRefreshQueued && !stopped);
         } finally {
           roomRefreshInFlight = false;
         }
       })();
+    }
+
+    /**
+     * 준비 토글 하나를 GET 없이 고친다. 넘긴 방이 정확히 그 바로 앞(`previousVersion` 이상, 이번 번호 미만)일
+     * 때만이다 — 그 사이에 이 방에 알린 다른 변화가 없다는 뜻이다. 날아가는 재조회가 있으면(그 응답이 무엇을
+     * 담았는지 모른다) 고치지 않는다. 그 사람이 방에 없으면 나간 것을 먼저 들은 것이라 고치지 않는다.
+     * 고칠 수 없으면 false — 부르는 쪽이 예전처럼 다시 읽는다.
+     */
+    function applyReadyChange(stamp: RoomStamp, raw: unknown): boolean {
+      const change = parseReadyChange(raw, stamp.version);
+      const base = delivered;
+      if (
+        change === null
+        || base === null
+        || roomRefreshInFlight
+        || base.stamp.epoch !== stamp.epoch
+        || base.stamp.version < change.previousVersion
+        || base.stamp.version >= stamp.version
+      ) return false;
+      if (!base.room.players.some((player) => player.id === change.playerId)) return false;
+      const room: PublicRoom = {
+        ...base.room,
+        players: base.room.players.map((player) => (
+          player.id === change.playerId ? { ...player, isReady: change.isReady } : player
+        )),
+      };
+      delivered = { room, stamp };
+      handler({ type: 'room', room });
+      return true;
+    }
+
+    /** room-invalidated 하나. 이미 아는 판이면 건너뛰고, 준비 토글이면 고치고, 아니면 다시 읽는다 */
+    function roomInvalidated(value: Record<string, unknown>): void {
+      const stamp = parseRoomStamp(value);
+      if (stamp === null) {
+        requestRoomRefresh('any');
+        return;
+      }
+      if (deliveredCovers(stamp)) return;
+      if (applyReadyChange(stamp, value.readyChange)) return;
+      requestRoomRefresh(stamp);
     }
 
     function receive(data: unknown, connectionGeneration: number): void {
@@ -1265,7 +1436,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         return;
       }
       if (value.type === 'room-invalidated') {
-        requestRoomRefresh();
+        roomInvalidated(value);
         return;
       }
       if (value.type === 'removed') {
@@ -1276,6 +1447,12 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
       const hasViewportHeight = Object.hasOwn(value, 'viewportHeight');
       const hasSeat = Object.hasOwn(value, 'seatId');
+      // 공유 무대 좌표 (U31). 셋이 함께 맞을 때만 싣고, 어긋나면 무대만 버린다 — 화면 중심의 px로는 그린다
+      const stage = isMovementStageId(value.stage)
+        && validMovementStageUnit(value.stageX)
+        && validMovementStageUnit(value.stageY)
+        ? { stage: value.stage, stageX: value.stageX, stageY: value.stageY }
+        : null;
       if (
         value.type === 'movement'
         && typeof value.playerId === 'string'
@@ -1310,6 +1487,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             viewportWidth: value.viewportWidth as number,
             viewportHeight: value.viewportHeight as number,
           } : {}),
+          ...(stage ?? {}),
           sequence: value.sequence,
           connectionGeneration,
         });
@@ -1351,6 +1529,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       // cached new client sending payload fields that the legacy strict parser discards.
       movementChannel.supportsViewport = false;
       movementChannel.supportsSeat = false;
+      movementChannel.supportsStage = false;
       movementChannel.supportsStandingAnswer = false;
       try {
         const ticketBody = await request(`/v1/rooms/${encodeURIComponent(code)}/ws-ticket`, {
@@ -1365,6 +1544,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         );
         movementChannel.supportsSeat = movementChannel.supportsViewport
           && ticketBody.movementSeat === WAITING_ROOM_SEAT_CAPABILITY;
+        // 공유 무대 좌표(U31)는 viewport 크기를 받는 서버에서만 싣는다
+        movementChannel.supportsStage = movementChannel.supportsViewport
+          && ticketBody.movementStage === MOVEMENT_STAGE_CAPABILITY;
         // 모르는 메시지를 버리기만 하는 이전 API에도 초안은 보내지 않는다 (U13)
         movementChannel.supportsStandingAnswer = ticketBody.standingAnswer === STANDING_ANSWER_CAPABILITY;
 
@@ -1376,13 +1558,16 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         ]);
         socket = connected;
         movementChannel.socket = connected;
+        movementChannel.lastSentMovement = null;
         connected.addEventListener('open', () => {
           if (stopped || connected !== socket) return;
           clearTimers();
           setStandingDeliverable(movementChannel.supportsStandingAnswer);
           const latest = movementPayload(movementChannel);
           if (latest && connected.readyState === 1) {
-            connected.send(JSON.stringify(latest));
+            const line = JSON.stringify(latest);
+            connected.send(line);
+            movementChannel.lastSentMovement = line;
           }
           // 끊긴 사이의 초안을 다시 맞춘다 (U13). API를 다시 띄웠으면 메모리의 초안이 사라졌고, 끊긴 사이
           // 칸에서 내려섰으면 서버에 남은 앞 칸을 지워야 한다 — 마지막 초안(지우기 포함)을 다시 보낸다
@@ -1405,6 +1590,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             movementChannel.socket = null;
             movementChannel.supportsViewport = false;
             movementChannel.supportsSeat = false;
+            movementChannel.supportsStage = false;
             movementChannel.supportsStandingAnswer = false;
             // 다시 붙을 때까지 새 초안은 서버에 닿지 않는다. 기억했다가 다시 열리면 보낸다
             setStandingDeliverable(false);
@@ -1438,6 +1624,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       movementChannel.socket = null;
       movementChannel.supportsViewport = false;
       movementChannel.supportsSeat = false;
+      movementChannel.supportsStage = false;
       movementChannel.supportsStandingAnswer = false;
       movementChannel.latestStanding = null;
       movementChannel.latest = null;
