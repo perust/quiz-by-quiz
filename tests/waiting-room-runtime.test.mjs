@@ -274,6 +274,23 @@ test('이전 API에서 방장 준비가 거절되면 시작을 보내지 않고 
   waiting.hide();
 });
 
+test('이전 API에서 방장 준비 뒤 시작이 not-ready 로 거절되면 다시 읽은 방으로 상태 줄을 그린다', async () => {
+  // 방장 준비가 snapshot을 바꾼다. 시작 전의 snapshot으로 다시 읽으면 그 결과를 «지난 화면»으로 버려
+  // «다시 확인하는 중…»에 멈췄다
+  const legacy = (guestReady, hostReady = false) => snapshot(
+    [player(ME, '퀴즈왕', hostReady), player('guest', '민수', guestReady)],
+    { hostReadyImplicit: false },
+  );
+  await enter(legacy(true));
+  behaviour.setReady = async () => ({ ok: true, room: legacy(true, true) });
+  behaviour.startGame = async () => ({ ok: false, reason: 'not-ready' });
+  behaviour.getRoom = async () => legacy(false, true);
+  byId('waiting-start').click();
+  await settle();
+  assert.equal(byId('waiting-start-status').textContent, '준비 1/2명 · 민수 님 기다리는 중');
+  waiting.hide();
+});
+
 test('거절 뒤 다시 읽어 보니 방이 사라졌으면 그렇다고 말하고 상태 줄도 멈춰 두지 않는다', async () => {
   await enter(READY_ROOM);
   behaviour.startGame = async () => ({ ok: false, reason: 'not-ready' });

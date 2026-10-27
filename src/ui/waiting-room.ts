@@ -746,7 +746,9 @@ ${me.nickname}`;
         // 버튼이 켜진 사이 누가 준비를 풀었다. 이유는 시작 상태 줄이 말하고, 방을 다시
         // 읽어 그 줄과 버튼을 서버가 본 상태로 맞춘다.
         setStartStatus('그 사이 준비 상태가 바뀌었어요. 다시 확인하는 중…');
-        void reloadRoom(action);
+        // 이전 API 경로는 방장 준비로 snapshot이 이미 바뀌었으므로 지금의 방을 기준으로 다시 읽는다 —
+        // 시작 전의 snapshot을 넘기면 다시 읽은 방을 «지난 화면»으로 버려 이 말에 멈춘다
+        void reloadRoom(captureAction() ?? action);
         return;
       }
       if (!result.ok) {
