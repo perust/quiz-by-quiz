@@ -322,3 +322,25 @@ test('Enter 대상 하나: 조건은 walker 가 Enter 를 양보하는 «제 키
     assert.equal(look(litTile(true), env), look(litTile(false), env));
   }
 });
+
+test('상호작용: 어두운 HUD 의 버튼도 마우스 hover 가 보인다 — 퀴즈 HUD 의 ?·나가기, edge HUD 의 설정', () => {
+  // 30절의 HUD 규칙이 .arena__help:hover·보조 버튼 hover·.icon-button:hover 를 같은 명시도로 덮어, 마우스를 올려도
+  // 아무 표시가 없었다(U49 정리에서 발견). 터치 기기에는 여전히 남지 않는다
+  const hud = node('header.quiz-header', node('div.quiz-hud', quiz));
+  const appBar = node('nav.app-bar', node('body'));
+  const cases = [
+    ['?', (pseudo) => node(`button.arena__help${pseudo}`, hud)],
+    ['나가기', (pseudo) => node(`button.button.button--ghost${pseudo}`, hud)],
+    ['설정', (pseudo) => node(`button.icon-button${pseudo}`, appBar)],
+  ];
+  for (const [name, make] of cases) {
+    const idle = make('');
+    const hover = make(':hover');
+    assert.notEqual(valueOf(rules, hover, 'border-color', DESKTOP), valueOf(rules, idle, 'border-color', DESKTOP), `${name}: hover 선`);
+    assert.equal(valueOf(rules, hover, 'border-color', DESKTOP), 'var(--hud-text)', `${name}: 어두운 바탕 위 밝은 선`);
+    assert.equal(valueOf(rules, hover, 'border-color', MOBILE), valueOf(rules, idle, 'border-color', MOBILE), `${name}: 터치에는 남지 않는다`);
+  }
+  for (const [name, make] of cases.slice(0, 2)) {
+    assert.equal(valueOf(rules, make(':hover'), 'background', DESKTOP), 'var(--hud-hover)', `${name}: 옅은 빛 바탕`);
+  }
+});

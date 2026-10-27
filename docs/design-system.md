@@ -202,7 +202,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 
 | 표면 | 모양 |
 | --- | --- |
-| edge HUD | `--hud-bg` · `--hud-line` · `--radius-md` · `--elevation-2` (닉네임, 설정, 화면 입구, 퀴즈 상태) |
+| edge HUD | `--hud-bg` · `--hud-line` · `--radius-md` · `--elevation-2` (닉네임, 설정, 화면 입구, 퀴즈 상태). hover(마우스)는 선이 `--hud-text`로 밝아지고, 퀴즈 HUD 안의 투명 버튼(?·나가기)은 바탕에 `--hud-hover` 옅은 빛을 더한다 |
 | 상황 overlay | `--world-glass` · `--world-floor-line` · `--radius-lg` · `--elevation-1` (질문, 결과 블록, 랭킹, 로비, 설정, 대기실·온라인 퀴즈 채팅, 매치 상태 줄은 `--radius-md`) |
 | overlay 안의 칸 | `--world-glass-soft` 또는 의미색의 soft 토큰 (분야 칸, 필터, 체크 줄) — 카드 안에 카드를 넣지 않는다 |
 | 월드 | 캐릭터와 같은 큰 픽셀·제한 팔레트의 세로·가로 academy art + 화면별 veil. 홈은 가장 밝고, 읽기 화면은 얇은 veil을 더한다. arena와 캐릭터 칸은 월드가 비치는 유리 바닥이다. art 는 **화면 크기**로 맞춘다(U50) — 폭 = 화면 폭과 «화면 높이(lvh) × 가로세로비» 중 큰 쪽, 위에 붙여 화면에 고정(`fixed`). `cover` 는 캔버스로 퍼진 body 배경에서 문서 전체 높이를 덮어 긴 화면일수록 그림이 확대·잘렸다. fixed 를 따르지 않는 브라우저도 첫 화면은 홈과 같은 구도이고 그 아래는 `--world-sky-2` 와 veil 이 잇는다 |
