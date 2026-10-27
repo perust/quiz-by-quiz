@@ -172,13 +172,14 @@
                home.js가 리스너를 단 뒤 열어준다. -->
           <div class="home-primary-actions">
             <button type="button" class="challenge-card challenge-card--online" id="open-online"
-                    aria-label="온라인, 친구와 함께 2명부터" disabled>
+                    aria-label="온라인, 방을 만들거나 참가해요" disabled>
               <span class="challenge-card__icon" data-icon="users" aria-hidden="true"></span>
               <span class="challenge-card__body">
                 <span class="challenge-card__name">온라인</span>
-                <!-- 혼자서는 시작할 수 없다는 것을 누르기 전에 알린다. 로비를 불러오는 동안
-                     home.js가 같은 자리에 «연결 중…»을 띄운다 -->
-                <span class="challenge-card__desc" id="open-online-desc">친구와 함께 · 2명부터</span>
+                <!-- 몇 명부터 여는지를 누르기 전에 알린다. 서버에 묻기 전에는 어느 API든 맞는 이 말이고,
+                     세션이 알려 준 시작 인원으로 home.js가 «혼자서도 · 친구와 함께»(또는 이전 API의
+                     «친구와 함께 · 2명부터»)로 바꾼다. 로비를 불러오는 동안은 같은 자리에 «연결 중…» -->
+                <span class="challenge-card__desc" id="open-online-desc">방을 만들거나 참가해요</span>
               </span>
             </button>
             <button type="button" class="challenge-card challenge-card--all" id="start-all" disabled>
@@ -330,6 +331,9 @@
           </div>
         </div>
         <p class="arena__hint" aria-hidden="true">
+          <!-- 시간이 끝나면 선 칸이 답인 판(U13, snapshot의 standingAnswers)에서만 보인다. 이전 API의 판은
+               직접 낸 답만 세므로 숨긴다 — online-quiz.js 가 판마다 고른다 -->
+          <span class="arena__hint-rule" id="online-arena-hint-rule" hidden>보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답</span>
           <span class="arena__hint-key">방향키·WASD로 움직이고 Enter/Space로 제출하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 제출하세요</span>
         </p>
@@ -544,7 +548,7 @@
           <div>
             <p class="online-block__eyebrow">새로운 퀴즈 파티</p>
             <h2 class="online-block__title" id="create-room-title">방 만들기</h2>
-            <p class="online-block__caption">분야와 인원, 문항 시간을 정하고 친구를 기다려요.</p>
+            <p class="online-block__caption">분야와 인원, 문항 시간을 정해 방을 열어요.</p>
           </div>
         </div>
         <form class="room-form" id="create-form" novalidate>
@@ -563,8 +567,9 @@
             <select class="room-form__input" id="create-capacity"
                     aria-describedby="create-capacity-help"></select>
           </div>
-          <!-- «12명»이 모여야 시작하는 줄 알지 않게, 정원과 시작 인원을 나눠 말한다 -->
-          <p class="room-form__help" id="create-capacity-help">2명부터 시작할 수 있어요</p>
+          <!-- «12명»이 모여야 시작하는 줄 알지 않게, 정원과 시작 인원을 나눠 말한다. 서버에 묻기 전에는 어느
+               API든 맞는 이 말이고, online.js가 세션이 알려 준 시작 인원으로 고친다(혼자서도 / 이전 API는 2명부터) -->
+          <p class="room-form__help" id="create-capacity-help">최대 인원까지 들어올 수 있어요</p>
           <div class="room-form__row">
             <label class="room-form__label" for="create-question-time">문항 시간</label>
             <select class="room-form__input" id="create-question-time"></select>
@@ -910,10 +915,20 @@
   <div class="dialog-backdrop" id="online-help-dialog" hidden>
     <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="online-help-dialog-title">
       <h2 class="dialog__title" id="online-help-dialog-title">온라인 캐릭터 퀴즈 조작법</h2>
-      <!-- 혼자 하는 퀴즈와 규칙이 다르다: 온라인에서는 칸에 서 있기만 하면 답이 나가지 않는다 -->
+      <!-- 답하는 규칙은 판이 정한다(snapshot의 standingAnswers, U13). 지금 판은 혼자 하는 퀴즈와 같다 —
+           시간이 끝나면 선 칸이 답이다. 이 필드를 모르는 이전 API의 판은 직접 낸 답만 센다.
+           online-quiz.js 가 판마다 한쪽만 보인다 -->
       <p class="dialog__body">
-        캐릭터를 답 칸으로 움직인 뒤 <strong>선택 버튼이나 Enter · Space를 눌러야 제출</strong>돼요.
-        칸 위에 서 있기만 하면 제출되지 않아요. 바닥 칸이나 위의 보기를 직접 눌러도 바로 제출돼요.
+        <span id="online-help-rule-standing" hidden>
+          <strong>시간이 다 되면 그때 밟고 있는 칸이 답</strong>이 돼요.
+          십자 틈에 서 있으면 아무것도 고르지 않은 것이라 시간 초과가 돼요.
+          기다리지 않고 내려면 칸 위에서 선택 버튼이나 Enter · Space를 눌러요.
+        </span>
+        <span id="online-help-rule-submit">
+          캐릭터를 답 칸으로 움직인 뒤 <strong>선택 버튼이나 Enter · Space를 눌러야 제출</strong>돼요.
+          칸 위에 서 있기만 하면 제출되지 않아요.
+        </span>
+        바닥 칸이나 위의 보기를 직접 눌러도 바로 제출돼요.
         순위는 맞힌 개수로만 정해요. 빨리 답해도 점수는 같아요.
         문항 시간은 방장이 방마다 20초나 40초로 정해요.
       </p>

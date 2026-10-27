@@ -236,6 +236,8 @@ class FakeRepository:
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: Any | None = None,
     ) -> bool:
         # 이 가짜 방에는 진행 중인 판이 없다.
         return False
@@ -354,7 +356,13 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json() == {"playerId": str(PLAYER_ID)}
+    # 방 snapshot이 없는 화면(홈·빈 로비·「게임 방법」)도 이 API의 규칙을 말하도록 함께 알린다 —
+    # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이다(standingAnswers, U13)
+    assert response.json() == {
+        "playerId": str(PLAYER_ID),
+        "minPlayers": 1,
+        "standingAnswers": True,
+    }
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text
 
@@ -716,7 +724,7 @@ class SharedAddressRoomsRepository(RotatingIdentityRepository):
     async def set_ready(self, actor_id: UUID, code: str, is_ready: bool) -> RoomView:
         return self.room
 
-    async def advance_expired_matches(self) -> list[Any]:
+    async def advance_expired_matches(self, *, standing_answers: Any | None = None) -> list[Any]:
         return []
 
     async def submit_answer(
@@ -727,6 +735,7 @@ class SharedAddressRoomsRepository(RotatingIdentityRepository):
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: Any | None = None,
     ) -> Any:
         if self.memberships.get(actor_id) != code:
             self.foreign_answers += 1

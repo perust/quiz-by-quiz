@@ -97,6 +97,28 @@ room read and WebSocket ticket for the same room are refused with `kicked` for
 or when the room is deleted, and it relies on the same single-worker contract —
 a second worker would not see it.
 
+Standing-answer drafts (U13) are a third in-process record. When a match
+snapshot carries `standingAnswers: true` and the WebSocket ticket advertises
+`standingAnswer: "standing-answer-v1"`, the browser sends the tile its character
+stands on after it really moved (`{"type": "standing-answer", ...}`, debounced,
+`choiceIndex: null` when it steps off). The API keeps one draft per room+player,
+never broadcasts it, and drops drafts after 90 seconds, beyond 4,096 records
+(oldest first), when the question advances or the match ends, and on leave,
+removal or room deletion. Drafts never count toward "everyone answered"; when a
+deadline (or an absent player's fill) closes a question, a draft received before
+`deadline_at` for that match and position is stored as that player's normal
+graded answer (`timed_out = false`, full question time) instead of a timeout. An
+API restart loses the drafts: browsers resend their latest draft when the socket
+reconnects, otherwise the old timeout applies. Drafts travel only over the room
+socket, so a browser whose socket is down at the deadline (dropped and
+reconnecting, or unable to get a ticket) cannot update its draft: the API grades
+the last draft it received before the deadline — an earlier tile if the player
+moved during the outage — or records the timeout if it has none. The browser
+tells the player to submit explicitly while its socket is down. This needs no migration. Rooms
+and the session response also carry `minPlayers: 1` — the host alone may start a
+match; a frontend that sees no such field treats the API as the previous
+two-player one.
+
 Persistent growth is bounded by a two-hour player lifetime, an independent
 60-second resource cleanup loop, and lobby materialization of no more than
 100 complete rooms. Parent rooms are selected before member expansion so a

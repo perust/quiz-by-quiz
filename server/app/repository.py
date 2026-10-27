@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
@@ -151,6 +152,33 @@ class ExpiredMatchAdvance:
 
     code: str
     finished: bool
+    # 넘긴 판과 넘기기 전의 문항 순서. API가 그 문항까지의 발밑 칸 초안을 버린다 (U13)
+    match_id: UUID | None = None
+    position: int | None = None
+
+
+@dataclass(frozen=True)
+class StandingAnswer:
+    """시간이 끝나면 답으로 세는 발밑 칸 (U13, 혼자 하기와 같은 규칙).
+
+    화면이 실제로 움직인 뒤 선 칸을 방 소켓으로 보낸 초안이다. API의 메모리에만 있고(presence와
+    같은 단일 worker 계약) DB에는 마감이 그 사람의 빈 답을 채울 때 보통 답으로만 남는다.
+    """
+
+    choice_index: int
+    # API가 받은 시각(UTC). 마감 뒤에 닿은 초안은 세지 않는다
+    received_at: datetime
+
+
+class StandingAnswerSource(Protocol):
+    """마감이 빈 답을 채울 때 묻는 발밑 칸 초안. 이 판·이 문항의 것만 돌려준다."""
+
+    def for_question(
+        self,
+        code: str,
+        match_id: UUID,
+        position: int,
+    ) -> Mapping[UUID, StandingAnswer]: ...
 
 
 @dataclass(frozen=True)
@@ -304,12 +332,15 @@ class RoomsRepository(Protocol):
 
     # absent_player_ids: 유예를 넘겨 끊긴 참가자. «모두 답했다»의 분모에서 빠진다 (U32).
     # 부르는 쪽(API)이 지금 요청한 사람은 넣지 않는다 — 요청하는 사람은 끊긴 사람이 아니다.
+    # standing_answers: 발밑 칸 초안 (U13). 마감이 빈 답을 채울 때만 묻고, «모두 답했다»에는
+    # 세지 않는다.
     async def get_match(
         self,
         actor_id: UUID,
         code: str,
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchRead: ...
 
     async def submit_answer(
@@ -320,16 +351,23 @@ class RoomsRepository(Protocol):
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchSubmission: ...
 
     async def cleanup_expired_resources(self) -> None: ...
 
-    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]: ...
+    async def advance_expired_matches(
+        self,
+        *,
+        standing_answers: StandingAnswerSource | None = None,
+    ) -> list[ExpiredMatchAdvance]: ...
 
     async def advance_past_absent_players(
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool: ...
 
     async def is_member(self, actor_id: UUID, code: str) -> bool: ...

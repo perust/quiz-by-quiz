@@ -1,4 +1,5 @@
 import type { PublicPlayer, PublicRoom } from '../online/adapter.js';
+import { roomMinPlayers } from '../online/rules.js';
 
 export interface WaitingRoomActionOwnership {
   request: number;
@@ -25,6 +26,7 @@ export interface WaitingRoomControls {
  *
  * - 방장(시작을 누르는 사람)은 언제나 센다. 시작 요청이 곧 방장의 준비다
  * - 유예를 넘겨 끊긴 사람(`connected: false`)은 기다리지 않고 판에도 넣지 않는다
+ * - 세는 사람이 방의 `minPlayers`(지금 API·로컬 방은 1 — 방장 혼자서도 연다, 이전 API는 2) 이상이어야 한다
  */
 function startRoster(room: PublicRoom, hostId: string): {
   counted: PublicPlayer[];
@@ -50,7 +52,7 @@ export function waitingRoomControls(room: PublicRoom, playerId: string): Waiting
   const canStart = room.isMine
     && joined
     && room.status !== 'playing'
-    && roster.counted.length >= 2
+    && roster.counted.length >= roomMinPlayers(room)
     && roster.waiting.length === 0;
 
   return {
@@ -106,12 +108,20 @@ export function waitingRoomStartStatus(
   }
 
   const { counted, waiting, offline } = startRoster(room, playerId);
-  if (counted.length < 2) {
+  const minimum = roomMinPlayers(room);
+  if (counted.length < minimum) {
     return offline.length > 0
-      ? `${who(offline)} 연결이 끊겼어요. 최소 2명이 필요해요.`
+      ? `${who(offline)} 연결이 끊겼어요. 최소 ${minimum}명이 필요해요.`
       : canInvite
-        ? '최소 2명이 필요해요. 초대 링크로 친구를 불러 보세요.'
-        : '최소 2명이 필요해요.';
+        ? `최소 ${minimum}명이 필요해요. 초대 링크로 친구를 불러 보세요.`
+        : `최소 ${minimum}명이 필요해요.`;
+  }
+  // 방장 혼자서도 여는 방 (minPlayers 1). 혼자라는 것이 막힘이 아니라는 것을 먼저 말한다
+  if (counted.length === 1) {
+    const alone = offline.length > 0
+      ? `${who(offline)}은 연결이 끊겨 이번 판에서 빠져요. 혼자서도 시작할 수 있어요.`
+      : '혼자서도 시작할 수 있어요.';
+    return canInvite && offline.length === 0 ? `${alone} 초대 링크로 친구를 불러도 돼요.` : alone;
   }
   if (waiting.length > 0) {
     return `준비 ${counted.length - waiting.length}/${counted.length}명 · ${who(waiting)} 기다리는 중`;

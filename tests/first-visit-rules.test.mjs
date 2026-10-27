@@ -72,9 +72,11 @@ test('무대 아래 안내: 규칙 줄이 먼저 오고, 조작 줄은 입력 �
   const html = await source('index.html');
   const quiz = html.slice(html.indexOf('data-screen="quiz"'), html.indexOf('data-screen="online-quiz"'));
   assert.match(quiz, /<p class="arena__hint" id="arena-hint" aria-hidden="true">\s*<span class="arena__hint-rule" id="arena-hint-rule">보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답<\/span>\s*<span class="arena__hint-key">[^<]*<\/span>\s*<span class="arena__hint-touch">[^<]*<\/span>\s*<\/p>/);
-  // 온라인은 규칙이 다르다(선택을 눌러야 제출). 로컬 규칙 줄을 옮겨 심지 않는다
+  // 온라인은 판마다 다르다 (U13): 시간이 끝나면 선 칸이 답인 판(snapshot의 standingAnswers)에서만 같은 규칙
+  // 줄을 보이고, 직접 낸 답만 세는 이전 API의 판에서는 숨긴 채 둔다(online-quiz.ts의 renderAnswerRule)
   const online = html.slice(html.indexOf('data-screen="online-quiz"'), html.indexOf('data-screen="online-result"'));
-  assert.doesNotMatch(online, /arena__hint-rule/);
+  assert.match(online, /<span class="arena__hint-rule" id="online-arena-hint-rule" hidden>보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답<\/span>/);
+  assert.equal(online.match(/arena__hint-rule/g).length, 1, '규칙 줄은 하나뿐이다');
 });
 
 test('처음 세 판(data-pinned)은 짧은 touch·좁은 화면에서도 규칙 줄을 남기고 조작 줄만 접는다', () => {

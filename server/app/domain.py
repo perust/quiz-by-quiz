@@ -9,6 +9,10 @@ ALLOWED_CATEGORIES = frozenset({"history", "science", "geography", "general", "a
 # 방 전체가 마감까지 멈춘다. migration 011의 CHECK와 같은 목록이다.
 DEFAULT_QUESTION_TIME_MS = 20_000
 ALLOWED_QUESTION_TIMES_MS = frozenset({DEFAULT_QUESTION_TIME_MS, 40_000})
+# 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 방장 혼자서도 연다 — 혼자 하고 싶은
+# 사람도 온라인 방을 만들어 푼다(소유자 방향: 언젠가 혼자 하기를 온라인 방 하나로 모은다). 방·세션
+# 응답이 `minPlayers`로 싣는다. 이 값을 모르는 이전 API는 둘이었다(화면은 없으면 2로 읽는다).
+MIN_MATCH_PLAYERS = 1
 ROOM_NAME_MAX_UNITS = 16
 ROOM_PASSWORD_MIN_UNITS = 4
 ROOM_PASSWORD_MAX_UNITS = 12

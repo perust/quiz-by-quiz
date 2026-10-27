@@ -158,6 +158,8 @@ function room(code, name, changes = {}) {
 
 let listRooms = async () => [];
 let createRoom = async () => ({ ok: false, message: '만들지 않는다' });
+/** 세션이 알려 준 규칙. 기본은 묻지 않은 것(null)이다 */
+let onlineRules = null;
 const entered = [];
 const lobby = createOnlineScreen({
   roomStore: {
@@ -166,6 +168,8 @@ const lobby = createOnlineScreen({
     me: () => 'me',
     listRooms: () => listRooms(),
     createRoom: (spec) => createRoom(spec),
+    // 세션이 알려 준 규칙(U13·혼자 여는 방). 기본은 묻지 않은 것처럼 둔다 — 빈 로비는 이전 API의 말이다
+    onlineRules: () => onlineRules,
   },
   onHome: () => {},
   onPractice: () => {},
@@ -198,6 +202,31 @@ test('「다시 시도」가 통해 오류 칸이 접히면 포커스는 <body>�
   assert.equal(document.activeElement, firstRoomButton());
   assert.match(document.activeElement.getAttribute('aria-label'), /참가$/);
   lobby.hide();
+});
+
+test('목록을 읽지 못해 시작 인원을 모르면 만들기 폼의 인원 도움말은 어느 API든 맞는 말이다', async () => {
+  // 세션을 열지 못했다(목록 GET 전의 세션 PUT이 실패했다). 그래도 동작 카드로 만들기 폼은 열린다
+  listRooms = async () => { throw new Error('Failed to fetch'); };
+  screen.hidden = false;
+  await lobby.show('slime-blue');
+  assert.equal(byId('room-empty-action').dataset.action, 'retry');
+  const help = byId('create-capacity-help');
+  assert.equal(help.textContent, '최대 인원까지 들어올 수 있어요');
+  assert.doesNotMatch(help.textContent, /명부터|혼자서도/, '이전 API는 둘부터, 지금 API는 혼자서도 — 둘 다 말하지 않는다');
+  lobby.hide();
+
+  // 세션이 규칙을 알려 주면 그 규칙을 말한다
+  for (const [rules, text] of [
+    [{ minPlayers: 1, standingAnswers: true }, '혼자서도 바로 시작할 수 있어요'],
+    [{ minPlayers: 2, standingAnswers: false }, '2명부터 시작할 수 있어요'],
+  ]) {
+    onlineRules = rules;
+    listRooms = async () => [];
+    await lobby.show('slime-blue');
+    assert.equal(help.textContent, text);
+    lobby.hide();
+  }
+  onlineRules = null;
 });
 
 test('다시 시도가 또 실패하거나 방이 여전히 없으면 같은 자리의 버튼에 포커스를 둔다', async () => {

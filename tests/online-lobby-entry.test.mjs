@@ -270,7 +270,7 @@ test('초대 링크는 부팅 때 한 번 읽어 주소에서 지우고, 로비�
   assert.match(online, /result\.reason === 'need-password' \|\| result\.reason === 'wrong-password'[\s\S]*?el\.joinPassword\.focus/);
 });
 
-test('홈의 온라인 입구는 2명부터라는 보조 줄을 보이고, 로비를 불러오는 동안 바쁨을 알린다 (U29·U34)', async () => {
+test('홈의 온라인 입구는 몇 명부터인지 보조 줄로 말하고, 로비를 불러오는 동안 바쁨을 알린다 (U29·U34)', async () => {
   const [html, home, app] = await Promise.all([
     source('../index.html'),
     source('../src/ui/home.ts'),
@@ -279,8 +279,12 @@ test('홈의 온라인 입구는 2명부터라는 보조 줄을 보이고, 로�
   const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
   const openOnline = between(app, '  async function openOnline(', '  async function openWaitingRoom');
 
-  assert.match(html, /id="open-online"\s+aria-label="온라인, 친구와 함께 2명부터"/);
-  assert.match(html, /<span class="challenge-card__desc" id="open-online-desc">친구와 함께 · 2명부터<\/span>/);
+  // 서버에 묻기 전에는 어느 API든 맞는 말이다. 세션이 알려 준 시작 인원으로 home.ts 가 바꾼다
+  assert.match(html, /id="open-online"\s+aria-label="온라인, 방을 만들거나 참가해요"/);
+  assert.match(html, /<span class="challenge-card__desc" id="open-online-desc">방을 만들거나 참가해요<\/span>/);
+  assert.match(home, /let onlineEntry = onlineEntryCopy\(null\);/);
+  assert.match(home, /setOnlineMinPlayers\(minPlayers\) \{\s*onlineEntry = onlineEntryCopy\(minPlayers\);\s*if \(onlineBusy\) return;/);
+  assert.match(app, /homeScreen\.setOnlineMinPlayers\(roomStore\.onlineRules\(\)\?\.minPlayers \?\? null\);\s*homeScreen\.render\(\{/);
   for (const env of [DESKTOP, MOBILE, NARROW]) {
     assert.equal(valueOf(rules, nodeFromHtml(html, 'open-online-desc'), 'display', env), 'block', '온라인 보조 줄은 보인다');
   }
@@ -353,13 +357,17 @@ test('게임 중인 방은 배지와 막힌 참가 버튼으로 미리 알린다
   assert.match(theme, /\.room-item__status::before \{[\s\S]*?var\(--i-hourglass\)/);
 });
 
-test('방 만들기는 «{닉네임}의 방»으로 채워 두고, 인원은 «최대 인원»과 2명부터라는 도움말로 말한다 (U41)', async () => {
+test('방 만들기는 «{닉네임}의 방»으로 채워 두고, 인원은 «최대 인원»과 시작 인원 도움말로 말한다 (U41)', async () => {
   const [html, online] = await Promise.all([source('../index.html'), source('../src/ui/online.ts')]);
   const create = between(html, 'id="create-form"', '</form>');
 
   assert.match(create, /<label class="room-form__label" for="create-capacity">최대 인원<\/label>/);
   assert.match(create, /id="create-capacity"\s+aria-describedby="create-capacity-help"/);
-  assert.match(create, /<p class="room-form__help" id="create-capacity-help">2명부터 시작할 수 있어요<\/p>/);
+  // 정적 글은 서버에 묻기 전의 말이라 어느 API든 맞아야 한다(시작 인원을 말하지 않는다). 목록을 읽어 세션
+  // 규칙을 알면 online.ts 가 고친다(혼자서도 / 2명부터)
+  assert.match(create, /<p class="room-form__help" id="create-capacity-help">최대 인원까지 들어올 수 있어요<\/p>/);
+  assert.doesNotMatch(create, /id="create-capacity-help">[^<]*명부터/);
+  assert.match(online, /el\.createCapacityHelp\.textContent = capacityHelpText\(roomStore\.onlineRules\(\)\?\.minPlayers \?\? null\);/);
   assert.doesNotMatch(create, /placeholder="같이 풀어요"/);
   assert.match(online, /suggestedRoomName = `\$\{getPlayer\(\)\.nickname\}의 방`\.slice\(0, ROOM_NAME_MAX_LENGTH\);/);
   assert.match(online, /if \(current\.trim\(\) !== '' && current !== suggestedRoomName\) return;/);

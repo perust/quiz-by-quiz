@@ -11,6 +11,7 @@ import { shortHomeStartPoint } from './walker-geometry.js';
 import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
+import { onlineEntryCopy } from '../online/rules.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -66,6 +67,13 @@ export interface HomeScreen {
    * 「연결 중…」을 보이고, 다시 눌러도 요청을 겹쳐 보내지 않는다.
    */
   setOnlineBusy(busy: boolean): void;
+
+  /**
+   * 온라인 입구 보조 줄이 말할 시작 인원. 세션을 연 뒤에야 안다 — 묻기 전(null)에는 어느 API든 맞는
+   * 말(«방을 만들거나 참가해요»)이고, 방장 혼자서도 여는 API면 «혼자서도 · 친구와 함께», 둘부터인 이전
+   * API면 «친구와 함께 · 2명부터»다. 버튼 이름도 같이 바꾼다. 바쁨 표시 중이면 거둘 때 쓴다.
+   */
+  setOnlineMinPlayers(minPlayers: number | null): void;
 
   /** 아직 들어가 있는 방이 있으면 dock 맨 위에 복귀 줄을 띄운다. null 이면 거둔다 (U35) */
   setRoomNote(room: HomeRoomNote | null): void;
@@ -172,9 +180,9 @@ export function createHomeScreen({
   let noteVisible = false;
   /** 로비를 불러오는 중인가. 그동안의 클릭은 같은 요청을 겹쳐 보낼 뿐이다 */
   let onlineBusy = false;
-  // 쉬는 상태의 이름과 보조 줄은 HTML 이 정한다. 바쁨 표시를 거둘 때 그대로 되돌린다
-  const onlineLabel = el.openOnline.getAttribute('aria-label') ?? '온라인';
-  const onlineDesc = el.openOnlineDesc.textContent ?? '';
+  // 쉬는 상태의 이름과 보조 줄. HTML 은 서버에 묻기 전의 말이고, 세션이 알려 준 시작 인원으로 바뀐다.
+  // 바쁨 표시를 거둘 때 이것으로 되돌린다
+  let onlineEntry = onlineEntryCopy(null);
   /** 복귀 줄이 가리키는 방 코드 */
   let roomNoteCode: string | null = null;
 
@@ -388,10 +396,17 @@ export function createHomeScreen({
     setOnlineBusy(busy) {
       onlineBusy = busy;
       // 색이 아니라 글자로 알린다. 버튼 이름도 함께 바꿔 스크린리더에도 같은 말이 간다
-      el.openOnlineDesc.textContent = busy ? '연결 중…' : onlineDesc;
-      el.openOnline.setAttribute('aria-label', busy ? '온라인, 연결 중' : onlineLabel);
+      el.openOnlineDesc.textContent = busy ? '연결 중…' : onlineEntry.desc;
+      el.openOnline.setAttribute('aria-label', busy ? '온라인, 연결 중' : onlineEntry.label);
       if (busy) el.openOnline.setAttribute('aria-busy', 'true');
       else el.openOnline.removeAttribute('aria-busy');
+    },
+
+    setOnlineMinPlayers(minPlayers) {
+      onlineEntry = onlineEntryCopy(minPlayers);
+      if (onlineBusy) return;
+      el.openOnlineDesc.textContent = onlineEntry.desc;
+      el.openOnline.setAttribute('aria-label', onlineEntry.label);
     },
 
     setRoomNote(room) {

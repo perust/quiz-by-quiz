@@ -240,8 +240,16 @@ function toPublic(room: Room): PublicRoom {
     inMatch: false,
     // 로컬 `startGame`은 처음부터 방장의 시작 요청을 방장의 준비로 본다 (U28)
     hostReadyImplicit: true,
+    // 서버와 같은 시작 인원이다 — 방장 혼자서도 연다. 이 브라우저 안의 방은 늘 나 혼자라
+    // 이 규칙이 있어야 「게임 시작」이 방 설정으로 로컬 한 판을 연다
+    minPlayers: LOCAL_ONLINE_RULES.minPlayers,
   };
 }
+
+/**
+ * 로컬 방의 규칙. 방장 혼자서도 열고(서버와 같다), 그 판은 로컬 퀴즈라 시간이 끝나면 선 칸이 답이다.
+ */
+const LOCAL_ONLINE_RULES = { minPlayers: 1, standingAnswers: true } as const;
 
 export const localRooms = {
   /** 이 저장소가 진짜 네트워크인지. 화면이 안내 문구를 정할 때 쓴다 */
@@ -501,8 +509,7 @@ export const localRooms = {
     if (!room) return { ok: false, reason: 'not-found' };
     if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
     // 서버와 같은 규칙: 방장의 시작 요청이 곧 방장의 준비이고, 나머지는 모두 준비해야 한다.
-    // (최소 인원은 화면이 미리 잠근다. 로컬 방에는 이 브라우저의 나뿐이라 서버처럼 막으면
-    // 개발용 방에서 판을 열 길이 사라진다.)
+    // 세는 사람은 방장 혼자여도 된다(`minPlayers` 1) — 이 브라우저의 방에는 나뿐이다.
     if (room.players.some((player) => player.id !== room.hostId && !player.isReady)) {
       return { ok: false, reason: 'not-ready' };
     }
@@ -547,6 +554,16 @@ export const localRooms = {
   /** local room에는 server-authoritative match가 없으므로 snapshot을 꾸며 내지 않는다. */
   async getMatch() {
     return null;
+  },
+
+  /** 서버 권위 판이 없으니 발밑 칸 초안을 받을 곳도 없다. 로컬 판은 제 arena가 직접 센다 */
+  sendStandingAnswer(): boolean {
+    return false;
+  },
+
+  /** 묻지 않아도 안다 — 로컬 방은 늘 같은 규칙이다 */
+  onlineRules() {
+    return { ...LOCAL_ONLINE_RULES };
   },
 
   /**

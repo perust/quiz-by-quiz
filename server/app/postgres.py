@@ -12,7 +12,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from .domain import DEFAULT_CHARACTER_ID, ValidatedPlayer, ValidatedRoom
+from .domain import DEFAULT_CHARACTER_ID, MIN_MATCH_PLAYERS, ValidatedPlayer, ValidatedRoom
 from .question_catalog import (
     RECENT_QUESTION_MEMORY,
     CatalogError,
@@ -43,6 +43,7 @@ from .repository import (
     RoomFull,
     RoomNotFound,
     RoomView,
+    StandingAnswerSource,
     TokenConflict,
 )
 
@@ -992,13 +993,15 @@ class PostgresRoomsRepository:
                 )
                 # 방장의 시작 요청이 곧 방장의 준비다. 유예를 넘겨 끊긴 참가자는
                 # 기다리지도, 판에 넣지도 않는다(멤버십과 재입장 유예는 그대로).
+                # 세는 사람은 방장 혼자여도 된다(MIN_MATCH_PLAYERS) — 혼자 온 사람도 방을
+                # 만들어 푼다.
                 members = [
                     member
                     for member in await members_cursor.fetchall()
                     if member["player_id"] == actor_id
                     or member["player_id"] not in absent_player_ids
                 ]
-                if len(members) < 2 or any(
+                if len(members) < MIN_MATCH_PLAYERS or any(
                     not bool(member["is_ready"])
                     for member in members
                     if member["player_id"] != actor_id
@@ -1112,6 +1115,7 @@ class PostgresRoomsRepository:
         code: str,
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchRead:
         async with self._pool.connection() as connection:
             async with connection.transaction():
@@ -1122,6 +1126,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
                 return MatchRead(
                     match=await self._match_view(connection, actor_id, match["id"]),
@@ -1136,6 +1141,7 @@ class PostgresRoomsRepository:
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchSubmission:
         if type(position) is not int or position < 1:
             raise RepositoryFailure("answer position is invalid")
@@ -1153,6 +1159,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 ):
                     raise MatchPositionMismatch
                 if match["state"] != "running" or int(match["current_position"]) != position:
@@ -1229,13 +1236,18 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
                 view = await self._match_view(connection, actor_id, match["id"])
                 if view is None:
                     raise RepositoryFailure("match answer view could not be read")
                 return MatchSubmission(match=view, answer=feedback, advanced=advanced)
 
-    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
+    async def advance_expired_matches(
+        self,
+        *,
+        standing_answers: StandingAnswerSource | None = None,
+    ) -> list[ExpiredMatchAdvance]:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 cursor = await connection.execute(
@@ -1259,9 +1271,18 @@ class PostgresRoomsRepository:
                         match["state"] == "revealing"
                         and int(match["current_position"]) >= int(match["total_questions"])
                     )
-                    if await self._advance_locked_match(connection, match):
+                    if await self._advance_locked_match(
+                        connection,
+                        match,
+                        standing_answers=standing_answers,
+                    ):
                         advanced.append(
-                            ExpiredMatchAdvance(code=str(match["code"]), finished=finishing)
+                            ExpiredMatchAdvance(
+                                code=str(match["code"]),
+                                finished=finishing,
+                                match_id=match["id"],
+                                position=int(match["current_position"]),
+                            )
                         )
                 return advanced
 
@@ -1269,6 +1290,8 @@ class PostgresRoomsRepository:
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool:
         """누가 막 유예를 넘겨 끊겼을 때, 남은 사람이 이미 다 답했으면 마감을 기다리지 않는다.
 
@@ -1300,6 +1323,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
@@ -1375,6 +1399,7 @@ class PostgresRoomsRepository:
         match: Mapping[str, Any],
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool:
         state = str(match["state"])
         if state not in {"running", "revealing"}:
@@ -1450,7 +1475,16 @@ class PostgresRoomsRepository:
 
         # 마감이 지났거나 끊긴 사람을 빼고 앞당겼으면, 답이 없는 참가자는 시간 초과로 채운다.
         # 시간 초과는 그 판의 문항 시간(20초·40초)을 다 쓴 것으로 남는다.
+        # 그 전에 발밑 칸 초안이 있는 사람은 그 칸을 답으로 남긴다 (U13, 혼자 하기와 같은 규칙) —
+        # «시간이 끝나면 선 칸이 답»이다. 초안은 «모두 답했다»에 세지 않았으므로 여기서만 쓴다.
         if expired or absent_player_ids:
+            if standing_answers is not None:
+                await self._record_standing_answers(
+                    connection,
+                    match,
+                    current_position,
+                    standing_answers,
+                )
             await connection.execute(
                 """
                 INSERT INTO quiz_online.match_answers (
@@ -1479,6 +1513,59 @@ class PostgresRoomsRepository:
             (_REVEAL_DURATION, match_id),
         )
         return await revealed.fetchone() is not None
+
+    async def _record_standing_answers(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match: Mapping[str, Any],
+        position: int,
+        standing_answers: StandingAnswerSource,
+    ) -> None:
+        """답이 없는 참가자의 발밑 칸 초안을 그 문항의 답으로 남긴다 (U13).
+
+        채점은 보통 답과 같고(정답이면 10점), 시간 초과가 아니며, 쓴 시간은 그 판의 문항 시간을
+        다 쓴 것이다 — 로컬에서 시간이 끝날 때 선 칸을 낸 답과 같다. 잠근 판에서 다시 본다: 이 판·
+        이 문항이고 판의 참가자이며 아직 답이 없고(먼저 낸 답이 이긴다) 마감 전에 받은 초안만 쓴다.
+        """
+        drafts = standing_answers.for_question(str(match["code"]), match["id"], position)
+        player_ids: list[UUID] = []
+        choices: list[int] = []
+        received: list[datetime] = []
+        for player_id, draft in drafts.items():
+            if type(draft.choice_index) is not int or draft.choice_index not in range(4):
+                continue
+            player_ids.append(player_id)
+            choices.append(draft.choice_index)
+            received.append(draft.received_at)
+        if not player_ids:
+            return
+        await connection.execute(
+            """
+            INSERT INTO quiz_online.match_answers (
+                match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
+            )
+            SELECT
+                match.id,
+                match.current_position,
+                player.player_id,
+                draft.choice_index,
+                draft.choice_index = question.answer_index,
+                false,
+                match.question_time_ms
+            FROM unnest(%s::uuid[], %s::smallint[], %s::timestamptz[])
+                AS draft(player_id, choice_index, received_at)
+            JOIN quiz_online.matches match ON match.id = %s
+            JOIN quiz_online.match_players player
+              ON player.match_id = match.id AND player.player_id = draft.player_id
+            JOIN quiz_online.match_questions question
+              ON question.match_id = match.id AND question.position = match.current_position
+            WHERE match.state = 'running'
+              AND match.current_position = %s
+              AND draft.received_at <= match.deadline_at
+            ON CONFLICT (match_id, position, player_id) DO NOTHING
+            """,
+            (player_ids, choices, received, match["id"], position),
+        )
 
     async def _match_view(
         self,

@@ -976,8 +976,10 @@
     const 온라인입구 = document.getElementById('open-online');
     결과.push({
       자리: '로비', 이름: '홈 온라인 입구의 바쁨 표시를 거뒀다',
+      // 쉬는 말은 세션이 알려 준 시작 인원을 따른다 — 묻기 전·혼자서도 여는 API·둘부터인 이전 API
       통과: !온라인입구.hasAttribute('aria-busy')
-        && document.getElementById('open-online-desc').textContent.trim() === '친구와 함께 · 2명부터',
+        && ['방을 만들거나 참가해요', '혼자서도 · 친구와 함께', '친구와 함께 · 2명부터']
+          .includes(document.getElementById('open-online-desc').textContent.trim()),
       무엇: `aria-busy ${온라인입구.getAttribute('aria-busy') ?? '없음'} · ${document.getElementById('open-online-desc').textContent.trim()}`,
     });
     const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
@@ -1184,7 +1186,9 @@
 
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
-    document.getElementById('waiting-start').click();
+    // 방장 혼자서도 판이 열린다(혼자 여는 온라인 방). 네트워크 방에서 누르면 서버에 진짜 판이 생기고 나가기가
+    // «게임이 끝나면»으로 거절되므로, 시작은 이 브라우저 안의 방(점검방)에서만 실제로 누른다
+    if (점검방) document.getElementById('waiting-start').click();
     document.getElementById('waiting-leave').click();
     await 화면기다리기('online');
     살펴본다('시작하자마자 나간 뒤', 'online', true);

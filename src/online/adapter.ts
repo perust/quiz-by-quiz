@@ -17,7 +17,9 @@
 //   getRoom(code)          방 하나
 //   updateRoom(spec)       방 설정 (방장만): 분야·인원·문항 시간(20초·40초)
 //   sendChat(spec)         한마디
-//   startGame(spec)        판 열기 (방장만)
+//   startGame(spec)        판 열기 (방장만). 방장 혼자서도 연다 (`minPlayers`)
+//   sendStandingAnswer     시간이 끝나면 답이 되는 발밑 칸 초안 (U13, 받는다고 알린 서버에만)
+//   onlineRules()          세션을 열 때 서버가 알려 준 규칙(시작 인원·발밑 칸). 모르면 null
 //   subscribe(code, fn)    방에서 일어나는 일. 그만 들으려면 되돌려 준 함수를 부른다
 //
 // 구독으로 오는 이벤트
@@ -25,6 +27,7 @@
 //   {type: 'chat',  playerId, nickname, text} 누가 한마디 했다
 //   {type: 'match', phase: 'started', setup}  판이 열렸다
 //   {type: 'removed', kind}                   방장이 나를 내보냈다 (U24, kind는 rules.ts의 RemovalKind)
+//   {type: 'standing-delivery', deliverable}  발밑 칸 초안이 서버에 닿을 수 있는지가 바뀌었다 (U13)
 //
 // **여는 사람이 판을 직접 시작하지 않는다.** `startGame`은 «시작됐다»는 이벤트를
 // 보낼 뿐이고 화면은 그 이벤트를 보고 움직인다. 서버 구현에서는 같은 이벤트가 방에
@@ -113,6 +116,29 @@ export interface PublicRoom {
    * 같은 때 생긴 참가자별 `connected` 필드를 보내면 새 서버다. 로컬 구현은 언제나 true다.
    */
   hostReadyImplicit: boolean;
+  /**
+   * 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 지금 API와 로컬 방은 1이다 — 방장
+   * 혼자서도 연다. 이 필드를 보내지 않는 이전 API는 둘이었다(`rules.ts`의 `roomMinPlayers`가 2로 읽는다).
+   */
+  minPlayers?: number;
+}
+
+/**
+ * 방 snapshot이 아직 없는 화면(홈 입구·빈 로비·「게임 방법」)이 말할 온라인 규칙. 저장소가 처음 세션을
+ * 열 때 서버가 함께 알려 준다. 이 필드를 모르는 이전 API는 둘부터·직접 낸 답만 세었다.
+ */
+export interface OnlineRules {
+  /** 판을 여는 데 필요한 세는 사람 수. 1이면 방장 혼자서도 연다 */
+  minPlayers: number;
+  /** 시간이 끝나면 발밑 칸이 답인가 (U13, 혼자 하기와 같은 규칙) */
+  standingAnswers: boolean;
+}
+
+/** 시간이 끝나면 답으로 세는 발밑 칸 초안 (U13). `choiceIndex`가 null이면 칸에서 내려섰다 */
+export interface StandingAnswerDraft {
+  matchId: string;
+  position: number;
+  choiceIndex: number | null;
 }
 
 /** 방이 사람을 기다리는지, 판이 도는지 */
@@ -268,6 +294,11 @@ interface OnlineMatchBase {
    * 쓴다 — 마감 판정은 서버가 한다. 구버전 서버는 보내지 않는다(그때 막대는 처음 받은 남은 시간을 가득으로 본다).
    */
   questionTimeMs?: OnlineQuestionTime;
+  /**
+   * 시간이 끝나면 발밑 칸이 답인 판인가 (U13, 혼자 하기와 같은 규칙). 그런 판에서만 화면이 실제로 움직인
+   * 뒤 선 칸을 초안으로 보내고 규칙을 그렇게 말한다. 이 필드가 없는 이전 API는 직접 낸 답만 센다.
+   */
+  standingAnswers?: true;
 }
 
 /** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
@@ -351,7 +382,15 @@ export type RoomEvent =
    * 대기실은 로비로 돌아가며 그 말을 띄운다. `removed`(끊긴 사이 자리를 비웠다)는 같은 코드로 다시
    * 참가할 수 있고, `kicked`(접속 중에 내보냈다)는 잠시 다시 들어갈 수 없다.
    */
-  | { type: 'removed'; kind: RemovalKind };
+  | { type: 'removed'; kind: RemovalKind }
+  /**
+   * 이 구독의 소켓으로 발밑 칸 초안(U13)이 서버에 닿을 수 있는지가 바뀌었다. 바뀔 때만 온다.
+   * 처음 붙는 동안은 닿는다고 본다 — 저장소가 마지막 초안을 기억했다가 소켓이 열리면 보낸다. 붙지 못했거나
+   * 끊겼거나(다시 붙는 중), 열린 소켓의 서버가 받는다고 알리지 않았으면 false이고, 다시 붙어 받는다고 알리면
+   * true다. false인 동안 마감이 오면 서버는 그 전에 받은 초안만 안다(없으면 시간 초과) — 온라인 퀴즈의 상태
+   * 줄이 그렇게 말한다. 로컬 방은 초안을 보내지 않아 이 이벤트도 없다.
+   */
+  | { type: 'standing-delivery'; deliverable: boolean };
 
 export type RoomEventHandler = (event: RoomEvent) => void;
 
@@ -406,6 +445,15 @@ export interface RoomStore {
     moving: boolean;
     seatId?: WaitingRoomSeatId;
   } & MovementViewport): boolean;
+  /**
+   * 발밑 칸 초안 (U13). `sendMovement`처럼 방 소켓으로 보내는 best-effort이고, 그 소켓의 서버가 받는다고
+   * 알렸을 때만(ws-ticket의 capability) 보낸다 — 모르는 서버에는 한 글자도 보내지 않는다. 소켓이 닫혀 있으면
+   * 기억했다가 다시 열릴 때 보낸다. 지금 닿을 수 있는지는 구독의 `standing-delivery` 이벤트가 알린다. 로컬 방은
+   * 서버 권위 판이 없어 보내지 않는다(false).
+   */
+  sendStandingAnswer(spec: { code: string } & StandingAnswerDraft): boolean;
+  /** 처음 세션을 열 때 서버가 알려 준 온라인 규칙. 아직 묻지 않았으면 null. 로컬 방은 늘 같은 값이다 */
+  onlineRules(): OnlineRules | null;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
   /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */
