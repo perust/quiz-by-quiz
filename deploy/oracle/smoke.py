@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
-"""Smoke-test the public quiz-by-quiz online API the way the Pages client uses it.
+"""Pages 화면이 쓰는 그대로 공개 quiz-by-quiz 온라인 API를 한 번 훑는 배포 점검.
 
-Run on the Oracle host with the system interpreter (Python 3.8+, standard
-library only — no curl, jq, openssl, requests or websockets)::
+운영 호스트의 시스템 python3(3.8 이상) 하나로 돈다. 표준 라이브러리만 쓴다 — curl·jq·openssl·
+requests·websockets가 없어도 된다::
 
-    python3 deploy/oracle/smoke.py baseline     # the serving migration-010 API
-    python3 deploy/oracle/smoke.py candidate    # the migration-011 API that replaces it
+    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-010 API
+    python3 deploy/oracle/smoke.py baseline-migrated   # migration 011 뒤에도 아직 도는 그 API
+    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-011 API
     python3 deploy/oracle/smoke.py candidate --resolve-to 127.0.0.1
     python3 deploy/oracle/smoke.py candidate --api http://127.0.0.1:18083
 
-One throwaway browser identity walks through the release gate, a session, a
-public two-seat room, the room's question time (candidate only) and the event
-WebSocket handshake, and then always leaves the room again — after a failure or
-Ctrl-C too. Each step prints one line, ``ok <step>: ...`` or
-``FAIL <step>: <reason>``; retries are noted on stderr. The exit status is 0
-only when every line is ``ok`` (1 otherwise, 130 after Ctrl-C, 2 for bad
-arguments). Bearer tokens, WebSocket tickets and response bodies are never
-printed, only status codes, error codes and the checked fields.
+한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션, 공개 2인 방, 방의 문항 시간(candidate만),
+이벤트 WebSocket을 차례로 지나고, 끝에는 언제나 방을 나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
+멈췄어도 그렇다. 단계마다 ``ok <step>: ...`` 또는 ``FAIL <step>: <reason>`` 한 줄이고, 다시 묻는
+것은 stderr에 적는다. 종료 코드는 모든 줄이 ``ok``일 때만 0이다(그 밖에는 1, Ctrl-C 뒤 130,
+SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티켓·응답 본문은 출력하지 않고
+상태 코드·오류 코드·확인한 필드만 적는다.
 
-``--resolve-to IP`` opens the TCP connection to IP but keeps the URL host for
-the Host header and for TLS SNI and certificate verification, for a host that
-cannot reach its own public address (hairpin NAT). ``http://`` is accepted only
-for a loopback API, like the browser client.
+``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 011인데 010 API가
+아직 돈다. 그 API의 gate는 503 ``migration-required``로 닫혀 있는 것이 정상이므로 이 모드는 그
+답만 ok로 보고, 방과 소켓은 baseline과 같이 돌아야 한다.
+
+``--resolve-to IP``는 TCP만 그 IP로 붙고 Host 헤더와 TLS SNI·인증서 검증은 URL 호스트로 한다
+(제 공인 주소로 돌아오지 못하는 호스트의 hairpin NAT). ``http://``는 브라우저 화면처럼 루프백
+API에만 받고, 그때 ``--resolve-to``도 루프백이어야 한다 — 평문 토큰이 밖으로 나가지 않는다.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import socket
 import ssl
 import sys
@@ -47,12 +50,27 @@ DEFAULT_API = "https://quiz-by-quiz-api.150.230.222.142.sslip.io"
 # Pages에서 온 브라우저의 Origin. 모든 요청에 싣고, CORS가 이것을 들이는지도 본다.
 PAGES_ORIGIN = "https://perust.github.io"
 RELEASE_CONTRACT = "character-only-v1"
+BASELINE = "baseline"
+MIGRATED_BASELINE = "baseline-migrated"
+CANDIDATE = "candidate"
+MODES = (BASELINE, MIGRATED_BASELINE, CANDIDATE)
 # 모드마다 공개 release gate가 답해야 하는 migration 판
 # (server/app/main.py의 RELEASE_SCHEMA_VERSION)
-SCHEMA_VERSIONS = {"baseline": 10, "candidate": 11}
+SCHEMA_VERSIONS = {BASELINE: 10, CANDIDATE: 11}
+# DB가 그 API의 판이 아니면 gate가 이 오류 코드의 503으로 닫힌다. baseline-migrated는 이것만 받는다.
+MIGRATION_REQUIRED_CODE = "migration-required"
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 _WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+OPCODE_TEXT = 0x1
+OPCODE_CLOSE = 0x8
+CLOSE_NORMAL = 1000
+# 브라우저가 소켓을 열자마자 보내는 움직임과 같은 모양이다(src/online/network-rooms.ts의
+# movementPayload). viewport 없는 옛 모양이라 010·011 API가 모두 받는다.
+PROBE_MOVEMENT = {"type": "movement", "x": 0.5, "y": 0.5, "moving": False}
+# 소켓에서 움직임이 되돌아오고 close에 답이 오기를 각각 이만큼까지 기다린다.
+WEBSOCKET_REPLY_SECONDS = 3.0
+MAX_FRAME_BYTES = 64 << 10
 # migration 011의 방 문항 시간. 보내지 않으면 20초이고 20초·40초 말고는 거절된다
 # (server/app/domain.py)
 DEFAULT_QUESTION_TIME_MS = 20_000
@@ -70,7 +88,10 @@ MAX_HEAD_BYTES = 16 << 10
 # 한 번에 이만큼까지만 기다린다.
 READINESS_RETRIES = 2
 MAX_RETRY_AFTER_SECONDS = 120
-_IDENTITY_ALPHABET ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+# 만들기 응답을 받지 못했으면(시간 초과·끊김) 방이 생겼는지 모른다. 서버가 뒤늦게 commit할 수
+# 있으므로 이만큼씩 쉬며 이 신분이 든 방을 다시 찾는다(모두 15초).
+CREATE_LOOKUP_WAITS = (2, 3, 5, 5)
+_IDENTITY_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 _ROOM_CODE = re.compile(r"[A-Z0-9]{6}")
 _TICKET = re.compile(r"[A-Za-z0-9_-]{32,256}")
 _ERROR_CODE = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
@@ -81,7 +102,53 @@ _MISSING = object()
 
 
 class Failure(Exception):
-    """A step's check did not hold. The message is printed, so it never carries a secret."""
+    """한 단계의 확인이 서지 않았다. 메시지는 그대로 출력되므로 비밀을 싣지 않는다."""
+
+
+class Terminated(KeyboardInterrupt):
+    """SIGTERM·SIGHUP. KeyboardInterrupt를 이어 Ctrl-C와 같은 길(FAIL 한 줄, 방 나가기)을 탄다."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__(signum)
+        self.signum = signum
+
+
+def _terminate(signum: int, frame: object) -> None:
+    raise Terminated(signum)
+
+
+def trap_termination() -> dict[int, object]:
+    """SIGTERM과 (있는 곳에서만) SIGHUP을 Terminated로 바꾸고 이전 처리기를 돌려준다.
+
+    운영 에이전트는 오래 걸린 실행을 대개 SIGTERM으로 멈춘다(도구 시간 초과, ``timeout N``, 끊긴
+    ``ssh -t``). 기본 동작대로 죽으면 만든 공개방이 30분 정리 전까지 운영 로비에 남는다.
+    """
+    previous: dict[int, object] = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        signum = getattr(signal, name, None)
+        if signum is not None:
+            previous[signum] = signal.signal(signum, _terminate)
+    return previous
+
+
+def restore_signals(previous: dict[int, object]) -> None:
+    for signum, handler in previous.items():
+        # Python 밖에서 걸린 처리기는 None으로 돌아온다. 그때는 기본 동작으로 되돌린다.
+        signal.signal(signum, signal.SIG_DFL if handler is None else handler)
+
+
+def interruption_name(error: KeyboardInterrupt) -> str:
+    if isinstance(error, Terminated):
+        try:
+            return signal.Signals(error.signum).name
+        except ValueError:
+            return f"signal {error.signum}"
+    return "Ctrl-C"
+
+
+def interruption_status(error: KeyboardInterrupt) -> int:
+    # 셸의 관례대로 128 + 신호 번호다. Ctrl-C(SIGINT)는 130.
+    return 128 + error.signum if isinstance(error, Terminated) else 130
 
 
 @dataclass(frozen=True)
@@ -125,6 +192,13 @@ def parse_ip(raw: str) -> str:
         raise ValueError("--resolve-to must be an IP address") from error
 
 
+def check_target(api: ApiUrl, resolve_to: str | None) -> None:
+    # http://의 루프백 규칙은 URL 호스트만 본다. --resolve-to가 그 평문 연결을 다른 주소로
+    # 돌리면 bearer 토큰·X-Player-Id·소켓 티켓이 암호화 없이 밖으로 나간다.
+    if resolve_to is not None and not api.tls and not ipaddress.ip_address(resolve_to).is_loopback:
+        raise ValueError("--resolve-to must be a loopback address for an http:// API")
+
+
 @dataclass
 class Reply:
     status: int
@@ -144,7 +218,7 @@ class Reply:
         return value
 
     def error_code(self) -> str | None:
-        """The API's ``detail.code`` (server/app/main.py ``_error``) when it looks like one."""
+        """API의 ``detail.code``(server/app/main.py의 ``_error``). 코드처럼 생겼을 때만 준다."""
         try:
             value = json.loads(self.body.decode("utf-8"))
         except ValueError:
@@ -152,6 +226,24 @@ class Reply:
         detail = value.get("detail") if isinstance(value, dict) else None
         code = detail.get("code") if isinstance(detail, dict) else None
         return code if isinstance(code, str) and _ERROR_CODE.fullmatch(code) else None
+
+
+@dataclass(frozen=True)
+class Frame:
+    opcode: int
+    payload: bytes = b""
+
+
+def close_code(frame: Frame) -> int:
+    # 상태 코드가 없는 close는 1005로 읽는다(RFC 6455 7.1.5).
+    return int.from_bytes(frame.payload[:2], "big") if len(frame.payload) >= 2 else 1005
+
+
+@dataclass
+class Upgrade:
+    status: int
+    headers: dict[str, str] = field(default_factory=dict)
+    channel: WebSocketChannel | None = None
 
 
 def _header_map(pairs: list[tuple[str, str]]) -> dict[str, str]:
@@ -163,7 +255,7 @@ def _header_map(pairs: list[tuple[str, str]]) -> dict[str, str]:
 
 
 class _PinnedConnection(http.client.HTTPConnection):
-    """http.client over the transport's socket, so ``--resolve-to`` holds for REST too."""
+    """transport의 소켓 위에서 도는 http.client. REST에도 ``--resolve-to``와 TLS가 그대로 선다."""
 
     def __init__(self, transport: HttpTransport) -> None:
         super().__init__(transport.api.host, transport.api.port, timeout=transport.timeout)
@@ -174,10 +266,9 @@ class _PinnedConnection(http.client.HTTPConnection):
 
 
 class HttpTransport:
-    """Talks to the API over plain sockets.
+    """API와 맨 소켓으로 이야기한다.
 
-    With ``resolve_to`` the TCP peer is that IP while the Host header, TLS SNI and
-    certificate verification keep the URL host.
+    ``resolve_to``가 있으면 TCP 상대만 그 IP이고 Host 헤더·TLS SNI·인증서 검증은 URL 호스트로 한다.
     """
 
     def __init__(
@@ -229,26 +320,99 @@ class HttpTransport:
         finally:
             connection.close()
 
-    def upgrade(self, path: str, headers: dict[str, str]) -> Reply:
-        """Send one HTTP/1.1 WebSocket upgrade and close the socket right after the answer."""
+    def upgrade(self, path: str, headers: dict[str, str]) -> Upgrade:
+        """HTTP/1.1 WebSocket upgrade 하나. 101이면 열린 channel을 넘기고 닫기는 부른 쪽이 한다."""
         sock = self.open_socket()
         try:
             lines = [f"GET {self.api.path}{path} HTTP/1.1", f"Host: {self.api.host_header}"]
             lines.extend(f"{name}: {value}" for name, value in headers.items())
             sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
-            status, response_headers = _parse_head(_read_head(sock))
-            if status == 101:
-                # 열린 소켓은 곧바로 닫는다. close frame을 먼저 보내 서버가 끊김을 바로 안다.
-                try:
-                    sock.sendall(_close_frame())
-                except OSError:
-                    pass
-            return Reply(status, response_headers)
-        finally:
+            head, rest = _read_head(sock)
+            status, response_headers = _parse_head(head)
+        except BaseException:
             sock.close()
+            raise
+        if status != 101:
+            sock.close()
+            return Upgrade(status, response_headers)
+        # 101 뒤에 같이 읽힌 바이트는 서버의 첫 frame이다. 버리지 않고 channel에 넘긴다.
+        return Upgrade(status, response_headers, WebSocketChannel(sock, rest, timeout=self.timeout))
 
 
-def _read_head(sock: socket.socket) -> bytes:
+class WebSocketChannel:
+    """101 뒤의 소켓. 보내는 frame은 가리고(mask) 서버 frame은 맨 채로 읽는다(RFC 6455 5.1)."""
+
+    def __init__(
+        self,
+        sock: socket.socket,
+        buffered: bytes = b"",
+        *,
+        timeout: float = TIMEOUT_SECONDS,
+        clock=time.monotonic,
+    ) -> None:
+        self._sock = sock
+        self._buffer = buffered
+        self._timeout = timeout
+        self._clock = clock
+        self._close_sent = False
+
+    def _send(self, frame: bytes) -> None:
+        self._sock.settimeout(self._timeout)
+        self._sock.sendall(frame)
+
+    def send_text(self, text: str) -> None:
+        self._send(_client_frame(OPCODE_TEXT, text.encode("utf-8")))
+
+    def send_close(self, code: int = CLOSE_NORMAL) -> None:
+        self._close_sent = True
+        self._send(_client_frame(OPCODE_CLOSE, code.to_bytes(2, "big")))
+
+    def _read_exact(self, size: int, deadline: float) -> bytes | None:
+        while len(self._buffer) < size:
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                # Python 3.8의 socket.timeout은 아직 TimeoutError가 아니다. recv가 내는 것과 맞춘다.
+                raise socket.timeout("timed out")  # noqa: UP041
+            self._sock.settimeout(remaining)
+            chunk = self._sock.recv(max(4096, size - len(self._buffer)))
+            if not chunk:
+                return None
+            self._buffer += chunk
+        data, self._buffer = self._buffer[:size], self._buffer[size:]
+        return data
+
+    def read_frame(self, deadline: float) -> Frame | None:
+        """서버 frame 하나를 deadline까지 기다린다. 연결이 frame 없이 끊기면 None이다."""
+        head = self._read_exact(2, deadline)
+        if head is None:
+            return None
+        if head[1] & 0x80:
+            raise Failure("server frame is masked")
+        length = head[1] & 0x7F
+        if length >= 126:
+            extended = self._read_exact(2 if length == 126 else 8, deadline)
+            if extended is None:
+                return None
+            length = int.from_bytes(extended, "big")
+        if length > MAX_FRAME_BYTES:
+            raise Failure("server frame is too large")
+        payload = self._read_exact(length, deadline) if length else b""
+        if payload is None:
+            return None
+        return Frame(head[0] & 0x0F, payload)
+
+    def close(self) -> None:
+        # 아직 close frame을 보내지 않았으면 먼저 보내 서버가 끊김을 바로 안다.
+        try:
+            if not self._close_sent:
+                self.send_close()
+        except OSError:
+            pass
+        finally:
+            self._sock.close()
+
+
+def _read_head(sock: socket.socket) -> tuple[bytes, bytes]:
     data = b""
     while b"\r\n\r\n" not in data:
         if len(data) > MAX_HEAD_BYTES:
@@ -257,7 +421,8 @@ def _read_head(sock: socket.socket) -> bytes:
         if not chunk:
             raise Failure("connection closed before the upgrade response")
         data += chunk
-    return data.split(b"\r\n\r\n", 1)[0]
+    head, _, rest = data.partition(b"\r\n\r\n")
+    return head, rest
 
 
 def _parse_head(head: bytes) -> tuple[int, dict[str, str]]:
@@ -273,12 +438,13 @@ def _parse_head(head: bytes) -> tuple[int, dict[str, str]]:
     return int(parts[1]), _header_map(pairs)
 
 
-def _close_frame() -> bytes:
-    """A masked client close frame with status 1000 (RFC 6455 5.5.1)."""
-    payload = (1000).to_bytes(2, "big")
+def _client_frame(opcode: int, payload: bytes) -> bytes:
+    """가린(masked) 클라이언트 frame 하나(RFC 6455 5.2). 보내는 것은 모두 125바이트 안이다."""
+    if len(payload) > 125:
+        raise ValueError("client frame payload is too long")
     mask = os.urandom(4)
     masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
-    return bytes((0x88, 0x80 | len(payload))) + mask + masked
+    return bytes((0x80 | opcode, 0x80 | len(payload))) + mask + masked
 
 
 def websocket_accept(key: str) -> str:
@@ -287,7 +453,7 @@ def websocket_accept(key: str) -> str:
 
 
 def _show(value: object) -> str:
-    """A checked value, short enough for one line and never a free-form body."""
+    """확인한 값을 한 줄에 들 만큼만 보인다. 자유 형식의 본문은 보이지 않는다."""
     if value is _MISSING:
         return "missing"
     if value is None or isinstance(value, bool):
@@ -364,7 +530,7 @@ def _print_note(line: str) -> None:
 
 
 class Report:
-    """One line per step. Every secret this run handled is scrubbed from what it prints."""
+    """단계마다 한 줄. 이 실행이 다룬 비밀은 모두 출력에서 지운다."""
 
     def __init__(self, write=_print_line, note=_print_note) -> None:
         self._write = write
@@ -393,13 +559,13 @@ class Report:
 
 
 class Smoke:
-    """The steps of one run against one API with one fresh browser identity."""
+    """한 API를 새 브라우저 신분 하나로 한 번 훑는 단계들."""
 
     def __init__(self, mode: str, transport, report: Report, *, sleep=time.sleep) -> None:
-        if mode not in SCHEMA_VERSIONS:
+        if mode not in MODES:
             raise ValueError(f"unknown mode {mode!r}")
         self.mode = mode
-        self.candidate = mode == "candidate"
+        self.candidate = mode == CANDIDATE
         self.transport = transport
         self.report = report
         self.sleep = sleep
@@ -409,6 +575,8 @@ class Smoke:
         report.keep_secret(self.token)
         self.session_ready = False
         self.room_requested = False
+        # 만들기 요청이 HTTP 답을 받았는가. 받지 못했으면 방이 생겼는지 모른다(cleanup이 찾아본다).
+        self.room_answered = False
         self.room_code: str | None = None
         self.current: str | None = None
 
@@ -431,10 +599,10 @@ class Smoke:
         return self.transport.request(method, path, headers, body)
 
     def run(self) -> int:
-        interrupted = False
+        interrupted: KeyboardInterrupt | None = None
         try:
-            # release gate가 틀려도 나머지를 본다 — 011을 돌린 직후 010 API의 gate는 503이지만
-            # 방과 소켓은 그대로 돌아야 한다(deploy/oracle/README.md의 단계 3).
+            # release gate가 틀려도 나머지를 본다 — 무엇이 더 깨졌는지 한 번에 보이게 한다.
+            # migration 011 직후의 010 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
             self._step("readiness", self.readiness)
             self._step("session", self.session)
             if not self.session_ready:
@@ -448,17 +616,18 @@ class Smoke:
                     self.report.fail(name, "not run (no room)")
                 else:
                     self._step(name, action)
-        except KeyboardInterrupt:
-            interrupted = True
-            self.report.fail(self.current or "run", "interrupted (Ctrl-C)")
+        except KeyboardInterrupt as error:
+            interrupted = error
+            self.report.fail(self.current or "run", f"interrupted ({interruption_name(error)})")
         finally:
-            self._cleanup()
-        if interrupted:
-            return 130
+            late = self._cleanup()
+        interrupted = interrupted or late
+        if interrupted is not None:
+            return interruption_status(interrupted)
         return 1 if self.report.failed else 0
 
     def _step(self, name: str, action) -> bool:
-        # Ctrl-C는 여기서 잡지 않는다. run()이 이 이름으로 한 줄을 남기고 cleanup으로 간다.
+        # Ctrl-C·SIGTERM은 여기서 잡지 않는다. run()이 이 이름으로 한 줄을 남기고 cleanup으로 간다.
         self.current = name
         try:
             detail = action()
@@ -474,20 +643,20 @@ class Smoke:
         self.report.ok(name, detail)
         return True
 
-    def _cleanup(self) -> None:
+    def _cleanup(self) -> KeyboardInterrupt | None:
         try:
             self._step("cleanup", self.cleanup)
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as error:
             left = (
                 f"room {self.room_code} stays until the server's idle cleanup"
                 if self.room_code
                 else "nothing was confirmed"
             )
-            self.report.fail("cleanup", f"interrupted (Ctrl-C); {left}")
+            self.report.fail("cleanup", f"interrupted ({interruption_name(error)}); {left}")
+            return error
+        return None
 
-    def readiness(self) -> str:
-        version = SCHEMA_VERSIONS[self.mode]
-        want = {"status": "ready", "contract": RELEASE_CONTRACT, "schemaVersion": version}
+    def _readiness_reply(self) -> Reply:
         reply = self.call("GET", "/v1/release-readiness", auth=False)
         for retry in range(1, READINESS_RETRIES + 1):
             if reply.status != 429:
@@ -496,7 +665,27 @@ class Smoke:
             self.report.note(f"readiness: HTTP 429, retry {retry}/{READINESS_RETRIES} in {wait}s")
             self.sleep(wait)
             reply = self.call("GET", "/v1/release-readiness", auth=False)
+        return reply
+
+    def readiness(self) -> str:
+        reply = self._readiness_reply()
+        migration_required = reply.status == 503 and reply.error_code() == MIGRATION_REQUIRED_CODE
+        if self.mode == MIGRATED_BASELINE:
+            # 단계 3의 정상 상태다. 다른 답(200, database-unavailable 같은 503)은 모두 FAIL이다.
+            if not migration_required:
+                raise Failure(f"{status_text(reply)}, expected HTTP 503 {MIGRATION_REQUIRED_CODE}")
+            problems = cors_problems(reply)
+            if problems:
+                raise Failure("; ".join(problems))
+            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 011)"
+        if migration_required and self.mode == BASELINE:
+            raise Failure(
+                f"{status_text(reply)}, expected 200 "
+                f"(after migration 011 run {MIGRATED_BASELINE} instead)"
+            )
         expect_status(reply, 200)
+        version = SCHEMA_VERSIONS[self.mode]
+        want = {"status": "ready", "contract": RELEASE_CONTRACT, "schemaVersion": version}
         problems = field_problems(reply.json(), want, exact=True) + cors_problems(reply)
         if problems:
             raise Failure("; ".join(problems))
@@ -533,6 +722,7 @@ class Smoke:
             "/v1/rooms",
             {"name": ROOM_NAME, "categoryId": None, "capacity": 2, "isPublic": True},
         )
+        self.room_answered = True
         expect_status(reply, 201)
         room = reply.json_object()
         code = room.get("code")
@@ -627,18 +817,62 @@ class Smoke:
             # 한 번만 다시 붙어 낡은 티켓과 진짜 거절을 가른다.
             self.report.note("websocket: upgrade HTTP 403, retrying once with a fresh ticket")
             retried = " after one 403 retry"
-        if answer.status != 101:
+        if answer.status != 101 or answer.channel is None:
             raise Failure(f"upgrade HTTP {answer.status}{retried}, expected 101")
-        problems = []
-        if answer.headers.get("sec-websocket-protocol") != WEBSOCKET_PROTOCOL:
-            problems.append(f"selected protocol is not {WEBSOCKET_PROTOCOL}")
-        if answer.headers.get("sec-websocket-accept") != websocket_accept(key):
-            problems.append("Sec-WebSocket-Accept does not match the key")
-        if answer.headers.get("upgrade", "").lower() != "websocket":
-            problems.append("Upgrade header is not websocket")
-        if problems:
-            raise Failure("upgrade HTTP 101 but " + "; ".join(problems))
-        return f"HTTP 101 protocol {WEBSOCKET_PROTOCOL}{retried}, closed"
+        channel = answer.channel
+        try:
+            problems = []
+            if answer.headers.get("sec-websocket-protocol") != WEBSOCKET_PROTOCOL:
+                problems.append(f"selected protocol is not {WEBSOCKET_PROTOCOL}")
+            if answer.headers.get("sec-websocket-accept") != websocket_accept(key):
+                problems.append("Sec-WebSocket-Accept does not match the key")
+            if answer.headers.get("upgrade", "").lower() != "websocket":
+                problems.append("Upgrade header is not websocket")
+            if problems:
+                raise Failure("upgrade HTTP 101 but " + "; ".join(problems))
+            # 101만으로는 모자란다. 서버는 accept한 뒤에야 hub에 붙이고(못 붙이면 1012로 닫는다)
+            # 접속 시각을 DB에 적으며(실패하면 frame 없이 끊긴다), 그다음에야 받는 loop가 돌아
+            # 움직임을 방 전체에 — 보낸 사람에게도 — 되돌린다. 내 움직임이 돌아오면 셋이 모두 섰다.
+            channel.send_text(json.dumps(PROBE_MOVEMENT, separators=(",", ":")))
+            self._await_frame(channel, "movement echo", self._is_my_movement)
+            channel.send_close(CLOSE_NORMAL)
+            closing = self._await_frame(channel, "close reply", _is_close)
+            if close_code(closing) != CLOSE_NORMAL:
+                raise Failure(f"close reply {close_code(closing)}, expected {CLOSE_NORMAL}")
+        finally:
+            channel.close()
+        return (
+            f"HTTP 101 protocol {WEBSOCKET_PROTOCOL}{retried}, movement echoed, "
+            f"closed {CLOSE_NORMAL}"
+        )
+
+    def _is_my_movement(self, frame: Frame) -> bool:
+        if frame.opcode != OPCODE_TEXT:
+            return False
+        try:
+            value = json.loads(frame.payload.decode("utf-8"))
+        except ValueError:
+            return False
+        return (
+            isinstance(value, dict)
+            and value.get("type") == "movement"
+            and value.get("playerId") == self.player_id
+        )
+
+    def _await_frame(self, channel, what: str, wanted) -> Frame:
+        # 그사이 온 다른 frame(방 무효화 알림, ping)은 건너뛴다. 내용은 출력하지 않는다.
+        deadline = time.monotonic() + WEBSOCKET_REPLY_SECONDS
+        while True:
+            try:
+                frame = channel.read_frame(deadline)
+            except (socket.timeout, TimeoutError):  # noqa: UP041 - Python 3.8에서는 둘이 다르다
+                raise Failure(f"no {what} within {WEBSOCKET_REPLY_SECONDS:g}s") from None
+            if frame is None:
+                raise Failure(f"connection dropped without a close frame before the {what}")
+            if wanted(frame):
+                return frame
+            if frame.opcode == OPCODE_CLOSE:
+                raise Failure(f"server closed with {close_code(frame)} before the {what}")
 
     def _joined_room_codes(self) -> list[str]:
         reply = self.call("GET", "/v1/rooms")
@@ -655,13 +889,28 @@ class Smoke:
             and _ROOM_CODE.fullmatch(room["code"])
         ]
 
+    def _created_room_codes(self) -> list[str]:
+        # 이 신분이 든 방은 모두 이 실행이 만든 것이다. 만들기가 HTTP 답을 받았으면 방은 이미
+        # 있거나 없으므로 한 번 보면 되고, 받지 못했으면 늦은 commit을 몇 번 더 기다린다.
+        codes = self._joined_room_codes()
+        if self.room_answered:
+            return codes
+        for wait in CREATE_LOOKUP_WAITS:
+            if codes:
+                break
+            self.report.note(f"cleanup: create outcome unknown, looking again in {wait}s")
+            self.sleep(wait)
+            codes = self._joined_room_codes()
+        return codes
+
     def cleanup(self) -> str:
         if not self.session_ready:
             return "nothing to leave (no session)"
         codes = [self.room_code] if self.room_code else []
         if not codes and self.room_requested:
-            # 만들기 응답을 잃었어도 이 신분이 든 방은 모두 이 실행이 만든 것이다.
-            codes = self._joined_room_codes()
+            codes = self._created_room_codes()
+            if not codes and not self.room_answered:
+                raise Failure("create outcome unknown; no joined room seen")
         if not codes:
             return "nothing to leave (no room)"
         for code in codes:
@@ -674,6 +923,10 @@ class Smoke:
         return f"left room {', '.join(codes)}, GET -> 404"
 
 
+def _is_close(frame: Frame) -> bool:
+    return frame.opcode == OPCODE_CLOSE
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="smoke.py",
@@ -681,8 +934,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "mode",
-        choices=("baseline", "candidate"),
-        help="baseline: the serving migration-010 API; candidate: the migration-011 API",
+        choices=MODES,
+        help=(
+            "baseline: the serving migration-010 API; "
+            "baseline-migrated: that API after migration 011 ran (gate 503 migration-required); "
+            "candidate: the migration-011 API"
+        ),
     )
     parser.add_argument("--api", default=DEFAULT_API, help=f"API base URL (default {DEFAULT_API})")
     parser.add_argument(
@@ -694,9 +951,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         api = parse_api(args.api)
         resolve_to = parse_ip(args.resolve_to) if args.resolve_to else None
+        check_target(api, resolve_to)
     except ValueError as error:
         parser.error(str(error))
-    return Smoke(args.mode, HttpTransport(api, resolve_to=resolve_to), Report()).run()
+    smoke = Smoke(args.mode, HttpTransport(api, resolve_to=resolve_to), Report())
+    previous = trap_termination()
+    try:
+        return smoke.run()
+    except KeyboardInterrupt as error:  # run()이 정리를 마친 뒤에 온 신호다. 남은 일이 없다.
+        return interruption_status(error)
+    finally:
+        restore_signals(previous)
 
 
 if __name__ == "__main__":
