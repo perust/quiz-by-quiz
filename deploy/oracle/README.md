@@ -24,7 +24,7 @@ Git, GitHub Actions logs, Docker image layers, or the public Pages artifact.
 | Input | Required property |
 | --- | --- |
 | `QUIZ_BY_QUIZ_SOURCE_DIR` | A new task-owned, hash-verified release directory. Never use the stale hand-copied public tree. |
-| `QUIZ_ONLINE_BANK_DIR` | The separately hash-verified private bank directory, mode `0700` with bank files `0640`; never `data/` from Pages. |
+| `QUIZ_ONLINE_BANK_DIR` | The separately hash-verified private bank directory, owned by `10001:10001`, mode `0750` or narrower with bank files `0640` and no access for other users (`ONLINE_QUESTION_BANK.md`); never `data/` from Pages. |
 | `QUIZ_MIGRATOR_DATABASE_URL` | Dedicated migration-owner connection for the Quiz database only. It is used by the one-shot migrator, not the runtime API. |
 | `QUIZ_DB_PASSWORD` | Runtime-role password supplied only through the protected platform environment; do not print, commit, or add it to a Compose file. |
 
@@ -116,7 +116,8 @@ Before the one-shot migrator handles `QUIZ_DB_PASSWORD`, the owner must confirm
 that PostgreSQL statement logging cannot persist credential-bearing SQL. The
 verified baseline is `log_statement=none` with duration logging disabled; a
 changed logging policy is a new preflight blocker, not a reason to print a
-secret for diagnosis.
+secret for diagnosis. `python -m app.release_check db` (below) reads these
+settings without printing anything secret.
 
 ### Shared-address players (N01, owner decision)
 
@@ -267,7 +268,13 @@ The candidate Pages client sends `questionTimeMs`, which the 010 API rejects as
 an unknown field, so Pages waits for the candidate API.
 
 1. Recompute and verify the source and private-bank hashes against the approved
-   candidate; stop on any mismatch.
+   candidate; stop on any mismatch. The source is a fresh clone checked out at
+   the approved commit: `git rev-parse HEAD` must equal it and
+   `git status --porcelain --ignored` must print nothing (Git checks every
+   object against that commit). The bank is compared as a full manifest,
+   `find <bank> -type f -print0 | sort -z | xargs -0 sha256sum` (names and
+   hashes only), against the manifest recorded when the owner approved that
+   bank.
 2. Render the overlay with the platform base and inspect the result. Do not
    `up`, restart, reload, migrate, or expose anything at this step.
 3. With the migration-010 API still serving, build and run only the explicit
@@ -342,20 +349,50 @@ overlay.
   only the migration-010 API serves and it never writes the column, so a
   `40000` means the candidate API ran too early. After step 4 run `--expect 11`
   without it: `40000` rooms are then expected and only counted (`INFO`).
-- **Step 4, the private bank** (after building the candidate API image, before
-  replacing the container):
-  `docker compose … run --rm --no-deps quiz-by-quiz-api /app/.venv/bin/python -m app.release_check bank`.
-  It loads `QUESTION_BANK_DIR` exactly as the API does and prints counts only:
-  questions per category (`FAIL` below the 10 a category round needs), ids
-  longer than 64 characters (`FAIL` — `match_questions.question_id` is
-  `varchar(64)`, so the API would start but a match that draws one could not),
-  ids in the public Pages form `<category>-<digits>` (`FAIL` — kept public ids
-  mark a likely copy of the public bank and make issue reports collide with
-  public question numbers), other ids without the `online-` prefix (`WARN`),
-  ids that are not `online-<category>-<digits>` (`WARN`, ids reach public issue
-  reports), any `CatalogError` with its class and message (a known id in the
-  message is shown as `<id>`), the public `data/` path (`FAIL`), and other-user
-  access to the mount (`WARN`). It cannot see whether the content was copied
-  from the public bank; `ONLINE_QUESTION_BANK.md` forbids that whatever the ids
-  are, so the approved-bank hash of step 1 stays the gate for that. A serving
-  API answers the same through `docker compose … exec quiz-by-quiz-api …`.
+- **Step 3, first — the private bank** (before the `db` checks, while the
+  migration-010 API still serves):
+  `docker compose … --profile migration run --build --rm --no-deps -e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank --volume "<QUIZ_ONLINE_BANK_DIR>:/run/quiz-by-quiz/online-bank:ro" quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check bank`.
+  It builds the candidate migrate image, mounts only the bank read-only and
+  loads it exactly as the candidate API will at startup, so a bank the candidate
+  would refuse stops the release while the database is still at 10. Do not build
+  the `quiz-by-quiz-api` image for this: once that image changes, the next
+  `docker compose up` could replace the 010 API before migration 011. It prints
+  counts only: questions per category (`FAIL` below the 10 a category round
+  needs), ids longer than 64 characters (`FAIL` — `match_questions.question_id`
+  is `varchar(64)`, so the API would start but a match that draws one could
+  not), ids in the public Pages form `<category>-<digits>` (`FAIL`: the
+  candidate catalog refuses them with a `CatalogError` that names only a count
+  and file names — the migration-010 API accepted any unique id, so a bank that
+  serves today can still fail here, and renaming is an owner decision described
+  in `ONLINE_QUESTION_BANK.md`), other ids without the `online-` prefix
+  (`WARN`), ids that are not `online-<category>-<digits>` (`WARN`, ids reach
+  public issue reports), any other `CatalogError` with its class and message (a
+  known id in the message is shown as `<id>`), the public `data/` path
+  (`FAIL`), and other-user access to the mount (`WARN`). It cannot see whether
+  the content was copied from the public bank; `ONLINE_QUESTION_BANK.md` forbids
+  that whatever the ids are, so the approved-bank hash of step 1 stays the gate
+  for that. A serving candidate API answers the same through
+  `docker compose … exec quiz-by-quiz-api /app/.venv/bin/python -m app.release_check bank`.
+
+### Smoke test through Caddy
+
+`deploy/oracle/smoke.py` is a Python 3 standard-library script for the Oracle
+host (no curl, jq or openssl). It creates one throwaway browser identity, a
+public two-seat room and an event socket through the public Caddy route, checks
+the answers, and always leaves the room again (also on Ctrl-C, SIGTERM and
+SIGHUP). It never prints tokens, tickets or response bodies, and exits 0 only
+when every step is `ok`.
+
+- Before step 3: `python3 deploy/oracle/smoke.py baseline` (the migration-010
+  API, readiness `schemaVersion: 10`). Its websocket result is the baseline for
+  step 5: a later websocket failure then points at the candidate, not at the
+  host's route.
+- After step 3: `python3 deploy/oracle/smoke.py baseline-migrated` (the same
+  API on a migration-11 database; readiness must be 503 `migration-required`).
+- After step 4: `python3 deploy/oracle/smoke.py candidate` (readiness
+  `schemaVersion: 11`; a room created without `questionTimeMs` reports 20000
+  and its players carry `connected`; 40000 is accepted and 30000 refused; the
+  socket answers 101 `qbb.v1` and echoes one movement message).
+
+If the host cannot reach its own public address, add `--resolve-to 127.0.0.1`;
+the URL host still names the Host header and the TLS certificate.

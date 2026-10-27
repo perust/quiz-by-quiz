@@ -168,12 +168,15 @@ def test_bank_fails_ids_in_the_public_pages_form(
 
     status, output = _run_bank(tmp_path / "bank", capsys)
 
+    # API 와 같은 로더가 공개 형식 ID 를 먼저 거절한다 (question_catalog). 그래서 개수와 파일 이름만
+    # 담은 catalog 실패 하나로 끝나고, ID·내용은 나오지 않는다
     assert status == 1
-    assert "FAIL id-prefix 16 of 50 ids have the public Pages form <category>-<digits>" in output
-    assert "WARN id-format 16 of 50 ids" in output
+    assert (
+        "FAIL catalog CatalogError: 16 question ids use the public Pages bank format <category>-NNN"
+    ) in output
     assert [line for line in output.splitlines() if line.startswith("FAIL ")] == [
-        line for line in output.splitlines() if line.startswith("FAIL id-prefix ")
-    ] + ["FAIL result 1 FAIL, 1 WARN"]
+        line for line in output.splitlines() if line.startswith("FAIL catalog ")
+    ] + ["FAIL result 1 FAIL, 0 WARN"]
     _assert_no_content(output, ids)
 
 
@@ -311,7 +314,7 @@ def test_bank_refuses_the_directory_the_api_treats_as_public(
     assert status == 1
     assert "public Pages data/ directory; the API refuses to start on it" in output
     assert _lines(output)["bank-dir"] == ["FAIL"]
-    assert "FAIL id-prefix 50 of 50 ids have the public Pages form" in output
+    assert "FAIL catalog CatalogError: 50 question ids use the public Pages bank format" in output
     _assert_no_content(output, ids)
 
 
@@ -334,7 +337,7 @@ def test_bank_refuses_the_real_public_pages_data_directory(
 
     assert status == 1
     assert "FAIL bank-dir" in output and "public Pages data/ directory" in output
-    assert "FAIL id-prefix" in output
+    assert "FAIL catalog CatalogError:" in output and "public Pages bank format" in output
     for question_id in public_ids:
         assert question_id not in output
 
@@ -681,10 +684,15 @@ def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> Non
     # 3단계의 011 뒤 점검은 후보 API가 아직 돌지 않았음(모두 20000)까지 exit status로 요구한다
     assert "the same command with `--expect 11 --require-default-question-time`" in guide
     assert "--require-idle" in guide
+    # bank는 migration 011 전에 후보 migrate 이미지로 돈다. API 이미지를 미리 빌드하면
+    # 다음 up 이 010 API 를 011 전에 바꿀 수 있어서다. migrate 서비스에는 bank mount와
+    # QUESTION_BANK_DIR 이 없으므로 명령이 둘을 직접 넘긴다 — API 서비스와 같은 경로다
     bank = documented(f"{command} bank")
-    assert "run --rm --no-deps quiz-by-quiz-api" in bank
+    assert "--profile migration run --build --rm --no-deps" in bank
+    assert "-e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank" in bank
+    assert ':/run/quiz-by-quiz/online-bank:ro" quiz-by-quiz-migrate' in bank
 
-    # db는 migrator URL을, bank는 bank mount를 가진 서비스에서만 돈다
+    # db는 migrator URL을 가진 서비스에서 돌고, bank 경로는 API 서비스가 쓰는 것과 같다
     migrate_service, api_service = compose.split("  quiz-by-quiz-api:", 1)
     assert "MIGRATOR_DATABASE_URL:" in migrate_service
     assert "QUESTION_BANK_DIR: /run/quiz-by-quiz/online-bank" in api_service

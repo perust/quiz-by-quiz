@@ -74,6 +74,7 @@ API는 다음 경우 fail-closed로 시작하지 않습니다.
 
 ```bash
 docker compose … --profile migration run --build --rm --no-deps \
+  -e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank \
   --volume "<QUIZ_ONLINE_BANK_DIR의 경로>:/run/quiz-by-quiz/online-bank:ro" \
   quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check bank
 ```
