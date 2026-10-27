@@ -3,6 +3,9 @@
 // The controller deliberately never calculates correctness, score, rank, deadlines,
 // or question progression. A WebSocket only says “invalidate”; the next visible
 // state always comes from an authenticated REST snapshot.
+//
+// 무효화는 몰려 온다(답 하나마다 방 전체에 방송된다). 그래서 GET은 한 번에 하나만 보내고,
+// 그동안 온 무효화는 끝난 뒤의 후속 GET 한 번으로 합친다 — N명 방의 재조회가 N²로 불어나지 않는다.
 
 import type {
   OnlineMatchAnswerResult,
@@ -10,6 +13,7 @@ import type {
   RoomEventHandler,
   Unsubscribe,
 } from './adapter.js';
+import { onlineErrorText } from './rules.js';
 
 export interface OnlineMatchGateway {
   getMatch(code: string): Promise<OnlineMatchSnapshot | null>;
@@ -54,9 +58,12 @@ export interface OnlineMatchController {
   close(): void;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+/**
+ * 화면에 넘기는 말 (U40). 어댑터 오류의 개발 상세(«서버 매치 snapshot이 …», «Failed to fetch»)는
+ * 콘솔에만 남기고, 이유를 플레이어의 말로 가진 오류(`OnlinePlayerError`)만 그 말을 쓴다.
+ */
+const REFRESH_FAILED_MESSAGE = '게임 상태를 불러오지 못했어요. 잠시 뒤 다시 맞춰요.';
+const SUBMIT_FAILED_MESSAGE = '답을 보내지 못했어요. 다시 골라 주세요.';
 
 function phaseRank(snapshot: OnlineMatchSnapshot): number {
   if (snapshot.state === 'finished') return 2;
@@ -99,6 +106,21 @@ interface RefreshOutcome {
   error: string | null;
 }
 
+const NOT_DELIVERED: RefreshOutcome = { delivered: false, error: null };
+
+/** 한 번의 GET이 지켜야 할 소유권. 아래 guard는 응답이 왔을 때 이것을 지금 상태와 견준다. */
+interface RefreshRequest {
+  /** 요청한 순간에 정한 번호. 뒤에 다른 요청이 오면 이 GET은 더 이상 «최신»이 아니다. */
+  id: number;
+  code: string;
+  generation: number;
+  reportError: boolean;
+  expectedMatchId: string | null;
+  identityVersion: number;
+  /** 이 GET 하나로 합쳐진 요청들. 모두 같은 결과를 받는다. */
+  waiters: Array<(outcome: RefreshOutcome) => void>;
+}
+
 export function createOnlineMatchController(
   {
     gateway,
@@ -120,16 +142,70 @@ export function createOnlineMatchController(
   let requiredMatchId: string | null = null;
   let awaitingUnknownIdentity = false;
   let matchIdentityVersion = 0;
+  /**
+   * 지금 날아가는 GET의 표식. 한 번에 하나만 보낸다 — 답 하나마다 방 전체에 무효화가
+   * 방송되므로, 오는 대로 GET을 보내면 같은 와이파이의 여럿이 IP당 요청 한도를 넘긴다.
+   * close()가 비우므로 늦게 끝난 이전 lifecycle의 GET이 새 매치의 첫 읽기를 막지 않는다.
+   */
+  let refreshInFlight: object | null = null;
+  /** 날아가는 동안 들어온 요청은 모두 이 하나의 후속 GET으로 합친다. */
+  let queuedRefresh: RefreshRequest | null = null;
 
-  async function refresh(
+  /**
+   * 요청을 합쳐 보낸다. 날아가는 GET이 없으면 바로 보내고, 있으면 끝난 뒤 **정확히 한 번** 더 읽는다.
+   * 날아가던 GET은 무효화 전에 출발했을 수 있으므로 후속 GET 없이 끝내면 낡은 화면이 남는다.
+   */
+  function refresh(
     expectedGeneration: number,
     reportError = true,
     expectedMatchId: string | null = requiredMatchId,
     expectedIdentityVersion = matchIdentityVersion,
   ): Promise<RefreshOutcome> {
     const activeCode = code;
-    if (!activeCode) return { delivered: false, error: null };
-    const refreshId = ++newestRefresh;
+    if (!activeCode) return Promise.resolve(NOT_DELIVERED);
+    // 번호는 요청한 순간에 매긴다. 그래서 후속 GET이 예약되면 날아가던 GET은 «최신»이 아니게 되어
+    // 그 null(매치 없음)이나 오류가 화면을 옮기지 못하고 후속 GET의 판정을 기다린다.
+    const id = ++newestRefresh;
+    return new Promise((resolve) => {
+      const merged = queuedRefresh;
+      queuedRefresh = {
+        id,
+        code: activeCode,
+        generation: expectedGeneration,
+        // 합친 요청 가운데 하나라도 알려 달라고 했으면 알린다. 실패를 조용히 삼키지 않는다.
+        reportError: (merged?.reportError ?? false) || reportError,
+        // 기대값은 가장 최근 요청의 것을 쓴다. identity가 바뀌었다면 그것이 지금의 매치다.
+        expectedMatchId,
+        identityVersion: expectedIdentityVersion,
+        waiters: [...(merged?.waiters ?? []), resolve],
+      };
+      pumpRefresh();
+    });
+  }
+
+  function pumpRefresh(): void {
+    if (refreshInFlight !== null || queuedRefresh === null) return;
+    const request = queuedRefresh;
+    queuedRefresh = null;
+    const flight = {};
+    refreshInFlight = flight;
+    void runRefresh(request).then((outcome) => {
+      if (refreshInFlight === flight) refreshInFlight = null;
+      for (const resolve of request.waiters) resolve(outcome);
+      pumpRefresh();
+    });
+  }
+
+  async function runRefresh(
+    {
+      id: refreshId,
+      code: activeCode,
+      generation: expectedGeneration,
+      reportError,
+      expectedMatchId,
+      identityVersion: expectedIdentityVersion,
+    }: RefreshRequest,
+  ): Promise<RefreshOutcome> {
     try {
       const snapshot = await gateway.getMatch(activeCode);
       if (
@@ -180,7 +256,7 @@ export function createOnlineMatchController(
         )
       );
       if (ownsError && expectedMatchId === null) awaitingUnknownIdentity = false;
-      const message = ownsError ? errorMessage(error) : null;
+      const message = ownsError ? onlineErrorText(error, REFRESH_FAILED_MESSAGE) : null;
       if (message !== null && reportError) onError(message, { source: 'refresh' });
       return { delivered: false, error: message };
     }
@@ -189,6 +265,11 @@ export function createOnlineMatchController(
   function close(): void {
     generation += 1;
     newestRefresh += 1;
+    // 예약된 후속 GET은 보내지 않는다. 기다리던 쪽은 «전달되지 않음»으로 끝난다.
+    const dropped = queuedRefresh;
+    queuedRefresh = null;
+    refreshInFlight = null;
+    for (const resolve of dropped?.waiters ?? []) resolve(NOT_DELIVERED);
     unsubscribe?.();
     unsubscribe = null;
     code = null;
@@ -255,8 +336,8 @@ export function createOnlineMatchController(
       if (!activeCode || !ownsActiveIdentity()) {
         onError(
           activeCode
-            ? '새 온라인 매치가 시작되어 이전 문제 답안을 보낼 수 없습니다.'
-            : '온라인 매치 연결이 없습니다. 대기실에서 다시 시작해 주세요.',
+            ? '새 게임이 시작돼 이전 문제의 답은 보낼 수 없어요.'
+            : '게임 연결이 끊겼어요. 대기실에서 다시 들어와 주세요.',
           { source: 'submit', token, matchId, position },
         );
         return;
@@ -295,7 +376,7 @@ export function createOnlineMatchController(
         }
       } catch (error) {
         if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
-          onError(errorMessage(error), { source: 'submit', token, matchId, position });
+          onError(onlineErrorText(error, SUBMIT_FAILED_MESSAGE), { source: 'submit', token, matchId, position });
         }
       }
     },

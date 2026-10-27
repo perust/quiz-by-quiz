@@ -64,3 +64,40 @@ test('조작법 대화상자는 확대 시 제목부터 읽도록 패널에 초�
     '패널 자체에 포커스가 있을 때 Tab과 Shift+Tab 모두 대화상자 안으로 들어간다',
   );
 });
+
+test('로컬 조작법은 실제 동작대로 말한다: 바닥 칸·보기를 직접 누르면 걷지 않고 바로 내고, 시간이 끝나면 밟은 칸이 답이다', async () => {
+  const [html, readme] = await Promise.all([source('../index.html'), source('../README.md')]);
+  const start = html.indexOf('id="help-dialog"');
+  const end = html.indexOf('id="online-help-dialog"');
+  assert.ok(start !== -1 && end > start);
+  const help = html.slice(start, end);
+
+  // 칸 click 은 캐릭터를 옮기지 않고 곧바로 답을 낸다 (src/ui/arena.ts 의 tile click → onChoose)
+  assert.doesNotMatch(help, /걸어가서 냅니다/);
+  assert.match(help, /바닥 칸이나 위 보기를 직접 누르면 캐릭터가 걸어가지 않고 <strong>그 답을 바로 냅니다<\/strong>/);
+  assert.match(help, /<strong>시간이 다 되면 그때 밟고 있는 칸이 답<\/strong>/);
+  assert.match(help, /십자 틈에 서 있으면 아무것도 고르지 않은 것이라 시간 초과가 됩니다/);
+
+  // README 도 로컬 규칙을 같은 말로 적는다 — «시간이 끝나면 오답»이 아니다
+  assert.doesNotMatch(readme, /시간이 끝나면 오답으로 처리하고/);
+  assert.match(readme, /시간이 끝나면 그때 캐릭터가 밟고 있는 칸이 답이 되고, 아무 칸도 밟지 않았으면 시간 초과 오답이다/);
+});
+
+test('누르고 있는 Enter·Space·숫자키의 자동 반복은 해설을 건너뛰지 못한다 (FR-4.4)', async () => {
+  const quiz = await source('../src/ui/quiz.ts');
+  const handlerStart = quiz.indexOf("document.addEventListener('keydown', (event) => {");
+  assert.notEqual(handlerStart, -1);
+  const handler = quiz.slice(handlerStart, quiz.indexOf('\n  });', handlerStart));
+
+  // 반복은 기본 동작까지 막는다 — 포커스가 간 「다음 문제」를 브라우저가 반복마다 누르기 때문이다
+  const guard = handler.match(
+    /if \(\s*event\.repeat\s*&& session\s*&& !el\.screen\.hidden\s*&& \(NEXT_KEYS\.includes\(event\.key\) \|\| CHOICE_KEYS\.includes\(event\.key\)\)\s*\) \{\s*event\.preventDefault\(\);\s*return;\s*\}/,
+  );
+  assert.ok(guard, '자동 반복 가드가 있다');
+
+  // 다른 어떤 처리보다 먼저 온다: 대화상자, 다음 문제, 숫자키, 캐릭터 고르기
+  for (const later of ['if (!el.dialog.hidden)', 'goNext();', 'selectChoice(index);', 'arena.handleKey(event)']) {
+    const at = handler.indexOf(later);
+    assert.ok(at > guard.index, `${later} 보다 반복 가드가 먼저다`);
+  }
+});

@@ -4,15 +4,20 @@ import asyncio
 import hashlib
 import logging
 import threading
+import time
+from collections.abc import Mapping
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.main import EventHub, _match_payload, create_app
 from app.repository import (
+    AbsentHostSweep,
+    ExpiredMatchAdvance,
     MatchAnswerView,
     MatchQuestionView,
     MatchRead,
@@ -75,6 +80,9 @@ class MatchApiRepository:
             explanation="정답 해설",
         )
         self.match_advanced_on_read = False
+        # API가 «모두 답했다»의 분모에서 빼라고 넘긴 참가자 (U32)
+        self.match_absent_player_ids: list[frozenset[UUID]] = []
+        self.answer_absent_player_ids: list[frozenset[UUID]] = []
         self.match = MatchView(
             id=MATCH_ID,
             state="running",
@@ -125,12 +133,26 @@ class MatchApiRepository:
         self.room = _room(ready=is_ready)
         return self.room
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup:
         assert actor_id == PLAYER_ID and code == self.room.code
+        assert absent_player_ids == frozenset()
         return MatchSetup(id=MATCH_ID, category_id="history", game_mode=True, total_questions=10)
 
-    async def get_match(self, actor_id: UUID, code: str) -> MatchRead:
+    async def get_match(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchRead:
         assert actor_id == PLAYER_ID and code == self.room.code
+        self.match_absent_player_ids.append(absent_player_ids)
         return MatchRead(match=self.match, advanced=self.match_advanced_on_read)
 
     async def submit_answer(
@@ -140,13 +162,15 @@ class MatchApiRepository:
         *,
         position: int,
         choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> MatchSubmission:
         assert actor_id == PLAYER_ID and code == self.room.code
+        self.answer_absent_player_ids.append(absent_player_ids)
         assert position == 1 and choice_index == 2
         self.match = replace(self.match, own_answer=self.answer)
         return MatchSubmission(match=self.match, answer=self.answer, advanced=False)
 
-    async def advance_expired_matches(self) -> list[str]:
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
         return []
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
@@ -324,6 +348,152 @@ def test_match_fetch_that_advances_broadcasts_invalidation() -> None:
     assert event == {"type": "match-invalidated", "matchId": str(MATCH_ID)}
 
 
+def test_match_fetch_that_finishes_the_match_also_invalidates_the_room() -> None:
+    # 판이 닫히면 방의 status가 playing에서 waiting으로 바뀐다. 판에서 빠진 멤버(U24)의
+    # 대기실은 GET /match로는 알 길이 없어(그 사람의 판이 아니다) 방을 다시 읽어야 한다.
+    repository = MatchApiRepository()
+    repository.match_advanced_on_read = True
+    repository.match = replace(repository.match, state="finished", question=None)
+
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+            events = [websocket.receive_json(), websocket.receive_json()]
+
+    assert response.status_code == 200
+    assert events == [
+        {"type": "match-invalidated", "matchId": str(MATCH_ID)},
+        {"type": "room-invalidated"},
+    ]
+
+
+class FinishingExpiryRepository(MatchApiRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.pending = [
+            [ExpiredMatchAdvance(code="ABC234", finished=False)],
+            [ExpiredMatchAdvance(code="ABC234", finished=True)],
+        ]
+
+    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
+        return self.pending.pop(0) if self.pending else []
+
+
+def test_expiry_sweep_invalidates_the_room_only_when_the_match_finishes() -> None:
+    repository = FinishingExpiryRepository()
+
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            events = [websocket.receive_json() for _ in range(3)]
+
+    # 문항이 넘어갈 때는 판만, 판이 닫힐 때는 방도 다시 읽게 한다.
+    assert events == [
+        {"type": "match-invalidated"},
+        {"type": "match-invalidated"},
+        {"type": "room-invalidated"},
+    ]
+
+
+OTHER_ID = UUID("87654321-4321-4765-8321-876543218765")
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 5_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_match_reads_and_answers_skip_long_absent_players_but_never_the_requester() -> None:
+    # 매치 중 끊긴 사람 때문에 남은 사람이 문제마다 마감까지 기다리지 않게, API는 유예를
+    # 넘겨 끊긴 참가자를 «모두 답했다»의 분모에서 빼라고 넘긴다 (U32). 소켓이 없어도 지금
+    # 요청한 사람은 끊긴 사람이 아니다 — 빼면 그 사람의 GET 하나가 자기 답을 건너뛴다.
+    repository = MatchApiRepository()
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(repository=cast(RoomsRepository, repository), event_hub=hub)
+    with TestClient(app) as client:
+        # 둘 다 이 프로세스에서 소켓을 본 적이 없다. 처음 물어본 때부터 유예를 센다.
+        assert hub.is_present("ABC234", OTHER_ID)
+        assert hub.is_present("ABC234", PLAYER_ID)
+        fresh = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+        clock.now += 61
+        assert hub.absent_actors("ABC234") == frozenset({OTHER_ID, PLAYER_ID})
+        stale = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+        answered = client.post(
+            "/v1/rooms/ABC234/match/answers",
+            headers=HEADERS,
+            json={"position": 1, "choiceIndex": 2},
+        )
+
+    assert fresh.status_code == stale.status_code == answered.status_code == 200
+    assert repository.match_absent_player_ids == [frozenset(), frozenset({OTHER_ID})]
+    assert repository.answer_absent_player_ids == [frozenset({OTHER_ID})]
+
+
+class AbsentAdvanceRepository(MatchApiRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.advance_calls: list[tuple[str, frozenset[UUID]]] = []
+        self.advance_requested = threading.Event()
+
+    async def transfer_absent_hosts(
+        self,
+        absent_by_room: Mapping[str, frozenset[UUID]],
+    ) -> AbsentHostSweep:
+        # 방장은 접속 중이고 끊긴 친구는 아직 참가자다.
+        return AbsentHostSweep(transferred=frozenset(), members=dict(absent_by_room))
+
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        self.advance_calls.append((code, absent_player_ids))
+        self.advance_requested.set()
+        return True
+
+
+def test_presence_sweep_advances_a_question_that_waited_only_for_a_newly_absent_player() -> None:
+    # 남은 사람이 이미 다 답했으면 다음 제출이 없어 마감까지 아무도 다시 판정하지 않는다.
+    # 누가 유예를 넘기는 순간 sweep이 한 번 판정하고, 넘겼으면 화면들이 다시 읽게 한다.
+    repository = AbsentAdvanceRepository()
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=cast(RoomsRepository, repository),
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            # 판에 있던 친구는 소켓이 끊긴 채 돌아오지 않는다.
+            assert hub.is_present("ABC234", OTHER_ID)
+            time.sleep(0.05)
+            assert repository.advance_calls == []
+
+            clock.now += 61
+            assert repository.advance_requested.wait(timeout=2)
+            events = [websocket.receive_json(), websocket.receive_json()]
+
+    assert repository.advance_calls[0] == ("ABC234", frozenset({OTHER_ID}))
+    assert events == [{"type": "room-invalidated"}, {"type": "match-invalidated"}]
+
+
 def test_revealing_match_is_the_only_snapshot_that_contains_feedback_and_scores() -> None:
     repository = MatchApiRepository()
     repository.match = replace(repository.match, state="revealing", own_answer=repository.answer)
@@ -352,6 +522,47 @@ def test_revealing_match_is_the_only_snapshot_that_contains_feedback_and_scores(
             "answeredCount": 0,
         }
     ]
+
+
+def test_active_match_payload_reports_remaining_time_measured_at_response() -> None:
+    repository = MatchApiRepository()
+    now = datetime(2026, 9, 18, 0, 0, 12, 500_000, tzinfo=UTC)
+
+    running = _match_payload(repository.match, now)
+    revealing = _match_payload(
+        replace(
+            repository.match,
+            state="revealing",
+            deadline_at="2026-09-18T00:00:28+00:00",
+            own_answer=repository.answer,
+        ),
+        now,
+    )
+    finished = _match_payload(
+        replace(repository.match, state="finished", deadline_at=None, question=None),
+        now,
+    )
+
+    # 마감 시각과 함께 «응답 시점의 남은 양»을 보낸다. 브라우저 시계가 틀려도 표시가 맞는다.
+    assert running["deadlineAt"] == "2026-09-18T00:00:20+00:00"
+    assert running["remainingMs"] == 7_500
+    # 공개 phase의 deadline은 다음 문제로 넘어가는 시각이다.
+    assert revealing["remainingMs"] == 15_500
+    assert finished["remainingMs"] is None
+
+
+def test_remaining_time_never_goes_negative_after_the_deadline() -> None:
+    repository = MatchApiRepository()
+    late = datetime(2026, 9, 18, 0, 1, 0, tzinfo=UTC)
+
+    assert _match_payload(repository.match, late)["remainingMs"] == 0
+
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+    assert response.status_code == 200
+    # 고정된 테스트 마감은 이미 지났다. 판정은 서버가 하고 표시는 0에서 멈춘다.
+    assert response.json()["remainingMs"] == 0
 
 
 def test_answer_submission_is_rate_limited_per_player_and_room() -> None:

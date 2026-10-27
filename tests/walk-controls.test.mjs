@@ -83,3 +83,52 @@ test('화면은 공용 조작부에 배치만 선언하고 짧은 화면까지 �
   assert.match(css, /width: var\(--walk-knob-size\)/);
   assert.match(css, /width: var\(--walk-confirm-size\)/);
 });
+
+test('입력 상태가 조작부 모습을 정한다: 적는 동안 숨김·대상 없음 흐림·누르는 동안 눌림', async () => {
+  const { MOBILE, loadStyles, node, valueOf } = await import('./css-cascade.mjs');
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const tree = (attrs = '', confirmClasses = '') => {
+    const root = node(`div.walk-controls.walk-controls--on#walk-controls${attrs}`, node('main.app', node('body')));
+    return {
+      stick: node('div.walk-stick#walk-stick', root),
+      confirm: node(`button.walk-confirm#walk-confirm${confirmClasses}`, root),
+    };
+  };
+
+  const shown = tree("[data-armed='true']");
+  assert.equal(valueOf(rules, shown.stick, 'display', MOBILE), 'block');
+  assert.equal(valueOf(rules, shown.confirm, 'display', MOBILE), 'block');
+  assert.equal(valueOf(rules, shown.confirm, 'background', MOBILE), 'var(--accent)');
+
+  // 글자를 적는 동안에는 --on 이어도 둘 다 거둔다
+  const typing = tree("[data-typing='true']");
+  assert.equal(valueOf(rules, typing.stick, 'display', MOBILE), 'none');
+  assert.equal(valueOf(rules, typing.confirm, 'display', MOBILE), 'none');
+
+  // 누를 것이 없으면 채움을 거둔 빈 고리 — 색만이 아니라 채움·두께가 함께 빠진다
+  const idle = tree("[data-armed='false']");
+  assert.equal(valueOf(rules, idle.confirm, 'display', MOBILE), 'block', '흐려도 자리는 그대로다');
+  assert.equal(valueOf(rules, idle.confirm, 'background', MOBILE), 'var(--glass)');
+  assert.equal(valueOf(rules, idle.confirm, 'box-shadow', MOBILE), 'var(--elevation-1)');
+  assert.match(valueOf(rules, idle.confirm, 'border', MOBILE) ?? '', /solid var\(--border-strong\)/);
+
+  // 확정은 뗄 때 하므로 누르고 있는 동안의 눌림을 상태 클래스로도 그린다
+  const pressed = tree("[data-armed='true']", '.walk-confirm--pressed');
+  assert.equal(valueOf(rules, pressed.confirm, 'translate', MOBILE), '0 2px');
+  assert.equal(valueOf(rules, pressed.confirm, 'background', MOBILE), 'var(--accent-hover)');
+  assert.equal(valueOf(rules, pressed.confirm, 'touch-action', MOBILE), 'none');
+});
+
+test('제자리 뛰기는 끝없이 돌지 않고 세 번에서 멈춘다 (WCAG 2.2.2)', async () => {
+  const { MOBILE, loadStyles, node, valueOf } = await import('./css-cascade.mjs');
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const walker = node('div.walker.walker--idle', node('body'));
+  const body = node('span.walker__body', walker);
+  const shadow = node('span.walker__shadow', walker);
+  assert.equal(valueOf(rules, body, 'animation', MOBILE), 'walker-idle 1.1s 3');
+  assert.equal(valueOf(rules, shadow, 'animation', MOBILE), 'walker-idle-shadow 1.1s 3');
+
+  // 고를 때의 한 번 뛰기는 여전히 제자리 뛰기를 이긴다 (walker.ts가 animationend로 뗀다)
+  const hop = node('div.walker.walker--idle.walker--hop', node('body'));
+  assert.equal(valueOf(rules, node('span.walker__body', hop), 'animation', MOBILE), 'walker-land 0.42s');
+});

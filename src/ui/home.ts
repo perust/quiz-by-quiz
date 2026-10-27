@@ -18,8 +18,16 @@ export interface HomeScreenDeps {
   onOpenRanking: () => void;
   onOpenCharacters: () => void;
   onOpenOnline: () => void;
+  /** 「아직 방에 있어요」 줄을 눌렀을 때. 그 방의 대기실로 간다 (U35) */
+  onReturnToRoom: (code: string) => void;
   /** 닉네임을 바꿨을 때 */
   onNickname: (nickname: string) => void;
+}
+
+/** 홈에서 돌아갈 수 있는 방. 이름은 화면에 보이고 코드는 돌아갈 때 쓴다 */
+export interface HomeRoomNote {
+  code: string;
+  name: string;
 }
 
 /**
@@ -45,6 +53,18 @@ export interface HomeScreen {
 
   /** 홈 하단 안내 문구. 문구가 없으면 숨긴다 */
   setNote(message: string | null | undefined): void;
+
+  /**
+   * 온라인 입구의 바쁨 표시 (U34). 로비는 목록을 받아 그린 뒤에야 열리므로 그동안
+   * 「연결 중…」을 보이고, 다시 눌러도 요청을 겹쳐 보내지 않는다.
+   */
+  setOnlineBusy(busy: boolean): void;
+
+  /** 아직 들어가 있는 방이 있으면 dock 맨 위에 복귀 줄을 띄운다. null 이면 거둔다 (U35) */
+  setRoomNote(room: HomeRoomNote | null): void;
+
+  /** 「혼자 연습하기」로 왔을 때. 분야 dock의 첫 칸에 포커스를 둔다 (U29) */
+  focusPractice(): void;
 }
 
 /** 320px의 다섯 칸 dock에서도 서로 붙지 않는 시각용 짧은 이름. 접근 가능한 이름은 전체 이름을 쓴다. */
@@ -54,7 +74,8 @@ const COMPACT_CATEGORY_NAMES: Partial<Record<CategoryId, string>> = {
 };
 
 export function createHomeScreen({
-  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onNickname,
+  onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onReturnToRoom,
+  onNickname,
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
@@ -65,6 +86,9 @@ export function createHomeScreen({
     openRanking: need<HTMLButtonElement>('open-ranking'),
     openCharacters: need<HTMLButtonElement>('open-characters'),
     openOnline: need<HTMLButtonElement>('open-online'),
+    openOnlineDesc: need('open-online-desc'),
+    roomNote: need<HTMLButtonElement>('home-room-note'),
+    roomNoteText: need('home-room-note-text'),
     nicknameCard: need<HTMLButtonElement>('open-nickname'),
     nicknameValue: need('nickname-value'),
     dialog: need('nickname-dialog'),
@@ -118,11 +142,24 @@ export function createHomeScreen({
     },
   });
   let noteVisible = false;
+  /** 로비를 불러오는 중인가. 그동안의 클릭은 같은 요청을 겹쳐 보낼 뿐이다 */
+  let onlineBusy = false;
+  // 쉬는 상태의 이름과 보조 줄은 HTML 이 정한다. 바쁨 표시를 거둘 때 그대로 되돌린다
+  const onlineLabel = el.openOnline.getAttribute('aria-label') ?? '온라인';
+  const onlineDesc = el.openOnlineDesc.textContent ?? '';
+  /** 복귀 줄이 가리키는 방 코드 */
+  let roomNoteCode: string | null = null;
 
   el.startAll.addEventListener('click', () => onStartAll());
   el.openRanking.addEventListener('click', () => onOpenRanking());
   el.openCharacters.addEventListener('click', () => onOpenCharacters());
-  el.openOnline.addEventListener('click', () => onOpenOnline());
+  el.openOnline.addEventListener('click', () => {
+    if (onlineBusy) return;
+    onOpenOnline();
+  });
+  el.roomNote.addEventListener('click', () => {
+    if (roomNoteCode) onReturnToRoom(roomNoteCode);
+  });
 
   // ── 닉네임 바꾸기 ──────────────────────────────────────────────
   // window.prompt 대신 페이지 안 다이얼로그를 쓴다. 열려 있는 동안에는
@@ -298,6 +335,26 @@ export function createHomeScreen({
         const screen = el.stage.closest<HTMLElement>('[data-screen]');
         if (screen && !screen.hidden) walker.setEnabled(true);
       }
+    },
+
+    setOnlineBusy(busy) {
+      onlineBusy = busy;
+      // 색이 아니라 글자로 알린다. 버튼 이름도 함께 바꿔 스크린리더에도 같은 말이 간다
+      el.openOnlineDesc.textContent = busy ? '연결 중…' : onlineDesc;
+      el.openOnline.setAttribute('aria-label', busy ? '온라인, 연결 중' : onlineLabel);
+      if (busy) el.openOnline.setAttribute('aria-busy', 'true');
+      else el.openOnline.removeAttribute('aria-busy');
+    },
+
+    setRoomNote(room) {
+      roomNoteCode = room?.code ?? null;
+      el.roomNoteText.textContent = room ? `「${room.name}」 방에 아직 있어요` : '';
+      el.roomNote.hidden = !room;
+    },
+
+    focusPractice() {
+      const first = el.grid.querySelector<HTMLButtonElement>('.category-card:not(:disabled)');
+      (first ?? el.startAll).focus({ preventScroll: true });
     },
   };
 }

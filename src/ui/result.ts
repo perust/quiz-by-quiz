@@ -1,11 +1,13 @@
 // 결과 화면 렌더링 (FR-5.2 ~ FR-5.7, FR-6.1)
 // 점수 계산은 core/scoring.js가 끝내고 오고, 저장은 app.js가 어댑터로 넘긴다.
-// 이 파일은 값을 그리고 닉네임 입력을 검사하는 일만 한다.
+// 이 파일은 값을 그리고 닉네임 입력을 검사하는 일, 그리고 **화면을 떠날 때 아직 남기지 않은
+// 기록을 남기는 일**(FR-6.1)을 한다.
 
-import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
+import { DEFAULT_NICKNAME, NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
 import { formatDuration, formatPercent } from './format.js';
+import { announce } from './screens.js';
 import type { RoundSummary } from '../types.js';
 
 /** 랭킹에 등록한 결과. app.ts의 어댑터 호출이 이 모양으로 답한다 */
@@ -17,13 +19,22 @@ export interface RegisterOutcome {
   stored: boolean;
 }
 
+/**
+ * 화면을 옮기는 콜백. 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려줘도 된다 —
+ * 자동 저장이 실패했다는 말은 **옮긴 뒤의 화면에서** 한 번 알린다.
+ *
+ * 기다리는 동안 다른 행동을 누르면 그 콜백도 곧바로 불린다. 먼저 부른 이동을 버리는 것은
+ * 부르는 쪽(app.ts 의 navigation 세대)의 몫이다 — 나중에 누른 것이 이긴다.
+ */
+type Leave = () => void | Promise<void>;
+
 /** app.ts가 넘겨주는 콜백 뭉치 */
 export interface ResultScreenDeps {
-  onRetry: () => void;
-  onHome: () => void;
+  onRetry: Leave;
+  onHome: Leave;
   /** 방에서 시작한 판이면 대기실로 되돌아간다 */
-  onRoom: () => void;
-  onRanking: () => void;
+  onRoom: Leave;
+  onRanking: Leave;
   onRegister: (nickname: string) => Promise<RegisterOutcome>;
 }
 
@@ -32,6 +43,7 @@ export interface ResultView {
   summary: RoundSummary;
   modeLabel: string;
   bestScore: number | null;
+  /** 등록 칸에 미리 채울 이름. 저장된 닉네임이고, 없으면 기본 닉네임이다 (FR-6.11) */
   nickname: string;
   characterId: string;
   /** 방에 들어가 있는가. 「대기실로」를 그릴지 정한다 */
@@ -44,7 +56,49 @@ export interface ResultScreen {
 
   /** 화면을 떠난다. 캐릭터와 손가락 조작부를 함께 거둔다 */
   hide(): void;
+
+  /**
+   * 버튼을 거치지 않고 페이지를 떠날 때(탭 닫기·새로고침) 아직 남기지 않은 기록을 곧바로 남긴다.
+   * 로컬 저장소는 부르는 자리에서 동기로 써지므로 `pagehide` 안에서도 끝난다.
+   */
+  flush(): void;
 }
+
+function isValidNickname(value: string): boolean {
+  return value.length >= NICKNAME_MIN_LENGTH && value.length <= NICKNAME_MAX_LENGTH;
+}
+
+/**
+ * 화면을 떠날 때 자동 저장에 쓸 이름 (FR-6.1).
+ *
+ * 칸의 값이 규칙(2~10자)에 맞으면 그것을 쓴다. 비웠거나 한 글자만 적다 떠났으면 **막지 않고**
+ * 저장된 이름으로 대신한다 — 떠나는 사람을 붙잡고 이름을 고치라고 할 일이 아니다.
+ * 저장된 이름마저 규칙 밖이면(예전 판이 남긴 값) 기본 닉네임을 쓴다.
+ */
+export function autoSaveNickname(typed: string, saved: string): string {
+  const value = typed.trim();
+  if (isValidNickname(value)) return value;
+  const fallback = saved.trim();
+  return isValidNickname(fallback) ? fallback : DEFAULT_NICKNAME;
+}
+
+const SAVE_FAILED = '기록을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.';
+
+/**
+ * 저장 결과를 한 줄로. 직접 등록과 자동 저장이 같은 말을 쓴다.
+ * 순위는 **이 브라우저 안의** 순위다 — 다른 사람과 겨룬 순위로 읽히지 않게 범위를 붙인다 (PRD 9.1).
+ */
+export function describeOutcome(
+  { rank, kept, stored }: RegisterOutcome,
+): { text: string; tone: MessageTone } {
+  if (!stored) return { text: SAVE_FAILED, tone: 'error' };
+  if (kept) return { text: `이 브라우저 기록 중 ${rank}위로 저장했어요.`, tone: 'done' };
+  // 상위 10개만 보관하므로 밀려난 기록은 남지 않는다 (FR-6.4)
+  return { text: '상위 10위 밖이라 랭킹 목록에는 남지 않았어요.', tone: null };
+}
+
+/** 자동 저장이 끝난 모양. round는 어느 판의 결과였는지다 */
+type Settled = { round: number } & ({ outcome: RegisterOutcome } | { error: string });
 
 /** 메시지의 결. null이면 아무 색도 입히지 않는다 */
 type MessageTone = 'error' | 'done' | null;
@@ -82,7 +136,10 @@ export function createResultScreen(
     categoryBlock: need('result-category-block'),
     categoryList: need('result-category-list'),
     reviewBlock: need('result-review-block'),
+    reviewTitle: need('result-review-title'),
     review: need('result-review'),
+    reviewJump: need('result-review-jump'),
+    reviewLink: need<HTMLAnchorElement>('result-review-link'),
     form: need<HTMLFormElement>('register-form'),
     input: need<HTMLInputElement>('nickname-input'),
     registerButton: need<HTMLButtonElement>('register-button'),
@@ -109,6 +166,30 @@ export function createResultScreen(
 
   /** 한 판에 한 번만 등록할 수 있다 */
   let registered = false;
+  /**
+   * 이번 판의 저장. **직접 등록과 자동 저장이 이 하나를 나눠 쓴다** — 「등록」을 누르고
+   * 곧바로 「다시 하기」를 눌러도 같은 저장을 기다릴 뿐 두 번 저장하지 않는다.
+   */
+  let saving: Promise<RegisterOutcome> | null = null;
+  /** 몇 번째로 올린 결과인가. 늦게 끝난 저장이 다음 판의 화면을 건드리지 않게 한다 */
+  let round = 0;
+  /**
+   * 떠나며 저장하는 중이다. 같은 틱에 행동 버튼을 연달아 눌러도 한 번만 저장하고 옮긴다.
+   * **저장하는 동안만 선다** — 옮기기까지 붙들면 느린 「대기실로」(네트워크를 기다린다)가
+   * 끝날 때까지 홈·다시 하기·랭킹·브라우저 «뒤로»가 모두 삼켜졌다
+   */
+  let leaving = false;
+  /**
+   * 몇 번째로 떠났는가. 옮기기를 기다리는 동안 다른 행동을 누르면 그쪽이 이긴다 — 늦게 끝난
+   * 이동은 app.ts 의 navigation 세대가 버리고, 여기서는 바쁨 표시·등록 칸·알림을 건드리지 않는다
+   */
+  let departure = 0;
+  /** 아직 등록 칸에 옮기지 않은 자동 저장 결과. 마지막으로 옮긴 쪽이 한 번만 반영하고 알린다 */
+  let unsettled: Settled | null = null;
+  /** 옮기기를 기다리는 버튼과 원래 글자. 네트워크를 기다리는 「대기실로」만 단다 */
+  let busy: { button: HTMLButtonElement; label: string | null } | null = null;
+  /** 칸이 규칙에 맞지 않을 때 대신 쓸 이름. show()가 받은 저장된 닉네임이다 */
+  let fallbackNickname = DEFAULT_NICKNAME;
 
   // ── 점수와 지표 ────────────────────────────────────────────────
 
@@ -186,6 +267,10 @@ export function createResultScreen(
   /** 틀린 문제를 정답·해설과 함께 (FR-5.4) */
   function renderReview(summary: RoundSummary): void {
     el.reviewBlock.hidden = summary.review.length === 0;
+    // 풀이는 등록 뒤 맨 아래라 「다시 하기」를 누르는 사람은 있는 줄도 모르고 지나간다.
+    // 요약 칩 아래에 그리로 건너가는 글자 링크를 둔다 — 버튼이 아니라 결과 행동의 무게는 그대로다
+    el.reviewJump.hidden = summary.review.length === 0;
+    el.reviewLink.textContent = `틀린 문제 ${summary.review.length}개 해설 보기`;
     if (summary.review.length === 0) return;
 
     el.review.replaceChildren();
@@ -236,22 +321,49 @@ export function createResultScreen(
    * **잠그기 전에 «어디 있을 것»이라고 넘겨짚지 않는다.** 폼 제출은 브라우저가
    * 포커스를 옮길 수도 있어, 미리 검사하면 맞지 않는다 — 실제로 그래서 한 번
    * 놓쳤다. 잠근 뒤의 실제 상태만 본다.
+   *
+   * 떠나는 길에서 잠글 때는 포커스를 옮기지 않는다(`rescueFocus` false). 누른 자리에 두어야
+   * 옮기기를 기다리는 동안 걷던 사람의 다음 Enter 가 엉뚱한 「다시 하기」를 누르지 않는다.
    */
-  function lockForm(): void {
+  function lockForm(rescueFocus = true): void {
     registered = true;
     el.input.disabled = true;
     el.registerButton.disabled = true;
     el.registerButton.textContent = '등록 완료';
+    if (!rescueFocus) return;
     const focused = document.activeElement;
     if (!focused || focused === document.body) el.retryButton.focus();
   }
 
+  /**
+   * 이번 판을 남긴다. 이미 남기는 중이면 그 저장을 같이 기다린다 — 두 번 저장하지 않는다.
+   *
+   * **`onRegister`는 아무것도 기다리지 않고 곧바로 부른다.** 로컬 저장소는 그 호출 안에서
+   * 동기로 써지므로, `pagehide`처럼 기다릴 수 없는 자리에서도 기록이 남는다.
+   */
+  function save(nickname: string): Promise<RegisterOutcome> {
+    if (saving) return saving;
+    const mine = round;
+    const attempt = onRegister(nickname);
+    saving = attempt;
+    attempt.then(
+      () => {
+        if (mine === round) registered = true;
+      },
+      () => {
+        // 실패한 저장은 다시 시도할 수 있게 비운다. 실패를 알리는 것은 기다린 쪽의 몫이다
+        if (mine === round && saving === attempt) saving = null;
+      },
+    );
+    return attempt;
+  }
+
   async function submitNickname(event: Event): Promise<void> {
     event.preventDefault();
-    if (registered) return;
+    if (registered || saving) return;
 
     const nickname = el.input.value.trim();
-    if (nickname.length < NICKNAME_MIN_LENGTH || nickname.length > NICKNAME_MAX_LENGTH) {
+    if (!isValidNickname(nickname)) {
       setMessage(
         `닉네임은 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 입력해 주세요.`,
         'error'
@@ -261,37 +373,130 @@ export function createResultScreen(
     }
 
     el.registerButton.disabled = true;
-    setMessage('등록 중입니다…', null);
+    setMessage('저장하는 중이에요…', null);
 
     try {
-      const { rank, kept, stored } = await onRegister(nickname);
+      const outcome = await save(nickname);
       lockForm();
-
-      if (!stored) {
-        setMessage('기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.', 'error');
-      } else if (kept) {
-        setMessage(`${rank}위로 등록했습니다.`, 'done');
-      } else {
-        // 상위 10개만 보관하므로 밀려난 기록은 남지 않는다 (FR-6.4)
-        setMessage('상위 10위 밖이라 랭킹 목록에는 남지 않았습니다.', null);
-      }
+      const { text, tone } = describeOutcome(outcome);
+      setMessage(text, tone);
     } catch (error) {
       el.registerButton.disabled = false;
       // catch로 잡히는 값은 TS에서 unknown이다. 던지는 쪽(저장소 어댑터)이
       // Error만 던지므로 지금까지처럼 message를 그대로 읽는다.
-      setMessage(`등록에 실패했습니다: ${(error as Error).message}`, 'error');
+      setMessage(`기록을 저장하지 못했어요: ${(error as Error).message}`, 'error');
     }
   }
 
+  // ── 떠날 때 자동 저장 (FR-6.1) ─────────────────────────────────
+  //
+  // 「등록」을 누르지 않고 「다시 하기」·「홈으로」를 누르면 기록이 조용히 사라졌고, 다음 판의
+  // 최고 기록 비교와 홈의 별 점수도 그 판을 몰랐다. 그래서 결과 화면을 떠나는 모든 길이 저장을
+  // 거친다 — 행동 버튼 넷, 브라우저 «뒤로»(「홈으로」를 누른다), 탭 닫기·새로고침(`flush`).
+
+  /**
+   * 아직 남기지 않았으면 칸의 이름으로 남긴다. **실패해도 던지지 않는다** —
+   * 저장 실패가 이동을 막으면 안 된다. 무엇이 됐는지만 돌려준다.
+   */
+  async function commitIfNeeded(): Promise<Settled | null> {
+    if (registered) return null;
+    const mine = round;
+    try {
+      const outcome = await save(autoSaveNickname(el.input.value, fallbackNickname));
+      return { round: mine, outcome };
+    } catch (error) {
+      // 위 submitNickname과 같은 이유로 message를 그대로 읽는다
+      return { round: mine, error: (error as Error).message };
+    }
+  }
+
+  /** 자동 저장의 결과를 등록 칸에 남긴다. 직접 등록했을 때와 같은 모양이 된다 */
+  function applySettled(settled: Settled): void {
+    if (settled.round !== round) return;
+    if ('outcome' in settled) {
+      lockForm();
+      const { text, tone } = describeOutcome(settled.outcome);
+      setMessage(text, tone);
+    } else {
+      setMessage(`기록을 저장하지 못했어요: ${settled.error}`, 'error');
+    }
+  }
+
+  /**
+   * 옮기기를 기다리는 버튼에 바쁨을 단다 (`aria-busy` + 글자). null 이면 걷는다.
+   * 잠그지는 않는다 — 잠그면 포커스가 떨어지고, 다른 행동으로 갈아타는 길은 열려 있어야 한다.
+   */
+  function markBusy(button: HTMLButtonElement | null, busyLabel?: string): void {
+    if (busy) {
+      if (busy.label !== null) busy.button.textContent = busy.label;
+      busy.button.removeAttribute('aria-busy');
+      busy = null;
+    }
+    if (!button || !busyLabel) return;
+    busy = { button, label: button.textContent };
+    button.textContent = busyLabel;
+    button.setAttribute('aria-busy', 'true');
+  }
+
+  async function leave(next: Leave, button: HTMLButtonElement, busyLabel?: string): Promise<void> {
+    // 같은 틱에 연달아 누른 것은 한 번만 받는다. 기다리는 이동을 같은 버튼으로 겹쳐 보내지도 않는다
+    if (leaving || busy?.button === button) return;
+    leaving = true;
+    // commitIfNeeded 는 실패해도 던지지 않는다. 잠금은 저장까지만 — 옮기는 동안에는 풀어 둔다
+    const settled = await commitIfNeeded();
+    leaving = false;
+    if (settled) {
+      // 남겼으면 등록 칸부터 잠근다. 옮기기를 기다리는 동안 「등록」이 살아 있는 것처럼 보이면
+      // 눌러도 아무 일이 없다(이미 남긴 판이다). 문구는 아래에서 옮긴 뒤에 넣는다
+      if ('outcome' in settled && settled.round === round) lockForm(false);
+      unsettled = settled;
+    }
+
+    const mine = ++departure;
+    markBusy(button, busyLabel);
+    try {
+      await next();
+    } finally {
+      if (mine === departure) markBusy(null);
+    }
+    // 그사이 다른 행동이 옮기기를 넘겨받았다. 등록 칸과 알림도 그쪽이 맡는다
+    if (mine !== departure || !unsettled) return;
+    const done = unsettled;
+    unsettled = null;
+    // 등록 칸 문구는 화면을 옮긴 뒤에 고친다. 숨은 status는 낭독되지 않으므로,
+    // 저장하지 못했다는 말은 옮겨 간 화면에서 `announce`로 **한 번만** 알린다
+    applySettled(done);
+    const failure = 'error' in done
+      ? `기록을 저장하지 못했어요: ${done.error}`
+      : (done.outcome.stored ? null : SAVE_FAILED);
+    if (failure) announce(failure);
+  }
+
   el.form.addEventListener('submit', submitNickname);
-  el.retryButton.addEventListener('click', () => onRetry());
-  el.rankingButton.addEventListener('click', () => onRanking());
-  el.homeButton.addEventListener('click', () => onHome());
-  el.roomButton.addEventListener('click', () => onRoom());
+  el.retryButton.addEventListener('click', () => { void leave(onRetry, el.retryButton); });
+  el.rankingButton.addEventListener('click', () => { void leave(onRanking, el.rankingButton); });
+  el.homeButton.addEventListener('click', () => { void leave(onHome, el.homeButton); });
+  // 대기실은 방 정보를 받아 그린 뒤에 열린다(네트워크). 기다리는 동안 홈의 온라인 입구처럼 글자로 말한다
+  el.roomButton.addEventListener('click', () => { void leave(onRoom, el.roomButton, '연결 중…'); });
+
+  // 주소에 «#»을 붙이지 않는다 — 해시 라우팅을 쓰지 않고, 붙이면 히스토리에 항목이 하나 더 쌓인다.
+  // 제목으로 포커스를 옮겨 스크린리더도 거기서부터 읽게 한다
+  el.reviewLink.addEventListener('click', (event) => {
+    event.preventDefault();
+    el.reviewTitle.scrollIntoView({ block: 'start' });
+    el.reviewTitle.focus({ preventScroll: true });
+  });
 
   return {
     hide() {
       walker.hide();
+    },
+
+    flush() {
+      if (registered || saving) return;
+      void commitIfNeeded().then((settled) => {
+        if (settled) applySettled(settled);
+      });
     },
 
     show({ summary, modeLabel, bestScore, nickname, characterId, inRoom }) {
@@ -299,12 +504,20 @@ export function createResultScreen(
       // 방에서 시작한 판이면 돌아갈 길을 준다. 홈으로 가는 길도 그대로 둔다 —
       // 방을 떠나고 싶을 수도 있고, 방은 로비에서 코드로 다시 찾을 수 있다
       el.roomButton.hidden = !inRoom;
+      round += 1;
       registered = false;
+      saving = null;
+      leaving = false;
+      // 앞 판에서 아직 끝나지 않은 이동은 이 판의 바쁨 표시·등록 칸·알림을 건드리지 않는다
+      departure += 1;
+      unsettled = null;
+      markBusy(null);
       el.input.disabled = false;
       el.registerButton.disabled = false;
       el.registerButton.textContent = '등록';
-      // 마지막에 쓴 닉네임을 기본값으로 채운다 (FR-6.11)
-      el.input.value = nickname ?? '';
+      // 마지막에 쓴 닉네임(없으면 기본 닉네임)을 채운다 (FR-6.11). 홈 HUD와 같은 이름이다
+      fallbackNickname = nickname;
+      el.input.value = nickname;
       setMessage(null, null);
 
       renderScore(summary, modeLabel);

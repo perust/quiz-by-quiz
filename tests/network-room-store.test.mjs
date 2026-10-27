@@ -44,6 +44,7 @@ function room(changes = {}) {
     isMine: true,
     joined: true,
     createdAt: '2026-09-17T00:00:00+00:00',
+    status: 'waiting',
     ...changes,
   };
 }
@@ -182,6 +183,64 @@ test('네트워크 저장소는 normal-mode 방과 캐릭터 없는 참가자 sn
   }
 });
 
+test('네트워크 저장소는 참가자 접속 상태를 그대로 받고 잘못된 값은 거부한다', async () => {
+  const offline = {
+    id: '22222222-2222-4222-8222-222222222222',
+    nickname: '친구',
+    characterId: 'slime-pink',
+    isReady: false,
+    connected: false,
+  };
+  let players = [{ ...room().players[0], connected: true }, offline];
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234')) return json(room({ players }));
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+
+  const loaded = await store.getRoom('ABC234');
+  assert.deepEqual(loaded?.players.map((player) => player.connected), [true, false]);
+
+  players = [{ ...offline, connected: 'no' }];
+  await assert.rejects(store.getRoom('ABC234'), /접속 상태/);
+});
+
+test('U24: 네트워크 저장소는 도는 판에 내 자리가 있는지 받고 잘못된 값은 거부한다', async () => {
+  let snapshot = room({ status: 'playing', inMatch: false });
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234')) return json(snapshot);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+
+  const leftOut = await store.getRoom('ABC234');
+  assert.deepEqual([leftOut?.status, leftOut?.inMatch], ['playing', false]);
+  snapshot = room({ status: 'playing', inMatch: true });
+  const seated = await store.getRoom('ABC234');
+  assert.deepEqual([seated?.status, seated?.inMatch], ['playing', true]);
+
+  snapshot = room({ status: 'playing', inMatch: 'yes' });
+  await assert.rejects(store.getRoom('ABC234'), /진행 상태/);
+});
+
 test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 보내고 새 방 snapshot을 받는다', async () => {
   const calls = [];
   const readyRoom = room({
@@ -210,7 +269,18 @@ test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 �
 
   const result = await store.setReady({ code: 'ABC234', isReady: true });
 
-  assert.deepEqual(result, { ok: true, room: readyRoom });
+  // connected를 모르는 이전 서버의 snapshot은 끊김을 단정하지 않고 접속 중으로 읽는다.
+  // inMatch를 모르는 이전 서버의 snapshot은 판에 내 자리가 없는 것으로 읽는다.
+  // connected가 없는 이전 서버는 방장의 준비도 요구하므로 hostReadyImplicit은 false다 (U28 호환).
+  assert.deepEqual(result, {
+    ok: true,
+    room: {
+      ...readyRoom,
+      inMatch: false,
+      hostReadyImplicit: false,
+      players: readyRoom.players.map((player) => ({ ...player, connected: true })),
+    },
+  });
   const readyCall = calls.find(({ url }) => url.endsWith('/v1/rooms/ABC234/ready'));
   assert.equal(readyCall.init.method, 'PUT');
   assert.deepEqual(JSON.parse(readyCall.init.body), { isReady: true });
@@ -693,7 +763,7 @@ test('movement events are validated and carry the local socket generation for st
   }
 });
 
-test('같은 socket의 겹친 room refresh는 가장 늦게 시작한 응답만 내보낸다', async () => {
+test('같은 socket의 room-invalidated는 요청 하나만 띄우고 그사이 온 무효화는 한 번의 후속 조회로 합친다', async () => {
   FakeWebSocket.instances.length = 0;
   const pending = [];
   const fetchImpl = async (input) => {
@@ -718,25 +788,32 @@ test('같은 socket의 겹친 room refresh는 가장 늦게 시작한 응답만 
   try {
     await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
     const socket = FakeWebSocket.instances[0];
-    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
-    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
-    await waitFor(() => pending.length === 2, 'room refreshes were not started');
+    for (let index = 0; index < 4; index += 1) {
+      socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+    }
+    await waitFor(() => pending.length === 1, 'room refresh was not started');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(pending.length, 1, 'only one room refresh may be in flight');
 
+    pending[0](json(room({ name: '첫 응답' })));
+    await waitFor(() => pending.length === 2, 'queued invalidations did not trigger one follow-up');
+    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
     pending[1](json(room({ name: '최신 방' })));
-    await waitFor(() => events.some((event) => event.type === 'room'), 'latest room was not emitted');
-    pending[0](json(room({ name: '오래된 방' })));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => pending.length === 3, 'an invalidation during the follow-up was lost');
+    pending[2](json(room({ name: '마지막 방' })));
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
+    assert.equal(pending.length, 3, 'settled invalidations must not keep refetching');
     assert.deepEqual(
       events.filter((event) => event.type === 'room').map((event) => event.room.name),
-      ['최신 방'],
+      ['첫 응답', '최신 방', '마지막 방'],
     );
   } finally {
     unsubscribe();
   }
 });
 
-test('a successful refresh is delivered when a later overlapping refresh fails', async () => {
+test('a failed queued room refresh keeps the earlier successful snapshot', async () => {
   FakeWebSocket.instances.length = 0;
   const pending = [];
   const fetchImpl = async (input) => {
@@ -763,20 +840,21 @@ test('a successful refresh is delivered when a later overlapping refresh fails',
     const socket = FakeWebSocket.instances[0];
     socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
     socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
-    await waitFor(() => pending.length === 2, 'room refreshes were not started');
+    await waitFor(() => pending.length === 1, 'room refresh was not started');
 
     pending[0].resolve(json(room({ name: '먼저 도착한 최신 상태' })));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => pending.length === 2, 'queued refresh was not started');
     pending[1].reject(new Error('later refresh failed'));
-    await waitFor(
-      () => events.some((event) => event.type === 'room'),
-      'successful refresh was lost when the later refresh failed',
-    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     assert.deepEqual(
       events.filter((event) => event.type === 'room').map((event) => event.room.name),
       ['먼저 도착한 최신 상태'],
     );
+
+    // 실패한 뒤에도 다음 무효화는 다시 읽는다.
+    socket.emit('message', { data: JSON.stringify({ type: 'room-invalidated' }) });
+    await waitFor(() => pending.length === 3, 'refresh stayed blocked after a failure');
   } finally {
     unsubscribe();
   }
@@ -1105,4 +1183,43 @@ test('서버가 비밀번호 필드를 잘못 돌려주면 응답을 신뢰하�
   });
 
   await assert.rejects(() => store.listRooms(), /비밀번호 필드/);
+});
+
+test('채팅 요청 한도(429)는 이유 없는 실패로 삼키지 않고 플레이어의 말을 가진 오류로 던진다 (U40)', async () => {
+  let status = 429;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/v1/rooms/ABC234/chat')) {
+      if (status === 204) return json(null, 204);
+      return json({
+        detail: status === 429
+          ? { code: 'rate-limited', message: '채팅은 잠시 뒤 다시 보낼 수 있습니다.' }
+          : { code: 'not-member', message: '먼저 이 방에 참가해 주세요.' },
+      }, status);
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const [{ createNetworkRoomStore }, { OnlinePlayerError, onlineErrorText }] = await Promise.all([
+    import('../js/online/network-rooms.js'),
+    import('../js/online/rules.js'),
+  ]);
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const send = () => store.sendChat({ code: 'ABC234', text: '안녕', player: { nickname: '퀴즈왕', characterId: 'slime-blue' } });
+
+  const error = await send().then(() => null, (failure) => failure);
+  assert.ok(error instanceof OnlinePlayerError, '«연결을 확인하라»가 아니라 «잠시 뒤에»를 말할 수 있어야 한다');
+  assert.equal(onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.'), '채팅은 잠시 뒤 다시 보낼 수 있습니다.');
+
+  // 그 밖의 4xx 는 지금처럼 {ok: false} 다
+  status = 403;
+  assert.deepEqual(await send(), { ok: false });
+  status = 204;
+  assert.deepEqual(await send(), { ok: true });
 });

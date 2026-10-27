@@ -47,7 +47,7 @@ test('편집 필드와 편집 가능한 자손은 기본 길게 누르기 메뉴
 });
 
 test('직접 누르는 버튼과 답 타일은 더블 탭 확대만 막고 스크롤과 핀치 줌을 허용한다', () => {
-  for (const selector of ['button', '.arena-tile', '.walk-confirm']) {
+  for (const selector of ['button', '.arena-tile']) {
     assertDeclaration(selector, 'touch-action', 'manipulation');
   }
 });
@@ -56,10 +56,19 @@ test('이동 스틱은 드래그하는 동안 브라우저 스크롤을 막는�
   assertDeclaration('.walk-stick', 'touch-action', 'none');
 });
 
-test('스틱 밖의 게임 영역이나 페이지 전체에 터치 제스처 금지를 확장하지 않는다', () => {
+// 선택 버튼은 뗄 때 확정한다. 누른 엄지가 조금 구르는 사이 브라우저가 스크롤로 가져가면
+// pointercancel 로 취소되어 «눌렀는데 안 된다»가 되므로 스틱과 같이 제스처를 받지 않는다.
+test('선택 버튼은 누른 채 구르는 엄지를 스크롤로 빼앗기지 않는다', () => {
+  assertDeclaration('.walk-confirm', 'touch-action', 'none');
+});
+
+test('고정 조작부(스틱·선택) 밖의 게임 영역이나 페이지 전체에 터치 제스처 금지를 확장하지 않는다', () => {
   for (const rule of rules) {
     if (/(?:^|;)\s*touch-action\s*:\s*none\s*;/.test(rule.body)) {
-      assert.deepEqual(rule.selectors, ['.walk-stick']);
+      assert.ok(
+        ['.walk-stick', '.walk-confirm'].includes(rule.selectors.join(', ')),
+        `touch-action: none 은 고정 조작부 하나씩에만 둔다: ${rule.selectors.join(', ')}`,
+      );
     }
   }
 });

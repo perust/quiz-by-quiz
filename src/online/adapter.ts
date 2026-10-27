@@ -28,11 +28,10 @@
 // 보낼 뿐이고 화면은 그 이벤트를 보고 움직인다. 서버 구현에서는 같은 이벤트가 방에
 // 있는 모두에게 가므로, 부르는 쪽을 고치지 않고 여럿이 함께 시작하는 판이 된다.
 //
-// **아직 없는 자리 — 여럿이 같은 문제를 푸는 판.**
-// 여기에 `submitAnswer(spec)`와 `{type: 'match', phase: 'question' | 'reveal' | 'over'}`
-// 가 들어간다. 진행 규칙(언제 다음 문항으로 넘길지, 점수를 어떻게 합칠지)은 그때
-// `core/`에 순수 함수로 둔다 — 서버와 화면이 같은 규칙을 써야 하기 때문이다.
-// **지금 미리 짓지 않는다.** 쓸 화면이 없으면 맞는지 확인할 길도 없다.
+// **여럿이 같은 문제를 푸는 판은 서버가 진행한다.** `getMatch`·`submitMatchAnswer`와
+// `{type: 'match', phase: 'started' | 'invalidated'}`가 그 자리다. 언제 다음 문항으로 넘길지,
+// 점수를 어떻게 합칠지는 서버만 정하고 화면은 인증된 snapshot을 그릴 뿐이다
+// (`match-controller.ts`). 그래서 진행 규칙을 `core/`에 두 벌 두지 않는다.
 //
 // **로컬 구현이 동기여도 모든 메서드는 Promise를 반환한다.** 서버 구현으로
 // 바뀔 때 부르는 쪽을 고치지 않기 위해서다.
@@ -57,6 +56,12 @@ export interface PublicPlayer {
   characterId: string;
   /** 이 참가자가 server-authoritative 시작 조건에 준비됐는가 */
   isReady: boolean;
+  /**
+   * 방에 연결돼 있는가. 소켓이 끊긴 뒤 유예(서버 60초)를 넘기면 false가 된다.
+   * false인 참가자는 시작 판정에서 기다리지 않고 판에도 넣지 않는다 — 멤버십과
+   * 재입장 유예는 그대로다. 로컬 방은 끊김을 알 길이 없어 언제나 true다.
+   */
+  connected: boolean;
 }
 
 /**
@@ -72,7 +77,10 @@ export interface PublicRoom {
   capacity: number;
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
-  /** 현재 방장이 첫 자리다. 나가면 가장 먼저 들어온 남은 참가자가 첫 자리로 승계한다. */
+  /**
+   * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
+   * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
+   */
   players: PublicPlayer[];
   isPublic: boolean;
   hasPassword: boolean;
@@ -81,7 +89,27 @@ export interface PublicRoom {
   /** 내가 들어가 있는 방인가 */
   joined: boolean;
   createdAt: string;
+  /**
+   * 판이 도는 중인가 (U33). 서버는 진행 중인 판에 새 참가를 받지 않으므로 목록이 미리
+   * 「게임 중」으로 알린다. 서버 권위 판이 없는 로컬 구현은 언제나 `waiting`이다.
+   */
+  status: RoomStatus;
+  /**
+   * 그 도는 판에 내 자리가 있는가 (U24). `playing`인데 false면 끊겨서 판에서 빠진 멤버다 —
+   * 판이 도는 동안에도 나가거나 다음 판을 준비할 수 있다. 로컬 구현은 언제나 false다.
+   */
+  inMatch: boolean;
+  /**
+   * 방장의 시작 요청을 곧 방장의 준비로 보는 저장소인가 (U28). 이 규칙이 생기기 전의 API는
+   * 방장도 준비해야 시작을 받는다. 그런 서버를 만나면 화면은 방장의 「게임 시작」 앞에 준비를
+   * 먼저 보낸다 — 화면(Pages)이 API보다 먼저 배포돼도 시작이 막히지 않게 하는 호환 장치다.
+   * 같은 때 생긴 참가자별 `connected` 필드를 보내면 새 서버다. 로컬 구현은 언제나 true다.
+   */
+  hostReadyImplicit: boolean;
 }
+
+/** 방이 사람을 기다리는지, 판이 도는지 */
+export type RoomStatus = 'waiting' | 'playing';
 
 /** 판을 열 때 쓰는 방 설정 */
 export interface MatchSetup {
@@ -199,6 +227,12 @@ interface OnlineMatchBase {
 /** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
 interface OnlineActiveMatchBase extends OnlineMatchBase {
   deadlineAt: string;
+  /**
+   * 서버가 응답 시점에 잰 이 phase의 남은 시간(ms). running이면 제출 마감까지,
+   * revealing이면 다음 문제(또는 최종 순위)까지다. 기기 시계와 무관하게 남은 시간을
+   * **표시만** 하려는 값이고 제출 가능 여부를 닫는 데 쓰지 않는다. 구버전 서버는 보내지 않는다.
+   */
+  remainingMs?: number;
 }
 
 export interface OnlineRunningMatch extends OnlineActiveMatchBase {

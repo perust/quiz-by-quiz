@@ -37,7 +37,12 @@ import {
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
-import { normalizeCode, type JoinFailReason } from './rules.js';
+import {
+  LeaveRoomRejected,
+  normalizeCode,
+  OnlinePlayerError,
+  type JoinFailReason,
+} from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
 const CATEGORIES_SET = new Set<string>(CATEGORIES.map(({ id }) => id));
@@ -47,6 +52,9 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   'need-password',
   'full',
   'save-failed',
+  // 409·429. 연결 실패로 던지면 화면이 «네트워크를 확인하라»고 잘못 말한다 (U33)
+  'game-in-progress',
+  'rate-limited',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHARACTER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -91,7 +99,16 @@ export interface NetworkRoomStoreOptions {
   newIdentity?: () => BrowserIdentity;
 }
 
-class ApiFailure extends Error {
+/** 서버가 이유를 말하지 않았거나(5xx·형식 밖 응답) 그 말이 개발 용어일 때 플레이어가 보는 말 (U40) */
+const SERVICE_TROUBLE_MESSAGE = '온라인 연결이 잠시 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
+/** 요청이 REQUEST_TIMEOUT_MS 안에 끝나지 않았을 때 (U40) */
+const TIMEOUT_MESSAGE = '응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.';
+
+/**
+ * HTTP 거절. `message`는 화면에 그대로 띄워도 되는 말이다 — 서버가 4xx로 알려 준 이유이거나
+ * `SERVICE_TROUBLE_MESSAGE`다. 상태·코드 같은 개발 상세는 필드와 콘솔에만 남긴다.
+ */
+class ApiFailure extends OnlinePlayerError {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -188,11 +205,17 @@ function parsePlayer(value: unknown): PublicPlayer {
   if (typeof value.isReady !== 'boolean') {
     throw new Error('서버 참가자 준비 상태가 올바르지 않습니다.');
   }
+  // 접속 상태를 모르는 이전 서버는 이 필드를 보내지 않는다. 그때는 끊김을 단정하지 않는다.
+  const connected = value.connected ?? true;
+  if (typeof connected !== 'boolean') {
+    throw new Error('서버 참가자 접속 상태가 올바르지 않습니다.');
+  }
   return {
     id: value.id,
     nickname: value.nickname,
     characterId,
     isReady: value.isReady,
+    connected,
   };
 }
 
@@ -239,6 +262,20 @@ function parseRoom(value: unknown): PublicRoom {
   if (typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) {
     throw new Error('서버 방 생성 시각이 올바르지 않습니다.');
   }
+  // status 를 모르는 이전 API로 되돌려도 목록이 깨지지 않게, 없으면 기다리는 방으로 본다.
+  // 있는데 모르는 값이면 다른 계약이므로 믿지 않는다.
+  const status = value.status ?? 'waiting';
+  if (status !== 'waiting' && status !== 'playing') {
+    throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
+  }
+  // 판의 자리를 모르는 이전 API는 이 필드를 보내지 않는다. 그때는 판에 없는 것으로 본다.
+  const inMatch = value.inMatch ?? false;
+  if (typeof inMatch !== 'boolean') {
+    throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
+  }
+  // 방장 자동 준비(U28)와 접속 상태(U24)는 같은 API에서 함께 생겼다. 참가자마다 `connected`를
+  // 보내지 않는 이전 API는 방장의 준비도 요구하므로, 화면이 시작 앞에 준비를 먼저 보낸다.
+  const hostReadyImplicit = players.every((player) => isObject(player) && Object.hasOwn(player, 'connected'));
 
   return {
     code: value.code,
@@ -252,6 +289,9 @@ function parseRoom(value: unknown): PublicRoom {
     isMine: value.isMine,
     joined: value.joined,
     createdAt: value.createdAt,
+    status,
+    inMatch,
+    hostReadyImplicit,
   };
 }
 
@@ -394,6 +434,14 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     }
     return deadlineAt;
   };
+  // 표시용 남은 시간이다. 구버전 서버처럼 없거나 쓸 수 없는 값이면 빼고, 화면은 예전 안내로
+  // 돌아간다 — 카운트다운 힌트 하나 때문에 매치 전체를 거절하지 않는다.
+  const activeRemainingMs = (): { remainingMs?: number } => {
+    const remainingMs = value.remainingMs;
+    return typeof remainingMs === 'number' && Number.isFinite(remainingMs) && remainingMs >= 0
+      ? { remainingMs }
+      : {};
+  };
   if (value.state === 'running') {
     if (value.reveal !== null || !Array.isArray(value.scores) || value.scores.length !== 0) {
       throw new Error('running 응답에 정답 또는 점수 정보가 섞였습니다.');
@@ -413,6 +461,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     return {
       ...base,
       deadlineAt: activeDeadlineAt(),
+      ...activeRemainingMs(),
       state: 'running',
       question,
       ownSubmission,
@@ -427,6 +476,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     return {
       ...base,
       deadlineAt: activeDeadlineAt(),
+      ...activeRemainingMs(),
       state: 'revealing',
       question,
       ownSubmission: null,
@@ -470,10 +520,12 @@ async function responseBody(response: Response): Promise<unknown> {
 function failureFrom(status: number, body: unknown): ApiFailure {
   const detail = isObject(body) && isObject(body.detail) ? body.detail : null;
   const code = detail && typeof detail.code === 'string' ? detail.code : 'request-failed';
-  const message = detail && typeof detail.message === 'string'
-    ? detail.message
-    : `온라인 서버 요청에 실패했습니다. (${status})`;
-  return new ApiFailure(status, code, message);
+  const serverMessage = detail && typeof detail.message === 'string' ? detail.message : null;
+  // 4xx의 이유는 서버가 플레이어에게 쓴 말이다(«이미 다음 문제로 넘어갔습니다»). 5xx나 이유 없는
+  // 응답은 «데이터베이스…» 같은 개발 상세라 콘솔에만 남기고 화면에는 한 가지 말을 쓴다 (U40)
+  if (serverMessage !== null && status < 500) return new ApiFailure(status, code, serverMessage);
+  console.warn(`[온라인 오류] 요청 실패 (${status} ${code})`, serverMessage ?? '');
+  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE);
 }
 
 export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomStore {
@@ -575,7 +627,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       return body;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('온라인 서버 응답 시간이 너무 오래 걸립니다.');
+        console.warn(`[온라인 오류] ${REQUEST_TIMEOUT_MS}ms 안에 응답이 없습니다: ${init.method ?? 'GET'} ${path}`);
+        throw new OnlinePlayerError(TIMEOUT_MESSAGE);
       }
       throw error;
     } finally {
@@ -884,6 +937,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let generation = 0;
     let latestDeliveredRoomGeneration = 0;
+    /** room 재조회가 지금 날아가는 중인가. 한 subscription에 하나만 띄운다. */
+    let roomRefreshInFlight = false;
+    /** 그 사이 무효화가 또 왔는가. 몇 번이 오든 끝난 뒤 한 번만 더 읽는다. */
+    let roomRefreshQueued = false;
     const movementChannel: MovementChannel = {
       socket: null,
       supportsViewport: false,
@@ -916,6 +973,31 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       if (room) handler({ type: 'room', room });
     }
 
+    /**
+     * room-invalidated와 재연결 복구가 부르는 재조회. **요청을 합친다** — 방송 하나에 방
+     * 전원이 GET을 보내므로, 준비 토글이 몰리면 무효화마다 한 번씩 읽는 것만으로 IP·프로세스
+     * 요청 한도를 먼저 먹는다. 날아가는 요청이 있으면 표시만 해 두고, 끝나면 최신 상태를
+     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 실패해도 다음 무효화·재연결이 다시 맞춘다.
+     */
+    function requestRoomRefresh(): void {
+      if (stopped) return;
+      if (roomRefreshInFlight) {
+        roomRefreshQueued = true;
+        return;
+      }
+      roomRefreshInFlight = true;
+      void (async () => {
+        try {
+          do {
+            roomRefreshQueued = false;
+            await refreshRoom(generation).catch(() => undefined);
+          } while (roomRefreshQueued && !stopped);
+        } finally {
+          roomRefreshInFlight = false;
+        }
+      })();
+    }
+
     function receive(data: unknown, connectionGeneration: number): void {
       if (stopped || connectionGeneration !== generation) return;
       if (typeof data !== 'string') return;
@@ -934,7 +1016,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         return;
       }
       if (value.type === 'room-invalidated') {
-        void refreshRoom(connectionGeneration).catch(() => undefined);
+        requestRoomRefresh();
         return;
       }
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
@@ -1046,7 +1128,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           }
           // 연결이 끊긴 동안 room-invalidated를 놓쳤을 수 있으므로 room과 match를
           // 모두 권위 있는 REST snapshot으로 다시 맞춘다.
-          void refreshRoom(connectionGeneration).catch(() => undefined);
+          requestRoomRefresh();
           // A reconnect may have missed a match transition. Send only an invalidation;
           // the controller must obtain its own authorized REST snapshot.
           handler({ type: 'match', phase: 'invalidated', matchId: null });
@@ -1114,6 +1196,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             method: 'DELETE',
           });
         } catch (error) {
+          // 판이 도는 동안 서버는 멤버십을 지킨다(409). 연결 실패와 구분해 던진다 (U32)
+          if (error instanceof ApiFailure && error.code === 'game-in-progress') {
+            throw new LeaveRoomRejected('game-in-progress');
+          }
           if (!(error instanceof ApiFailure) || error.status !== 404) throw error;
         }
         commitRoomMutation(normalized, requestGeneration);
@@ -1134,7 +1220,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         }, player);
         return { ok: true };
       } catch (error) {
-        if (error instanceof ApiFailure && error.status >= 400 && error.status < 500) {
+        // 요청 한도(429)는 «보내지 못했다»가 아니라 «잠시 뒤에»다. 서버의 말(«채팅은 잠시 뒤…»)을
+        // 화면이 쓸 수 있게 그대로 던진다 (U40) — `{ok: false}`에는 이유가 실리지 않는다
+        if (
+          error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 429
+        ) {
           return { ok: false };
         }
         throw error;

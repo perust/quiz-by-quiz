@@ -20,9 +20,10 @@ test('대기실의 네트워크 방 작업은 실패를 알리고 leave/chat 성
   const patch = between(waiting, 'async function patch(change: RoomPatch)', "  el.category.addEventListener('click'");
   assert.match(patch, /const action = captureAction\(\);\s*if \(!action\) return;/);
   assert.match(patch, /await roomStore\.updateRoom\(\{ code: action\.code, patch: change \}\);/);
+  // 이유를 플레이어의 말로 아는 실패(요청 한도·응답 시간 초과·서버의 4xx 거절)는 그 말을 쓴다 (U40)
   assert.match(
     patch,
-    /catch\s*\{\s*if \(!ownsAction\(action\)\) return;\s*notice\('방 설정을 바꾸지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'\);/,
+    /catch \(error\)\s*\{\s*if \(!ownsAction\(action\)\) return;\s*notice\(`방 설정을 바꾸지 못했어요\. \$\{onlineErrorText\(error, RETRY_HINT\)\}`\);/,
   );
 
   const leave = between(waiting, "  el.leave.addEventListener('click'", '  // ── 채팅');
@@ -32,9 +33,10 @@ test('대기실의 네트워크 방 작업은 실패를 알리고 leave/chat 성
   );
   assert.match(leave, /await roomStore\.leaveRoom\(\{ code: action\.code \}\);/);
   assert.match(leave, /if \(!ownsAction\(action, false\)\) return;\s*onLeave\(action\.code, entryGeneration\);/);
+  // 판이 도는 방의 거절(409)은 로비와 같은 말로 알린다 (U32). 그 밖의 실패만 연결을 의심한다
   assert.match(
     leave,
-    /catch\s*\{\s*if \(!ownsAction\(action, false\)\) return;\s*notice\('방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'\);/,
+    /catch \(error\)\s*\{\s*if \(!ownsAction\(action, false\)\) return;[\s\S]*?notice\(error instanceof LeaveRoomRejected\s*\?\s*LEAVE_MESSAGES\[error\.reason\]\s*:\s*`방에서 나오지 못했어요\. \$\{onlineErrorText\(error, RETRY_HINT\)\}`\);/,
   );
 
   const chat = between(waiting, "  el.chatForm.addEventListener('submit'", '  /**\n   * 채팅칸과 걷기를 오간다.');
@@ -46,17 +48,22 @@ test('대기실의 네트워크 방 작업은 실패를 알리고 leave/chat 성
   assert.match(chat, /if \(!ownsAction\(action, false\)\) return;/);
   assert.match(
     chat,
-    /catch\s*\{\s*if \(!ownsAction\(action, false\)\) return;\s*notice\('메시지를 보내지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.'\);/,
+    /catch \(error\)\s*\{\s*if \(!ownsAction\(action, false\)\) return;\s*notice\(`메시지를 보내지 못했어요\. \$\{onlineErrorText\(error, RETRY_HINT\)\}`\);/,
   );
   assert.match(chat, /if \(el\.chatInput\.value === text\) \{[\s\S]*?el\.chatInput\.value = '';/);
 });
 
 test('로비의 나가기 실패는 목록 갱신 대신 화면 메시지로 처리한다', async () => {
   const online = await source('../src/ui/online.ts');
-  const leave = between(online, '  async function leave(code: string)', '  async function joinByCode(');
+  const leave = between(online, '  async function leave(code: string', '  async function joinByCode(');
 
   assert.match(
     leave,
-    /const request = visibleRequest;\s*if \(request === null \|\| !ownsScreen\(request\)\) return;[\s\S]*?await roomStore\.leaveRoom\(\{ code \}\);\s*if \(!ownsScreen\(request\)\) return;\s*await loadRooms\(request\);\s*\}\s*catch\s*\{\s*if \(!ownsScreen\(request\)\) return;\s*say\(el\.message, '방에서 나오지 못했어요\. 연결을 확인한 뒤 다시 시도해 주세요\.', 'bad'\);/,
+    /const request = visibleRequest;\s*if \(request === null \|\| !ownsScreen\(request\)\) return;[\s\S]*?await roomStore\.leaveRoom\(\{ code \}\);\s*if \(!ownsScreen\(request\)\) return;\s*await loadRooms\(request\);\s*\}\s*catch \(error\)\s*\{\s*if \(!ownsScreen\(request\)\) return;/,
+  );
+  // 판이 도는 방의 거절(409)은 연결 문제로 말하지 않는다 (U32). 그 밖의 실패만 연결을 의심한다
+  assert.match(
+    leave,
+    /error instanceof LeaveRoomRejected\s*\?\s*LEAVE_MESSAGES\[error\.reason\]\s*:\s*`방에서 나오지 못했어요\. \$\{onlineErrorText\(error, '연결을 확인한 뒤 다시 시도해 주세요\.'\)\}`/,
   );
 });

@@ -1,7 +1,9 @@
 // 내 캐릭터 화면
 //
-// 캐릭터를 걸어서 칸 위에 올라가면 그 자리에서 모습이 바뀐다.
-// 고르는 순간이 곧 미리보기라 «골라 보고 되돌리는» 과정이 없다.
+// 캐릭터를 걸어서 칸 위에 멈춰 서면(또는 잠깐 머물면) 그 자리에서 모습이 바뀐다.
+// 고르는 순간이 곧 미리보기라 «골라 보고 되돌리는» 과정이 없다. 다만 다른 곳으로
+// 가는 길에 **스쳐 지나간 칸은 바꾸지 않는다** — 「홈」까지 걸어 나가는 동안 지나간
+// 카드마다 캐릭터가 바뀌어 저장되면 원래 캐릭터를 지킨 채 나갈 수 없다.
 //
 // 걷기는 ui/walker.js가 하고, 여기서는 «몇 번 칸 = 어떤 캐릭터»만 잇는다.
 
@@ -11,7 +13,13 @@ import { createWalker } from './walker.js';
 import { createPreview, paintCharacter } from './sprite.js';
 
 /**
- * onSelect는 «올라섰다»에도 «골랐다»에도 불린다. 저장은 부르는 쪽이 정한다.
+ * 밟고 걸어가는 동안 이만큼 같은 카드 위에 머물러야 그 캐릭터가 된다(ms).
+ * 멈춰 서면 기다리지 않는다. 걷는 속도로는 카드 하나를 지나는 데 이보다 짧게 걸린다.
+ */
+const STEP_SETTLE_MS = 250;
+
+/**
+ * onSelect는 «멈춰 섰다»에도 «골랐다»에도 불린다. 저장은 부르는 쪽이 정한다.
  */
 export interface CharactersScreenDeps {
   onSelect: (id: string) => void;
@@ -37,6 +45,13 @@ export function createCharactersScreen(
   const cards: HTMLButtonElement[] = [];
   /** 화면에 들어올 때의 선택. 처음 설 자리를 여기서 정한다 */
   let currentId = CHARACTERS[0].id;
+  /** 밟은 카드를 입히기까지 남은 시간. 다른 칸으로 옮기거나 화면을 떠나면 거둔다 */
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function cancelSettle(): void {
+    clearTimeout(settleTimer);
+    settleTimer = undefined;
+  }
 
   function markSelected(id: string): void {
     cards.forEach((card) => {
@@ -58,9 +73,26 @@ export function createCharactersScreen(
 
   const walker = createWalker({
     character: el.walker,
-    // 밟는 순간 그 캐릭터가 된다. 걸어 다니는 캐릭터도 함께 바뀌어 바로 보인다.
-    // 「홈으로」처럼 캐릭터 칸이 아닌 것을 밟으면 dataset이 비어 아무 일도 없다
-    onStep: (node) => apply(node?.dataset.characterId),
+    // 밟은 칸에 잠깐 머물면 그 캐릭터가 된다. 걸어 다니는 캐릭터도 함께 바뀌어 바로 보인다.
+    // 스쳐 지나가면 다음 칸이 타이머를 거둬 아무 일도 없다. 「홈으로」처럼 캐릭터 칸이
+    // 아닌 것을 밟으면 dataset이 비어 기다릴 것도 없다
+    onStep: (node) => {
+      cancelSettle();
+      const id = node?.dataset.characterId;
+      if (!id) return;
+      settleTimer = setTimeout(() => {
+        settleTimer = undefined;
+        // 그사이 다른 화면의 워커가 켜져 이쪽이 꺼졌으면 떠난 화면의 칸을 입히지 않는다
+        if (walker.isEnabled()) apply(id);
+      }, STEP_SETTLE_MS);
+    },
+    // 멈춰 섰으면 기다리지 않고 지금 발밑의 카드를 입힌다. 화면을 떠나며 멈춘 것
+    // (setEnabled(false))은 고른 것이 아니므로 그냥 둔다
+    onMove: (_point, moving) => {
+      if (moving || !walker.isEnabled()) return;
+      cancelSettle();
+      apply(walker.standingElement()?.dataset.characterId);
+    },
     startAt: () => {
       const index = CHARACTERS.findIndex((character) => character.id === currentId);
       const box = cards[index]?.getBoundingClientRect();
@@ -88,6 +120,7 @@ export function createCharactersScreen(
       // 걸어가서 Enter로 고르든 손가락으로 바로 누르든 같은 길로 들어온다.
       // 워커의 «고르기»도 결국 이 click을 부르므로 여기 한 곳만 있으면 된다
       card.addEventListener('click', () => {
+        cancelSettle();
         apply(character.id);
         onBack();
       });
@@ -115,6 +148,7 @@ export function createCharactersScreen(
 
   return {
     show(selectedId) {
+      cancelSettle();
       currentId = selectedId;
       build();
       markSelected(selectedId);
@@ -123,6 +157,7 @@ export function createCharactersScreen(
     },
 
     hide() {
+      cancelSettle();
       walker.setEnabled(false);
     },
   };

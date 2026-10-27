@@ -1,7 +1,8 @@
 // 온라인 로비 화면
 //
-// 처음 들어오면 공개방과 비공개방을 한 목록에서 보고, 필터로 좁히거나 코드와
-// 비밀번호로 바로 참가하고, 새 방을 만든다.
+// 처음 들어오면 공개방과 비밀번호로 잠긴 방을 한 목록에서 보고, 필터로 좁히거나 코드와
+// 비밀번호로 바로 참가하고, 새 방을 만든다. 잠긴 방도 목록에 보인다 — «숨김»이 아니라
+// «잠금»이다 (U36).
 //
 // **방을 어디에 두는지 이 파일은 모른다.** `online/adapter.js`의 `roomStore`만
 // 부르고, 그 구현이 브라우저 안이든 서버든 화면은 그대로다. 랭킹 화면이 저장소를
@@ -10,21 +11,34 @@
 // **비밀번호가 맞는지도 여기서 견주지 않는다.** 입력한 값을 그대로 넘기고 결과만
 // 받는다 — 서버 구현이 되면 그 검사가 자연히 서버에서 일어난다.
 
-import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { CATEGORIES, ROOM_CAPACITY_CHOICES, ROOM_NAME_MAX_LENGTH } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import type { PlayerInfo, PublicRoom, RoomStore } from '../online/adapter.js';
 import {
   DEFAULT_ROOM_FILTERS,
   filterAndSortRooms,
+  isRoomPlaying,
   roomListAction,
   type RoomAvailabilityFilter,
   type RoomCategoryFilter,
   type RoomListFilters,
   type RoomVisibilityFilter,
 } from '../online/room-list.js';
-import { JOIN_MESSAGES, isValidCode, normalizeCode } from '../online/rules.js';
+import {
+  CODE_MESSAGES,
+  JOIN_MESSAGES,
+  LEAVE_MESSAGES,
+  LeaveRoomRejected,
+  checkCodeInput,
+  checkRoomName,
+  hasHangul,
+  isValidCode,
+  normalizeCode,
+  onlineErrorText,
+} from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
+import { scrollBehavior } from './motion.js';
 import {
   isCurrentOnlineScreenAction,
   type OnlineScreenActionOwnership,
@@ -38,6 +52,8 @@ export interface OnlineScreenDeps {
   /** 방 저장소 어댑터 */
   roomStore: RoomStore;
   onHome: () => void;
+  /** 빈 목록의 「혼자 연습하기」. 홈으로 돌아가 분야 dock에 포커스를 둔다 (U29) */
+  onPractice: () => void;
   /** 방에 들어가면 대기실로 넘긴다 */
   onEnterRoom: (code: string) => void;
   /** 방에 들고 들어가는 나. 저장소가 이 값을 그대로 참가자로 삼는다 */
@@ -47,11 +63,16 @@ export interface OnlineScreenDeps {
 export interface OnlineScreen {
   /** notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다 */
   show(characterId: string, notice?: string): Promise<void>;
+  /**
+   * 초대 링크로 들어왔을 때 (U27). `show` 다음, 화면이 보인 뒤에 부른다 — 포커스를
+   * 옮겨야 하기 때문이다. 공개방이면 바로 들어가고, 잠긴 방이면 비밀번호 칸에 선다.
+   */
+  acceptInvite(code: string): void;
   hide(): void;
 }
 
 export function createOnlineScreen(
-  { roomStore, onHome, onEnterRoom, getPlayer }: OnlineScreenDeps,
+  { roomStore, onHome, onPractice, onEnterRoom, getPlayer }: OnlineScreenDeps,
 ): OnlineScreen {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online"]'),
@@ -69,6 +90,7 @@ export function createOnlineScreen(
     emptyTitle: need('room-empty-title'),
     emptyCopy: need('room-empty-copy'),
     emptyAction: need<HTMLButtonElement>('room-empty-action'),
+    emptySecondary: need<HTMLButtonElement>('room-empty-secondary'),
     summary: need('room-list-summary'),
     refresh: need<HTMLButtonElement>('room-refresh'),
     filterToggle: need<HTMLButtonElement>('room-filter-toggle'),
@@ -81,6 +103,7 @@ export function createOnlineScreen(
     joinForm: need<HTMLFormElement>('join-form'),
     joinCode: need<HTMLInputElement>('join-code'),
     joinPassword: need<HTMLInputElement>('join-password'),
+    joinSubmit: need<HTMLButtonElement>('join-submit'),
     joinMessage: need('join-message'),
     createBlock: need('create-room-block'),
     createForm: need<HTMLFormElement>('create-form'),
@@ -90,6 +113,7 @@ export function createOnlineScreen(
     createPrivate: need<HTMLInputElement>('create-private'),
     createPasswordRow: need('create-password-row'),
     createPassword: need<HTMLInputElement>('create-password'),
+    createSubmit: need<HTMLButtonElement>('create-submit'),
     createMessage: need('create-message'),
     character: need('online-character'),
   };
@@ -157,6 +181,45 @@ export function createOnlineScreen(
     onHome();
   }
 
+  /** 「혼자 연습하기」. 홈으로 나가는 길과 같은 소유권 규칙을 따른다 */
+  function leaveForPractice(): void {
+    const owner = captureNavigationAction();
+    if (!owner || !ownsNavigationAction(owner)) return;
+    invalidateScreenOwnership();
+    walker.hide();
+    onPractice();
+  }
+
+  /**
+   * 요청이 도는 동안 버튼을 잠그고 `aria-busy`를 단다 (U34). 다시 눌러 같은 요청이 겹치지
+   * 않게 하고, 무엇을 기다리는지는 글자로도 알린다(`busyLabel`, 색만으로 알리지 않는다).
+   *
+   * 잠그는 순간 버튼에 있던 포커스는 브라우저가 떨어뜨린다. 풀 때 갈 곳을 잃었으면
+   * 그 버튼으로 되돌린다 — 실패한 뒤 Tab 자리를 잃지 않게 한다.
+   */
+  const busyButtons = new WeakMap<HTMLButtonElement, { label: string | null; hadFocus: boolean }>();
+  function setBusy(button: HTMLButtonElement, busy: boolean, busyLabel?: string): void {
+    if (busy) {
+      busyButtons.set(button, {
+        label: busyLabel ? button.textContent : null,
+        hadFocus: document.activeElement === button,
+      });
+      if (busyLabel) button.textContent = busyLabel;
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      return;
+    }
+    const before = busyButtons.get(button);
+    busyButtons.delete(button);
+    if (before && before.label !== null) button.textContent = before.label;
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    if (before?.hadFocus && button.isConnected && !el.screen.hidden
+        && (document.activeElement === null || document.activeElement === document.body)) {
+      button.focus({ preventScroll: true });
+    }
+  }
+
   // ── 안내 ───────────────────────────────────────────────────────
   // 진짜로 이어지는지 아닌지를 숨기지 않는다. 친구를 불렀는데 아무도 못 들어오면
   // 그게 더 나쁘다. 어댑터가 스스로 밝히므로 화면은 물어보기만 한다.
@@ -164,10 +227,10 @@ export function createOnlineScreen(
   // 저장이 막힌 브라우저(사생활 보호 모드)도 마찬가지다. 방은 만들어지지만
   // 새로고침하면 사라지므로, 코드를 알려 주기 전에 알아야 한다.
   el.note.textContent = roomStore.isNetworked
-    ? '공개방과 비공개방을 함께 보여줘요. 비공개방은 참가할 때 비밀번호가 필요합니다.'
+    ? '열린 방을 모두 보여 줘요. 잠긴 방은 비밀번호를 아는 사람만 들어올 수 있어요.'
     : roomStore.isPersistent === false
-      ? '이 브라우저에서 저장이 막혀 있어 새로고침하면 방이 사라져요. API 설정도 없어 방은 이 브라우저 안에만 만들어집니다.'
-      : '이 독립 개발 문서에는 API 설정이 없어 방이 이 브라우저 안에만 만들어져요. 실제 온라인 연결 전 화면과 흐름을 확인하는 단계입니다.';
+      ? '이 브라우저에서 저장이 막혀 있어 새로고침하면 방이 사라져요. 온라인 연결도 없어 방은 이 브라우저 안에만 만들어져요.'
+      : '지금은 온라인 연결이 없어 방이 이 브라우저 안에만 만들어져요. 다른 기기의 친구는 들어올 수 없어요.';
 
   // ── 선택지 채우기 ───────────────────────────────────────────────
 
@@ -201,7 +264,19 @@ export function createOnlineScreen(
     }
   }
 
-  // 비공개일 때만 비밀번호 칸을 연다. 늘 열어 두면 공개방에도 적어야 하나 헷갈린다
+  /**
+   * 방 이름을 «{닉네임}의 방»으로 미리 채운다 (U41). 기본값처럼 보이는 placeholder는
+   * 비워 둔 채 만들면 거절됐다. 사용자가 고친 이름은 덮지 않는다.
+   */
+  let suggestedRoomName = '';
+  function suggestRoomName(): void {
+    const current = el.createName.value;
+    if (current.trim() !== '' && current !== suggestedRoomName) return;
+    suggestedRoomName = `${getPlayer().nickname}의 방`.slice(0, ROOM_NAME_MAX_LENGTH);
+    el.createName.value = suggestedRoomName;
+  }
+
+  // 잠글 때만 비밀번호 칸을 연다. 늘 열어 두면 공개방에도 적어야 하나 헷갈린다
   function syncPrivatePassword(): void {
     el.createPasswordRow.hidden = !el.createPrivate.checked;
     el.createPassword.required = el.createPrivate.checked;
@@ -244,7 +319,7 @@ export function createOnlineScreen(
   function makeButton(
     label: string,
     variant: string,
-    run: () => void,
+    run: (button: HTMLButtonElement) => void,
     subject?: string,
   ): HTMLButtonElement {
     const button = document.createElement('button');
@@ -252,7 +327,7 @@ export function createOnlineScreen(
     button.className = `button ${variant} button--small`;
     button.textContent = label;
     if (subject) button.setAttribute('aria-label', `${subject} ${label}`);
-    button.addEventListener('click', run);
+    button.addEventListener('click', () => run(button));
     return button;
   }
 
@@ -261,7 +336,7 @@ export function createOnlineScreen(
     el.joinPassword.value = '';
     say(el.joinMessage, `${room.name}의 비밀번호를 입력해 주세요.`);
     showPanel('join');
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.joinBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.joinPassword.focus({ preventScroll: true });
   }
 
@@ -288,11 +363,21 @@ export function createOnlineScreen(
     name.className = 'room-item__name';
     name.textContent = room.name;
 
+    // 잠긴 방도 목록에 보인다. «비공개»라 부르면 숨는 줄 알므로 «잠김»이라 쓰고,
+    // 디자인 층이 자물쇠 아이콘을 함께 단다 (U36)
     const visibility = document.createElement('span');
     visibility.className = `room-item__visibility ${room.isPublic ? 'room-item__visibility--public' : 'room-item__visibility--private'}`;
-    visibility.textContent = room.isPublic ? '공개' : '비공개';
+    visibility.textContent = room.isPublic ? '공개' : '잠김';
 
     titleLine.append(name, visibility);
+
+    // 판이 도는 방은 새로 들어갈 수 없다. 누르고 나서 거절당하기 전에 먼저 알린다 (U33)
+    if (isRoomPlaying(room)) {
+      const status = document.createElement('span');
+      status.className = 'room-item__status';
+      status.textContent = '게임 중';
+      titleLine.append(status);
+    }
 
     const meta = document.createElement('span');
     meta.className = 'room-item__meta';
@@ -307,13 +392,13 @@ export function createOnlineScreen(
     if (action === 'enter') {
       actions.append(
         makeButton('들어가기', 'button--primary', () => enterRoom(room.code), room.name),
-        makeButton('나가기', 'button--ghost', () => leave(room.code), room.name),
+        makeButton('나가기', 'button--ghost', (button) => leave(room.code, button), room.name),
       );
     } else if (action === 'join') {
       actions.append(makeButton(
         '참가',
         'button--primary',
-        () => joinByCode(room.code, '', el.message),
+        (button) => joinByCode(room.code, '', el.message, button),
         room.name,
       ));
     } else if (action === 'password') {
@@ -324,9 +409,15 @@ export function createOnlineScreen(
         room.name,
       ));
     } else {
-      const full = makeButton('가득 참', 'button--ghost', () => undefined, room.name);
-      full.disabled = true;
-      actions.append(full);
+      // 누를 수 없는 이유를 버튼 글자가 말한다. 게임 중인 방은 끝나면 다시 「참가」가 된다
+      const blocked = makeButton(
+        action === 'playing' ? '끝나면 참가' : '가득 참',
+        'button--ghost',
+        () => undefined,
+        room.name,
+      );
+      blocked.disabled = true;
+      actions.append(blocked);
     }
 
     item.append(icon, body, actions);
@@ -384,24 +475,72 @@ export function createOnlineScreen(
     syncFilterToggle();
   }
 
+  /**
+   * 마지막 목록 조회가 실패했으면 플레이어에게 보일 그 사연(`onlineErrorText`), 아니면 null.
+   * «방이 없다»와 «모른다»를 가른다 — 서버가 안 되는데 첫 방을 만들라고 하면 눌러도
+   * 또 실패한다 (U34).
+   */
+  let listError: string | null = null;
+
+  type EmptyAction = 'create' | 'reset' | 'retry';
+
+  function showEmptyState(
+    { title, copy, action, label, practice }:
+    { title: string; copy: string; action: EmptyAction; label: string; practice: boolean },
+  ): void {
+    el.emptyTitle.textContent = title;
+    el.emptyCopy.textContent = copy;
+    el.emptyAction.textContent = label;
+    el.emptyAction.dataset.action = action;
+    el.emptySecondary.hidden = !practice;
+    el.empty.hidden = false;
+    el.list.hidden = true;
+  }
+
   function renderList(): void {
     const filters = currentFilters();
+    syncFilterToggle(filters);
+
+    if (listError !== null) {
+      el.list.replaceChildren();
+      // 낭독은 라이브 리전인 요약 줄이 맡는다. 맨 위 알림에 같은 말을 겹쳐 띄우지 않는다
+      el.summary.textContent = '방 목록을 불러오지 못했어요.';
+      showEmptyState({
+        title: '온라인에 연결할 수 없어요',
+        copy: listError,
+        action: 'retry',
+        label: '다시 시도',
+        practice: false,
+      });
+      return;
+    }
+
     const visible = filterAndSortRooms(rooms, filters);
     el.list.replaceChildren();
     visible.forEach((room) => el.list.append(createItem(room)));
 
-    syncFilterToggle(filters);
     el.summary.textContent = `전체 ${rooms.length}개 중 ${visible.length}개 방`;
     if (visible.length === 0) {
-      const hasRooms = rooms.length > 0;
-      el.emptyTitle.textContent = hasRooms ? '조건에 맞는 방이 없어요' : '아직 열린 방이 없어요';
-      el.emptyCopy.textContent = hasRooms
-        ? '필터를 초기화하면 다른 방을 다시 볼 수 있어요.'
-        : '첫 방을 만들고 친구들을 초대해 보세요.';
-      el.emptyAction.textContent = hasRooms ? '필터 초기화' : '첫 방 만들기';
-      el.emptyAction.dataset.action = hasRooms ? 'reset' : 'create';
-      el.empty.hidden = false;
-      el.list.hidden = true;
+      if (rooms.length > 0) {
+        showEmptyState({
+          title: '조건에 맞는 방이 없어요',
+          copy: '필터를 초기화하면 다른 방을 다시 볼 수 있어요.',
+          action: 'reset',
+          label: '필터 초기화',
+          practice: false,
+        });
+        return;
+      }
+      // 혼자 온 사람에게 막다른 길이 되지 않게, 2명부터라는 것을 먼저 말하고 혼자서도
+      // 할 수 있는 길을 함께 둔다. 가짜 대기 인원이나 봇으로 메우지 않는다 (U29).
+      // 짧은 touch 화면은 설명 줄을 접으므로 핵심은 제목에 둔다.
+      showEmptyState({
+        title: '친구를 불러야 시작할 수 있어요 (2명부터)',
+        copy: '아직 열린 방이 없어요. 방을 만들고 코드를 친구에게 알려 주세요.',
+        action: 'create',
+        label: '방 만들고 친구 부르기',
+        practice: true,
+      });
       return;
     }
 
@@ -409,20 +548,51 @@ export function createOnlineScreen(
     el.list.hidden = false;
   }
 
+  /**
+   * 목록을 다시 읽는다. 도는 동안 새로고침·다시 시도를 잠가 같은 요청이 쌓이지 않게 한다 —
+   * 같은 와이파이의 여럿이 IP당 한도를 함께 쓴다 (N01). 주기적으로 다시 읽지 않는다.
+   */
   async function loadRooms(request: number): Promise<void> {
     const listRequest = ++listRequestGeneration;
+    const retry = el.emptyAction.dataset.action === 'retry' ? el.emptyAction : null;
+    const retryHadFocus = retry !== null && document.activeElement === retry;
+    setBusy(el.refresh, true);
+    if (retry) setBusy(retry, true);
     try {
       const loadedRooms = await roomStore.listRooms();
       if (!ownsScreen(request) || listRequest !== listRequestGeneration) return;
       rooms = loadedRooms;
+      listError = null;
       renderList();
     } catch (error) {
       if (!ownsScreen(request) || listRequest !== listRequestGeneration) return;
+      // 개발 상세(«서버 방 응답이…», «Failed to fetch»)는 콘솔에만 남긴다 (U40)
       rooms = [];
+      listError = onlineErrorText(error, '잠시 후 다시 시도해 주세요.');
       renderList();
-      const detail = error instanceof Error ? ` (${error.message})` : '';
-      say(el.message, `방 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.${detail}`, 'bad');
+    } finally {
+      // 더 늦게 시작한 조회가 있으면 그쪽이 푼다. 화면을 떠났으면 다음 진입의 조회가 푼다
+      if (listRequest === listRequestGeneration) {
+        setBusy(el.refresh, false);
+        if (retry) setBusy(retry, false);
+        // 다시 시도가 통해 오류 칸이 접혔으면 그 버튼으로는 포커스를 돌려줄 수 없다 (a11y-ux-07)
+        if (retryHadFocus) focusRevealedList();
+      }
     }
+  }
+
+  /**
+   * 빈 상태의 버튼을 눌렀더니 그 칸이 접혔다(다시 시도가 통했거나 필터를 풀었다). 누른 버튼이 숨어
+   * 포커스가 `<body>`로 떨어지면 다음 Tab이 페이지 맨 위에서 시작하고, 방금 나타난 방들을 지나친다.
+   * 그래서 목록의 첫 버튼(없으면 늘 보이는 새로고침)으로 옮긴다. 빈 상태가 그대로면(방이 여전히
+   * 없거나 다시 실패했다) 같은 버튼이 보이므로 `setBusy`가 돌려준 자리를 둔다.
+   */
+  function focusRevealedList(): void {
+    if (el.screen.hidden || !el.empty.hidden) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== el.emptyAction) return;
+    const first = el.list.querySelector<HTMLButtonElement>('button:not([disabled])');
+    (first ?? el.refresh).focus({ preventScroll: true });
   }
 
   // ── 참가 ───────────────────────────────────────────────────────
@@ -438,31 +608,54 @@ export function createOnlineScreen(
   }
 
   /** 방에서 나온다. 마지막 사람이 나가면 저장소가 방을 지운다 */
-  async function leave(code: string): Promise<void> {
+  async function leave(code: string, trigger?: HTMLButtonElement): Promise<void> {
     const request = visibleRequest;
     if (request === null || !ownsScreen(request)) return;
+    if (trigger) setBusy(trigger, true);
     try {
       await roomStore.leaveRoom({ code });
       if (!ownsScreen(request)) return;
       await loadRooms(request);
-    } catch {
+    } catch (error) {
       if (!ownsScreen(request)) return;
-      say(el.message, '방에서 나오지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.', 'bad');
+      // 거절과 연결 실패를 가른다. 판이 도는 방은 연결이 아니라 언제 되는지를 말한다 (U32)
+      say(
+        el.message,
+        error instanceof LeaveRoomRejected
+          ? LEAVE_MESSAGES[error.reason]
+          : `방에서 나오지 못했어요. ${onlineErrorText(error, '연결을 확인한 뒤 다시 시도해 주세요.')}`,
+        'bad',
+      );
+    } finally {
+      if (trigger) setBusy(trigger, false);
     }
   }
 
+  /**
+   * @param trigger 요청이 도는 동안 잠글 버튼. 목록의 「참가」면 그 버튼, 아니면 폼의 제출 버튼
+   */
   async function joinByCode(
     code: string,
     password: string,
     messageNode: HTMLElement = el.joinMessage,
+    trigger: HTMLButtonElement = el.joinSubmit,
   ): Promise<void> {
+    // 이미 도는 참가 요청이 있다. 소유권을 잡기 전에 돌려보낸다 — 먼저 잡으면 도는 요청의
+    // 결과가 «더 새 동작에 밀렸다»며 버려져, 들어가 놓고도 대기실로 넘어가지 않는다
+    if (trigger.disabled) return;
     const owner = captureNavigationAction();
     if (!owner) return;
+    setBusy(trigger, true, trigger === el.joinSubmit ? '참가하는 중…' : undefined);
     try {
       const result = await roomStore.joinRoom({ code, password, player: getPlayer() });
       if (!ownsNavigationAction(owner)) return;
       if (!result.ok) {
         say(messageNode, JOIN_MESSAGES[result.reason] ?? '들어가지 못했어요.', 'bad');
+        // 잠긴 방이면 비밀번호 칸으로 데려간다. 초대 링크로 곧장 들어오려던 사람도 이 길을 탄다
+        if (messageNode === el.joinMessage
+            && (result.reason === 'need-password' || result.reason === 'wrong-password')) {
+          el.joinPassword.focus({ preventScroll: true });
+        }
         return;
       }
 
@@ -470,34 +663,67 @@ export function createOnlineScreen(
       commitEnterRoom(result.room.code, owner);
     } catch (error) {
       if (!ownsNavigationAction(owner)) return;
-      const detail = error instanceof Error ? ` (${error.message})` : '';
-      say(messageNode, `방에 들어가지 못했어요. 네트워크 상태를 확인해 주세요.${detail}`, 'bad');
+      say(messageNode, `방에 들어가지 못했어요. ${onlineErrorText(error, '네트워크 상태를 확인해 주세요.')}`, 'bad');
+    } finally {
+      setBusy(trigger, false);
     }
   }
 
   el.joinForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const code = normalizeCode(el.joinCode.value);
-    if (!isValidCode(code)) {
-      say(el.joinMessage, '방 코드는 여섯 글자예요.', 'bad');
+    const checked = checkCodeInput(el.joinCode.value);
+    if (!checked.ok) {
+      say(el.joinMessage, checked.message, 'bad');
       el.joinCode.focus();
       return;
     }
-    await joinByCode(code, el.joinPassword.value);
+    await joinByCode(checked.value, el.joinPassword.value);
+  });
+
+  // 한글 자판 그대로 치면 글자를 지우지 않고 이유를 바로 알린다. 제출해서야 «여섯 글자가
+  // 아니다»를 들으면 무엇이 틀렸는지 알 수 없다 (U27). 같은 말을 되풀이해 낭독하지 않게
+  // 상태가 바뀔 때만 고친다.
+  el.joinCode.addEventListener('input', () => {
+    const showing = !el.joinMessage.hidden && el.joinMessage.textContent === CODE_MESSAGES.hangul;
+    if (hasHangul(el.joinCode.value)) {
+      if (!showing) say(el.joinMessage, CODE_MESSAGES.hangul, 'bad');
+    } else if (showing) {
+      say(el.joinMessage, '');
+    }
+  });
+
+  // 칸은 코드 길이까지만 받아 붙여 넣은 초대 링크가 잘린다. 붙여 넣는 순간 코드만 뽑아 넣는다
+  el.joinCode.addEventListener('paste', (event) => {
+    const text = event.clipboardData?.getData('text') ?? '';
+    const code = normalizeCode(text);
+    if (!isValidCode(code) || code === text) return;
+    event.preventDefault();
+    el.joinCode.value = code;
+    el.joinCode.dispatchEvent(new Event('input'));
   });
 
   // ── 만들기 ─────────────────────────────────────────────────────
 
   el.createForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // 이미 만드는 중이다. 두 번 누르면 방이 둘 생긴다
+    if (el.createSubmit.disabled) return;
+    // 서버와 같은 규칙으로 먼저 본다. 비워 둔 채 보내 거절당하는 길을 막는다 (U41)
+    const name = checkRoomName(el.createName.value);
+    if (!name.ok) {
+      say(el.createMessage, name.message, 'bad');
+      el.createName.focus();
+      return;
+    }
     const isPublic = !el.createPrivate.checked;
     const selected = CATEGORIES.find((category) => category.id === el.createCategory.value);
     const owner = captureNavigationAction();
     if (!owner) return;
 
+    setBusy(el.createSubmit, true, '만드는 중…');
     try {
       const result = await roomStore.createRoom({
-        name: el.createName.value,
+        name: name.value,
         categoryId: selected ? selected.id : null,
         capacity: Number(el.createCapacity.value),
         isPublic,
@@ -514,12 +740,14 @@ export function createOnlineScreen(
       el.createForm.reset();
       el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
       syncPrivatePassword();
+      suggestRoomName();
       // 만들자마자 대기실로 들어간다. 목록으로 돌아가 다시 찾을 이유가 없다
       commitEnterRoom(result.room.code, owner);
     } catch (error) {
       if (!ownsNavigationAction(owner)) return;
-      const detail = error instanceof Error ? ` (${error.message})` : '';
-      say(el.createMessage, `방을 만들지 못했어요. 네트워크 상태를 확인해 주세요.${detail}`, 'bad');
+      say(el.createMessage, `방을 만들지 못했어요. ${onlineErrorText(error, '네트워크 상태를 확인해 주세요.')}`, 'bad');
+    } finally {
+      setBusy(el.createSubmit, false);
     }
   });
 
@@ -544,29 +772,39 @@ export function createOnlineScreen(
   el.filters.addEventListener('reset', () => setTimeout(resetRoomFilters, 0));
 
   el.emptyAction.addEventListener('click', () => {
-    if (el.emptyAction.dataset.action === 'create') {
+    const action = el.emptyAction.dataset.action;
+    if (action === 'create') {
       showPanel('create');
-      el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      el.createBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
       el.createName.focus({ preventScroll: true });
       return;
     }
+    if (action === 'retry') {
+      if (visibleRequest !== null) void loadRooms(visibleRequest);
+      return;
+    }
+    // 그 버튼에 포커스가 있던 때만 옮긴다. 캐릭터가 밟아 누른(click) 것이면 포커스를 주지 않는다 —
+    // 버튼에 포커스가 생기면 다음 Enter가 발밑이 아니라 그 버튼을 누른다(walker의 «비켜난다» 규칙)
+    const hadFocus = document.activeElement === el.emptyAction;
     resetRoomFilters();
+    if (hadFocus) focusRevealedList();
   });
+  el.emptySecondary.addEventListener('click', leaveForPractice);
 
   el.openPublic.addEventListener('click', () => {
     showPanel('rooms');
-    el.summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.summary.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
   });
 
   el.openPrivate.addEventListener('click', () => {
     showPanel('join');
-    el.joinBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.joinBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.joinCode.focus({ preventScroll: true });
   });
 
   el.openCreate.addEventListener('click', () => {
     showPanel('create');
-    el.createBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.createBlock.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
     el.createName.focus({ preventScroll: true });
   });
 
@@ -602,13 +840,54 @@ export function createOnlineScreen(
       say(el.joinMessage, '');
       say(el.createMessage, '');
       say(el.message, notice ?? '', notice ? 'bad' : undefined);
+      suggestRoomName();
       // 이전 방문에서 코드 참가/공개방 찾기가 바꾼 필터를 새 진입까지 끌고 오면
-      // '방 찾기'가 선택됐는데 비공개방만 보이는 모순이 생긴다. 로비는 매번 기본 목록으로 연다.
+      // '방 찾기'가 선택됐는데 잠긴 방만 보이는 모순이 생긴다. 로비는 매번 기본 목록으로 연다.
       resetRoomFilters();
       showPanel('rooms');
       await loadRooms(request);
       if (!ownsScreen(request)) return;
       walker.show(characterId);
+    },
+
+    acceptInvite(rawCode) {
+      if (visibleRequest === null || !ownsScreen(visibleRequest)) return;
+      const code = normalizeCode(rawCode);
+      if (!isValidCode(code)) {
+        showPanel('join');
+        el.joinCode.value = code;
+        el.joinPassword.value = '';
+        say(el.joinMessage, '초대 링크의 방 코드가 올바르지 않아요. 받은 코드를 직접 적어 주세요.', 'bad');
+        el.joinBlock.scrollIntoView({ block: 'nearest' });
+        el.joinCode.focus({ preventScroll: true });
+        return;
+      }
+
+      const room = rooms.find((item) => item.code === code);
+      // 이미 들어가 있는 방이면 다시 참가할 것 없이 들어간다. 대기실이 진행 중인 판으로 이어 준다
+      if (room?.joined) {
+        enterRoom(code);
+        return;
+      }
+      // 잠긴 방은 비밀번호를 링크에 싣지 않는다. 코드를 채워 두고 비밀번호 칸에 선다
+      if (room && !room.isPublic) {
+        preparePrivateJoin(room);
+        return;
+      }
+
+      showPanel('join');
+      el.joinCode.value = code;
+      el.joinPassword.value = '';
+      el.joinBlock.scrollIntoView({ block: 'nearest' });
+      if (room && isRoomPlaying(room)) {
+        say(el.joinMessage, JOIN_MESSAGES['game-in-progress'], 'bad');
+        el.joinCode.focus({ preventScroll: true });
+        return;
+      }
+      // 공개방이거나 목록에 없는 방(목록은 최근 100개까지다). 바로 참가해 보고, 잠겨
+      // 있으면 저장소의 need-password 를 받아 비밀번호 칸으로 데려간다
+      say(el.joinMessage, '');
+      void joinByCode(code, '');
     },
 
     hide() {

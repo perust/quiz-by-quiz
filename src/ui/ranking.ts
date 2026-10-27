@@ -33,6 +33,13 @@ const TABS: RankingTab[] = [
 /** app.ts가 넘겨주는 콜백 뭉치 */
 export interface RankingScreenDeps {
   onHome: () => void;
+  /** 빈 탭에서 그 탭의 판을 곧바로 연다 (FR-6.12). 홈으로 돌려보내 다시 고르게 하지 않는다 */
+  onStart: (target: RankingTarget) => void;
+  /**
+   * 그 탭의 판을 지금 열 수 있는가. 홈의 분야 칸·전체 도전이 잠기는 것과 같은 규칙이다 —
+   * 문제를 불러오지 못한 분야에 「… 시작하기」를 권하면 눌렀을 때 홈으로 튕겨 나간다
+   */
+  canStart: (target: RankingTarget) => boolean;
   loadRankings: (target: RankingTarget) => Promise<ScoreRecord[]>;
   clearRankings: () => Promise<void>;
 }
@@ -55,7 +62,7 @@ export interface RankingScreen {
 }
 
 export function createRankingScreen(
-  { onHome, loadRankings, clearRankings }: RankingScreenDeps,
+  { onHome, onStart, canStart, loadRankings, clearRankings }: RankingScreenDeps,
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
@@ -64,8 +71,9 @@ export function createRankingScreen(
     list: need('ranking-list'),
     empty: need('ranking-empty'),
     emptyMessage: need('ranking-empty-message'),
-    emptyHomeButton: need<HTMLButtonElement>('ranking-empty-home'),
+    emptyStartButton: need<HTMLButtonElement>('ranking-empty-start'),
     homeButton: need<HTMLButtonElement>('ranking-home'),
+    footer: need('ranking-footer'),
     clearButton: need<HTMLButtonElement>('ranking-clear'),
     dialog: need('clear-dialog'),
     dialogCancel: need<HTMLButtonElement>('clear-cancel'),
@@ -160,17 +168,28 @@ export function createRankingScreen(
     return item;
   }
 
+  function currentTab(): RankingTab {
+    return TABS.find((item) => item.key === activeKey) ?? TABS[0];
+  }
+
   async function render(): Promise<void> {
     syncTabs();
 
-    const tab = TABS.find((item) => item.key === activeKey) ?? TABS[0];
-    const records = await loadRankings(tab.target);
+    const tab = currentTab();
+    // 「모든 기록 지우기」는 이 탭이 아니라 **모든 랭킹**을 지운다. 그래서 숨기는 기준도 모든
+    // 탭이다 — 이 탭이 비었어도 다른 탭에 기록이 있으면 지울 것이 있다 (FR-6.6)
+    const lists = await Promise.all(TABS.map((item) => loadRankings(item.target)));
+    const records = lists[TABS.indexOf(tab)] ?? [];
+    el.footer.hidden = lists.every((list) => list.length === 0);
 
     el.list.replaceChildren();
 
     if (records.length === 0) {
-      // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12)
+      // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12).
+      // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
+      // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
       el.emptyMessage.textContent = `${tab.label} 기록이 아직 없습니다.`;
+      el.emptyStartButton.textContent = canStart(tab.target) ? `${tab.label} 시작하기` : '홈으로';
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -200,14 +219,21 @@ export function createRankingScreen(
     await clearRankings();
     highlightId = null;
     await render();
-    el.clearButton.focus();
+    // 지우고 나면 「모든 기록 지우기」가 숨는다. 거기 두면 포커스가 <body>로 떨어지므로
+    // 빈 탭이 주는 다음 행동(「… 시작하기」)으로 옮긴다 — 되돌릴 수 없는 조작 뒤에는 갈 곳을 남긴다
+    (el.empty.hidden ? el.clearButton : el.emptyStartButton).focus();
     announce('저장된 기록을 모두 지웠습니다.');
   }
 
   buildTabs();
 
   el.homeButton.addEventListener('click', () => onHome());
-  el.emptyHomeButton.addEventListener('click', () => onHome());
+  // 글자를 그린 때와 같은 판정으로 고른다. 열 수 없는 판을 열려다 홈으로 튕기지 않는다
+  el.emptyStartButton.addEventListener('click', () => {
+    const { target } = currentTab();
+    if (canStart(target)) onStart(target);
+    else onHome();
+  });
   el.clearButton.addEventListener('click', openClearDialog);
   el.dialogCancel.addEventListener('click', closeClearDialog);
   el.dialogConfirm.addEventListener('click', confirmClear);

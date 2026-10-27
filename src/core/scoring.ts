@@ -128,7 +128,7 @@ export function summarizeRound({ questions, answers, mode, categoryId = null }: 
     accuracy,
 
     // 문항별 응답 시간의 합. 해설을 읽은 시간은 타이머가 멈춰 있어 빠져 있고,
-    // 시간 초과 문항은 session이 이미 20초로 맞춰 넣었다 (FR-5.3).
+    // 시간 초과 문항은 session이 이미 그 판의 제한 시간(기본 20초)으로 맞춰 넣었다 (FR-5.3).
     // performance.now()가 소수를 주므로 저장 전에 밀리초로 떨군다
     durationMs: Math.round(answers.reduce((sum, answer) => sum + answer.elapsedMs, 0)),
 

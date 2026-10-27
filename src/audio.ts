@@ -95,3 +95,12 @@ export function playTimeout(): void {
   beep({ freq: 392, duration: 0.14, type: 'sawtooth', peak: 0.045 });
   beep({ freq: 196, delay: 0.13, duration: 0.26, type: 'sawtooth', peak: 0.045 });
 }
+
+/**
+ * 소리를 켰을 때 — 짧고 밝은 한 음으로 «이제 들린다»를 바로 알린다 (U54).
+ * 설정의 소리 토글을 누른 클릭 안에서 부르므로 브라우저가 소리를 막지 않는다.
+ */
+export function playToggleOn(): void {
+  if (!enabled) return;
+  beep({ freq: 880, duration: 0.09, peak: 0.05 });
+}

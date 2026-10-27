@@ -68,16 +68,23 @@ test('첫 결과 상태는 아직 저장하지 않은 기록을 저장됐다고 
   assert.doesNotMatch(result, /첫 기록을 남겼어요/);
 });
 
-test('빈 랭킹은 설명으로 막지 않고 퀴즈 시작 행동을 제공한다', async () => {
-  const [html, ranking] = await Promise.all([
+test('빈 랭킹은 설명으로 막지 않고 그 탭의 판을 곧바로 여는 행동을 제공한다', async () => {
+  const [html, ranking, app] = await Promise.all([
     source('../index.html'),
     source('../src/ui/ranking.ts'),
+    source('../src/app.ts'),
   ]);
 
   assert.match(html, /id="ranking-empty-message"/);
-  assert.match(html, /id="ranking-empty-home">퀴즈 시작하기<\/button>/);
-  assert.match(ranking, /emptyHomeButton: need<HTMLButtonElement>\('ranking-empty-home'\)/);
-  assert.match(ranking, /el\.emptyHomeButton\.addEventListener\('click', \(\) => onHome\(\)\)/);
+  assert.match(html, /id="ranking-empty-start">퀴즈 시작하기<\/button>/);
+  assert.match(ranking, /emptyStartButton: need<HTMLButtonElement>\('ranking-empty-start'\)/);
+  // 예전에는 홈으로만 돌려보내 분야를 다시 골라야 했다 (U23). 이제 그 탭의 판을 연다
+  assert.match(ranking, /el\.emptyStartButton\.textContent = canStart\(tab\.target\) \? `\$\{tab\.label\} 시작하기` : '홈으로';/);
+  assert.match(ranking, /el\.emptyStartButton\.addEventListener\('click', \(\) => \{\s*const \{ target \} = currentTab\(\);\s*if \(canStart\(target\)\) onStart\(target\);\s*else onHome\(\);/);
+  assert.doesNotMatch(ranking, /emptyHomeButton|ranking-empty-home/);
+  assert.match(app, /onStart: \(target\) => startRound\(/);
+  // 열 수 없는 판(문제를 불러오지 못한 분야)은 권하지 않는다. 홈의 분야 칸·전체 도전과 같은 규칙이다
+  assert.match(app, /canStart: \(target\) => \(target\.mode === 'all'\s*\? allModeCount\(\) > 0\s*: \(target\.category \? banks\[target\.category\]\?\.length \?\? 0 : 0\) > 0\),/);
   assert.match(ranking, /startPoint: \(\) => pointBelowRightEdge\(el\.header, el\.character\)/);
 });
 

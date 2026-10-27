@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+import time
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 from uuid import UUID
@@ -10,9 +13,10 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.main import create_app
+from app.main import EventHub, create_app
 from app.password_work import PasswordWorkBusy
 from app.repository import (
+    AbsentHostSweep,
     AccessInfo,
     MatchSetup,
     PlayerView,
@@ -21,6 +25,7 @@ from app.repository import (
 )
 
 PLAYER_ID = UUID("12345678-1234-5678-9234-567812345678")
+MATCH_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 PLAYER_TOKEN = "player-token-with-at-least-thirty-two-characters"  # noqa: S105
 HEADERS = {
     "Authorization": f"Bearer {PLAYER_TOKEN}",
@@ -68,6 +73,15 @@ class FakeRepository:
         self.authenticate_calls = 0
         self.current_schema_version = 10
         self.schema_version_calls = 0
+        self.start_absent_player_ids: frozenset[UUID] | None = None
+        self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
+        self.transfer_requested = threading.Event()
+        # 끊긴 방장을 넘길 수 있는가(접속 중인 사람이 있는가). 한 번 넘기면 다시 넘기지 않는다.
+        self.can_transfer = True
+        self.transferred_codes: set[str] = set()
+        # None이면 끊긴 사람도 모두 아직 참가자다. 값이 있으면 그 사람들만 참가자다.
+        self.member_ids: frozenset[UUID] | None = None
+        self.leave_absent_player_ids: frozenset[UUID] | None = None
 
     async def open(self) -> None:
         return None
@@ -121,7 +135,14 @@ class FakeRepository:
         self.join_calls += 1
         return self.room
 
-    async def leave_room(self, actor_id: UUID, code: str) -> RoomView | None:
+    async def leave_room(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> RoomView | None:
+        self.leave_absent_player_ids = absent_player_ids
         return None
 
     async def update_room(self, actor_id: UUID, code: str, patch: Any) -> RoomView:
@@ -132,8 +153,56 @@ class FakeRepository:
     async def send_chat(self, actor_id: UUID, code: str, text: str) -> PlayerView:
         return self.room.players[0]
 
-    async def start_game(self, actor_id: UUID, code: str) -> MatchSetup:
-        return MatchSetup(category_id=self.room.category_id, game_mode=self.room.game_mode)
+    async def start_game(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSetup:
+        self.start_absent_player_ids = absent_player_ids
+        return MatchSetup(
+            id=MATCH_ID,
+            category_id=self.room.category_id,
+            game_mode=self.room.game_mode,
+            total_questions=10,
+        )
+
+    async def transfer_absent_host(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        raise AssertionError("presence sweep reads every absent room at once")
+
+    async def transfer_absent_hosts(
+        self,
+        absent_by_room: Mapping[str, frozenset[UUID]],
+    ) -> AbsentHostSweep:
+        self.transfer_calls.append(dict(absent_by_room))
+        self.transfer_requested.set()
+        transferred = frozenset(
+            code
+            for code in absent_by_room
+            if code == self.room.code
+            and self.can_transfer
+            and code not in self.transferred_codes
+        )
+        self.transferred_codes |= transferred
+        members = {
+            code: self.member_ids if self.member_ids is not None else absent
+            for code, absent in absent_by_room.items()
+            if code == self.room.code
+        }
+        return AbsentHostSweep(transferred=transferred, members=members)
+
+    async def advance_past_absent_players(
+        self,
+        code: str,
+        absent_player_ids: frozenset[UUID],
+    ) -> bool:
+        # 이 가짜 방에는 진행 중인 판이 없다.
+        return False
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
         return self.member and code == self.room.code
@@ -1011,3 +1080,259 @@ def test_websocket_inbound_rate_limit_closes_a_flooding_connection() -> None:
                 websocket.receive_json()
 
     assert disconnected.value.code == 4429
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 5_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def wait_until(predicate: Any, message: str) -> None:
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError(message)
+
+
+OTHER_ID = UUID("87654321-4321-4765-8321-876543218765")
+
+
+def test_room_payload_marks_long_disconnected_members_and_start_skips_them() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    repository.room = room_view(
+        players=(
+            PlayerView(id=PLAYER_ID, nickname="퀴즈왕", character_id="slime-blue"),
+            PlayerView(
+                id=OTHER_ID,
+                nickname="친구",
+                character_id="slime-pink",
+                is_ready=True,
+            ),
+        ),
+    )
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        ticket = client.post(
+            f"/v1/rooms/{repository.room.code}/ws-ticket",
+            headers=HEADERS,
+        ).json()["ticket"]
+        with client.websocket_connect(
+            f"/v1/rooms/{repository.room.code}/events",
+            subprotocols=ws_protocols(ticket),
+        ):
+            wait_until(lambda: hub.is_present("ABC234", PLAYER_ID), "socket was not activated")
+            fresh = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+            # 소켓을 아직 본 적 없는 친구도 처음 물어본 때부터 유예를 센다.
+            assert [player["connected"] for player in fresh["players"]] == [True, True]
+
+            clock.now += 61
+            stale = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+            assert [player["connected"] for player in stale["players"]] == [True, False]
+
+            started = client.post("/v1/rooms/ABC234/start", headers=HEADERS)
+
+    assert started.status_code == 201
+    assert repository.start_absent_player_ids == frozenset({OTHER_ID})
+
+
+def test_presence_sweep_transfers_an_absent_host_and_invalidates_remaining_screens() -> None:
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=repository,
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        stayer = register_rotating_identity(client, 30, "198.51.100.30")
+        leaver = register_rotating_identity(client, 31, "198.51.100.31")
+        leaver_id = UUID(leaver["X-Player-Id"])
+        tickets = [
+            client.post("/v1/rooms/ABC234/ws-ticket", headers=headers).json()["ticket"]
+            for headers in (stayer, leaver)
+        ]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(tickets[0]),
+        ) as stayer_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(tickets[1]),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            # 유예 안의 끊김은 방송하지도 방장을 넘기지도 않는다.
+            time.sleep(0.05)
+            assert repository.transfer_calls == []
+
+            clock.now += 61
+            assert repository.transfer_requested.wait(timeout=2)
+            event = stayer_socket.receive_json()
+
+    assert repository.transfer_calls[0] == {"ABC234": frozenset({leaver_id})}
+    assert event == {"type": "room-invalidated"}
+
+
+def _issue_tickets(
+    client: TestClient,
+    stayer: dict[str, str],
+    leaver: dict[str, str],
+) -> tuple[str, str]:
+    tickets = [
+        client.post("/v1/rooms/ABC234/ws-ticket", headers=headers).json()["ticket"]
+        for headers in (stayer, leaver)
+    ]
+    return tickets[0], tickets[1]
+
+
+def test_presence_sweep_keeps_retrying_an_absent_host_until_someone_can_take_over() -> None:
+    # server-1: 방장만 있던 방에서 방장이 끊기면 넘길 사람이 없다. 그 뒤에 누가 들어와도
+    # 끊긴 사람의 집합은 그대로라, 집합이 바뀔 때만 보던 sweep은 다시 넘기지 않았다.
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.can_transfer = False
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=repository,
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        stayer = register_rotating_identity(client, 40, "198.51.100.40")
+        leaver = register_rotating_identity(client, 41, "198.51.100.41")
+        leaver_id = UUID(leaver["X-Player-Id"])
+        stayer_ticket, leaver_ticket = _issue_tickets(client, stayer, leaver)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(stayer_ticket),
+        ) as stayer_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(leaver_ticket),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            clock.now += 61
+            # 끊김이 처음 보일 때 한 번 다시 읽게 한다. 넘길 사람이 없어 넘기지는 못했다.
+            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            wait_until(
+                lambda: len(repository.transfer_calls) >= 3,
+                "the sweep stopped looking at a room whose host is still absent",
+            )
+            assert repository.transferred_codes == set()
+
+            # 접속 중인 사람이 생겼다(늦게 들어왔다). 끊긴 사람의 집합은 그대로다.
+            repository.can_transfer = True
+            wait_until(
+                lambda: repository.transferred_codes == {"ABC234"},
+                "a member who joined after the failed transfer never became host",
+            )
+            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+
+    assert repository.transferred_codes == {"ABC234"}
+    assert all(
+        call == {"ABC234": frozenset({leaver_id})} for call in repository.transfer_calls
+    )
+
+
+def test_presence_sweep_forgets_members_that_the_room_no_longer_has() -> None:
+    # server-6: 30분 정리는 hub를 거치지 않는다. sweep이 참가자 목록을 보고 기록을 버린다.
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.can_transfer = False
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(
+        repository=repository,
+        event_hub=hub,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        stayer = register_rotating_identity(client, 42, "198.51.100.42")
+        leaver = register_rotating_identity(client, 43, "198.51.100.43")
+        stayer_id = UUID(stayer["X-Player-Id"])
+        leaver_id = UUID(leaver["X-Player-Id"])
+        stayer_ticket, leaver_ticket = _issue_tickets(client, stayer, leaver)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(stayer_ticket),
+        ) as stayer_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(leaver_ticket),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            clock.now += 61
+            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert hub.absent_actors("ABC234") == frozenset({leaver_id})
+
+            # 정리가 끊긴 사람을 방에서 뺐다. 남은 화면도 다시 읽는다.
+            repository.member_ids = frozenset({stayer_id})
+            wait_until(
+                lambda: hub.absent_actors("ABC234") == frozenset(),
+                "the sweep kept the presence record of a removed member",
+            )
+            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            # 같은 방에 다시 들어오면 처음 본 사람처럼 새 유예로 센다.
+            assert hub.is_present("ABC234", leaver_id)
+
+
+def test_rejoining_after_membership_ended_starts_a_fresh_grace() -> None:
+    # server-6: 예전 멤버십의 끊김 기록이 남아 있으면 들어오자마자 «연결 끊김»이고 시작에서 빠졌다.
+    repository = FakeRepository()
+    repository.member = True
+    repository.password_hash = None
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ):
+            wait_until(lambda: hub.is_present("ABC234", PLAYER_ID), "socket was not activated")
+        wait_until(lambda: hub.connection_count == 0, "closed socket stayed admitted")
+        clock.now += 61
+        assert hub.absent_actors("ABC234") == frozenset({PLAYER_ID})
+
+        # 30분 정리로 방에서 빠졌다가 같은 방에 다시 들어온다.
+        repository.member = False
+        joined = client.post("/v1/rooms/ABC234/join", headers=HEADERS, json={})
+
+    assert joined.status_code == 200
+    assert [player["connected"] for player in joined.json()["players"]] == [True]
+    assert hub.absent_actors("ABC234") == frozenset()
+
+
+def test_leave_hands_the_host_to_a_connected_member_and_forgets_a_deleted_room() -> None:
+    # server-2: 나가는 방장의 자리를 끊긴 사람에게 넘기면 남은 사람이 시작할 수 없었다.
+    repository = FakeRepository()
+    repository.member = True
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        assert hub.is_present("ABC234", OTHER_ID)
+        clock.now += 61
+        left = client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS)
+
+    assert left.status_code == 204
+    assert repository.leave_absent_player_ids == frozenset({OTHER_ID})
+    # 이 가짜 방은 마지막 사람이 나가 사라졌다. 같은 코드의 기록이 남지 않는다.
+    assert hub.absent_actors("ABC234") == frozenset()

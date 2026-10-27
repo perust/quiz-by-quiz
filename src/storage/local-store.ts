@@ -7,10 +7,12 @@
 //
 // 저장 데이터가 깨져도 앱을 죽이지 않고 빈 값으로 되돌린다 (PRD 8).
 
-import { RANKING_TOP_N } from '../constants.js';
+import { RANKING_TOP_N, ROOM_CODE_LENGTH, TIME_LIMIT_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { safeStorage } from './safe-storage.js';
 import { bestScore, placeRecord, selectRanking, isSameRanking } from '../core/ranking.js';
-import type { CategoryId, QuestionResult, RankingTarget, RoundMode, ScoreRecord, Settings } from '../types.js';
+import type {
+  CategoryId, QuestionResult, RankingTarget, RoundMode, ScoreRecord, Settings, TimeLimitChoice,
+} from '../types.js';
 import type { Preferences, RankingStore, SaveOutcome, SaveRecordInput } from './adapter.js';
 
 /** 저장소 키 (PRD 6.3). 키 이름은 저장 방식의 세부사항이라 이 파일 밖으로 새지 않는다 */
@@ -19,11 +21,25 @@ const KEYS = {
   settings: 'quiz.settings',
   nickname: 'quiz.nickname',
   recentQuestionIds: 'quiz.recentQuestionIds',
+  lastRoomCode: 'quiz.lastRoomCode',
   schemaVersion: 'quiz.schemaVersion',
 };
 
-/** 사용자 설정 기본값. 저장된 값이 없거나 깨졌을 때 이걸로 되돌린다 */
-const DEFAULT_SETTINGS: Settings = { soundEnabled: true, characterId: null };
+/** 저장된 방 코드의 꼴. 손으로 고쳤거나 깨진 값은 흔적으로 치지 않는다 */
+const ROOM_CODE_PATTERN = new RegExp(`^[A-Z0-9]{${ROOM_CODE_LENGTH}}$`);
+
+/**
+ * 사용자 설정 기본값. 저장된 값이 없거나 깨졌을 때 이걸로 되돌린다.
+ *
+ * 문항 시간·움직임 줄이기(U42·U55)는 **더하기만 한 키**라 스키마 버전을 올리지 않았다 —
+ * 예전 설정에는 이 키가 없고, 없으면 여기 기본값(20초·움직임 그대로)이 된다.
+ */
+const DEFAULT_SETTINGS: Settings = {
+  soundEnabled: true,
+  characterId: null,
+  timeLimitMs: TIME_LIMIT_MS,
+  reduceMotion: false,
+};
 
 /** 저장 데이터 스키마 버전. 구조가 바뀌면 올린다 (v2 마이그레이션 판단 기준) */
 const SCHEMA_VERSION = 1;
@@ -43,6 +59,15 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 /**
+ * 고를 수 있는 문항 시간인가 (FR-3.7). 30초처럼 목록에 없는 값이나 글자는 아니다.
+ * **null 은 «제한 없음»이라는 값이다** — 키가 없는 것(undefined)과 다르다.
+ */
+function isTimeLimitChoice(value: unknown): value is TimeLimitChoice {
+  const choices: readonly unknown[] = TIME_LIMIT_CHOICES;
+  return value !== undefined && choices.includes(value);
+}
+
+/**
  * isValidRecord를 통과한 값.
  *
  * **검사한 필드만 알고 있다.** category·durationMs·questionResults는 아직 무엇이든
@@ -59,6 +84,7 @@ interface CheckedRecord {
   category?: unknown;
   durationMs?: unknown;
   questionResults?: unknown;
+  timeLimitMs?: unknown;
 }
 
 // ── 안전한 읽기·쓰기 ─────────────────────────────────────────────
@@ -179,8 +205,8 @@ function normalizeQuestionResults(value: unknown): QuestionResult[] | null {
 function normalizeRecord(record: CheckedRecord): ScoreRecord {
   const questionResults = normalizeQuestionResults(record.questionResults);
 
-  // 스프레드에 섞여 들어오는 questionResults 는 여기서 빼 둔다. 다듬은 값만 아래에서 다시 넣는다
-  const { questionResults: _raw, ...rest } = record;
+  // 스프레드에 섞여 들어오는 선택 필드는 여기서 빼 둔다. 다듬은 값만 아래에서 다시 넣는다
+  const { questionResults: _raw, timeLimitMs, ...rest } = record;
 
   const normalized: ScoreRecord = {
     ...rest,
@@ -193,6 +219,10 @@ function normalizeRecord(record: CheckedRecord): ScoreRecord {
 
   // 값이 없거나 깨졌으면 키 자체를 남기지 않는다. 빈 배열이 "다 틀렸다"로 읽히면 안 된다
   if (questionResults) normalized.questionResults = questionResults;
+
+  // 문항 시간은 기본(20초)이 아닌 판에만 남긴다. 키가 없으면 20초 판이다 — 예전 기록도 그렇다.
+  // 이 값으로 랭킹을 나누지 않는다 (점수에 속도가 없다, PRD 2.1)
+  if (isTimeLimitChoice(timeLimitMs) && timeLimitMs !== TIME_LIMIT_MS) normalized.timeLimitMs = timeLimitMs;
 
   return normalized;
 }
@@ -290,7 +320,7 @@ export function createLocalPreferences(): Preferences {
       writeJson(KEYS.nickname, nickname);
     },
 
-    /** 음소거 등 사용자 설정 (PRD 6.3). 깨져 있으면 기본값으로 돌린다 */
+    /** 소리·문항 시간·움직임 줄이기·캐릭터 (PRD 6.3). 깨져 있으면 기본값으로 돌린다 */
     async getSettings(): Promise<Settings> {
       const stored = readJson(KEYS.settings, null);
       if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
@@ -303,6 +333,9 @@ export function createLocalPreferences(): Preferences {
         ...(typeof saved.soundEnabled === 'boolean' ? { soundEnabled: saved.soundEnabled } : {}),
         // 없는 캐릭터 id 여도 그대로 둔다. characters.ts 가 못 찾으면 기본값으로 되돌린다
         ...(typeof saved.characterId === 'string' ? { characterId: saved.characterId } : {}),
+        // 목록에 없는 문항 시간(손으로 고친 값, 예전 판의 값)은 기본 20초로 돌린다 (FR-3.7)
+        ...(isTimeLimitChoice(saved.timeLimitMs) ? { timeLimitMs: saved.timeLimitMs } : {}),
+        ...(typeof saved.reduceMotion === 'boolean' ? { reduceMotion: saved.reduceMotion } : {}),
       };
     },
 
@@ -326,6 +359,25 @@ export function createLocalPreferences(): Preferences {
 
     async setRecentQuestionIds(ids: string[]): Promise<void> {
       writeJson(KEYS.recentQuestionIds, ids);
+    },
+
+    /** 마지막으로 들어간 온라인 방 (U35, server-5). 부팅 때 서버에 물어볼지만 정한다 */
+    async getLastRoomCode(): Promise<string | null> {
+      const value = readJson(KEYS.lastRoomCode, null);
+      return typeof value === 'string' && ROOM_CODE_PATTERN.test(value) ? value : null;
+    },
+
+    async setLastRoomCode(code: string | null): Promise<void> {
+      if (code !== null) {
+        writeJson(KEYS.lastRoomCode, code);
+        return;
+      }
+      try {
+        safeStorage.removeItem(KEYS.lastRoomCode);
+      } catch (error) {
+        // 못 지워도 다음 부팅에 한 번 더 물어볼 뿐이다 (저장소가 던지는 것은 DOMException 이다)
+        console.warn(`[저장소] ${KEYS.lastRoomCode} 지우기 실패: ${(error as Error).message}`);
+      }
     },
   };
 }

@@ -1,4 +1,4 @@
-// 온라인 방의 규칙. 순수 함수만 둔다 — DOM도 저장소도 모른다.
+// 온라인 방의 규칙. 순수 함수와 그 함수들이 쓰는 이유·문구만 둔다 — DOM도 저장소도 모른다.
 //
 // 화면과 방 저장소가 **같은 규칙을 쓰게** 하려고 따로 뺐다. 화면에서만 검사하면
 // 서버 구현으로 갈아끼웠을 때 서버가 다른 기준으로 거절해 말이 어긋난다.
@@ -24,7 +24,13 @@ export type JoinFailReason =
   | 'wrong-password'
   | 'need-password'
   | 'full'
-  | 'save-failed';
+  | 'save-failed'
+  // 서버만 낸다 (U33). 연결 문제가 아니므로 «네트워크를 확인하라»로 뭉뚱그리지 않는다
+  | 'game-in-progress'
+  | 'rate-limited';
+
+/** 방에서 나가기가 거절될 수 있는 사연. LEAVE_MESSAGES가 이 목록을 빠짐없이 옮긴다 */
+export type LeaveFailReason = 'game-in-progress';
 
 /**
  * 방 코드에 쓰는 글자.
@@ -32,9 +38,42 @@ export type JoinFailReason =
  */
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
-/** 입력한 코드를 견줄 수 있는 꼴로 다듬는다. 소문자와 공백을 받아준다 */
+/** 초대 링크(`…?room=CODE`)의 코드 자리. 붙여 넣은 링크 전체에서 코드만 뽑는다 */
+const INVITE_CODE = /[?&]room=([^&#\s]*)/i;
+
+/** 한글 자모·음절. 한글 자판 그대로 코드를 치면 이 글자들이 들어온다 */
+const HANGUL = /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7a3\ud7b0-\ud7ff]/;
+
+/**
+ * 입력한 코드를 견줄 수 있는 꼴로 다듬는다. 소문자와 공백을 받아준다.
+ * 초대 링크를 통째로 붙여 넣어도 `room=` 값만 쓴다 (U27).
+ */
 export function normalizeCode(raw: string | null | undefined): string {
-  return String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const text = String(raw ?? '');
+  const invite = INVITE_CODE.exec(text);
+  return (invite ? invite[1] : text).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/** 한글이 섞였는가. 지워 버리면 «여섯 글자가 아니다»로만 보여 이유를 알 수 없다 */
+export function hasHangul(raw: string | null | undefined): boolean {
+  return HANGUL.test(String(raw ?? ''));
+}
+
+/** 코드 칸이 거절될 때 띄우는 말. 화면이 같은 말을 입력 중에도 쓴다 */
+export const CODE_MESSAGES = {
+  hangul: '방 코드는 영문과 숫자예요. 영문 자판으로 바꿔 주세요.',
+  length: '방 코드는 여섯 글자예요.',
+} as const;
+
+/**
+ * 코드 칸에 적은 것을 검사한다. 한글이 섞였으면 지우고 넘어가지 않고 자판을 바꾸라고
+ * 알린다 — 한글 자판이 기본인 휴대폰에서 가장 흔한 실수다 (U27).
+ */
+export function checkCodeInput(raw: string | null | undefined): CheckResult {
+  if (hasHangul(raw)) return { ok: false, message: CODE_MESSAGES.hangul };
+  const value = normalizeCode(raw);
+  if (value.length !== ROOM_CODE_LENGTH) return { ok: false, message: CODE_MESSAGES.length };
+  return { ok: true, value };
 }
 
 export function isValidCode(code: string | null | undefined): boolean {
@@ -63,7 +102,7 @@ export function checkRoomName(name: string | null | undefined): CheckResult {
   return { ok: true, value };
 }
 
-/** 비공개 방일 때만 부른다. 공개방은 비밀번호를 두지 않는다 */
+/** 비밀번호로 잠근 방일 때만 부른다. 공개방은 비밀번호를 두지 않는다 */
 export function checkPassword(password: string | null | undefined): CheckResult {
   const value = String(password ?? '');
   if (value.length < ROOM_PASSWORD_MIN_LENGTH) {
@@ -105,4 +144,52 @@ export const JOIN_MESSAGES: Record<JoinFailReason, string> = {
   full: '방이 이미 가득 찼어요.',
   // 저장이 막힌 브라우저에서 일어난다. 조용히 실패하면 버튼이 고장 난 것처럼 보인다
   'save-failed': '브라우저 저장 공간이 부족해 들어가지 못했어요. 저장 공간을 비우고 다시 시도해 주세요.',
+  // 진행 중인 판에는 새로 들어갈 수 없다. 언제 되는지까지 말해 준다 (U33)
+  'game-in-progress': '지금 게임 중이에요. 끝나면 들어갈 수 있어요.',
+  'rate-limited': '요청이 많아요. 잠시 후 다시 시도해 주세요.',
 };
+
+/** 나가기가 거절된 이유를 화면에 띄울 말로 옮긴다 */
+export const LEAVE_MESSAGES: Record<LeaveFailReason, string> = {
+  // 판이 도는 동안에는 서버가 멤버십을 지킨다. 연결 문제로 보이면 안 된다 (U32)
+  'game-in-progress': '게임이 끝나면 나갈 수 있어요.',
+};
+
+/**
+ * **플레이어에게 그대로 보여도 되는 말**을 가진 온라인 오류 (U40).
+ *
+ * 저장소가 던지는 그 밖의 오류의 `message`는 개발자를 위한 진단이다 — «서버 매치 snapshot이
+ * 올바르지 않습니다», 브라우저의 «Failed to fetch» 같은 것. 서버가 4xx로 알려 준 거절, 응답이
+ * 늦은 것처럼 이유를 플레이어의 말로 말할 수 있을 때만 이 오류로 던진다.
+ */
+export class OnlinePlayerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OnlinePlayerError';
+  }
+}
+
+/**
+ * 오류를 화면에 띄울 말로 옮긴다 (U40). `OnlinePlayerError`면 그 말을, 아니면 부르는 쪽이
+ * 고른 `fallback`을 쓴다. **개발 상세는 콘솔에만 남긴다** — 화면에 «온라인 매치 오류: 서버 …»를
+ * 띄우면 플레이어는 무엇을 해야 할지 모른다.
+ */
+export function onlineErrorText(error: unknown, fallback: string): string {
+  if (error instanceof OnlinePlayerError) return error.message;
+  console.warn('[온라인 오류]', error);
+  return fallback;
+}
+
+/**
+ * 저장소가 나가기를 **거절했다**는 표시 (U32).
+ *
+ * `leaveRoom`의 계약은 `{ok: true}`만 돌려준다. 거절을 그 값에 섞으면 결과를 보지 않던
+ * 호출이 거절을 성공으로 읽고 화면을 옮겨 버리므로, 거절은 이 오류로 던진다. 연결 실패(그냥
+ * `Error`)와 구분되므로 로비와 대기실이 같은 말(`LEAVE_MESSAGES`)로 이유를 말한다.
+ */
+export class LeaveRoomRejected extends OnlinePlayerError {
+  constructor(readonly reason: LeaveFailReason) {
+    super(LEAVE_MESSAGES[reason]);
+    this.name = 'LeaveRoomRejected';
+  }
+}

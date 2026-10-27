@@ -65,6 +65,13 @@ export interface Preferences {
   /** 다음 판에서 후순위로 밀 최근 출제 문제 (FR-1.4) */
   getRecentQuestionIds(): Promise<string[]>;
   setRecentQuestionIds(ids: string[]): Promise<void>;
+  /**
+   * 이 브라우저가 마지막으로 들어간 온라인 방 코드 (U35, server-5). 부팅 때 홈이 «아직 방에
+   * 있어요»를 물어볼지 정하는 흔적일 뿐이고 방의 권위는 서버다. 없거나 깨졌으면 null.
+   * null 을 넘기면 지운다
+   */
+  getLastRoomCode(): Promise<string | null>;
+  setLastRoomCode(code: string | null): Promise<void>;
 }
 
 export const rankingStore: RankingStore = createLocalRankingStore();

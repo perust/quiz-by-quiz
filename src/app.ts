@@ -7,20 +7,33 @@ import {
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
   RECENT_QUESTION_MEMORY,
+  TIME_LIMIT_MS,
 } from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession, type QuizSession } from './core/session.js';
 import { summarizeRound } from './core/scoring.js';
 import { preferences, rankingStore } from './storage/adapter.js';
-import { setEnabled as setSoundEnabled } from './audio.js';
+import { playToggleOn, setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen, type ScreenName } from './ui/screens.js';
+import {
+  backStepFor,
+  closeDialog,
+  createBackGuard,
+  isGuardState,
+  openDialog,
+  pressControl,
+  setUnloadWarning,
+} from './ui/back-guard.js';
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
+import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { createRoomKeepalive } from './online/room-keepalive.js';
+import { normalizeCode } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
@@ -28,8 +41,8 @@ import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
+import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
 import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
-import { need } from './dom.js';
 import type { CategoryId, RankingTarget, RoundMode, RoundSummary } from './types.js';
 
 const ALL_MODE_LABEL = '전체 도전';
@@ -46,6 +59,8 @@ interface PendingResult {
   target: RankingTarget;
   /** 판이 끝난 시각. 닉네임을 입력한 시각이 아니다 */
   playedAt: string;
+  /** 그 판의 문항 시간. 기본(20초)이 아니면 기록에 함께 남긴다 (FR-3.7) */
+  timeLimitMs: number | null;
 }
 
 /**
@@ -76,59 +91,27 @@ function showFatalError(message: string): void {
   }
 }
 
-// ── 소리 설정 ────────────────────────────────────────────────────
-
-interface ToggleFace {
-  /** 아이콘 이름 (css/voxel-theme.css 의 data-icon 목록). 글리프를 쓰지 않는다 */
-  icon: string;
-  label: string;
-}
-
-interface ToggleSpec {
-  ids: { button: string; icon: string; label: string };
-  on: ToggleFace;
-  off: ToggleFace;
-  apply: (value: boolean) => void;
-  onChange: (value: boolean) => void;
-}
-
-interface Toggle {
-  /** **onChange를 부르지 않는다.** 저장된 값을 화면에 얹기만 한다 */
-  set(value: boolean): void;
-}
-
 /**
- * 앱 바의 소리 켬/끔 버튼.
+ * 초대 링크(`?room=CODE`)의 코드 (U27). **부팅 때 한 번만** 읽고 주소에서 지운다 —
+ * 남겨 두면 새로고침할 때마다 같은 방에 다시 들어가려 한다. 해시 라우팅은 두지 않으며
+ * (새로고침하면 홈), 비밀번호는 링크에 싣지 않는다.
  */
-function createToggle({ ids, on, off, apply, onChange }: ToggleSpec): Toggle {
-  const button = need(ids.button);
-  const icon = need(ids.icon);
-  const label = need(ids.label);
-  let enabled = false;
-
-  function render(): void {
-    apply(enabled);
-    button.setAttribute('aria-pressed', String(enabled));
-    icon.dataset.icon = enabled ? on.icon : off.icon;
-    label.textContent = enabled ? on.label : off.label;
+function takeInviteCode(): string | null {
+  const url = new URL(window.location.href);
+  const raw = url.searchParams.get('room');
+  if (raw === null) return null;
+  url.searchParams.delete('room');
+  try {
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    // 주소를 못 고쳐도 초대는 받는다. 새로고침하면 한 번 더 열릴 뿐이다
   }
-
-  button.addEventListener('click', () => {
-    enabled = !enabled;
-    render();
-    onChange(enabled);
-  });
-
-  return {
-    set(value: boolean) {
-      enabled = Boolean(value);
-      render();
-    },
-  };
+  return normalizeCode(raw) || null;
 }
 
 async function main(): Promise<void> {
   markBooted();
+  const inviteCode = takeInviteCode();
 
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
@@ -141,20 +124,39 @@ async function main(): Promise<void> {
 
   const settings = await preferences.getSettings();
 
-  const soundToggle = createToggle({
-    ids: { button: 'sound-toggle', icon: 'sound-icon', label: 'sound-label' },
-    on: { icon: 'sound-on', label: '소리 켜짐' },
-    off: { icon: 'sound-off', label: '소리 꺼짐' },
-    apply: setSoundEnabled,
-    onChange: (enabled) => preferences.setSettings({ soundEnabled: enabled }),
+  // ── 설정 (U42·U54·U55) ─────────────────────────────────────────
+  // 앱 바의 「설정」 대화상자. 고르는 순간 적용하고 저장한다.
+  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 서버의 20초다 */
+  let timeLimitMs = settings.timeLimitMs;
+  setSoundEnabled(settings.soundEnabled);
+  applyMotionPreference(settings.reduceMotion);
+  const settingsDialog = createSettingsDialog({
+    onChange: (patch) => {
+      if (patch.soundEnabled !== undefined) {
+        setSoundEnabled(patch.soundEnabled);
+        // 켰으면 그 자리에서 한 음 들려준다 (U54). 클릭 안이라 브라우저가 소리를 막지 않는다
+        if (patch.soundEnabled) playToggleOn();
+      }
+      if (patch.timeLimitMs !== undefined) timeLimitMs = patch.timeLimitMs;
+      if (patch.reduceMotion !== undefined) applyMotionPreference(patch.reduceMotion);
+      void preferences.setSettings(patch);
+    },
+    // 대화상자 뒤에서 퀴즈 시간이 끝났으면 퀴즈가 「다음 문제」로 포커스를 이어 간다
+    onClose: () => quizScreen.resumeAfterDialog(),
   });
-  soundToggle.set(settings.soundEnabled);
+  settingsDialog.set(settings);
 
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
 
   // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
-  let savedNickname = (await preferences.getNickname()) || DEFAULT_NICKNAME;
+  const storedNickname = await preferences.getNickname();
+  let savedNickname = storedNickname || DEFAULT_NICKNAME;
+  // 저장된 이름이 없으면 기본 이름을 한 번 저장해 둔다. 홈 HUD·결과 등록 칸·온라인 프로필이
+  // 모두 같은 값을 읽는다 — 전에는 홈에 «퀴즈왕»이 보이는데 등록 칸은 비어 있었다 (FR-6.11)
+  if (!storedNickname) await preferences.setNickname(savedNickname);
+  /** 마지막으로 들어간 온라인 방. 부팅 때 홈의 «아직 방에 있어요»를 물어볼지 정한다 (server-5) */
+  const lastRoomCode = await preferences.getLastRoomCode();
 
   /** 다시 하기가 되풀이할 판 종류 */
   let lastRound: Round | null = null;
@@ -188,6 +190,7 @@ async function main(): Promise<void> {
     onOpenRanking: () => openRanking(),
     onOpenCharacters: () => openCharacters(),
     onOpenOnline: () => openOnline(),
+    onReturnToRoom: (code) => { void openWaitingRoom(code); },
     onNickname: (value) => {
       savedNickname = value;
       syncRoomPlayer();
@@ -195,10 +198,22 @@ async function main(): Promise<void> {
     },
   });
 
+  // 홈의 «「방」 방에 아직 있어요» 줄 (U35). 언제 묻는지는 online/home-room-note.ts 가 정한다
+  const homeRoomNote = createHomeRoomNote({
+    isNetworked: roomStore.isNetworked,
+    lastRoomCode,
+    saveLastRoomCode: (code) => { void preferences.setLastRoomCode(code); },
+    myRooms: () => roomStore.myRooms(),
+    activeRoomCode: () => activeRoomCode,
+    navigation: () => waitingRoomEntryGeneration,
+    show: (room) => homeScreen.setRoomNote(room),
+  });
+
   // 온라인 로비. 방을 어디에 두는지는 어댑터가 정하고 화면은 모른다
   const onlineScreen = createOnlineScreen({
     roomStore,
     onHome: goHome,
+    onPractice: () => { void practiceAlone(); },
     onEnterRoom: (code) => openWaitingRoom(code),
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
@@ -217,6 +232,8 @@ async function main(): Promise<void> {
       })) return;
       stopOnlineMatch();
       activeRoomCode = null;
+      // 스스로 나왔든 방이 사라졌든 그 방은 이제 돌아갈 곳이 아니다. 홈의 줄과 부팅 흔적을 거둔다 (U35)
+      homeRoomNote.leave(code);
       // reason 이 있으면 내가 나간 것이 아니라 들어갈 수 없어서 되돌아온 것이다
       void openOnline(reason);
     },
@@ -270,22 +287,28 @@ async function main(): Promise<void> {
 
   quizScreen.setCharacter(characterId);
 
+  // 결과 화면은 아직 남기지 않은 기록을 저장한 **뒤에** 이 콜백들을 부른다 (FR-6.1).
+  // 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려준다
   const resultScreen = createResultScreen({
-    onRetry: () => {
-      if (lastRound) startRound(lastRound);
-      else goHome();
-    },
+    onRetry: () => (lastRound ? startRound(lastRound) : goHome()),
     onHome: goHome,
-    onRoom: () => {
-      if (activeRoomCode) openWaitingRoom(activeRoomCode);
-      else goHome();
-    },
+    onRoom: () => (activeRoomCode ? openWaitingRoom(activeRoomCode) : goHome()),
     onRanking: () => openRanking(pending?.target ?? null),
     onRegister: registerRecord,
   });
 
   const rankingScreen = createRankingScreen({
     onHome: goHome,
+    // 빈 탭에서 그 탭의 판을 곧바로 연다 (FR-6.12)
+    onStart: (target) => startRound(
+      target.mode === 'all'
+        ? { mode: 'all', categoryId: null }
+        : { mode: 'category', categoryId: target.category },
+    ),
+    // 홈의 분야 칸(`card.disabled`)·전체 도전(`startAll.disabled`)과 같은 규칙이다
+    canStart: (target) => (target.mode === 'all'
+      ? allModeCount() > 0
+      : (target.category ? banks[target.category]?.length ?? 0 : 0) > 0),
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
   });
@@ -319,7 +342,7 @@ async function main(): Promise<void> {
     onExit: () => {
       stopOnlineMatch();
       onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
-      void openOnline('매치는 서버에서 계속 진행됩니다. 방에 다시 들어가 이어서 풀 수 있어요.');
+      void openOnline('매치는 계속 진행돼요. 목록의 「들어가기」로 다시 돌아올 수 있어요.');
     },
     onFinished: showOnlineFinal,
   });
@@ -333,6 +356,8 @@ async function main(): Promise<void> {
     onHome: () => { void goHome(); },
     getPlayerId: () => roomStore.me(),
   });
+  /** 최종 순위를 읽는 동안 방 소켓을 붙든다. 1분 넘게 읽어도 «연결 끊김»이 되지 않게 (U24) */
+  const resultKeepalive = createRoomKeepalive(roomStore);
 
   onlineMatchController = createOnlineMatchController({
     gateway: roomStore,
@@ -362,9 +387,25 @@ async function main(): Promise<void> {
 
   /** finished ranking 역시 server snapshot만 받는다. local ranking store에 쓰지 않는다. */
   function showOnlineFinal(snapshot: OnlineFinishedMatch): void {
+    const code = onlineMatchRoomCode;
     stopOnlineMatch();
     onlineResultScreen.show(snapshot);
     goTo('online-result');
+    // 아직 그 방에 있으면 소켓을 이어 붙든다. 화면을 떠나면 closers가 놓는다 — 대기실로 가면
+    // 대기실이 제 구독을 연 뒤에 놓는다(다시 붙는 잠깐은 60초 유예 안이다). 홈·로비로 가면
+    // 방에 남아 있어도 놓는다 — 홈은 방 밖이라는 기존 계약 그대로다
+    if (!roomStore.isNetworked || !code || code !== activeRoomCode) return;
+    resultKeepalive.hold(code, () => {
+      // 결과를 보는 사이 그 방에서 새 판이 열렸다. 그 판에 넣어졌는지는 서버 snapshot만
+      // 판정한다 — 대기실 복구와 같은 길이다. 넣어지지 않았으면 결과 화면에 그대로 남는다
+      void recoverActiveNetworkMatch(code, {
+        getMatch: (roomCode) => roomStore.getMatch(roomCode),
+        isStillCurrent: () => currentScreen === 'online-result'
+          && activeRoomCode === code && resultKeepalive.heldCode() === code,
+        hasOpenMatch: () => onlineMatchRoomCode === code,
+        openMatch: openOnlineMatch,
+      });
+    });
   }
 
   function stopOnlineMatch(): void {
@@ -397,7 +438,7 @@ async function main(): Promise<void> {
     stopOnlineMatch();
     onlineMatchRoomCode = code;
     onlineQuizScreen.startPresence();
-    onlineQuizScreen.setNotice('서버 매치 상태를 불러오는 중입니다.');
+    onlineQuizScreen.setNotice('매치를 불러오는 중이에요.');
     goTo('online-quiz');
     onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
     await onlineMatchController?.open(code);
@@ -442,20 +483,83 @@ async function main(): Promise<void> {
     quiz: () => quizScreen.hide(),
     'online-quiz': () => onlineQuizScreen.hide(),
     result: () => resultScreen.hide(),
-    'online-result': () => onlineResultScreen.hide(),
+    'online-result': () => {
+      resultKeepalive.release();
+      onlineResultScreen.hide();
+    },
     ranking: () => rankingScreen.hide(),
     online: () => onlineScreen.hide(),
     waiting: () => waitingRoom.hide(),
     characters: () => charactersScreen.hide(),
   };
 
+  /** 지금 보이는 화면. goTo 만 바꾼다 */
+  let currentScreen: ScreenName = 'home';
+  /** 브라우저 «뒤로»의 안전망. 화면을 옮길 때마다 goTo 가 알린다 */
+  const backGuard = createBackGuard(window.history);
+
   function goTo(name: ScreenName): void {
     if (name !== 'waiting') invalidateWaitingRoomEntry();
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
+    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다
+    settingsDialog.dismiss();
     showScreen(name);
+    currentScreen = name;
+    // 브라우저 «뒤로»가 앱 밖으로 나가지 않게 히스토리 상태만 남긴다. 주소는 그대로다
+    backGuard.enter(name);
+    // 새로고침·탭 닫기 확인은 로컬 판이 진행 중일 때만 (FR-3.6)
+    setUnloadWarning(name === 'quiz');
   }
+
+  // ── 뒤로 가기 ──────────────────────────────────────────────────
+  //
+  // 홈이 아닌 화면에서 시스템 「뒤로」나 뒤로 스와이프를 하면 앱 밖으로 나가 풀던 판과
+  // 결과가 통째로 사라졌다. 이제는 popstate 로 돌아와 그 화면의 뒤로·나가기 버튼을
+  // 누른 것과 같이 움직인다 — 퀴즈는 나가기 확인, 결과는 자동 저장 뒤 홈.
+
+  window.addEventListener('popstate', (event) => {
+    const dialog = openDialog();
+    const step = backStepFor(currentScreen, {
+      dialogOpen: dialog !== null,
+      landedOnGuard: isGuardState(event.state),
+    });
+
+    if (step.kind === 'leave') {
+      // 홈에 남아 있던 guard 를 지나 페이지를 연 자리에 닿았다. 사용자는 앱을 나가려던 것이다
+      history.back();
+      return;
+    }
+    if (step.kind === 'stay') {
+      backGuard.enter(currentScreen);
+      return;
+    }
+    // 그 밖에는 이 화면을 계속 지키며 시작한다. 확인을 무르거나 옮기는 중에 또 「뒤로」를
+    // 눌러도 앱 밖으로 나가지 않는다. 다른 화면으로 옮기면 goTo 가 이 자리를 바꿔 쓴다
+    if (currentScreen !== 'home') backGuard.rearm(currentScreen);
+
+    switch (step.kind) {
+      case 'close-dialog':
+        if (dialog) closeDialog(dialog);
+        break;
+      case 'control':
+        pressControl(step.id);
+        break;
+      case 'lobby':
+        void openOnline();
+        break;
+      case 'home':
+        void goHome();
+        break;
+    }
+  });
+
+  // 결과 화면에서 탭을 닫거나 새로고침해도 기록을 남긴다 (FR-6.1). 로컬 저장소는 부르는
+  // 자리에서 동기로 써지므로 여기서 끝난다 — 서버 구현으로 바꾸면 다른 길이 필요하다
+  window.addEventListener('pagehide', () => {
+    if (currentScreen === 'result') resultScreen.flush();
+  });
 
   // ── 홈 ─────────────────────────────────────────────────────────
 
@@ -491,11 +595,19 @@ async function main(): Promise<void> {
   }
 
   async function goHome(): Promise<void> {
+    if (!(await showHome())) return;
+    // 아직 들어가 있는 방을 묻는다 (U35). goTo('home')이 화면 세대를 올린 **뒤에** 불러야 한다 —
+    // 그 전의 세대를 쥐면 답이 늘 «지난 화면»으로 읽혀 줄이 한 번도 뜨지 않았다 (online-client-1)
+    void homeRoomNote.refresh();
+  }
+
+  /** 홈을 그려 연다. 그리는 사이 다른 화면으로 옮겼으면 false */
+  async function showHome(): Promise<boolean> {
     const navigationGeneration = invalidateWaitingRoomEntry();
     // 홈으로 가도 방에서 나가지는 않는다. 다만 매치 socket은 닫아 재접속 경계를 분명히 한다.
     stopOnlineMatch();
     const bestScores = await loadBestScores();
-    if (!isCurrentNavigation(navigationGeneration)) return;
+    if (!isCurrentNavigation(navigationGeneration)) return false;
     homeScreen.render({
       categories: CATEGORIES,
       banks,
@@ -505,6 +617,13 @@ async function main(): Promise<void> {
       nickname: savedNickname,
     });
     goTo('home');
+    return true;
+  }
+
+  /** 빈 로비의 「혼자 연습하기」 (U29). 홈으로 가서 분야 dock에 선다 */
+  async function practiceAlone(): Promise<void> {
+    await goHome();
+    homeScreen.focusPractice();
   }
 
   // ── 퀴즈 ───────────────────────────────────────────────────────
@@ -559,6 +678,8 @@ async function main(): Promise<void> {
       questions,
       mode: round.mode,
       categoryId: round.categoryId,
+      // 설정에서 고른 문항 시간 (FR-3.7). 판이 도는 동안에 바꿔도 다음 판부터 쓴다
+      timeLimitMs,
     });
 
     goTo('quiz');
@@ -582,7 +703,8 @@ async function main(): Promise<void> {
 
     const target: RankingTarget = { mode: summary.mode, category: summary.categoryId };
 
-    // 최고 점수는 이번 기록을 저장하기 전에 읽어야 비교가 성립한다 (FR-5.7)
+    // 최고 점수는 이번 기록을 저장하기 전에 읽어야 비교가 성립한다 (FR-5.7).
+    // 앞 판을 등록하지 않고 떠났어도 결과 화면이 자동 저장했으므로 그 판까지 들어 있다
     const [bestScore, nickname] = await Promise.all([
       rankingStore.getBestScore(target),
       preferences.getNickname(),
@@ -590,14 +712,15 @@ async function main(): Promise<void> {
     if (!isCurrentNavigation(navigationGeneration)) return;
 
     // playedAt은 판이 끝난 시각이다. 닉네임을 입력한 시각이 아니다
-    pending = { summary, target, playedAt: new Date().toISOString() };
+    pending = { summary, target, playedAt: new Date().toISOString(), timeLimitMs: session.timeLimitMs };
     registeredId = null;
 
     resultScreen.show({
       summary,
       modeLabel: labelFor({ mode: summary.mode, categoryId: summary.categoryId }),
       bestScore,
-      nickname,
+      // 등록 칸은 홈 HUD와 같은 이름으로 채운다. 비워 두면 매번 새로 지어야 한다 (FR-6.11)
+      nickname: nickname || savedNickname,
       characterId,
       inRoom: Boolean(activeRoomCode),
     });
@@ -606,12 +729,17 @@ async function main(): Promise<void> {
 
   /**
    * 랭킹 등록 (FR-6.1). 저장은 어댑터를 통해서만 한다 (FR-6.8).
-   * nickname은 결과 화면이 길이를 검사한 값이다.
+   * nickname은 결과 화면이 길이를 검사한 값이다. 「등록」을 눌렀을 때도, 등록하지 않고
+   * 결과 화면을 떠날 때(자동 저장)도 이 한 길로 온다 — 문항별 정오까지 똑같이 남는다.
+   * 한 판을 두 번 남기지 않는 것은 결과 화면이 지킨다(저장 하나를 나눠 쓴다).
+   *
+   * **`saveRecord`까지 기다리는 것이 없다.** 로컬 저장소는 이 호출 안에서 동기로 써져
+   * `pagehide`에서 불러도 기록이 남는다. 앞에 await를 넣으면 그 보장이 깨진다.
    */
   async function registerRecord(nickname: string) {
     if (!pending) throw new Error('등록할 기록이 없습니다');
 
-    const { summary, target, playedAt } = pending;
+    const { summary, target, playedAt, timeLimitMs: roundLimit } = pending;
     const outcome = await rankingStore.saveRecord({
       nickname,
       mode: summary.mode,
@@ -623,13 +751,15 @@ async function main(): Promise<void> {
       playedAt,
       // 문항별 정오. 선생님 모드가 문항 단위 정답률을 내는 근거다
       questionResults: summary.questionResults,
+      // 기본(20초)이 아닌 판만 문항 시간을 남긴다. 랭킹은 나누지 않는다 (점수에 속도가 없다)
+      ...(roundLimit === TIME_LIMIT_MS ? {} : { timeLimitMs: roundLimit }),
     });
 
     savedNickname = nickname;
     syncRoomPlayer();
     await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)
     registeredId = outcome.kept ? outcome.record.id : null;
-    pending = { summary, target, playedAt };
+    pending = { summary, target, playedAt, timeLimitMs: roundLimit };
 
     return outcome;
   }
@@ -645,15 +775,27 @@ async function main(): Promise<void> {
 
   // ── 온라인 ─────────────────────────────────────────────────────
 
-  async function openOnline(notice?: string): Promise<void> {
+  async function openOnline(notice?: string, invite?: string): Promise<void> {
     const navigationGeneration = invalidateWaitingRoomEntry();
-    await onlineScreen.show(characterId, notice);
+    homeRoomNote.visitOnline();
+    // 로비는 목록을 받아 그린 뒤에 연다(내용을 그린 뒤 goTo). 그동안 홈의 입구가 아무
+    // 반응이 없어 보이지 않게 바로 바쁨 표시를 단다 (U34)
+    homeScreen.setOnlineBusy(true);
+    try {
+      await onlineScreen.show(characterId, notice);
+    } finally {
+      homeScreen.setOnlineBusy(false);
+    }
     if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('online');
+    // 화면이 보인 뒤에 넘긴다. 포커스를 비밀번호 칸으로 옮길 수 있어야 한다 (U27)
+    if (invite) onlineScreen.acceptInvite(invite);
   }
 
   async function openWaitingRoom(code: string): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
+    // 방에 들어간다는 흔적을 남긴다. 새로고침한 뒤의 홈이 이것을 보고 돌아갈 방을 묻는다 (server-5)
+    homeRoomNote.enter(code);
     if (onlineMatchRoomCode) stopOnlineMatch();
     activeRoomCode = code;
     try {
@@ -725,7 +867,15 @@ async function main(): Promise<void> {
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));
 
-  await goHome();
+  if (inviteCode) {
+    // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27). 홈의 온라인 입구가
+    // «연결 중…»으로 그 사이를 알린다. «아직 방에 있어요»는 여기서 묻지 않는다 — 곧 로비가
+    // 목록을 읽고, 로비를 다녀온 뒤의 홈이 다시 묻는다 (server-5)
+    await showHome();
+    await openOnline(undefined, inviteCode);
+  } else {
+    await goHome();
+  }
 }
 
 main().catch((error: unknown) => {
