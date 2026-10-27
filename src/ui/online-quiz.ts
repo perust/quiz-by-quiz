@@ -17,6 +17,7 @@ import type {
 } from '../online/adapter.js';
 import { onlineErrorText } from '../online/rules.js';
 import type { Arena, ArenaDeps } from './arena.js';
+import { createChatLineQueue } from './chat-queue.js';
 import { choiceLayout } from './choice-layout.js';
 import {
   createPlayerBubbleController,
@@ -35,6 +36,10 @@ import { createBody } from './sprite.js';
 type OnlineMovementEvent = Extract<RoomEvent, { type: 'movement' }>;
 type OnlineActiveMatch = OnlineRunningMatch | OnlineRevealingMatch;
 type OnlineChatEvent = Extract<RoomEvent, { type: 'chat' }>;
+/** 대화 로그의 한 줄. 남의 말이거나(말한 사람 이름이 앞에 온다) 화면이 남기는 안내다 */
+type OnlineChatLine =
+  | { kind: 'chat'; playerId: string; nickname: string; text: string }
+  | { kind: 'notice'; text: string };
 
 /** 말풍선 수명과 최근 대화 줄 수는 대기실과 같은 계약을 쓴다. */
 const BUBBLE_MS = 3200;
@@ -575,6 +580,11 @@ export function createOnlineQuizScreen(
   const remoteMovements = createPlayerMovementController();
   const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
   const chatBubbleNodes = new Map<string, HTMLElement>();
+  /**
+   * 대화 로그에 붙일 차례 (U42). 새 문항·공개로 질문 제목에 포커스를 옮기거나 남은 5초 경고를 낸 직후에
+   * 온 줄은 잠깐 기다렸다 붙어, 우선 낭독 뒤에 polite로 선다(`ui/chat-queue.ts`)
+   */
+  const chatLines = createChatLineQueue<OnlineChatLine>({ append: writeChatLine, limit: CHAT_LINES });
   const movementPublisher = createMovementPublisher({
     send: (sample) => {
       if (presenceActive) onMovement(sample);
@@ -621,6 +631,8 @@ export function createOnlineQuizScreen(
     el.chatSubmit.disabled = true;
     el.chatInput.value = '';
     el.chatInput.blur();
+    // 기다리던 줄도 버린다 — 떠난 매치의 말이 다음 화면의 로그에 늦게 붙지 않는다
+    chatLines.reset();
     el.chatLog.replaceChildren();
     // 로비 fetch를 기다리는 동안 문제 화면이 잠시 남아도 새 제출이나 늦은 완료가
     // 이 lifecycle을 다시 그릴 수 없어야 한다.
@@ -755,30 +767,40 @@ export function createOnlineQuizScreen(
     if (!bubble.hidden) fitChatBubble(bubble);
   }
 
-  function appendChatLine(nickname: string, text: string): void {
-    const line = document.createElement('li');
-    line.className = 'chat-log__line';
-    const who = document.createElement('span');
-    who.className = 'chat-log__who';
-    who.textContent = nickname;
-    line.append(who, ' ', text);
-    el.chatLog.append(line);
+  /**
+   * 대화 로그에 한 줄을 붙인다. 로그는 `role="log"`·`aria-relevant="additions"`라 붙인 이 줄만 낭독된다 —
+   * 말한 사람 이름이 줄 맨 앞이다. 떼어 내는 오래된 줄은 읽지 않는다. 포커스는 건드리지 않는다.
+   * 차례를 기다리는 사이에 숨긴 사람의 말은 여기서 다시 거른다 (N06).
+   */
+  function writeChatLine(line: OnlineChatLine): void {
+    const item = document.createElement('li');
+    if (line.kind === 'chat') {
+      if (line.playerId !== getPlayerId() && isChatHidden(line.playerId)) return;
+      item.className = 'chat-log__line';
+      const who = document.createElement('span');
+      who.className = 'chat-log__who';
+      who.textContent = line.nickname;
+      item.append(who, ' ', line.text);
+    } else {
+      item.className = 'chat-log__line chat-log__line--notice';
+      item.textContent = line.text;
+    }
+    el.chatLog.append(item);
     while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+    // 로그는 높이가 묶여 있다(style.css). 가장 새 줄이 칸 아래로 잘리지 않게 끝에 맞춘다 — 그 칸만 움직인다
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
 
   function chatNotice(text: string): void {
-    const line = document.createElement('li');
-    line.className = 'chat-log__line chat-log__line--notice';
-    line.textContent = text;
-    el.chatLog.append(line);
-    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+    chatLines.push({ kind: 'notice', text });
   }
 
   function updateChat(event: OnlineChatEvent): void {
     if (!presenceActive) return;
     // 내가 숨긴 사람의 말은 로그에도 말풍선에도 그리지 않는다 (N06). 내 말은 숨기지 않는다
     if (event.playerId !== getPlayerId() && isChatHidden(event.playerId)) return;
-    appendChatLine(event.nickname, event.text);
+    // 로그 줄은 우선 낭독(새 문항·남은 5초 경고)이 막 나갔으면 잠깐 기다린다. 말풍선은 곧바로 띄운다
+    chatLines.push({ kind: 'chat', playerId: event.playerId, nickname: event.nickname, text: event.text });
     chatBubbles.show(event.playerId, event.text);
     const bubble = chatBubbleNodes.get(event.playerId);
     if (bubble) fitChatBubble(bubble);
@@ -885,6 +907,8 @@ export function createOnlineQuizScreen(
     if (view.warning && warnedQuestionKey !== questionKey) {
       warnedQuestionKey = questionKey;
       announce('시간이 얼마 남지 않았어요.');
+      // 같은 순간에 온 채팅 줄은 이 경고 뒤에 선다 (U42) — 경고가 채팅 뒤로 밀리지 않는다
+      chatLines.yieldTo();
     }
     if (remaining > 0) countdownFrame = requestAnimationFrame(tickCountdown);
   }
@@ -1246,6 +1270,8 @@ export function createOnlineQuizScreen(
         document.activeElement === el.chatInput,
       )) {
         el.question.focus({ preventScroll: true });
+        // 포커스가 새 문항(또는 공개된 문항)을 읽기 시작했다. 같은 순간에 온 채팅 줄은 그 뒤에 붙인다 (U42)
+        chatLines.yieldTo();
       }
     }
     revealIntoView(nextSnapshot);

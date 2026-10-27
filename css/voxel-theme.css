@@ -3965,8 +3965,9 @@ body:has([data-screen='home']:not([hidden])) {
 }
 
 /* 대화와 매치 상태도 상황 overlay 표면에 얹는다. 12–14px 보조 글자가 픽셀 그림 무늬 위에 바로
-   놓이면 토큰 대비와 상관없이 읽히지 않는다. 대기실의 채팅칸·안내·로그는 마크업에서 형제이므로
-   선과 모서리를 나눠 맡아 한 표면으로 이어 보이게 한다 (간격은 css/style.css) */
+   놓이면 토큰 대비와 상관없이 읽히지 않는다. 대기실의 로그·안내·채팅칸은 마크업에서 형제이므로
+   선과 모서리를 나눠 맡아 한 표면으로 이어 보이게 한다 — 로그가 위, 채팅칸이 아래다 (간격은 css/style.css).
+   손가락만 쓰는 기기에서 안내가 접혀도 로그와 채팅칸이 그대로 맞물린다 */
 [data-screen='waiting'] > .chat,
 [data-screen='waiting'] > .chat__hint,
 [data-screen='waiting'] > .chat-log {
@@ -3974,7 +3975,7 @@ body:has([data-screen='home']:not([hidden])) {
   background: var(--world-glass);
 }
 
-[data-screen='waiting'] > .chat {
+[data-screen='waiting'] > .chat-log {
   border-bottom: 0;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
@@ -3984,7 +3985,7 @@ body:has([data-screen='home']:not([hidden])) {
   border-bottom: 0;
 }
 
-[data-screen='waiting'] > .chat-log {
+[data-screen='waiting'] > .chat {
   border-top: 0;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
