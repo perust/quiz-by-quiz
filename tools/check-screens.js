@@ -549,11 +549,12 @@
     const 분야상자 = document.getElementById('category-grid').getBoundingClientRect();
     결과.push({
       자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
+      // 서버 방에 아직 들어가 있으면 줄이 이미 떠 있어 «펼치면 커진다»를 견줄 수 없다. 그때는 겹침만 본다
       통과: (줄이분야옆
         ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
         : (원래복귀줄.숨김 ? 줄뒤dock > 줄전dock : 줄뒤dock >= 줄전dock))
         && 줄뒤겹침.length === 0,
-      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
+      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px${원래복귀줄.숨김 ? '' : ' (줄이 이미 떠 있었다)'} · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
     });
     복귀줄.hidden = 원래복귀줄.숨김;
     복귀줄글.textContent = 원래복귀줄.글;
@@ -562,11 +563,13 @@
       const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
       const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
       const dock상자 = 홈조각.dock.getBoundingClientRect();
+      // 서버 방에 아직 들어가 있으면 방 복귀 줄이 dock 맨 위에 한 줄을 더한다(U35). 그 줄을 빼고 한 줄 dock 을 잰다
+      const 복귀줄몫 = 복귀줄.hidden ? 0 : 분야줄.top - dock상자.top;
       결과.push({
         자리: '홈', 이름: '짧은 가로: 분야와 온라인·전체 도전이 dock 한 줄에 있다',
         통과: Math.abs(분야줄.top - 주행동줄.top) <= 1 && 분야줄.right <= 주행동줄.left + 1
-          && dock상자.height <= innerHeight / 4,
-        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px / 화면 ${innerHeight}px`,
+          && dock상자.height - 복귀줄몫 <= innerHeight / 4,
+        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px${복귀줄몫 ? ` (복귀 줄 ${Math.round(복귀줄몫)}px 포함)` : ''} / 화면 ${innerHeight}px`,
       });
       const 브랜드상자 = 홈조각.브랜드.getBoundingClientRect();
       결과.push({
