@@ -47,6 +47,13 @@ export function createCharactersScreen(
   let currentId = CHARACTERS[0].id;
   /** 밟은 카드를 입히기까지 남은 시간. 다른 칸으로 옮기거나 화면을 떠나면 거둔다 */
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * 들어온 뒤 방향키·스틱으로 실제로 걸었는가. 걷기 전의 «멈춤»은 고른 것이 아니다 — 워커는 처음 세울 때
+   * (`place`)와 화면 크기가 바뀔 때(`relayout`)도 `onMove(…, false)`를 부른다. 짧은 화면에서 지금 입은 카드가
+   * 접힘 아래면 처음 자리가 화면 아래 끝으로 clamp되어 선택점이 위의 다른 카드에 드는데, 한때 그 «멈춤»이
+   * 그 카드를 입혀 저장했다 — 화면을 열기만 해도 캐릭터가 바뀌었다. 퀴즈 무대의 `movedSinceReset`과 같은 생각이다
+   */
+  let walked = false;
 
   function cancelSettle(): void {
     clearTimeout(settleTimer);
@@ -86,18 +93,27 @@ export function createCharactersScreen(
         if (walker.isEnabled()) apply(id);
       }, STEP_SETTLE_MS);
     },
-    // 멈춰 섰으면 기다리지 않고 지금 발밑의 카드를 입힌다. 화면을 떠나며 멈춘 것
-    // (setEnabled(false))은 고른 것이 아니므로 그냥 둔다
+    // 걷다가 멈춰 섰으면 기다리지 않고 지금 발밑의 카드를 입힌다. 화면을 떠나며 멈춘 것
+    // (setEnabled(false))과 아직 걷지 않은 «멈춤»(처음 세운 자리·화면 크기 변화, 위 `walked`)은
+    // 고른 것이 아니므로 그냥 둔다. 그때 밟은 카드에 걸린 머물기 타이머도 거둔다
     onMove: (_point, moving) => {
-      if (moving || !walker.isEnabled()) return;
+      if (!walker.isEnabled()) return;
+      if (moving) {
+        walked = true;
+        return;
+      }
       cancelSettle();
-      apply(walker.standingElement()?.dataset.characterId);
+      if (walked) apply(walker.standingElement()?.dataset.characterId);
     },
     startAt: () => {
       const index = CHARACTERS.findIndex((character) => character.id === currentId);
       const box = cards[index]?.getBoundingClientRect();
       if (!box || box.width === 0) return null;
-      // 카드 아래에는 이름이 있다. 그 위에 서야 가리지 않는다
+      // 카드 아래에는 이름이 있다. 그 위에 서야 가리지 않는다.
+      // 카드가 화면 안이면 선택점(몸통 가운데, U10)은 이 발끝에서 키의 절반 위라 카드(96px 이상) 안이다.
+      // **늘 그렇지는 않다** — 짧은 화면에서 이 카드가 접힘 아래면 워커가 화면 아래 끝으로 clamp되어
+      // 선택점이 위의 다른 카드에 든다. 그 카드에 불은 켜지지만 걷기 전에는 입히지 않는다(`walked`).
+      // 카드 쪽으로 스크롤하지도 않는다 — 들어올 때 스크롤을 끌어가면 위의 「홈」과 제목이 밀려난다
       return { x: box.left + box.width / 2, y: box.bottom - 26 };
     },
   });
@@ -149,6 +165,7 @@ export function createCharactersScreen(
   return {
     show(selectedId) {
       cancelSettle();
+      walked = false;
       currentId = selectedId;
       build();
       markSelected(selectedId);
