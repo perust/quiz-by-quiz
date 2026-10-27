@@ -107,15 +107,16 @@ test('세션 응답이 방 snapshot 없는 화면의 규칙을 알려 준다 —
   });
   assert.equal(fresh.onlineRules(), null, '세션을 열기 전에는 모른다');
   await fresh.listRooms();
-  assert.deepEqual(fresh.onlineRules(), { minPlayers: 1, standingAnswers: true });
+  // 세션이 `rankings`를 알리지 않는 API(#106·#107)는 서버 랭킹이 없다 — 화면이 온라인 랭킹을 숨긴다 (FR-7.13 2단계)
+  assert.deepEqual(fresh.onlineRules(), { minPlayers: 1, standingAnswers: true, rankings: false });
 
   const legacy = await storeWith({ session: { playerId: identity.id }, rooms: [] });
   await legacy.listRooms();
-  assert.deepEqual(legacy.onlineRules(), { minPlayers: 2, standingAnswers: false });
+  assert.deepEqual(legacy.onlineRules(), { minPlayers: 2, standingAnswers: false, rankings: false });
 
   const odd = await storeWith({ session: { playerId: identity.id, minPlayers: 'x', standingAnswers: 'yes' }, rooms: [] });
   await odd.listRooms();
-  assert.deepEqual(odd.onlineRules(), { minPlayers: 2, standingAnswers: false }, '깨진 값은 이전 규칙으로 읽는다');
+  assert.deepEqual(odd.onlineRules(), { minPlayers: 2, standingAnswers: false, rankings: false }, '깨진 값은 이전 규칙으로 읽는다');
 });
 
 test('방장 혼자: 새 API(minPlayers 1)면 「게임 시작」이 켜지고, 이전 API의 방은 예전처럼 잠근다', async () => {
@@ -173,7 +174,8 @@ test('방장 혼자인 상태 줄은 혼자서도 시작할 수 있다고 말한
 test('로컬 방도 같은 규칙이다 — 방장 혼자서도 열고, 초안을 보낼 서버가 없다', async () => {
   globalThis.window = { localStorage: memoryStorage() };
   const { localRooms } = await import('../js/online/local-rooms.js?solo-rooms');
-  assert.deepEqual(localRooms.onlineRules(), { minPlayers: 1, standingAnswers: true });
+  // 이 브라우저 안의 방에는 서버 랭킹이 없다
+  assert.deepEqual(localRooms.onlineRules(), { minPlayers: 1, standingAnswers: true, rankings: false });
   const created = await localRooms.createRoom({
     name: '혼자 연습방',
     categoryId: 'history',

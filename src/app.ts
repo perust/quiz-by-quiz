@@ -31,20 +31,20 @@ import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
 import { createChatMutes } from './ui/chat-mutes.js';
-import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
+import { roomStore, type OnlineFinishedMatch, type OnlineRankingPeriod } from './online/adapter.js';
 import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
 import { playAgainInRoom } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
-import { normalizeCode, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
+import { normalizeCode, onlineErrorText, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
 import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createQuizReviewScreen } from './ui/quiz-review.js';
-import { createRankingScreen } from './ui/ranking.js';
+import { createRankingScreen, type RankingScope } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
 import { withTopic } from './ui/korean.js';
 import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
@@ -336,7 +336,8 @@ async function main(): Promise<void> {
     onRetry: () => (lastRound ? startRound(lastRound) : goHome()),
     onHome: goHome,
     onRoom: () => (activeRoomCode ? openWaitingRoom(activeRoomCode) : goHome()),
-    onRanking: () => openRanking(pending?.target ?? null),
+    // 방금 남긴 이 브라우저의 기록을 짚어 보인다 — 온라인 랭킹이 아니라 이 브라우저의 기록 범위다
+    onRanking: () => openRanking(pending?.target ?? null, { scope: 'local' }),
     onRegister: registerRecord,
   });
 
@@ -366,6 +367,20 @@ async function main(): Promise<void> {
         fileName: recordsExportFileName(savedNickname, now),
         data: buildRecordsExport({ records: lists.flat(), nickname: savedNickname, now }),
       };
+    },
+    // 온라인 랭킹 (FR-7.13 2단계). 서버가 채점한 온라인 판의 기록이다 — 저장소는 여기서만 부르고 화면은 보일 말만
+    // 받는다. 랭킹을 모르는 이전 API(세션에 `rankings: true`가 없다)와 로컬 방이면 화면이 온라인 랭킹을 숨긴다
+    online: {
+      available: () => (roomStore.isNetworked ? roomStore.onlineRules()?.rankings ?? null : false),
+      load: async (target, period) => {
+        try {
+          const result = await roomStore.getOnlineRankings({ target, period });
+          return result.supported ? { status: 'ok', board: result.board } : { status: 'unsupported' };
+        } catch (error) {
+          return { status: 'error', message: onlineErrorText(error, '연결을 확인하고 다시 시도해 주세요.') };
+        }
+      },
+      onOpenOnline: () => { void openOnline(); },
     },
   });
 
@@ -421,6 +436,8 @@ async function main(): Promise<void> {
     },
     onHome: () => { void goHome(); },
     getPlayerId: () => roomStore.me(),
+    // 이 판이 남은 이번 주 랭킹을 연다 (FR-7.13 2단계). 결과 화면을 떠나므로 방 소켓은 closers가 놓는다
+    onOpenRanking: (target) => { void openRanking(target, { scope: 'online', period: 'week' }); },
   });
   /** 최종 순위를 읽는 동안 방 소켓을 붙든다. 1분 넘게 읽어도 «연결 끊김»이 되지 않게 (U24) */
   const resultKeepalive = createRoomKeepalive(roomStore);
@@ -901,9 +918,17 @@ async function main(): Promise<void> {
 
   // ── 랭킹 ───────────────────────────────────────────────────────
 
-  async function openRanking(target: RankingTarget | null = null): Promise<void> {
+  /**
+   * 랭킹을 연다. scope를 주면 그 범위(온라인 랭킹·이 브라우저의 기록)이고, 없으면 이 페이지에서 마지막으로 본
+   * 범위(처음이면 온라인 랭킹이 있을 때 온라인)다. 온라인 랭킹은 불러오는 중인 상태를 그린 뒤 곧바로 연다 —
+   * 응답을 기다리느라 홈의 입구가 멈춘 것처럼 보이지 않게
+   */
+  async function openRanking(
+    target: RankingTarget | null = null,
+    { scope, period }: { scope?: RankingScope; period?: OnlineRankingPeriod } = {},
+  ): Promise<void> {
     const navigationGeneration = invalidateWaitingRoomEntry();
-    await rankingScreen.show({ target, highlightId: registeredId, characterId });
+    await rankingScreen.show({ target, highlightId: registeredId, characterId, scope, period });
     if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('ranking');
   }

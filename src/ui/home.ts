@@ -12,6 +12,7 @@ import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
 import { onlineEntryCopy } from '../online/rules.js';
+import { NICKNAME_PROBLEM_MESSAGES, nicknameProblem } from '../online/nickname-rules.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -255,6 +256,16 @@ export function createHomeScreen({
       el.dialogMessage.hidden = false;
       el.dialogMessage.textContent =
         `닉네임은 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 적어주세요.`;
+      el.dialogInput.focus();
+      return;
+    }
+    // 온라인 랭킹은 모두에게 보인다 (PRD 12.1). 서버가 거절할 이름을 보내기 전에 같은 규칙·같은 말로
+    // 막는다(online/nickname-rules.ts — 서버의 nickname_filter.py와 같은 값이다). 같은 이름은 막지 않는다.
+    // role=status 문단은 먼저 펼치고 넣는다(«숨긴 채로 채우면 낭독되지 않는다»)
+    const problem = nicknameProblem(wanted);
+    if (problem !== null) {
+      el.dialogMessage.hidden = false;
+      el.dialogMessage.textContent = NICKNAME_PROBLEM_MESSAGES[problem];
       el.dialogInput.focus();
       return;
     }

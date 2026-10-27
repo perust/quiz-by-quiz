@@ -166,8 +166,12 @@ export function onlineQuestionTimeLabel(value: OnlineQuestionTime): string {
 /** `minPlayers`를 보내지 않는 이전 API의 시작 인원 */
 export const LEGACY_MIN_PLAYERS = 2;
 
-/** 이전 API의 온라인 규칙: 둘부터, 직접 낸 답만 센다 */
-export const LEGACY_ONLINE_RULES = { minPlayers: LEGACY_MIN_PLAYERS, standingAnswers: false } as const;
+/** 이전 API의 온라인 규칙: 둘부터, 직접 낸 답만 세고, 서버 랭킹이 없다 */
+export const LEGACY_ONLINE_RULES = {
+  minPlayers: LEGACY_MIN_PLAYERS,
+  standingAnswers: false,
+  rankings: false,
+} as const;
 
 /** 이 방의 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 모르면 이전 API의 2다 */
 export function roomMinPlayers(room: { minPlayers?: number }): number {
@@ -301,6 +305,24 @@ export const REMOVED_BY_HOST_MESSAGES: Record<RemovalKind, string> = {
 /** 서버가 알려 준 이유 코드를 내보내진 방식으로 옮긴다. 그 밖의 코드는 null */
 export function removalKind(code: unknown): RemovalKind | null {
   return code === 'kicked' || code === 'removed' ? code : null;
+}
+
+// ── 닉네임 금칙 규칙 (PRD 12.1) ─────────────────────────────────
+// 서버는 세션을 열 때(PUT /v1/session) 금칙 규칙에 걸린 닉네임을 이 코드의 400으로 거절한다. 화면은
+// 서버의 말 대신 이 말을 쓴다 — 고칠 곳(홈의 닉네임)까지 말한다. 보내기 전에 화면이 먼저 같은 규칙으로
+// 보므로(nickname-rules.ts) 보통은 닿지 않는다. 규칙이 생기기 전에 저장한 이름이면 여기서 듣는다.
+
+export type NicknameRejection = 'nickname-profanity' | 'nickname-personal-info';
+
+export const NICKNAME_REJECTION_MESSAGES: Readonly<Record<NicknameRejection, string>> = {
+  'nickname-profanity': '닉네임에 쓸 수 없는 말이 들어 있어요. 홈에서 닉네임을 바꿔 주세요.',
+  'nickname-personal-info':
+    '전화번호·이메일·인터넷 주소처럼 보이는 닉네임은 쓸 수 없어요. 홈에서 닉네임을 바꿔 주세요.',
+};
+
+/** 서버의 거절 코드가 닉네임 금칙 규칙의 것인가 */
+export function nicknameRejection(code: unknown): NicknameRejection | null {
+  return code === 'nickname-profanity' || code === 'nickname-personal-info' ? code : null;
 }
 
 /**

@@ -879,6 +879,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   display: none;
 }
 
+/* 온라인 랭킹에 남은 판 (FR-7.13 2단계). 요약 바로 아래의 한 줄이다 */
+.online-final__recorded {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  word-break: keep-all;
+}
+
 .online-final-ranking {
   display: grid;
   margin: 0 0 var(--space-6);
@@ -1582,6 +1589,32 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   cursor: pointer;
 }
 
+/* 범위(온라인 랭킹·이 브라우저의 기록)와 기간(이번 주·전체)을 고르는 두 칸 (FR-7.13 2단계). 랭킹 탭과 같은
+   분절 버튼이고 어느 폭에서나 두 칸이 폭을 반씩 나눈다 — 가로 스크롤에 숨기지 않는다 */
+.ranking-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  padding: var(--space-1);
+}
+
+.ranking-switch__option {
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+/* 온라인 랭킹의 주(서울 날짜)와 상태 줄(불러오는 중·몇 개·못 읽음). 화면 워커는 머리말 오른쪽 아래에서
+   쉬므로 이 줄들까지 내려오지 않는다 */
+.ranking-window,
+.ranking-status {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  word-break: keep-all;
+}
+
 @media (max-width: 576px) {
   .ranking-tabs {
     display: grid;
@@ -1643,6 +1676,22 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .ranking-item__date {
   grid-area: date;
   font-variant-numeric: tabular-nums;
+}
+
+/* 온라인 랭킹 줄에는 그 기록의 캐릭터를 순위 옆에 세운다(최종 순위 화면과 같은 40px 정지 그림). 순위와
+   캐릭터가 두 줄에 걸쳐 서고 이름·점수·날짜는 예전 자리다 */
+.ranking-item--online {
+  grid-template-columns: 32px 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'rank figure nickname score'
+    'rank figure date date';
+}
+
+.ranking-item__figure {
+  grid-area: figure;
+  position: relative;
+  width: 40px;
+  height: 48px;
 }
 
 /* 빈 상태 (FR-6.12). 막힌 설명으로 끝내지 않고 곧바로 첫 기록을 시작할 수 있게 한다. */
@@ -3530,6 +3579,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   .ranking-item {
     grid-template-columns: 28px minmax(0, 1fr) auto;
     padding: var(--space-3);
+  }
+
+  .ranking-item--online {
+    grid-template-columns: 28px 40px minmax(0, 1fr) auto;
   }
 
   .ranking-item__rank {

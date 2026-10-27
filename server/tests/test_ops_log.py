@@ -135,7 +135,7 @@ def wait_until(predicate: Any, message: str, timeout: float = 5.0) -> None:
 def _emit_every_event() -> None:
     window = ops_log.RequestWindow()
     window.record(200, 12.0)
-    ops_log.api_started(schema_version=11)
+    ops_log.api_started(schema_version=12)
     ops_log.api_stopped()
     ops_log.room_created(
         "ABC234", capacity=4, category_id=None, question_time_ms=20_000, locked=False
@@ -149,7 +149,7 @@ def _emit_every_event() -> None:
         "ABC234", players=2, category_id="science", question_time_ms=40_000, questions=10
     )
     ops_log.match_finished("ABC234", via="sweep")
-    ops_log.cleanup(CleanupCounts(rooms_deleted=1, members_removed=2))
+    ops_log.cleanup(CleanupCounts(rooms_deleted=1, members_removed=2, rankings_pruned=3))
     ops_log.server_error("GET", "/v1/rooms/{raw_code}", RuntimeError("boom"))
     ops_log.summary(
         window_seconds=300.2,
@@ -185,7 +185,7 @@ def test_events_carry_the_expected_values(ops_lines: list[str]) -> None:
     _emit_every_event()
 
     by_name = {event["event"]: event for event in events(ops_lines)}
-    assert by_name["api_started"]["schemaVersion"] == 11
+    assert by_name["api_started"]["schemaVersion"] == 12
     assert by_name["room_created"] | {"ts": None} == {
         "event": "room_created",
         "ts": None,
@@ -201,6 +201,8 @@ def test_events_carry_the_expected_values(ops_lines: list[str]) -> None:
     assert by_name["cleanup"]["roomsDeleted"] == 1
     assert by_name["cleanup"]["membersRemoved"] == 2
     assert by_name["cleanup"]["hostsTransferred"] == 0
+    # 보존 기간을 넘겨 지운 랭킹 기록도 수만 남긴다 (migration 012)
+    assert by_name["cleanup"]["rankingsPruned"] == 3
     assert by_name["server_error"] | {"ts": None} == {
         "event": "server_error",
         "ts": None,
@@ -634,6 +636,7 @@ def test_cleanup_logs_one_line_only_when_something_changed(ops_lines: list[str])
     assert first["membersRemoved"] == 3
     assert first["hostsTransferred"] == 0
     assert first["playersDeleted"] == 4
+    assert first["rankingsPruned"] == 0
 
 
 # ── 5분 요약 ─────────────────────────────────────────────────────────────────

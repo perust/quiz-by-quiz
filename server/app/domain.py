@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .nickname_filter import nickname_problem
+
 ALLOWED_CAPACITIES = frozenset({2, 4, 6, 8, 10, 12})
 ALLOWED_CATEGORIES = frozenset({"history", "science", "geography", "general", "art"})
 # 방장이 방마다 고르는 온라인 문항 시간(ms). 제한 없음은 없다 — 한 사람이 답하지 않으면
@@ -111,9 +113,27 @@ def validate_question_time(question_time_ms: object) -> int:
     return question_time_ms
 
 
+# 닉네임 금칙 규칙(PRD 12.1)에 걸렸을 때의 오류. 화면은 코드를 보고 제 말로 옮긴다
+# (src/online/rules.ts의 NICKNAME_ERROR_MESSAGES). 같은 이름은 막지 않는다.
+NICKNAME_PROFANITY_CODE = "nickname-profanity"
+NICKNAME_PERSONAL_INFO_CODE = "nickname-personal-info"
+
+
 def validate_player(nickname: str | None, character_id: str | None) -> ValidatedPlayer:
     normalized_nickname = str(nickname or "").strip() or "손님"
     normalized_nickname = _truncate_utf16(normalized_nickname, NICKNAME_MAX_UNITS)
+    problem = nickname_problem(normalized_nickname)
+    if problem == "profanity":
+        raise DomainError(
+            NICKNAME_PROFANITY_CODE,
+            "닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임으로 바꿔 주세요.",
+        )
+    if problem is not None:
+        raise DomainError(
+            NICKNAME_PERSONAL_INFO_CODE,
+            "전화번호·이메일·인터넷 주소처럼 보이는 닉네임은 쓸 수 없어요. "
+            "다른 닉네임으로 바꿔 주세요.",
+        )
 
     normalized_character = (
         DEFAULT_CHARACTER_ID if character_id is None else str(character_id).strip()

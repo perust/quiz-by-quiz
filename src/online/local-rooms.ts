@@ -249,7 +249,8 @@ function toPublic(room: Room): PublicRoom {
 /**
  * 로컬 방의 규칙. 방장 혼자서도 열고(서버와 같다), 그 판은 로컬 퀴즈라 시간이 끝나면 선 칸이 답이다.
  */
-const LOCAL_ONLINE_RULES = { minPlayers: 1, standingAnswers: true } as const;
+// 이 브라우저 안의 방에는 서버 랭킹이 없다(rankings: false) — 판이 로컬 퀴즈라 기록은 혼자 하기 랭킹에 남는다
+const LOCAL_ONLINE_RULES = { minPlayers: 1, standingAnswers: true, rankings: false } as const;
 
 export const localRooms = {
   /** 이 저장소가 진짜 네트워크인지. 화면이 안내 문구를 정할 때 쓴다 */
@@ -564,6 +565,11 @@ export const localRooms = {
   /** 묻지 않아도 안다 — 로컬 방은 늘 같은 규칙이다 */
   onlineRules() {
     return { ...LOCAL_ONLINE_RULES };
+  },
+
+  /** 서버 랭킹이 없다. 이 브라우저의 기록은 혼자 하기 랭킹(storage)이 맡는다 */
+  async getOnlineRankings() {
+    return { supported: false as const };
   },
 
   /**

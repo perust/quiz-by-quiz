@@ -14,6 +14,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from .domain import DEFAULT_CHARACTER_ID, MIN_MATCH_PLAYERS, ValidatedPlayer, ValidatedRoom
+from .nickname_filter import ranking_nickname
 from .question_catalog import (
     RECENT_QUESTION_MEMORY,
     CatalogError,
@@ -41,6 +42,9 @@ from .repository import (
     NotHost,
     NotMember,
     PlayerView,
+    RankingBoardView,
+    RankingEntryView,
+    RankingPeriod,
     RepositoryFailure,
     RoomCounts,
     RoomFull,
@@ -279,6 +283,53 @@ CROSS JOIN LATERAL (
     ) AS playing
 ) room_state
 WHERE room.expires_at > now()
+"""
+
+# 온라인 랭킹 (FR-7.13 2단계, migration 012). «이번 주»는 서울 시각 월요일 0시부터 다음 월요일 0시
+# 전까지다. 기록의 week_start(저장 열)와 같은 식으로 지금의 주를 고르고, 창의 두 끝을 함께 돌려준다.
+_RANKING_WEEK_SQL = """
+SELECT
+    week.week_start,
+    (week.week_start::timestamp AT TIME ZONE 'Asia/Seoul') AS window_start,
+    ((week.week_start + 7)::timestamp AT TIME ZONE 'Asia/Seoul') AS window_end
+FROM (
+    SELECT (
+        date_trunc('week', COALESCE(%(at)s::timestamptz, now()) AT TIME ZONE 'Asia/Seoul')
+    )::date AS week_start
+) week
+"""
+
+# 상위 기록. 점수 내림차순, 같은 점수는 먼저 남긴 기록(기록 시각 → 같은 판이면 그 판의 순위대로
+# 남긴 id)이 위다 — 혼자 하기 랭킹(FR-6.3)과 같은 «먼저 달성한 순»이다. 두 색인을 그대로 탄다.
+_RANKING_COLUMNS = """
+SELECT
+    ranking.nickname,
+    ranking.character_id,
+    ranking.score,
+    ranking.correct_count,
+    ranking.total_questions,
+    ranking.recorded_at,
+    COALESCE(ranking.player_id = %(actor_id)s::uuid, false) AS is_mine
+FROM quiz_online.online_rankings ranking
+"""
+_RANKING_ORDER = """
+ORDER BY ranking.score DESC, ranking.recorded_at ASC, ranking.id ASC
+LIMIT %(limit)s
+"""
+_RANKING_ALL_SQL = _RANKING_COLUMNS + "WHERE ranking.board = %(board)s" + _RANKING_ORDER
+_RANKING_WEEK_ENTRIES_SQL = (
+    _RANKING_COLUMNS
+    + "WHERE ranking.board = %(board)s AND ranking.week_start = %(week_start)s"
+    + _RANKING_ORDER
+)
+
+_INSERT_RANKING_SQL = """
+INSERT INTO quiz_online.online_rankings (
+    match_id, player_id, mode, category_id, score, correct_count, total_questions,
+    question_time_ms, nickname, character_id, recorded_at
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (match_id, player_id) DO NOTHING
 """
 
 # 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
@@ -1450,10 +1501,17 @@ class PostgresRoomsRepository:
                     WHERE id = %s
                       AND state = 'revealing'
                       AND deadline_at <= now()
-                    RETURNING id
+                    RETURNING id, finished_at
                     """,
                     (match_id,),
                 )
+                closed = await completed.fetchone()
+                if closed is None:
+                    return False
+                # 판을 닫는 바로 이 transaction에서 랭킹을 남긴다. 기록이 실패하면 판도 닫히지
+                # 않고 다음 sweep·읽기가 다시 닫는다 — 닫힌 판의 기록이 빠지는 일이 없다.
+                await self._record_rankings(connection, match, closed["finished_at"])
+                return True
             else:
                 completed = await connection.execute(
                     """
@@ -1547,6 +1605,89 @@ class PostgresRoomsRepository:
         )
         return await revealed.fetchone() is not None
 
+    async def _record_rankings(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match: Mapping[str, Any],
+        finished_at: datetime,
+    ) -> None:
+        """닫힌 판의 참가자마다 온라인 랭킹 기록 한 줄 (FR-7.13 2단계, PRD 12.1).
+
+        점수·맞힌 수는 서버가 채점한 답에서 다시 센다(최종 순위와 같은 `_score_views`). 끊겨서
+        빈 답이 시간 초과로 채워진 참가자도 판의 참가자이므로 남긴다. 닉네임은 그 방에서 보인
+        이름이고, 지금 금칙 규칙에 걸리는 옛 이름이면 «익명»으로 남긴다. 같은 판·같은 사람은 한 번만
+        남는다(UNIQUE). 최종 순위 순서대로 넣어, 같은 점수·같은 시각이면 그 판의 순위가 id 순서다.
+        """
+        category_id = match["category_id"]
+        mode = "all" if category_id is None else "category"
+        for score in await self._score_views(connection, match["id"]):
+            await connection.execute(
+                _INSERT_RANKING_SQL,
+                (
+                    match["id"],
+                    score.player_id,
+                    mode,
+                    category_id,
+                    score.score,
+                    score.correct_count,
+                    int(match["total_questions"]),
+                    int(match["question_time_ms"]),
+                    ranking_nickname(score.nickname),
+                    score.character_id or DEFAULT_CHARACTER_ID,
+                    finished_at,
+                ),
+            )
+
+    async def list_rankings(
+        self,
+        *,
+        board: str,
+        period: RankingPeriod,
+        actor_id: UUID | None = None,
+        at: datetime | None = None,
+        limit: int = 10,
+    ) -> RankingBoardView:
+        async with self._pool.connection() as connection:
+            window_start: str | None = None
+            window_end: str | None = None
+            params: dict[str, object] = {
+                "board": board,
+                "actor_id": actor_id,
+                "limit": limit,
+            }
+            if period == "week":
+                week_cursor = await connection.execute(_RANKING_WEEK_SQL, {"at": at})
+                week = await week_cursor.fetchone()
+                if week is None:
+                    raise RepositoryFailure("ranking week could not be computed")
+                window_start = _iso(week["window_start"])
+                window_end = _iso(week["window_end"])
+                params["week_start"] = week["week_start"]
+                cursor = await connection.execute(_RANKING_WEEK_ENTRIES_SQL, params)
+            else:
+                cursor = await connection.execute(_RANKING_ALL_SQL, params)
+            rows = await cursor.fetchall()
+        return RankingBoardView(
+            board=board,
+            period=period,
+            window_start=window_start,
+            window_end=window_end,
+            entries=tuple(
+                RankingEntryView(
+                    # 같은 점수도 먼저 남긴 기록이 위이고 순위는 그 순서다(혼자 하기 랭킹과 같다)
+                    rank=index,
+                    nickname=str(row["nickname"]),
+                    character_id=str(row["character_id"]),
+                    score=int(row["score"]),
+                    correct_count=int(row["correct_count"]),
+                    total_count=int(row["total_questions"]),
+                    recorded_at=_iso(row["recorded_at"]),
+                    is_mine=bool(row["is_mine"]),
+                )
+                for index, row in enumerate(rows, start=1)
+            ),
+        )
+
     async def _record_standing_answers(
         self,
         connection: AsyncConnection[dict[str, Any]],
@@ -1633,8 +1774,18 @@ class PostgresRoomsRepository:
         own_answer: MatchAnswerView | None = None
         # «문제 다시 보기»는 판이 끝난 뒤에만 만든다 (U38)
         review: tuple[MatchReviewView, ...] = ()
+        ranking_recorded = False
         if match["state"] == "finished":
             review = await self._review_views(connection, actor_id, match_id)
+            recorded_cursor = await connection.execute(
+                """
+                SELECT 1
+                FROM quiz_online.online_rankings
+                WHERE match_id = %s AND player_id = %s
+                """,
+                (match_id, actor_id),
+            )
+            ranking_recorded = await recorded_cursor.fetchone() is not None
         if match["state"] in {"running", "revealing"}:
             question_cursor = await connection.execute(
                 """
@@ -1681,6 +1832,7 @@ class PostgresRoomsRepository:
             scores=scores,
             review=review,
             question_time_ms=int(match["question_time_ms"]),
+            ranking_recorded=ranking_recorded,
         )
 
     async def _score_views(
@@ -1910,13 +2062,26 @@ class PostgresRoomsRepository:
                 orphaned_hosts = await connection.execute(_TRANSFER_ORPHANED_HOSTS_SQL)
                 empty_rooms = await connection.execute(_DELETE_EMPTY_ROOMS_SQL)
                 expired_players = await connection.execute(_DELETE_EXPIRED_PLAYERS_SQL)
-                return CleanupCounts(
+                counts = CleanupCounts(
                     rooms_deleted=_affected(expired_rooms) + _affected(empty_rooms),
                     members_removed=_affected(stale_members),
                     hosts_transferred=_affected(orphaned_hosts),
                     matches_deleted=int(matches_row["deleted"] or 0) if matches_row else 0,
                     players_deleted=_affected(expired_players),
                 )
+            # 랭킹 보존 기간 정리(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄, migration
+            # 012의 함수). 방 정리와 따로 돈다 — 이것이 실패해도 방 정리와 그 뒤의 멤버십 재확인은
+            # 이번 차례에 그대로 선다.
+            try:
+                pruned_cursor = await connection.execute(
+                    "SELECT quiz_online.prune_online_rankings() AS pruned"
+                )
+                pruned_row = await pruned_cursor.fetchone()
+            except errors.Error:
+                _logger.warning("online ranking retention sweep failed", exc_info=True)
+                return counts
+            pruned = int(pruned_row["pruned"] or 0) if pruned_row else 0
+            return replace(counts, rankings_pruned=pruned)
 
     async def ops_counts(self) -> RoomCounts:
         async with self._pool.connection(timeout=5) as connection:

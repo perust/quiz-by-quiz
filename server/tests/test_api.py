@@ -76,7 +76,7 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 11
+        self.current_schema_version = 12
         self.schema_version_calls = 0
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
@@ -306,7 +306,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_11() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_12() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -314,11 +314,12 @@ def test_release_readiness_requires_character_only_contract_and_migration_11() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 11,
+            "schemaVersion": 12,
         }
 
-        # 010까지의 DB에는 방장이 고른 문항 시간 열이 없다. 이 API는 그 위에서 방을 읽지 못한다
-        for older in (9, 10):
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가 없다. 이 API는
+        # 그 위에서 방을 읽거나 판을 닫지 못한다(닫는 transaction이 랭킹을 남긴다)
+        for older in (9, 10, 11):
             repository.current_schema_version = older
             blocked = client.get("/v1/release-readiness")
             assert blocked.status_code == 503
@@ -357,11 +358,13 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
 
     assert response.status_code == 200
     # 방 snapshot이 없는 화면(홈·빈 로비·「게임 방법」)도 이 API의 규칙을 말하도록 함께 알린다 —
-    # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이다(standingAnswers, U13)
+    # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이며(standingAnswers, U13), 끝난
+    # 판은 서버 랭킹에 남는다(rankings, FR-7.13 2단계)
     assert response.json() == {
         "playerId": str(PLAYER_ID),
         "minPlayers": 1,
         "standingAnswers": True,
+        "rankings": True,
     }
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text

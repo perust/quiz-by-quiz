@@ -544,6 +544,25 @@
       통과: 랭킹탭크기.length === 6 && 랭킹탭크기.every((높이) => 높이 >= 44),
       무엇: 랭킹탭크기.map((높이) => `${높이}px`).join(', '),
     });
+    // 온라인 랭킹 (FR-7.13 2단계). 서버 랭킹을 아는 API면 범위·기간 두 칸이 44px 이상이고, 불러온 뒤 상태 줄이
+    // 무슨 일인지 말한다(«불러오는 중…»에 멈추지 않는다). 모르는 API(세션에 rankings 없음)면 범위 탭째 숨는다.
+    // 아래 검사는 예전처럼 이 브라우저의 기록에서 본다
+    if (!document.getElementById('ranking-scope-tabs').hidden) {
+      await 눌러('ranking-scope-online', 1500);
+      const 두칸 = [...(활성랭킹?.querySelectorAll('.ranking-switch__option') ?? [])]
+        .filter((칸) => 칸.getClientRects().length > 0)
+        .map((칸) => 칸.getBoundingClientRect().height);
+      const 온라인상태 = document.getElementById('ranking-online-status').textContent.trim();
+      결과.push({
+        자리: '랭킹', 이름: '온라인 랭킹의 범위·기간 칸이 44px 이상이고 상태 줄이 무슨 일인지 말한다',
+        통과: document.getElementById('ranking-scope-tabs').hidden
+          || (두칸.length === 4 && 두칸.every((높이) => 높이 >= 44) && 온라인상태 !== '' && !온라인상태.endsWith('…')),
+        무엇: document.getElementById('ranking-scope-tabs').hidden
+          ? '랭킹을 모르는 API — 범위 탭을 거뒀다'
+          : `${두칸.map((높이) => `${높이}px`).join(', ')} · ${온라인상태 || '(빈 상태 줄)'}`,
+      });
+      if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
+    }
     const 랭킹안내 = document.querySelector('.ranking-scope');
     const 랭킹캐릭터 = document.getElementById('ranking-character');
     const 겹친랭킹글 = 겹친글자줄(랭킹안내, 랭킹캐릭터.getBoundingClientRect());
@@ -857,6 +876,8 @@
 
     // ⑫ 시스템 「뒤로」. 앱 밖으로 나가지 않고 그 화면의 뒤로·나가기 버튼과 같이 움직인다
     await 눌러('open-ranking', 700);
+    // 이 브라우저의 기록에서 본다 — 온라인 랭킹을 아는 API면 마지막에 본 범위가 온라인일 수 있다
+    if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
     // 방금 자동 저장된 분야 기록 하나뿐이라 전체 도전 탭은 비어 있다
     document.querySelector('[data-screen="ranking"] .ranking-tab').click();
     await 잠깐(300);

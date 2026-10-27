@@ -374,11 +374,14 @@
         <h1 class="screen-title" id="online-final-title">온라인 매치 결과</h1>
       </header>
       <p class="online-final__summary" id="online-final-summary" role="status"></p>
+      <!-- 이 판의 결과가 서버 랭킹에 남았으면 (FR-7.13 2단계). 남기지 않는 이전 API면 online-result.js 가 숨긴다 -->
+      <p class="online-final__recorded" id="online-final-recorded" hidden>이 판의 점수가 온라인 랭킹에 기록됐어요.</p>
       <ol class="online-final-ranking" id="online-final-ranking" aria-label="최종 순위"></ol>
       <div class="result-actions">
         <!-- 방에 아직 있을 때만. 대기실로 돌아가며 방장이 아니면 준비를 켜 둔다 (U38) -->
         <button type="button" class="button button--primary" id="online-final-again" hidden>한 판 더</button>
         <button type="button" class="button button--ghost" id="online-final-room">대기실로</button>
+        <button type="button" class="button button--ghost" id="online-final-open-ranking" hidden>온라인 랭킹 보기</button>
         <button type="button" class="button button--ghost" id="online-final-home">홈으로</button>
       </div>
       <!-- 끝난 판의 문제·정답·해설 (U38). 처음에는 접어 두어 행동 줄이 먼저 온다 -->
@@ -815,16 +818,34 @@
         </button>
       </header>
 
-      <!-- 저장 범위 명시 (FR-6.10) -->
-      <p class="ranking-scope">이 브라우저에 저장된 내 기록이에요.</p>
+      <!-- 저장 범위 명시 (FR-6.10). 글은 ranking.js 가 범위에 맞춰 바꾼다. 머리말 바로 아래 자리라 화면
+           워커가 이 줄의 오른쪽 주차 공간에서 쉰다 — 누를 것(범위 탭)을 그 자리에 두지 않는다 -->
+      <p class="ranking-scope" id="ranking-scope-note">이 브라우저에 저장된 내 기록이에요.</p>
+
+      <!-- 어느 기록을 보는가 (FR-7.13 2단계). 서버 랭킹을 모르는 API·로컬 방이면 ranking.js 가 숨겨
+           예전처럼 이 브라우저의 기록만 보인다 -->
+      <div class="ranking-switch" id="ranking-scope-tabs" role="group" aria-label="랭킹 범위" hidden>
+        <button type="button" class="ranking-switch__option" id="ranking-scope-online" aria-pressed="false">온라인 랭킹</button>
+        <button type="button" class="ranking-switch__option" id="ranking-scope-local" aria-pressed="true">이 브라우저의 기록</button>
+      </div>
 
       <div class="ranking-tabs" id="ranking-tabs" role="group" aria-label="랭킹 종류"></div>
+
+      <!-- 온라인 랭킹의 기간. «이번 주»는 서울 시각 월요일 0시에 새로 시작한다 -->
+      <div class="ranking-switch" id="ranking-periods" role="group" aria-label="기간" hidden>
+        <button type="button" class="ranking-switch__option" id="ranking-period-week" aria-pressed="true">이번 주</button>
+        <button type="button" class="ranking-switch__option" id="ranking-period-all" aria-pressed="false">전체</button>
+      </div>
+      <p class="ranking-window" id="ranking-window" hidden></p>
+      <!-- 온라인 랭킹을 불러오는 중·불러온 것·못 불러온 것을 말하는 줄. 알리는 말만 둔다 -->
+      <p class="ranking-status" id="ranking-online-status" role="status" hidden></p>
 
       <ol class="ranking-list" id="ranking-list"></ol>
       <div class="ranking-empty" id="ranking-empty" hidden>
         <p class="ranking-empty__message" id="ranking-empty-message"></p>
         <!-- 글자는 ranking.js 가 탭 이름으로 바꾼다 (예: 「과학 시작하기」). 누르면 그 탭의 판이 열린다.
-             문제를 불러오지 못해 그 판을 열 수 없으면 「홈으로」가 된다 -->
+             문제를 불러오지 못해 그 판을 열 수 없으면 「홈으로」가 된다. 온라인 랭킹이 비었으면 「온라인 방 열기」,
+             불러오지 못했으면 「다시 시도」다 -->
         <button type="button" class="button button--primary" id="ranking-empty-start">퀴즈 시작하기</button>
       </div>
 
@@ -1048,7 +1069,7 @@
   <div class="dialog-backdrop" id="nickname-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="nickname-dialog-title">
       <h2 class="dialog__title" id="nickname-dialog-title">닉네임 바꾸기</h2>
-      <p class="dialog__body">랭킹과 온라인 방에서 이 이름으로 보여요.</p>
+      <p class="dialog__body">랭킹과 온라인 방에서 이 이름으로 보여요. 온라인 랭킹은 모두가 보니 전화번호·이메일 같은 개인 정보는 넣지 마세요.</p>
       <form id="nickname-form" novalidate>
         <!-- 눈으로는 위 제목이 무엇을 적는 칸인지 알려주지만, 스크린리더는 칸 자체의
              이름을 읽는다. placeholder 는 이름이 아니다 — 글자를 넣는 순간 사라진다 -->

@@ -23,6 +23,7 @@ import unittest
 from collections import deque
 from pathlib import Path
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_PATH = ROOT / "deploy" / "oracle" / "smoke.py"
@@ -102,7 +103,7 @@ class FakeApi:
     def __init__(
         self,
         *,
-        schema_version: int = 11,
+        schema_version: int = 12,
         readiness_error: tuple[int, str] | None = None,
         readiness_extra: dict | None = None,
         readiness_429: int = 0,
@@ -117,6 +118,11 @@ class FakeApi:
         interrupt: tuple[str, str] | None = None,
         terminate: tuple[str, str] | None = None,
         question_time: bool = True,
+        rankings: bool = True,
+        nickname_filter: bool = True,
+        ranking_extra: dict | None = None,
+        ranking_entry_extra: dict | None = None,
+        anonymous_mine: bool = False,
     ) -> None:
         self.schema_version = schema_version
         self.readiness_error = readiness_error
@@ -133,6 +139,12 @@ class FakeApi:
         self.interrupt = interrupt
         self.terminate = terminate
         self.question_time = question_time
+        # migration 012 API의 것: 세션의 rankings, 닉네임 금칙 규칙, GET /v1/rankings
+        self.rankings = rankings
+        self.nickname_filter = nickname_filter
+        self.ranking_extra = dict(ranking_extra or {})
+        self.ranking_entry_extra = dict(ranking_entry_extra or {})
+        self.anonymous_mine = anonymous_mine
         self.requests: list[tuple[str, str, dict, object]] = []
         self.upgrades: list[tuple[str, dict]] = []
         self.channels: list[FakeChannel] = []
@@ -169,7 +181,63 @@ class FakeApi:
             signal.raise_signal(signal.SIGTERM)
         return reply
 
+    def _rankings(self, method, path, headers):
+        """server/app/main.py의 list_rankings. 신분이 없어도 읽고, 있으면 확인한다."""
+        if not self.rankings:
+            # 랭킹을 모르는 API에는 그 경로가 없다(FastAPI의 기본 404)
+            return smoke.Reply(404, self._cors(headers), body({"detail": "Not Found"}))
+        query = {key: values[0] for key, values in parse_qs(urlsplit(path).query).items()}
+        mode, category, period = query.get("mode"), query.get("category"), query.get("period")
+        if (
+            mode not in ("category", "all")
+            or period not in ("week", "all")
+            or (mode == "category" and category not in ("history", "science"))
+            or (mode == "all" and category is not None)
+        ):
+            return error(400, "invalid-ranking", self._cors(headers))
+        if "Authorization" in headers and headers.get("X-Player-Id") not in self.players:
+            return error(401, "unauthorized", self._cors(headers))
+        anonymous = "Authorization" not in headers
+        entries = [
+            {
+                "rank": rank,
+                "nickname": f"참가자{rank}",
+                "characterId": "slime-blue",
+                "score": 100 - rank * 10,
+                "correctCount": 10 - rank,
+                "totalCount": 10,
+                "recordedAt": "2026-10-27T03:10:52+00:00",
+                "isMine": anonymous and self.anonymous_mine,
+                **self.ranking_entry_extra,
+            }
+            for rank in (1, 2)
+        ]
+        window = (
+            {
+                "start": "2026-10-25T15:00:00+00:00",
+                "end": "2026-11-01T15:00:00+00:00",
+                "timeZone": "Asia/Seoul",
+            }
+            if period == "week"
+            else None
+        )
+        return self._ok(
+            200,
+            {
+                "mode": mode,
+                "categoryId": category if mode == "category" else None,
+                "period": period,
+                "window": window,
+                "limit": 10,
+                "entries": entries,
+                **self.ranking_extra,
+            },
+            headers,
+        )
+
     def _handle(self, method, path, headers, payload):
+        if method == "GET" and path.startswith("/v1/rankings"):
+            return self._rankings(method, path, headers)
         if path == "/v1/release-readiness":
             if self.readiness_429:
                 self.readiness_429 -= 1
@@ -194,12 +262,18 @@ class FakeApi:
         self.tokens.add(token.group(1))
         if (method, path) == ("PUT", "/v1/session"):
             assert set(payload) == {"nickname", "characterId"}
+            if self.nickname_filter and "@" in payload["nickname"]:
+                # 거절된 세션은 프로필을 바꾸지 않는다
+                return error(400, "nickname-personal-info", self._cors(headers))
             self.players.add(player)
-            return self._ok(200, {"playerId": player}, headers)
+            session = {"playerId": player, "minPlayers": 1, "standingAnswers": True}
+            if self.rankings:
+                session["rankings"] = True
+            return self._ok(200, session, headers)
         if player not in self.players:
             return error(401, "unauthorized")
         if (method, path) == ("POST", "/v1/rooms"):
-            # 010 API는 모르는 필드를 거절한다(extra="forbid") — questionTimeMs가 없어야 한다.
+            # 구버전 화면처럼 questionTimeMs를 보내지 않는다 — 011·012 API 모두 20초로 둔다.
             assert set(payload) == {"name", "categoryId", "capacity", "isPublic"}
             code = "QZ7K2M"
             self.rooms[code] = {
@@ -386,26 +460,53 @@ class SmokeRunTests(unittest.TestCase):
             [
                 "ok readiness",
                 "ok session",
+                "ok nickname",
+                "ok rankings",
                 "ok room",
                 "ok room-settings",
                 "ok websocket",
                 "ok cleanup",
             ],
         )
-        self.assertIn("questionTimeMs 20000", run.lines[2])
-        self.assertIn("400 invalid-question-time", run.lines[3])
-        self.assertEqual(run.lines[4], WEBSOCKET_OK)
+        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12")
+        self.assertIn("rankings true", run.lines[1])
+        self.assertEqual(
+            run.lines[2],
+            "ok nickname: HTTP 400 nickname-personal-info for an e-mail-shaped nickname",
+        )
+        self.assertEqual(
+            run.lines[3],
+            "ok rankings: anonymous week HTTP 200 (2 entries, window Asia/Seoul); "
+            "history all-time HTTP 200; unknown board -> 400 invalid-ranking",
+        )
+        self.assertIn("questionTimeMs 20000", run.lines[4])
+        self.assertIn("400 invalid-question-time", run.lines[5])
+        self.assertEqual(run.lines[6], WEBSOCKET_OK)
         self.assert_left_the_room(run)
         self.assert_no_secret(run)
 
     def test_every_request_carries_the_pages_origin_and_auth_only_after_the_gate(self):
         run = Run("candidate", FakeApi())
+        # 공개 읽기 둘은 신분 없이 보낸다: release gate와 공개 랭킹(그 거절까지)
+        anonymous = {
+            "/v1/release-readiness",
+            "/v1/rankings?mode=all&period=week",
+            "/v1/rankings?mode=season&period=week",
+        }
         for method, path, headers, _ in run.api.requests:
             with self.subTest(request=f"{method} {path}"):
                 self.assertEqual(headers["Origin"], "https://perust.github.io")
-                authenticated = path != "/v1/release-readiness"
+                authenticated = path not in anonymous
                 self.assertEqual("Authorization" in headers, authenticated)
                 self.assertEqual("X-Player-Id" in headers, authenticated)
+        # 랭킹은 읽기만 한다 — 판을 열지 않으므로 기록을 남기지 않는다
+        self.assertFalse(
+            any(
+                path.startswith("/v1/rankings") and method != "GET"
+                for method, path, _, _ in run.api.requests
+            )
+        )
+        self.assertFalse(any(path.endswith("/start") for _, path, _, _ in run.api.requests))
         (path, headers), = run.api.upgrades
         self.assertEqual(path, "/v1/rooms/QZ7K2M/events")
         self.assertEqual(headers["Origin"], "https://perust.github.io")
@@ -428,7 +529,7 @@ class SmokeRunTests(unittest.TestCase):
     def test_websocket_skips_other_frames_while_waiting_for_the_echo(self):
         run = Run("candidate", FakeApi(socket_noise=True))
         self.assertEqual(run.code, 0, run.lines)
-        self.assertEqual(run.lines[4], WEBSOCKET_OK)
+        self.assertEqual(run.lines[6], WEBSOCKET_OK)
         self.assertNotIn("room-invalidated", run.output)
 
     def test_websocket_closed_or_dropped_after_the_101_fails_and_still_cleans_up(self):
@@ -446,48 +547,68 @@ class SmokeRunTests(unittest.TestCase):
             with self.subTest(options=options):
                 run = Run("candidate", FakeApi(**options))
                 self.assertEqual(run.code, 1)
-                self.assertEqual(run.lines[4], f"FAIL websocket: {reason}")
+                self.assertEqual(run.lines[6], f"FAIL websocket: {reason}")
                 self.assertTrue(run.api.channels[0].closed)
                 self.assert_left_the_room(run)
                 self.assert_no_secret(run)
 
     def test_baseline_against_the_candidate_fails_the_gate_and_still_cleans_up(self):
-        run = Run("baseline", FakeApi(schema_version=11))
+        run = Run("baseline", FakeApi(schema_version=12))
         self.assertEqual(run.code, 1)
         self.assertEqual(
             run.lines[0],
-            "FAIL readiness: schemaVersion=11 (want 10)",
+            "FAIL readiness: schemaVersion=12 (want 11)",
         )
         self.assertEqual(
             [line.split(":")[0] for line in run.lines[1:]],
-            ["ok session", "ok room", "ok websocket", "ok cleanup"],
+            ["ok session", "ok room", "ok room-settings", "ok websocket", "ok cleanup"],
         )
         self.assert_left_the_room(run)
         self.assert_no_secret(run)
 
-    def test_baseline_does_not_send_or_require_the_question_time(self):
-        run = Run("baseline", FakeApi(schema_version=10, question_time=False))
+    def test_baseline_neither_reads_nor_requires_the_rankings(self):
+        # 이 경계의 baseline은 011 API다: 문항 시간은 있고 랭킹·닉네임 규칙은 없다
+        run = Run("baseline", FakeApi(schema_version=11, rankings=False, nickname_filter=False))
         self.assertEqual(run.code, 0, run.lines)
-        self.assertFalse(any(path.endswith("QZ7K2M") and method == "PATCH"
-                             for method, path, _, _ in run.api.requests))
+        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 11")
+        self.assertEqual(run.lines[1], "ok session: HTTP 200 playerId is this identity")
+        self.assertFalse(
+            any(path.startswith("/v1/rankings") for _, path, _, _ in run.api.requests)
+        )
+        sessions = [payload for method, path, _, payload in run.api.requests if path == "/v1/session"]
+        self.assertEqual(sessions, [{"nickname": "점검", "characterId": "slime-blue"}])
+        # 011 API의 방 설정(문항 시간)은 baseline도 본다
+        self.assertTrue(
+            any(
+                path.endswith("QZ7K2M") and method == "PATCH"
+                for method, path, _, _ in run.api.requests
+            )
+        )
+
+    def test_baseline_against_an_api_without_question_time_fails_the_room(self):
+        # 010 API는 이 경계의 baseline이 아니다 — #106의 migration 011 경계를 먼저 마친다
+        run = Run("baseline", FakeApi(schema_version=11, question_time=False, rankings=False))
+        self.assertEqual(run.code, 1)
+        self.assertIn("FAIL room: room QZ7K2M: questionTimeMs=missing (want 20000)", run.lines)
+        self.assert_left_the_room(run)
 
     def test_migrated_baseline_passes_only_on_the_expected_migration_required_gate(self):
-        # README 단계 3: DB는 011인데 010 API가 아직 돈다. gate는 닫히고 방과 소켓은 돈다.
-        api = FakeApi(readiness_error=(503, "migration-required"), question_time=False)
+        # README 단계 3: DB는 012인데 011 API가 아직 돈다. gate는 닫히고 방과 소켓은 돈다.
+        api = FakeApi(readiness_error=(503, "migration-required"), rankings=False)
         run = Run("baseline-migrated", api)
         self.assertEqual(run.code, 0, run.lines)
         self.assertEqual(
             run.lines[0],
-            "ok readiness: HTTP 503 migration-required (closed as expected after migration 011)",
+            "ok readiness: HTTP 503 migration-required (closed as expected after migration 012)",
         )
         self.assertEqual(
             [line.split(":")[0] for line in run.lines[1:]],
-            ["ok session", "ok room", "ok websocket", "ok cleanup"],
+            ["ok session", "ok room", "ok room-settings", "ok websocket", "ok cleanup"],
         )
         self.assert_no_secret(run)
 
         for options, reason in (
-            ({"schema_version": 10}, "HTTP 200, expected HTTP 503 migration-required"),
+            ({"schema_version": 11}, "HTTP 200, expected HTTP 503 migration-required"),
             (
                 {"readiness_error": (503, "database-unavailable")},
                 "HTTP 503 database-unavailable, expected HTTP 503 migration-required",
@@ -498,7 +619,7 @@ class SmokeRunTests(unittest.TestCase):
             ),
         ):
             with self.subTest(options=options):
-                run = Run("baseline-migrated", FakeApi(question_time=False, **options))
+                run = Run("baseline-migrated", FakeApi(rankings=False, **options))
                 self.assertEqual(run.code, 1)
                 self.assertEqual(run.lines[0], f"FAIL readiness: {reason}")
                 self.assert_left_the_room(run)
@@ -509,7 +630,7 @@ class SmokeRunTests(unittest.TestCase):
         self.assertEqual(
             run.lines[0],
             "FAIL readiness: HTTP 503 migration-required, expected 200 "
-            "(after migration 011 run baseline-migrated instead)",
+            "(after migration 012 run baseline-migrated instead)",
         )
         candidate = Run("candidate", FakeApi(readiness_error=(503, "migration-required")))
         self.assertEqual(
@@ -530,15 +651,45 @@ class SmokeRunTests(unittest.TestCase):
                 self.assertEqual(run.code, 1)
                 self.assertEqual(run.lines[0], f"FAIL readiness: {CORS_FAILURE}")
                 self.assertEqual(run.lines[1], f"FAIL session: {CORS_FAILURE}")
-                self.assertEqual(run.lines[4], WEBSOCKET_OK)
+                self.assertEqual(run.lines[2], f"FAIL nickname: {CORS_FAILURE}")
+                self.assertEqual(run.lines[3], f"FAIL rankings: anonymous week: {CORS_FAILURE}")
+                self.assertEqual(run.lines[6], WEBSOCKET_OK)
                 self.assert_left_the_room(run)
                 self.assert_no_secret(run)
 
     def test_candidate_room_must_show_me_connected(self):
         run = Run("candidate", FakeApi(connected=False))
         self.assertEqual(run.code, 1)
-        self.assertEqual(run.lines[2], "FAIL room: room QZ7K2M: connected=false (want true)")
+        self.assertEqual(run.lines[4], "FAIL room: room QZ7K2M: connected=false (want true)")
         self.assert_left_the_room(run)
+
+    def test_candidate_against_an_api_without_rankings_fails_session_nickname_and_rankings(self):
+        # 011 API를 candidate로 보면: 세션이 랭킹을 알리지 않고, 닉네임을 거절하지 않고, 경로가 없다
+        run = Run("candidate", FakeApi(rankings=False, nickname_filter=False))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(run.lines[1], "FAIL session: rankings=missing (want true)")
+        self.assertEqual(
+            run.lines[2], "FAIL nickname: HTTP 200, expected HTTP 400 nickname-personal-info"
+        )
+        self.assertEqual(run.lines[3], "FAIL rankings: anonymous week: HTTP 404, expected 200")
+        self.assertEqual(run.lines[6], WEBSOCKET_OK)
+        self.assert_left_the_room(run)
+
+    def test_rankings_must_carry_exactly_the_public_fields(self):
+        for options, reason in (
+            (
+                {"ranking_entry_extra": {"playerId": "leak"}},
+                "anonymous week: entry 1 does not carry exactly the public fields",
+            ),
+            ({"ranking_extra": {"debug": True}}, "anonymous week: unexpected field(s) debug"),
+            ({"anonymous_mine": True}, "anonymous week: an anonymous read marked an entry as mine"),
+        ):
+            with self.subTest(options=options):
+                run = Run("candidate", FakeApi(**options))
+                self.assertEqual(run.code, 1)
+                self.assertEqual(run.lines[3], f"FAIL rankings: {reason}")
+                self.assert_left_the_room(run)
+                self.assert_no_secret(run)
 
     def test_candidate_against_an_api_without_question_time_fails_the_room(self):
         run = Run("candidate", FakeApi(question_time=False))
@@ -560,13 +711,13 @@ class SmokeRunTests(unittest.TestCase):
         run = Run("candidate", FakeApi(upgrade_403=1))
         self.assertEqual(run.code, 0, run.lines)
         self.assertEqual(len(run.api.tickets), 2)
-        self.assertIn("after one 403 retry", run.lines[4])
+        self.assertIn("after one 403 retry", run.lines[6])
         self.assert_no_secret(run)
 
         refused = Run("candidate", FakeApi(upgrade_403=2))
         self.assertEqual(refused.code, 1)
         self.assertEqual(
-            refused.lines[4],
+            refused.lines[6],
             "FAIL websocket: upgrade HTTP 403 after one 403 retry, expected 101",
         )
         self.assertEqual(len(refused.api.tickets), 2)
@@ -597,7 +748,7 @@ class SmokeRunTests(unittest.TestCase):
                 code = smoke.main(["candidate", "--api", "http://127.0.0.1:9"])
         self.assertEqual(code, 143)
         lines = stdout.getvalue().splitlines()
-        self.assertEqual(lines[2], "FAIL room: interrupted (SIGTERM)")
+        self.assertEqual(lines[4], "FAIL room: interrupted (SIGTERM)")
         # 만들기 요청이 답을 받기 전에 멈췄다. 이 신분이 든 방을 찾아 나간다.
         self.assertEqual(lines[-1], "ok cleanup: left room QZ7K2M, GET -> 404")
         self.assertEqual(api.rooms, {})
@@ -616,8 +767,8 @@ class SmokeRunTests(unittest.TestCase):
         api.request = drop_create_response
         run = Run("candidate", api)
         self.assertEqual(run.code, 1)
-        self.assertEqual(run.lines[2], "FAIL room: TimeoutError: timed out")
-        self.assertEqual(run.lines[3], "FAIL room-settings: not run (no room)")
+        self.assertEqual(run.lines[4], "FAIL room: TimeoutError: timed out")
+        self.assertEqual(run.lines[5], "FAIL room-settings: not run (no room)")
         self.assertEqual(run.sleeps, [])
         self.assert_left_the_room(run)
 
@@ -671,7 +822,7 @@ class SmokeRunTests(unittest.TestCase):
 
         api.request = refuse_create
         run = Run("candidate", api)
-        self.assertEqual(run.lines[2], "FAIL room: HTTP 429 rate-limited, expected 201")
+        self.assertEqual(run.lines[4], "FAIL room: HTTP 429 rate-limited, expected 201")
         self.assertEqual(run.lines[-1], "ok cleanup: nothing to leave (no room)")
         self.assertEqual(run.sleeps, [])
 

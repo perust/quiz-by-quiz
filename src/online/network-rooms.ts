@@ -1,7 +1,7 @@
 import { CATEGORIES, ROOM_CAPACITY_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import type { KeyValueStorage } from '../storage/safe-storage.js';
-import type { CategoryId } from '../types.js';
+import type { CategoryId, RankingTarget } from '../types.js';
 import type {
   CreateRoomResult,
   CreateRoomSpec,
@@ -13,6 +13,10 @@ import type {
   OnlineMatchQuestion,
   OnlineMatchSnapshot,
   OnlineOwnSubmission,
+  OnlineRankingBoard,
+  OnlineRankingEntry,
+  OnlineRankingPeriod,
+  OnlineRankingResult,
   OnlineRules,
   OnlineReveal,
   OnlineRevealingMatch,
@@ -43,11 +47,14 @@ import {
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
+import { nicknameProblem } from './nickname-rules.js';
 import {
   ApiFailure,
   isOnlineQuestionTime,
   LEGACY_MIN_PLAYERS,
   LeaveRoomRejected,
+  NICKNAME_REJECTION_MESSAGES,
+  nicknameRejection,
   normalizeCode,
   OnlinePlayerError,
   parseRetryAfterMs,
@@ -599,6 +606,8 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       reveal: null,
       scores: parseScores(value.scores),
       ...(review === undefined ? {} : { review }),
+      // 온라인 랭킹에 남았는가 (FR-7.13 2단계). 참·거짓만 믿는다 — 없으면(이전 API) 랭킹 이야기를 하지 않는다
+      ...(typeof value.rankingRecorded === 'boolean' ? { rankingRecorded: value.rankingRecorded } : {}),
     } satisfies OnlineFinishedMatch;
   }
   throw new Error('서버 매치 상태가 올바르지 않습니다.');
@@ -616,6 +625,77 @@ function sessionRules(body: Record<string, unknown>): OnlineRules {
       ? minPlayers as number
       : LEGACY_MIN_PLAYERS,
     standingAnswers: body.standingAnswers === true,
+    // 서버 랭킹 (FR-7.13 2단계). true만 믿는다 — 없는 이전 API면 화면이 온라인 랭킹을 숨긴다
+    rankings: body.rankings === true,
+  };
+}
+
+const RANKING_ENTRY_KEYS = new Set([
+  'rank', 'nickname', 'characterId', 'score', 'correctCount', 'totalCount', 'recordedAt', 'isMine',
+]);
+const RANKING_LIMIT = 10;
+
+function parseRankingEntry(value: unknown, rank: number): OnlineRankingEntry {
+  if (!isObject(value)) throw new Error('서버 랭킹 줄이 올바르지 않습니다.');
+  // 공개 필드만 받는다. 브라우저 신분 같은 다른 필드가 실려 오면 믿지 않는다
+  if (Object.keys(value).some((key) => !RANKING_ENTRY_KEYS.has(key))) {
+    throw new Error('서버 랭킹 줄에 모르는 필드가 있습니다.');
+  }
+  if (value.rank !== rank) throw new Error('서버 랭킹 순위가 순서와 맞지 않습니다.');
+  const nickname = value.nickname;
+  const characterId = value.characterId;
+  const recordedAt = value.recordedAt;
+  if (typeof nickname !== 'string' || nickname.trim() === '' || nickname.length > 20) {
+    throw new Error('서버 랭킹 닉네임이 올바르지 않습니다.');
+  }
+  if (typeof characterId !== 'string' || !CHARACTER_ID_PATTERN.test(characterId)) {
+    throw new Error('서버 랭킹 캐릭터가 올바르지 않습니다.');
+  }
+  if (typeof recordedAt !== 'string' || !Number.isFinite(Date.parse(recordedAt))) {
+    throw new Error('서버 랭킹 기록 시각이 올바르지 않습니다.');
+  }
+  if (typeof value.isMine !== 'boolean') throw new Error('서버 랭킹 내 기록 표시가 올바르지 않습니다.');
+  const totalCount = parseInteger(value.totalCount, '랭킹 문제 수', 1);
+  const correctCount = parseInteger(value.correctCount, '랭킹 정답 수');
+  const score = parseInteger(value.score, '랭킹 점수');
+  if (correctCount > totalCount) throw new Error('서버 랭킹 정답 수가 문제 수보다 많습니다.');
+  return { rank, nickname, characterId, score, correctCount, totalCount, recordedAt, isMine: value.isMine };
+}
+
+function parseRankingBoard(
+  value: unknown,
+  target: RankingTarget,
+  period: OnlineRankingPeriod,
+): OnlineRankingBoard {
+  if (!isObject(value)) throw new Error('서버 랭킹 응답이 올바르지 않습니다.');
+  const categoryId = target.mode === 'category' ? target.category : null;
+  if (value.mode !== target.mode || value.categoryId !== categoryId || value.period !== period) {
+    throw new Error('서버 랭킹 응답이 물어본 판과 다릅니다.');
+  }
+  let window: OnlineRankingBoard['window'] = null;
+  if (period === 'week') {
+    const raw = value.window;
+    if (
+      !isObject(raw)
+      || typeof raw.start !== 'string'
+      || typeof raw.end !== 'string'
+      || !Number.isFinite(Date.parse(raw.start))
+      || !Number.isFinite(Date.parse(raw.end))
+    ) {
+      throw new Error('서버 랭킹 기간이 올바르지 않습니다.');
+    }
+    window = { start: raw.start, end: raw.end };
+  } else if (value.window !== null) {
+    throw new Error('전체 기간 랭킹에 기간이 섞였습니다.');
+  }
+  if (!Array.isArray(value.entries) || value.entries.length > RANKING_LIMIT) {
+    throw new Error('서버 랭킹 목록이 올바르지 않습니다.');
+  }
+  return {
+    target: { ...target },
+    period,
+    window,
+    entries: value.entries.map((entry, index) => parseRankingEntry(entry, index + 1)),
   };
 }
 
@@ -634,6 +714,9 @@ function failureFrom(status: number, body: unknown, retryAfter: string | null = 
   const detail = isObject(body) && isObject(body.detail) ? body.detail : null;
   const code = detail && typeof detail.code === 'string' ? detail.code : 'request-failed';
   const serverMessage = detail && typeof detail.message === 'string' ? detail.message : null;
+  // 닉네임 금칙 규칙의 거절은 고칠 곳(홈의 닉네임)까지 말하는 화면의 말로 바꾼다 (PRD 12.1)
+  const rejection = status === 400 ? nicknameRejection(code) : null;
+  if (rejection !== null) return new ApiFailure(status, code, NICKNAME_REJECTION_MESSAGES[rejection]);
   // 요청 한도(429)는 «언제 다시»를 함께 든다. 재조회가 그 값을 따라 한 번 다시 보낸다 (N01)
   const retryAfterMs = status === 429 ? parseRetryAfterMs(retryAfter) : null;
   // 4xx의 이유는 서버가 플레이어에게 쓴 말이다(«이미 다음 문제로 넘어갔습니다»). 5xx나 이유 없는
@@ -771,6 +854,14 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
   async function ensureSession(player?: PlayerInfo): Promise<void> {
     const profile = profileBody(player);
+    // 금칙 규칙에 걸리는 닉네임(규칙이 생기기 전에 저장한 이름)은 보내지 않는다. 서버도 같은 규칙으로
+    // 거절한다 — 보내기 전에 같은 말로 고칠 곳을 알린다 (PRD 12.1)
+    const problem = nicknameProblem(profile.nickname);
+    if (problem !== null) {
+      throw new OnlinePlayerError(
+        NICKNAME_REJECTION_MESSAGES[problem === 'profanity' ? 'nickname-profanity' : 'nickname-personal-info'],
+      );
+    }
     const fingerprint = JSON.stringify(profile);
     if (sessionFingerprint === fingerprint) return;
     if (sessionPromise) {
@@ -831,6 +922,27 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
   async function listRooms(): Promise<PublicRoom[]> {
     return parseRooms(await request('/v1/rooms'));
+  }
+
+  /**
+   * 온라인 랭킹 (FR-7.13 2단계). 세션을 열어 이 API가 랭킹을 아는지(`rankings: true`) 먼저 본다 — 모르는
+   * 이전 API에는 랭킹 요청을 보내지 않는다. 신분을 실어 보내 서버가 내 기록(isMine)을 가린다.
+   */
+  async function getOnlineRankings({ target, period }: {
+    target: RankingTarget;
+    period: OnlineRankingPeriod;
+  }): Promise<OnlineRankingResult> {
+    await ensureSession();
+    if (learnedRules?.rankings !== true) return { supported: false };
+    const params = new URLSearchParams({ mode: target.mode });
+    if (target.mode === 'category') {
+      const category = target.category;
+      if (category === null || !CATEGORIES_SET.has(category)) throw new Error('랭킹 분야가 올바르지 않습니다.');
+      params.set('category', category);
+    }
+    params.set('period', period);
+    const value = await request(`/v1/rankings?${params.toString()}`);
+    return { supported: true, board: parseRankingBoard(value, target, period) };
   }
 
   async function createRoom(spec: CreateRoomSpec): Promise<CreateRoomResult> {
@@ -1509,6 +1621,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     sendMovement,
     sendStandingAnswer,
     onlineRules: () => learnedRules,
+    getOnlineRankings,
     startGame,
     getMatch,
     submitMatchAnswer,

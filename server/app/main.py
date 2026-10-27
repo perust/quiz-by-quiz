@@ -52,6 +52,8 @@ from .rate_limit import (
     RateLimitClaim,
 )
 from .repository import (
+    RANKING_BOARDS,
+    RANKING_LIMIT,
     CleanupCounts,
     MatchAnswerView,
     MatchInProgress,
@@ -66,6 +68,9 @@ from .repository import (
     NotHost,
     NotMember,
     PlayerView,
+    RankingBoardView,
+    RankingEntryView,
+    RankingPeriod,
     RoomFull,
     RoomNotFound,
     RoomsRepository,
@@ -76,9 +81,10 @@ from .repository import (
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
-# 이 API가 읽고 쓰는 마지막 migration. 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지
-# 못하므로 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
-RELEASE_SCHEMA_VERSION = 11
+# 이 API가 읽고 쓰는 마지막 migration. 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하고(닫는
+# transaction이 기록을 남긴다) 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지 못하므로
+# 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
+RELEASE_SCHEMA_VERSION = 12
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
@@ -130,6 +136,18 @@ ENDPOINT_CLIENT_SHARE_DIVISOR = 2
 # 한 사람이 방 코드를 바꿔 가며 보내도 «사람+방» 몫의 이 배수까지다 — 방 셋을 오가는 사람(같은
 # 브라우저의 탭 셋)도 방마다 제 몫을 다 쓴다.
 ENDPOINT_ACTOR_ROOM_SPAN = 3
+# 공개 랭킹 읽기의 몫 (FR-7.13 2단계). 세션 없이도 읽는 공개 읽기라 release gate처럼
+# IP·프로세스 칸으로 묶고, 신분을 실은 요청은 인증 몫(위)도 함께 먹는다. 한 교실(한 주소 뒤
+# 36명)이 판을 마치고 함께 랭킹을 열어 탭 여덟을 넘겨 봐도(36 × 8 = 288) IP 칸 300에 들고,
+# 프로세스 1,200은 초당 20번의 색인 조회(LIMIT 10)다. deploy/oracle/README.md의 ingress 한도와
+# 같은 값이다.
+RANKING_CLIENT_LIMIT = 300
+RANKING_PROCESS_LIMIT = 1_200
+RANKING_WINDOW_SECONDS = 60
+RANKING_MODES = frozenset({"category", "all"})
+RANKING_PERIODS: frozenset[RankingPeriod] = frozenset({"week", "all"})
+# 랭킹의 «이번 주»가 쓰는 시간대. 응답이 함께 알린다.
+RANKING_TIME_ZONE = "Asia/Seoul"
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -1069,7 +1087,47 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
     # «문제 다시 보기»(U38)는 끝난 판에만 있다. 진행 중인 판의 응답에는 키조차 없다.
     if match.state == "finished":
         payload["review"] = [_review_payload(item) for item in match.review]
+        # 이 판의 내 결과가 온라인 랭킹에 남았는가 (FR-7.13 2단계). 이 필드가 없는 이전 API의 결과
+        # 화면은 랭킹 이야기를 하지 않는다.
+        payload["rankingRecorded"] = match.ranking_recorded
     return payload
+
+
+def _ranking_entry_payload(entry: RankingEntryView) -> dict[str, object]:
+    # 브라우저 신분(player id)은 싣지 않는다. 묻는 사람의 기록인지(isMine)만 알린다.
+    return {
+        "rank": entry.rank,
+        "nickname": entry.nickname,
+        "characterId": entry.character_id,
+        "score": entry.score,
+        "correctCount": entry.correct_count,
+        "totalCount": entry.total_count,
+        "recordedAt": entry.recorded_at,
+        "isMine": entry.is_mine,
+    }
+
+
+def _ranking_payload(
+    view: RankingBoardView,
+    *,
+    mode: str,
+    category_id: str | None,
+) -> dict[str, object]:
+    window = None
+    if view.period == "week" and view.window_start and view.window_end:
+        window = {
+            "start": view.window_start,
+            "end": view.window_end,
+            "timeZone": RANKING_TIME_ZONE,
+        }
+    return {
+        "mode": mode,
+        "categoryId": category_id,
+        "period": view.period,
+        "window": window,
+        "limit": RANKING_LIMIT,
+        "entries": [_ranking_entry_payload(entry) for entry in view.entries[:RANKING_LIMIT]],
+    }
 
 
 def _match_start_payload(match: MatchSetup) -> dict[str, object]:
@@ -1152,6 +1210,7 @@ def create_app(
     ticket_limiter = AtomicMultiWindowLimiter()
     websocket_inbound_limiter = AtomicMultiWindowLimiter()
     release_readiness_limiter = AtomicMultiWindowLimiter()
+    ranking_limiter = AtomicMultiWindowLimiter()
     movement_sequences = count(1)
     # 운영 기록 (deploy/oracle/README.md «Operational log»). uvicorn의 --log-level과 무관하게
     # INFO 한 줄 JSON을 stderr로 낸다. 요청 계수는 고정 크기 칸뿐이라 요청 수와 무관하게
@@ -1398,6 +1457,9 @@ def create_app(
         request: Request,
         identity: Identity = Depends(_identity),
     ) -> UUID:
+        return await authenticate_actor(request, identity)
+
+    async def authenticate_actor(request: Request, identity: Identity) -> UUID:
         client_key = _client_key(request)
         wait = authenticated_ingress_limiter.try_acquire(
             (
@@ -1518,7 +1580,68 @@ def create_app(
             # 함께 알린다. 이 필드가 없는 이전 API는 둘부터였고 직접 낸 답만 셌다.
             "minPlayers": MIN_MATCH_PLAYERS,
             "standingAnswers": True,
+            # 끝난 온라인 판을 서버 랭킹에 남기고 GET /v1/rankings로 보인다 (FR-7.13 2단계).
+            # 이 필드가 없는 이전 API면 화면은 온라인 랭킹을 숨긴다.
+            "rankings": True,
         }
+
+    @app.get("/v1/rankings")
+    async def list_rankings(
+        request: Request,
+        mode: str | None = None,
+        category: str | None = None,
+        period: str | None = None,
+        authorization: Annotated[str | None, Header()] = None,
+        player_id_header: Annotated[str | None, Header(alias="X-Player-Id")] = None,
+    ) -> dict[str, object]:
+        """온라인 랭킹 상위 10 (FR-7.13 2단계, PRD 12.1). 세션 없이도 읽는 공개 읽기다.
+
+        신분(Authorization·X-Player-Id)을 실은 요청은 다른 인증 요청처럼 확인하고, 그 브라우저의
+        기록에만 isMine을 단다. 신분이 틀렸으면 401이다 — 화면은 세션을 다시 열고 한 번 더 묻는다.
+        """
+        client_key = _client_key(request)
+        wait = ranking_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"rankings:client:{client_key}",
+                    limit=RANKING_CLIENT_LIMIT,
+                    window_seconds=RANKING_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key="rankings:process",
+                    limit=RANKING_PROCESS_LIMIT,
+                    window_seconds=RANKING_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("랭킹은 잠시 뒤 다시 볼 수 있어요.", wait)
+        if (
+            mode not in RANKING_MODES
+            or period not in RANKING_PERIODS
+            or (mode == "category" and category not in ALLOWED_CATEGORIES)
+            or (mode == "all" and category is not None)
+        ):
+            raise _error(400, "invalid-ranking", "랭킹 종류가 올바르지 않아요.")
+        actor_id: UUID | None = None
+        if authorization is not None or player_id_header is not None:
+            actor_id = await authenticate_actor(
+                request,
+                _identity(authorization=authorization, player_id_header=player_id_header),
+            )
+        board = category if mode == "category" and category is not None else "all"
+        if board not in RANKING_BOARDS:  # pragma: no cover - guarded above
+            raise _error(400, "invalid-ranking", "랭킹 종류가 올바르지 않아요.")
+        view = await repo.list_rankings(
+            board=board,
+            period="week" if period == "week" else "all",
+            actor_id=actor_id,
+        )
+        return _ranking_payload(
+            view,
+            mode=mode,
+            category_id=category if mode == "category" else None,
+        )
 
     @app.get("/v1/rooms")
     async def list_rooms(

@@ -19,7 +19,8 @@
 //   sendChat(spec)         한마디
 //   startGame(spec)        판 열기 (방장만). 방장 혼자서도 연다 (`minPlayers`)
 //   sendStandingAnswer     시간이 끝나면 답이 되는 발밑 칸 초안 (U13, 받는다고 알린 서버에만)
-//   onlineRules()          세션을 열 때 서버가 알려 준 규칙(시작 인원·발밑 칸). 모르면 null
+//   onlineRules()          세션을 열 때 서버가 알려 준 규칙(시작 인원·발밑 칸·서버 랭킹). 모르면 null
+//   getOnlineRankings(q)   온라인 랭킹 상위 10 (FR-7.13 2단계). 랭킹을 모르는 API·로컬 방은 {supported:false}
 //   subscribe(code, fn)    방에서 일어나는 일. 그만 들으려면 되돌려 준 함수를 부른다
 //
 // 구독으로 오는 이벤트
@@ -45,7 +46,7 @@
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
 import { safeStorage } from '../storage/safe-storage.js';
-import type { CategoryId, OnlineQuestionTime } from '../types.js';
+import type { CategoryId, OnlineQuestionTime, RankingTarget } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
   MovementViewport,
@@ -132,7 +133,46 @@ export interface OnlineRules {
   minPlayers: number;
   /** 시간이 끝나면 발밑 칸이 답인가 (U13, 혼자 하기와 같은 규칙) */
   standingAnswers: boolean;
+  /**
+   * 끝난 판을 서버 랭킹에 남기고 GET /v1/rankings로 보이는가 (FR-7.13 2단계). 세션 응답의 `rankings: true`다.
+   * 이 필드가 없는 이전 API면 false — 화면은 온라인 랭킹을 숨긴다
+   */
+  rankings: boolean;
 }
+
+// ── 온라인 랭킹 (FR-7.13 2단계, PRD 12.1) ─────────────────────────
+// 서버가 채점한 온라인 판의 결과다. 브라우저가 점수를 보고하지 않는다 — 읽기만 한다.
+
+/** «이번 주»(서울 시각 월요일 0시부터 다음 월요일 0시 전까지)와 «전체» */
+export type OnlineRankingPeriod = 'week' | 'all';
+
+export interface OnlineRankingEntry {
+  /** 점수 내림차순, 같은 점수는 먼저 남긴 기록이 위 — 순위는 그 순서다(1, 2, 3, 혼자 하기 랭킹과 같다) */
+  rank: number;
+  nickname: string;
+  characterId: string;
+  score: number;
+  correctCount: number;
+  totalCount: number;
+  /** 서버가 판을 닫은 시각 (ISO 8601) */
+  recordedAt: string;
+  /** 이 브라우저의 기록인가. 서버가 인증된 브라우저 신분으로 가린다 — 신분 자체는 오지 않는다 */
+  isMine: boolean;
+}
+
+export interface OnlineRankingBoard {
+  target: RankingTarget;
+  period: OnlineRankingPeriod;
+  /** «이번 주»의 두 끝 (ISO 8601). «전체»면 null */
+  window: { start: string; end: string } | null;
+  /** 상위 10까지 */
+  entries: OnlineRankingEntry[];
+}
+
+/** 랭킹을 모르는 API·로컬 방이면 supported:false. 연결 실패는 던진다 */
+export type OnlineRankingResult =
+  | { supported: false }
+  | { supported: true; board: OnlineRankingBoard };
 
 /** 시간이 끝나면 답으로 세는 발밑 칸 초안 (U13). `choiceIndex`가 null이면 칸에서 내려섰다 */
 export interface StandingAnswerDraft {
@@ -338,6 +378,11 @@ export interface OnlineFinishedMatch extends OnlineMatchBase {
   scores: OnlineScore[];
   /** 문항 순서대로. 구버전 서버이거나 맞춰 볼 수 없으면 없다 — 그때는 순위만 보인다 */
   review?: OnlineReviewItem[];
+  /**
+   * 이 판의 내 결과가 온라인 랭킹에 남았는가 (FR-7.13 2단계). 서버가 판을 닫는 transaction에서 남긴다.
+   * 이 필드가 없는 이전 API면 없다 — 결과 화면은 랭킹 이야기를 하지 않는다
+   */
+  rankingRecorded?: boolean;
 }
 
 /** API가 준 상태는 이 union 밖으로 넓히지 않는다. */
@@ -454,6 +499,12 @@ export interface RoomStore {
   sendStandingAnswer(spec: { code: string } & StandingAnswerDraft): boolean;
   /** 처음 세션을 열 때 서버가 알려 준 온라인 규칙. 아직 묻지 않았으면 null. 로컬 방은 늘 같은 값이다 */
   onlineRules(): OnlineRules | null;
+  /**
+   * 온라인 랭킹 상위 10 (FR-7.13 2단계). 세션을 열어(규칙을 알아) 이 API가 랭킹을 아는지 본 뒤에 읽는다 —
+   * 모르는 API에는 랭킹 요청을 보내지 않고 {supported:false}다. 로컬 방도 서버 랭킹이 없어 늘 그렇다.
+   * 읽기만 하고, 브라우저 신분을 실어 보내 내 기록(isMine)을 서버가 가린다
+   */
+  getOnlineRankings(query: { target: RankingTarget; period: OnlineRankingPeriod }): Promise<OnlineRankingResult>;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
   /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */

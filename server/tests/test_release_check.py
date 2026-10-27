@@ -3,7 +3,7 @@
 bank는 임시 디렉터리에서 돈다. db는 `python -m app.migrate`를 마친
 RELEASE_CHECK_TEST_DATABASE_URL(migrator 권한의 버려도 되는 test DB)에서 돌고, 그 값이 없으면
 건너뛴다. 운영의 MIGRATOR_DATABASE_URL은 읽지 않는다 — 아래 test는 같은 DB 안에서 schema를
-지우고 001..010을 한 transaction으로 다시 깔았다가 되돌리고(그동안 모든 quiz_online 표를
+지우고 001..010·001..011을 한 transaction으로 다시 깔았다가 되돌리고(그동안 모든 quiz_online 표를
 ACCESS EXCLUSIVE로 쥔다) app.migrate의 advisory lock도 쥔다. 그 값을 내보낸 채 pytest를
 돌렸다고 운영 DB에 닿으면 안 된다. 다른 DB나 schema는 만들지 않는다.
 """
@@ -377,7 +377,7 @@ def test_db_requires_the_migrator_url_and_never_reads_the_runtime_password(
 ) -> None:
     environment = _RecordingEnvironment({"QUIZ_DB_PASSWORD": "runtime-secret"})
 
-    status = release_check.main(["db", "--expect", "11"], environment)
+    status = release_check.main(["db", "--expect", "12"], environment)
 
     output = capsys.readouterr().out
     assert status == 1
@@ -411,12 +411,16 @@ def test_db_connection_failure_prints_neither_the_url_nor_the_driver_message(
     [
         ["db"],
         ["db", "--expect", "9"],
-        ["db", "--expect", "12"],
-        # 011 전에는 question_time_ms가 없다. 그 요구는 --expect 11에만 뜻이 있다
+        ["db", "--expect", "13"],
+        # 011 전에는 question_time_ms가 없고, 012 단계에서는 011 API가 40000을 쓴다. 그 요구는
+        # --expect 11에만 뜻이 있다
         ["db", "--expect", "10", "--require-default-question-time"],
+        ["db", "--expect", "12", "--require-default-question-time"],
+        # 랭킹 표는 012부터다. 비어 있어야 한다는 요구는 --expect 12에만 뜻이 있다
+        ["db", "--expect", "11", "--require-empty-rankings"],
     ],
 )
-def test_db_accepts_only_an_explicit_expect_of_10_or_11(argv: list[str]) -> None:
+def test_db_accepts_only_an_explicit_expect_of_10_11_or_12(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         release_check.main(argv, {})
     assert raised.value.code == 2
@@ -679,10 +683,12 @@ def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> Non
     def documented(fragment: str) -> str:
         return next(line for line in lines if fragment in line)
 
-    database = documented(f"{command} db --expect 10")
+    database = documented(f"{command} db --expect 11")
     assert "run --rm --no-deps quiz-by-quiz-migrate" in database
-    # 3단계의 011 뒤 점검은 후보 API가 아직 돌지 않았음(모두 20000)까지 exit status로 요구한다
-    assert "the same command with `--expect 11 --require-default-question-time`" in guide
+    # 3단계의 012 뒤 점검은 후보 API가 아직 돌지 않았음(랭킹 표가 빔)까지 exit status로 요구한다
+    assert "the same command with `--expect 12 --require-empty-rankings`" in guide
+    # 앞선 011 경계의 점검(모두 20000)도 기록으로 남는다
+    assert "`--expect 11 --require-default-question-time`" in guide
     assert "--require-idle" in guide
     # bank는 migration 011 전에 후보 migrate 이미지로 돈다. API 이미지를 미리 빌드하면
     # 다음 up 이 010 API 를 011 전에 바꿀 수 있어서다. migrate 서비스에는 bank mount와
@@ -756,7 +762,7 @@ def recorded_statements(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
 
 @pytest.mark.integration
 @needs_database
-def test_latest_database_passes_expect_11_with_only_read_statements(
+def test_latest_database_passes_expect_12_with_only_read_statements(
     recorded_statements: list[str],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -772,7 +778,7 @@ def test_latest_database_passes_expect_11_with_only_read_statements(
 
     monkeypatch.setattr(release_check, "_run", counting_run)
 
-    status = release_check.main(["db", "--expect", "11"], environment)
+    status = release_check.main(["db", "--expect", "12"], environment)
 
     output = capsys.readouterr().out
     lines = _lines(output)
@@ -785,6 +791,15 @@ def test_latest_database_passes_expect_11_with_only_read_statements(
     assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..40000" in output
     assert "OK runtime-question-time-access" in output
     assert "OK runtime-ledger-access" in output
+    assert "OK rankings-table quiz_online.online_rankings has 14 columns" in output
+    assert "OK rankings-constraints 5 checks validated" in output
+    assert "OK rankings-indexes" in output
+    assert "OK rankings-retention quiz_online.prune_online_rankings() SECURITY DEFINER" in output
+    assert "INFO rankings-records" in output
+    assert (
+        "OK runtime-rankings-access quiz_by_quiz_app can only SELECT/INSERT "
+        "quiz_online.online_rankings"
+    ) in output
     assert "OK log_statement none" in output
     assert "INFO active-matches" in output and "INFO recent-members" in output
     # 접속 문자열도, 그 안의 비밀번호도 출력하지 않는다
@@ -817,12 +832,34 @@ def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> 
 
     output = capsys.readouterr().out
     assert status == 1
-    assert "FAIL ledger latest version is 11, expected 10" in output
+    assert "FAIL ledger latest version is 12, expected 10" in output
     assert "FAIL schema-version" in output
     assert "FAIL question-time-columns migration 011 columns already exist" in output
     assert "FAIL question-time-constraints migration 011 constraints already exist" in output
     assert "allows 0..40000, expected 0..20000" in output
+    assert "FAIL rankings-table migration 012 table already exists" in output
     assert output.splitlines()[-1].startswith("FAIL result ")
+
+
+@pytest.mark.integration
+@needs_database
+def test_latest_database_fails_expect_11(capsys: pytest.CaptureFixture[str]) -> None:
+    """012 뒤의 DB를 012 전 점검(3단계의 첫 명령)으로 보면 랭킹 표가 있어 멈춘다."""
+    assert TEST_MIGRATOR_URL is not None
+
+    status = release_check.main(
+        ["db", "--expect", "11"], {"MIGRATOR_DATABASE_URL": TEST_MIGRATOR_URL}
+    )
+
+    output = capsys.readouterr().out
+    lines = _lines(output)
+    assert status == 1
+    assert "FAIL ledger latest version is 12, expected 11" in output
+    assert "FAIL rankings-table migration 012 table already exists" in output
+    # 011이 더한 것은 그대로 맞다
+    assert lines["question-time-columns"] == ["OK"]
+    assert lines["elapsed-ms-check"] == ["OK"]
+    assert "rankings-constraints" not in lines and "runtime-rankings-access" not in lines
 
 
 @pytest.mark.integration
@@ -854,34 +891,35 @@ def test_a_running_migrator_is_reported_without_failing(
     with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as migrator:
         migrator.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
         try:
-            held = release_check.main(["db", "--expect", "11"], environment)
+            held = release_check.main(["db", "--expect", "12"], environment)
             held_output = capsys.readouterr().out
         finally:
             migrator.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
 
     assert held == 0
     assert "WARN migration-lock held by another session: app.migrate is running" in held_output
-    release_check.main(["db", "--expect", "11"], environment)
+    release_check.main(["db", "--expect", "12"], environment)
     assert "OK migration-lock not held" in capsys.readouterr().out
 
 
 @pytest.mark.integration
 @needs_database
 def test_question_times_must_stay_at_the_default_until_the_candidate_api_runs() -> None:
-    """011 뒤 후보 API로 바꾸기 전(README 3단계)에는 모든 방·판이 20000이다.
+    """011 뒤 그 후보 API로 바꾸기 전(011 경계의 3단계)에는 모든 방·판이 20000이다.
 
-    40000은 그 순서를 어긴 흔적이다.
+    40000은 그 순서를 어긴 흔적이다. 001..011만 깐 DB를 한 transaction에서 만들고 되돌린다.
     """
     assert TEST_MIGRATOR_URL is not None
+    migrations = discover_migrations()
     with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
         connection.execute("SET lock_timeout = '10s'")
-        # 둘 다 되돌린다. 다른 test가 남긴 방·판도 이 transaction 안에서만 기본값으로 돌린다
+        # 둘 다 되돌린다 — 이 DB는 다시 최신이다
         with connection.transaction(force_rollback=True):
-            _reset_question_times(connection)
+            _install(connection, migrations[:11])
             _seed_room(connection, question_time_ms=20_000)
             at_default = check_database(connection, expect=11, require_default_question_time=True)
         with connection.transaction(force_rollback=True):
-            _reset_question_times(connection)
+            _install(connection, migrations[:11])
             _seed_room(connection, question_time_ms=20_000)
             _seed_room(connection, question_time_ms=40_000)
             too_early = check_database(connection, expect=11, require_default_question_time=True)
@@ -920,7 +958,7 @@ def test_a_column_grant_on_the_ledger_fails_runtime_ledger_access() -> None:
                 (_RUNTIME_ROLE_NAME, _RUNTIME_ROLE_NAME),
             ).fetchone()
             assert privileges == (False, True)
-            checks = check_database(connection, expect=11)
+            checks = check_database(connection, expect=12)
 
     assert [check.render() for check in checks if check.status == "FAIL"] == [
         f"FAIL runtime-ledger-access {_RUNTIME_ROLE_NAME} holds SELECT on "
@@ -957,7 +995,10 @@ def test_migration_10_database_passes_expect_10_and_fails_expect_11() -> None:
     rendered_10 = [check.render() for check in at_10]
     assert [line for line in rendered_10 if line.startswith("FAIL")] == []
     assert "OK ledger versions 1..10 contiguous, latest 10" in rendered_10
-    assert "INFO pending-migrations app.migrate from this image would apply 11" in rendered_10
+    assert "INFO pending-migrations app.migrate from this image would apply 11, 12" in rendered_10
+    assert (
+        "OK rankings-table quiz_online.online_rankings absent, as at migration 10" in rendered_10
+    )
     assert "OK schema-version quiz_online.character_only_schema_version() = 10" in rendered_10
     assert any(line.startswith("OK character-only 5 constraints") for line in rendered_10)
     assert any(
@@ -991,16 +1032,139 @@ def test_migration_10_database_passes_expect_10_and_fails_expect_11() -> None:
     assert "character-only" not in failed_11
 
 
+@pytest.mark.integration
+@needs_database
+def test_migration_11_database_passes_expect_11_and_fails_expect_12() -> None:
+    """001..011만 깐 DB(012 전, 3단계의 첫 점검)를 한 transaction에서 만들고 점검한 뒤 되돌린다."""
+    assert TEST_MIGRATOR_URL is not None
+    migrations = discover_migrations()
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            _install(connection, migrations[:11])
+            # 011 API는 40초 방을 연다 — 012 단계에서는 정상이다
+            _seed_room(connection, question_time_ms=40_000)
+            connection.execute("SET TRANSACTION READ ONLY")
+
+            at_11 = check_database(connection, expect=11)
+            at_12 = check_database(connection, expect=12)
+            empty_12 = check_database(connection, expect=12, require_empty_rankings=True)
+
+    rendered_11 = [check.render() for check in at_11]
+    assert [line for line in rendered_11 if line.startswith("FAIL")] == []
+    assert "OK ledger versions 1..11 contiguous, latest 11" in rendered_11
+    assert "INFO pending-migrations app.migrate from this image would apply 12" in rendered_11
+    assert (
+        "OK rankings-table quiz_online.online_rankings absent, as at migration 11" in rendered_11
+    )
+    assert _statuses(at_11)["question-time-values"] == "INFO"
+
+    failed_12 = {check.name for check in at_12 if check.status == "FAIL"}
+    assert failed_12 == {
+        "ledger",
+        "schema-version",
+        "rankings-table",
+        "rankings-constraints",
+        "rankings-indexes",
+        "rankings-retention",
+        "rankings-records",
+        "runtime-rankings-access",
+    }
+    assert {check.name for check in empty_12 if check.status == "FAIL"} == failed_12
+
+
+@pytest.mark.integration
+@needs_database
+def test_rankings_must_stay_empty_until_the_candidate_api_runs() -> None:
+    """012 뒤 후보 API로 바꾸기 전(README 3단계)에는 011 API만 돈다. 그 API는 랭킹을 모른다.
+
+    기록이 있으면 후보 API가 너무 일찍 돌았다는 뜻이다. 4단계 뒤에는 기록이 정상이다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        # 점검의 transaction은 READ ONLY가 되어 바깥 transaction에 남는다 — 쓰기는 점검 앞에 둔다
+        with connection.transaction(force_rollback=True):
+            connection.execute("DELETE FROM quiz_online.online_rankings")
+            empty = check_database(connection, expect=12, require_empty_rankings=True)
+        with connection.transaction(force_rollback=True):
+            connection.execute("DELETE FROM quiz_online.online_rankings")
+            _seed_ranking(connection)
+            too_early = check_database(connection, expect=12, require_empty_rankings=True)
+            after_step_4 = check_database(connection, expect=12)
+
+    assert [check.render() for check in empty if check.status == "FAIL"] == []
+    records = next(check for check in empty if check.name == "rankings-records")
+    assert records.render() == "OK rankings-records 0 records in 0 boards; empty"
+
+    assert [check.render() for check in too_early if check.status == "FAIL"] == [
+        "FAIL rankings-records 1 records in 1 boards; --require-empty-rankings needs 0 "
+        "(only the candidate API records)"
+    ]
+    assert _statuses(after_step_4)["rankings-records"] == "INFO"
+    assert [check.name for check in after_step_4 if check.status == "FAIL"] == []
+
+
+@pytest.mark.integration
+@needs_database
+@pytest.mark.parametrize(
+    ("grant", "held"),
+    [
+        ("GRANT UPDATE (nickname) ON quiz_online.online_rankings TO {}", "UPDATE"),
+        ("GRANT DELETE ON quiz_online.online_rankings TO {}", "DELETE"),
+        ("GRANT TRUNCATE ON quiz_online.online_rankings TO {}", "TRUNCATE"),
+    ],
+)
+def test_runtime_rankings_access_allows_only_insert_and_select(grant: str, held: str) -> None:
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(sql.SQL(grant).format(sql.Identifier(_RUNTIME_ROLE_NAME)))
+            granted = check_database(connection, expect=12)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                sql.SQL("REVOKE INSERT ON quiz_online.online_rankings FROM {}").format(
+                    sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            revoked = check_database(connection, expect=12)
+
+    assert [check.render() for check in granted if check.status == "FAIL"] == [
+        f"FAIL runtime-rankings-access {_RUNTIME_ROLE_NAME} on quiz_online.online_rankings: "
+        f"holds {held} (table or column grant)"
+    ]
+    assert [check.render() for check in revoked if check.status == "FAIL"] == [
+        f"FAIL runtime-rankings-access {_RUNTIME_ROLE_NAME} on quiz_online.online_rankings: "
+        "lacks INSERT"
+    ]
+
+
+def _install(connection: psycopg.Connection[Any], migrations: Iterable[Any]) -> None:
+    """quiz_online을 지우고 주어진 migration만 다시 깐다. 부르는 쪽의 transaction이 되돌린다."""
+    connection.execute("DROP SCHEMA quiz_online CASCADE")
+    for migration in migrations:
+        connection.execute(_migration_body(migration.path))
+
+
+def _seed_ranking(connection: psycopg.Connection[Any]) -> None:
+    connection.execute(
+        """
+        INSERT INTO quiz_online.online_rankings (
+            match_id, player_id, mode, category_id, score, correct_count, total_questions,
+            question_time_ms, nickname, character_id, recorded_at
+        )
+        VALUES (%s, %s, 'category', 'history', 70, 7, 10, 20000, '점검', 'slime-blue', now())
+        """,
+        (uuid4(), uuid4()),
+    )
+
+
 def _migration_body(path: Path) -> str:
     """The migration without its own BEGIN/COMMIT, so the test's transaction can roll it back."""
     lines = path.read_text(encoding="utf-8").splitlines()
     assert lines.count("BEGIN;") == 1 and lines.count("COMMIT;") == 1, path.name
     return "\n".join(line for line in lines if line not in {"BEGIN;", "COMMIT;"})
-
-
-def _reset_question_times(connection: psycopg.Connection[Any]) -> None:
-    connection.execute("UPDATE quiz_online.rooms SET question_time_ms = 20000")
-    connection.execute("UPDATE quiz_online.matches SET question_time_ms = 20000")
 
 
 def _seed_room(

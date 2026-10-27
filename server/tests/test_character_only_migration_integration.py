@@ -1,4 +1,4 @@
-"""빈 DB에서 v9 데이터를 만든 뒤 migration 010 → 011을 차례로 올리고 후보 API를 돌려 본다.
+"""빈 DB에서 v9 데이터를 만든 뒤 migration 010 → 011 → 012를 차례로 올리고 후보 API를 돌려 본다.
 
 CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.github/workflows/pages.yml).
 
@@ -6,7 +6,10 @@ CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.gith
   끝난 단계라(API → migration 010 → Pages), 지금 후보 API는 v9 위에서 돌지 않는다.
 - 011(방장이 고르는 문항 시간)은 더하기만 한다: 010의 API가 도는 동안 먼저 적용하고, 열 이름을
   적어 쓰던 그 API의 문장이 그대로 통하며, 이미 있는 방·도는 판은 예전의 20초를 받는다
-  (migration 011 → API → Pages). 후보 API는 011 위에서 그 판을 20초로 이어 간다.
+  (migration 011 → API → Pages).
+- 012(온라인 랭킹)도 더하기만 한다: 011의 API가 도는 동안 먼저 적용하고(그 API의 판 닫기·방 문장이
+  그대로 통하고 랭킹 표는 비어 있다), 후보 API는 012 위에서 012 전에 열린 판을 이어 가 닫을 때
+  참가자마다 기록을 남긴다 (migration 012 → API → Pages).
 """
 
 from __future__ import annotations
@@ -49,7 +52,7 @@ pytestmark = [
 _SEEDED_QUESTIONS = (("upgrade-science-000", 0), ("upgrade-science-001", 1))
 
 
-def test_v9_data_upgrades_through_010_and_011_and_the_candidate_continues_it() -> None:
+def test_v9_data_upgrades_through_010_011_and_012_and_the_candidate_continues_it() -> None:
     assert MIGRATOR_URL is not None
     assert RUNTIME_URL is not None
     host_id, guest_id = uuid4(), uuid4()
@@ -88,7 +91,7 @@ def test_v9_data_upgrades_through_010_and_011_and_the_candidate_continues_it() -
         assert asyncio.run(_runtime_schema_version()) == 10
 
         # ── 011: 010의 API가 도는 동안 더한다 ──
-        assert apply_pending(connection, migrations) == (11,)
+        assert apply_pending(connection, migrations[:11]) == (11,)
         assert connection.execute(
             "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
         ).fetchone()[0] == list(range(1, 12))
@@ -135,9 +138,31 @@ def test_v9_data_upgrades_through_010_and_011_and_the_candidate_continues_it() -
                 "UPDATE quiz_online.rooms SET question_time_ms = 30000 WHERE id = %s",
                 (room_id,),
             )
+        assert connection.execute(
+            "SELECT to_regclass('quiz_online.online_rankings') IS NULL"
+        ).fetchone()[0] is True
+
+        # ── 012: 011의 API가 도는 동안 더한다 ──
+        assert apply_pending(connection, migrations) == (12,)
+        assert connection.execute(
+            "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
+        ).fetchone()[0] == list(range(1, 13))
+        assert connection.execute(
+            "SELECT count(*) FROM quiz_online.online_rankings"
+        ).fetchone()[0] == 0
+        # 011의 API가 쓰던 방 문장(문항 시간을 적는다)이 그대로 통한다
+        assert connection.execute(
+            """
+            UPDATE quiz_online.rooms SET question_time_ms = 40000, updated_at = now()
+            WHERE id = %s
+            RETURNING question_time_ms
+            """,
+            (later_room_id,),
+        ).fetchone()[0] == 40_000
+        assert asyncio.run(_runtime_schema_version()) == 12
 
     try:
-        asyncio.run(_exercise_candidate_against_v11(host_id, guest_id, room_code, match_id))
+        asyncio.run(_exercise_candidate_against_v12(host_id, guest_id, room_code, match_id))
     finally:
         with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
             connection.execute(
@@ -147,9 +172,14 @@ def test_v9_data_upgrades_through_010_and_011_and_the_candidate_continues_it() -
             connection.execute(
                 "DELETE FROM quiz_online.players WHERE id IN (%s, %s)", (host_id, guest_id)
             )
+            # 런타임 역할은 랭킹 기록을 지우지 못한다 — 시험이 남긴 줄은 migrator가 거둔다
+            connection.execute(
+                "DELETE FROM quiz_online.online_rankings WHERE player_id IN (%s, %s)",
+                (host_id, guest_id),
+            )
 
 
-async def _exercise_candidate_against_v11(
+async def _exercise_candidate_against_v12(
     host_id: UUID,
     guest_id: UUID,
     room_code: str,
@@ -164,7 +194,7 @@ async def _exercise_candidate_against_v11(
     await repository.open()
     compatibility_code: str | None = None
     try:
-        assert await repository.schema_version() == 11
+        assert await repository.schema_version() == 12
 
         # 구버전 client의 gameMode:false·문항 시간 없는 방은 캐릭터 전용 20초 방이 된다
         compatibility_room = await repository.create_room(
@@ -199,7 +229,7 @@ async def _exercise_candidate_against_v11(
         assert room.question_time_ms == 20_000
         assert all(player.character_id for player in room.players)
 
-        # 011 전에 010의 API가 연 판을 후보 API가 이어 간다 — 마감·시간 초과 모두 그 판의 20초다
+        # 011·012 전에 열린 판을 후보 API가 이어 간다 — 마감·시간 초과 모두 그 판의 20초다
         await _expire_phase(match_id)
         revealed = await repository.get_match(host_id, room_code)
         assert revealed.advanced is True
@@ -218,6 +248,13 @@ async def _exercise_candidate_against_v11(
         await _expire_phase(match_id)
         finished = (await repository.get_match(host_id, room_code)).match
         assert finished is not None and finished.state == "finished"
+        # 012 전에 열린 판도 후보 API가 닫았으니 참가자마다 서버가 채점한 기록이 남는다
+        assert finished.ranking_recorded is True
+        assert await _ranking_rows(match_id) == [
+            # 같은 점수·같은 시각이면 최종 순위의 순서(이름 순)대로 남는다
+            ("구버전방장", "category", "science", 0, 0, 2, 20_000, True),
+            ("구버전손님", "category", "science", 0, 0, 2, 20_000, True),
+        ]
 
         setup = await repository.start_game(host_id, room_code)
         assert setup.game_mode is True
@@ -230,6 +267,24 @@ async def _exercise_candidate_against_v11(
                 await connection.execute(
                     "DELETE FROM quiz_online.rooms WHERE code = %s", (compatibility_code,)
                 )
+
+
+async def _ranking_rows(match_id: UUID) -> list[tuple[object, ...]]:
+    assert RUNTIME_URL is not None
+    async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT ranking.nickname, ranking.mode, ranking.category_id, ranking.score,
+                   ranking.correct_count, ranking.total_questions, ranking.question_time_ms,
+                   ranking.recorded_at = match.finished_at
+            FROM quiz_online.online_rankings ranking
+            JOIN quiz_online.matches match ON match.id = ranking.match_id
+            WHERE ranking.match_id = %s
+            ORDER BY ranking.id
+            """,
+            (match_id,),
+        )
+        return [tuple(row) for row in await cursor.fetchall()]
 
 
 async def _runtime_schema_version() -> int:

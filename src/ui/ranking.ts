@@ -1,6 +1,6 @@
-// 랭킹 화면 렌더링 (FR-6.2 ~ FR-6.6, FR-6.10, FR-6.12) · 기록 내보내기 (N02)
+// 랭킹 화면 렌더링 (FR-6.2 ~ FR-6.6, FR-6.10, FR-6.12) · 기록 내보내기 (N02) · 온라인 랭킹 (FR-7.13 2단계)
 // 기록을 어디서 읽고 지우고 내보내는지는 app.js가 넘겨준 콜백이 안다.
-// 이 파일은 저장소를 직접 알지 못한다.
+// 이 파일은 저장소를 직접 알지 못한다 — 온라인 랭킹도 app.ts가 넘긴 콜백으로만 읽는다.
 
 import { CATEGORIES } from '../constants.js';
 import { need, needOne } from '../dom.js';
@@ -8,6 +8,8 @@ import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 import { formatPlayedAt } from './format.js';
 import { trapFocus } from './quiz.js';
 import { announce } from './screens.js';
+import { createBody } from './sprite.js';
+import type { OnlineRankingBoard, OnlineRankingEntry, OnlineRankingPeriod } from '../online/adapter.js';
 import type { RankingTarget, RecordsExportFile, ScoreRecord } from '../types.js';
 
 /** 탭 하나. key는 전체 도전이면 'all', 아니면 카테고리 id다 */
@@ -30,6 +32,36 @@ const TABS: RankingTab[] = [
   })),
 ];
 
+/** 어느 기록을 보는가. 온라인은 서버가 채점한 온라인 판, 로컬은 이 브라우저에 남은 혼자 하기 기록이다 */
+export type RankingScope = 'online' | 'local';
+
+const PERIOD_LABELS: Readonly<Record<OnlineRankingPeriod, string>> = { week: '이번 주', all: '전체 기간' };
+
+/** 저장 범위 줄 (FR-6.10). 어느 기록인지 맨 위에서 말한다 */
+const SCOPE_NOTES: Readonly<Record<RankingScope, string>> = {
+  local: '이 브라우저에 저장된 내 기록이에요.',
+  online: '온라인 방에서 끝까지 푼 판이 모두 남아요. 같은 점수면 먼저 남긴 기록이 위예요.',
+};
+
+/**
+ * 온라인 랭킹을 읽은 결과. app.ts가 저장소의 답과 오류를 이 모양으로 옮긴다 — 이 화면은 오류의 종류를
+ * 모르고 보일 말만 받는다
+ */
+export type OnlineRankingLoad =
+  | { status: 'ok'; board: OnlineRankingBoard }
+  /** 이 API에는 서버 랭킹이 없다(세션이 `rankings: true`를 알리지 않는다). 온라인 랭킹을 숨긴다 */
+  | { status: 'unsupported' }
+  | { status: 'error'; message: string };
+
+/** 온라인 랭킹 (FR-7.13 2단계). 없으면 이 화면은 예전처럼 이 브라우저의 기록만 보인다 */
+export interface OnlineRankingDeps {
+  /** 온라인 랭킹이 있는가 — true·false(이 API·로컬 방에는 없다)·null(아직 묻지 않아 모른다) */
+  available: () => boolean | null;
+  load: (target: RankingTarget, period: OnlineRankingPeriod) => Promise<OnlineRankingLoad>;
+  /** 빈 온라인 랭킹의 다음 행동: 온라인 로비를 연다 */
+  onOpenOnline: () => void;
+}
+
 /** app.ts가 넘겨주는 콜백 뭉치 */
 export interface RankingScreenDeps {
   onHome: () => void;
@@ -47,15 +79,19 @@ export interface RankingScreenDeps {
    * 정하고(`core/records-export.ts`) 이 화면은 내려받기·복사만 한다 — 저장소를 직접 부르지 않는다
    */
   exportRecords: () => Promise<RecordsExportFile>;
+  online?: OnlineRankingDeps;
 }
 
 /**
  * target을 주면 그 랭킹 탭을 열고, highlightId를 주면 그 기록을 강조한다.
+ * scope를 주면 그 범위(온라인·이 브라우저)를, period를 주면 온라인 랭킹의 그 기간을 연다.
  */
 export interface RankingView {
   target?: RankingTarget | null;
   highlightId?: string | null;
   characterId?: string;
+  scope?: RankingScope;
+  period?: OnlineRankingPeriod;
 }
 
 export interface RankingScreen {
@@ -66,13 +102,54 @@ export interface RankingScreen {
   hide(): void;
 }
 
+/** «이번 주»의 두 끝을 서울 날짜로: «10월 26일 (월) ~ 11월 1일 (일)». 끝은 다음 월요일 0시라 하루 앞이다 */
+export function rankingWeekLabel(window: { start: string; end: string }): string {
+  const start = new Date(window.start);
+  const last = new Date(new Date(window.end).getTime() - 1);
+  try {
+    const day = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+    });
+    return `${day.format(start)} ~ ${day.format(last)}`;
+  } catch {
+    // 시간대를 모르는 오래된 브라우저: 날짜만 숫자로 보인다(서울 시각으로 옮기지 못한다)
+    return `${formatPlayedAt(window.start).slice(0, 10)} ~ ${formatPlayedAt(last.toISOString()).slice(0, 10)}`;
+  }
+}
+
+/** 상태 줄(role=status)의 한 문장. 무엇을 봤고 몇 개인지 말한다 — 글이 바뀔 때만 낭독된다 */
+export function onlineRankingSummary(
+  tabLabel: string,
+  period: OnlineRankingPeriod,
+  entries: readonly OnlineRankingEntry[],
+): string {
+  const where = `${PERIOD_LABELS[period]} ${tabLabel} 온라인 랭킹`;
+  if (entries.length === 0) return `${where}에 아직 기록이 없어요.`;
+  const mine = entries.filter(({ isMine }) => isMine).length;
+  return mine > 0
+    ? `${where} · 기록 ${entries.length}개 · 내 기록 ${mine}개`
+    : `${where} · 기록 ${entries.length}개`;
+}
+
 export function createRankingScreen(
-  { onHome, onStart, canStart, loadRankings, clearRankings, exportRecords }: RankingScreenDeps,
+  { onHome, onStart, canStart, loadRankings, clearRankings, exportRecords, online }: RankingScreenDeps,
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
     header: needOne<HTMLElement>('[data-screen="ranking"] .ranking-header'),
     character: need('ranking-character'),
+    scopeTabs: need('ranking-scope-tabs'),
+    scopeOnline: need<HTMLButtonElement>('ranking-scope-online'),
+    scopeLocal: need<HTMLButtonElement>('ranking-scope-local'),
+    scopeNote: need('ranking-scope-note'),
+    periods: need('ranking-periods'),
+    periodWeek: need<HTMLButtonElement>('ranking-period-week'),
+    periodAll: need<HTMLButtonElement>('ranking-period-all'),
+    window: need('ranking-window'),
+    onlineStatus: need('ranking-online-status'),
     list: need('ranking-list'),
     empty: need('ranking-empty'),
     emptyMessage: need('ranking-empty-message'),
@@ -99,8 +176,26 @@ export function createRankingScreen(
   let activeKey = TABS[0].key;
   /** 방금 등록한 기록 ID. 다른 탭으로 옮기면 지운다 (FR-6.5) */
   let highlightId: string | null = null;
+  /** 지금 보는 범위. 이 페이지가 열려 있는 동안 마지막 것을 기억한다 */
+  let scope: RankingScope | null = null;
+  let period: OnlineRankingPeriod = 'week';
+  /** 늦게 온 온라인 응답이 그 뒤에 고른 탭·기간을 덮지 않게 한다 */
+  let onlineRequest = 0;
+  /** 빈 칸의 버튼이 하는 일. 글자를 그린 때와 같은 판정으로 누른다 */
+  let emptyAction: 'start' | 'home' | 'online' | 'retry' = 'start';
+  /** 읽어 보니 이 API에는 서버 랭킹이 없었다. 이 페이지에서는 다시 권하지 않는다 */
+  let onlineMissing = false;
 
   const tabButtons = new Map<string, HTMLButtonElement>();
+
+  /** 온라인 랭킹을 보일 수 있는가. 이 API·로컬 방에 없다고 알았으면 거두고 이 브라우저의 기록만 보인다 */
+  function onlineOffered(): boolean {
+    return online !== undefined && !onlineMissing && online.available() !== false;
+  }
+
+  function activeScope(): RankingScope {
+    return scope === 'online' && onlineOffered() ? 'online' : 'local';
+  }
 
   // ── 탭 ─────────────────────────────────────────────────────────
 
@@ -116,7 +211,7 @@ export function createRankingScreen(
         if (activeKey === tab.key) return;
         activeKey = tab.key;
         highlightId = null; // 다른 랭킹으로 옮겼으니 하이라이트는 의미가 없다
-        render();
+        void render();
       });
 
       tabButtons.set(tab.key, button);
@@ -124,12 +219,36 @@ export function createRankingScreen(
     }
   }
 
+  function syncPressed(button: HTMLButtonElement, pressed: boolean, activeClass = 'ranking-tab--active'): void {
+    button.classList.toggle(activeClass, pressed);
+    button.setAttribute('aria-pressed', String(pressed));
+  }
+
+  /** 범위·기간의 두 칸. 랭킹 탭과 같은 분절 버튼이지만 탭 여섯(.ranking-tab)과 섞이지 않게 제 이름을 쓴다 */
+  function syncOption(button: HTMLButtonElement, pressed: boolean): void {
+    syncPressed(button, pressed, 'ranking-switch__option--active');
+  }
+
   function syncTabs(): void {
-    for (const [key, button] of tabButtons) {
-      const isActive = key === activeKey;
-      button.classList.toggle('ranking-tab--active', isActive);
-      button.setAttribute('aria-pressed', String(isActive));
-    }
+    for (const [key, button] of tabButtons) syncPressed(button, key === activeKey);
+    const current = activeScope();
+    // 온라인 랭킹이 없으면 범위 탭도 거둔다 — 예전 화면 그대로다
+    el.scopeTabs.hidden = !onlineOffered();
+    syncOption(el.scopeOnline, current === 'online');
+    syncOption(el.scopeLocal, current === 'local');
+    el.scopeNote.textContent = SCOPE_NOTES[current];
+    el.periods.hidden = current !== 'online';
+    syncOption(el.periodWeek, period === 'week');
+    syncOption(el.periodAll, period === 'all');
+  }
+
+  /**
+   * 누른 버튼이 사라지면 포커스가 <body>로 떨어진다. 그 버튼에 포커스가 있었을 때만 지금 탭으로 옮긴다 —
+   * 캐릭터가 밟아 누른 것이면 옮기지 않는다(포커스가 생기면 다음 Enter가 발밑이 아니라 그 버튼을 누른다)
+   */
+  function keepFocus(hadFocus: boolean, gone: () => boolean): void {
+    if (!hadFocus || !gone()) return;
+    tabButtons.get(activeKey)?.focus();
   }
 
   // ── 목록 ───────────────────────────────────────────────────────
@@ -178,17 +297,84 @@ export function createRankingScreen(
     return item;
   }
 
+  /**
+   * 온라인 랭킹 한 줄. 순위는 서버가 정한 그대로다(같은 점수는 먼저 남긴 기록이 위, 1·2·3). 내 기록은
+   * 색과 함께 «나» 글자로 짚는다 — 이 브라우저의 신분으로 서버가 가린 것이다
+   */
+  function createOnlineItem(entry: OnlineRankingEntry): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'ranking-item ranking-item--online';
+    item.classList.toggle('ranking-item--mine', entry.isMine);
+
+    const rankLabel = document.createElement('span');
+    rankLabel.className = 'ranking-item__rank';
+    rankLabel.textContent = String(entry.rank);
+
+    // 캐릭터는 그림이다. 누구인지는 옆의 이름 글자가 말한다
+    const figure = document.createElement('span');
+    figure.className = 'ranking-item__figure';
+    figure.setAttribute('aria-hidden', 'true');
+    figure.append(createBody(entry.characterId));
+
+    const nickname = document.createElement('span');
+    nickname.className = 'ranking-item__nickname';
+    nickname.textContent = entry.nickname;
+    if (entry.isMine) {
+      const badge = document.createElement('span');
+      badge.className = 'ranking-item__badge';
+      badge.textContent = '나';
+      nickname.append(' ', badge);
+    }
+
+    const score = document.createElement('span');
+    score.className = 'ranking-item__score';
+    score.textContent = `${entry.score}점`;
+    const hits = document.createElement('span');
+    hits.className = 'ranking-item__hits';
+    hits.textContent = `${entry.correctCount}/${entry.totalCount}`;
+    score.append(' ', hits);
+
+    const date = document.createElement('span');
+    date.className = 'ranking-item__date';
+    date.textContent = formatPlayedAt(entry.recordedAt);
+
+    item.append(rankLabel, figure, nickname, score, date);
+    return item;
+  }
+
   function currentTab(): RankingTab {
     return TABS.find((item) => item.key === activeKey) ?? TABS[0];
   }
 
+  /** role=status는 늘 펼쳐 둔다(«숨긴 채로 채우면 낭독되지 않는다»). 같은 말이면 다시 넣지 않는다 */
+  function setOnlineStatus(text: string): void {
+    if (el.onlineStatus.textContent === text) return;
+    el.onlineStatus.textContent = text;
+  }
+
   async function render(): Promise<void> {
     syncTabs();
+    if (activeScope() === 'online') {
+      // 불러오는 중인 상태를 그리고 곧바로 돌아온다 — app.ts는 그린 뒤 화면을 옮기므로(«내용을 그린 뒤
+      // goTo») 응답을 기다리면 홈의 입구가 멈춘 것처럼 보인다. 응답이 오면 그 자리에서 다시 그린다
+      void renderOnline();
+      return;
+    }
+    await renderLocal();
+  }
+
+  async function renderLocal(): Promise<void> {
+    onlineRequest += 1; // 온라인에서 넘어왔으면 그 응답은 이제 쓸 데가 없다
+    el.onlineStatus.hidden = true;
+    el.onlineStatus.textContent = '';
+    el.window.hidden = true;
 
     const tab = currentTab();
     // 「모든 기록 지우기」는 이 탭이 아니라 **모든 랭킹**을 지운다. 그래서 숨기는 기준도 모든
     // 탭이다 — 이 탭이 비었어도 다른 탭에 기록이 있으면 지울 것이 있다 (FR-6.6)
     const lists = await Promise.all(TABS.map((item) => loadRankings(item.target)));
+    // 기다리는 사이 온라인으로 옮겼으면 그 화면을 덮지 않는다
+    if (activeScope() !== 'local') return;
     const records = lists[TABS.indexOf(tab)] ?? [];
     const noRecords = lists.every((list) => list.length === 0);
     el.footer.hidden = noRecords;
@@ -202,8 +388,9 @@ export function createRankingScreen(
       // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12).
       // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
       // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
+      emptyAction = canStart(tab.target) ? 'start' : 'home';
       el.emptyMessage.textContent = `${tab.label} 기록이 아직 없어요.`;
-      el.emptyStartButton.textContent = canStart(tab.target) ? `${tab.label} 시작하기` : '홈으로';
+      el.emptyStartButton.textContent = emptyAction === 'start' ? `${tab.label} 시작하기` : '홈으로';
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -212,6 +399,73 @@ export function createRankingScreen(
     el.empty.hidden = true;
     el.list.hidden = false;
     records.forEach((record, index) => el.list.append(createItem(record, index + 1)));
+  }
+
+  /**
+   * 온라인 랭킹 (FR-7.13 2단계). 이 브라우저의 기록 칸(내보내기·지우기)은 거둔다 — 서버 기록은 지우거나
+   * 내보낼 수 없다. 기다리는 동안·비었을 때·못 읽었을 때 무슨 일인지 상태 줄과 빈 칸이 말한다
+   */
+  async function renderOnline(): Promise<void> {
+    if (!online) return;
+    const tab = currentTab();
+    const shown = period;
+    const request = ++onlineRequest;
+    el.footer.hidden = true;
+    el.exportBlock.hidden = true;
+    el.list.replaceChildren();
+    el.list.hidden = true;
+    el.empty.hidden = true;
+    el.window.hidden = true;
+    el.onlineStatus.hidden = false;
+    setOnlineStatus('온라인 랭킹을 불러오는 중…');
+
+    let result: OnlineRankingLoad;
+    try {
+      result = await online.load(tab.target, shown);
+    } catch (error) {
+      console.warn('[온라인 랭킹] 읽지 못했습니다', error);
+      result = { status: 'error', message: '연결을 확인하고 다시 시도해 주세요.' };
+    }
+    // 기다리는 사이 다른 탭·기간·범위를 골랐으면 이 답은 버린다
+    if (request !== onlineRequest || activeScope() !== 'online') return;
+
+    if (result.status === 'unsupported') {
+      // 이 API에는 서버 랭킹이 없다. 범위 탭을 거두고 이 브라우저의 기록으로 돌아간다
+      const hadFocus = document.activeElement === el.scopeOnline || document.activeElement === el.scopeLocal;
+      onlineMissing = true;
+      scope = 'local';
+      await render();
+      keepFocus(hadFocus, () => el.scopeTabs.hidden);
+      return;
+    }
+
+    if (result.status === 'error') {
+      setOnlineStatus('온라인 랭킹을 불러오지 못했어요.');
+      emptyAction = 'retry';
+      el.emptyMessage.textContent = result.message;
+      el.emptyStartButton.textContent = '다시 시도';
+      el.empty.hidden = false;
+      return;
+    }
+
+    const { board } = result;
+    if (board.window) {
+      el.window.textContent = `${rankingWeekLabel(board.window)} · 월요일 0시(한국 시간)에 새로 시작해요.`;
+      el.window.hidden = false;
+    }
+    setOnlineStatus(onlineRankingSummary(tab.label, shown, board.entries));
+    if (board.entries.length === 0) {
+      // 가상 기록을 심지 않는다 (FR-6.12). 기록은 온라인 방에서 끝까지 푼 판에서만 생긴다
+      emptyAction = 'online';
+      el.emptyMessage.textContent = tab.target.mode === 'all'
+        ? '온라인 방에서 전체 도전 판을 끝까지 풀면 점수가 여기에 남아요.'
+        : `온라인 방에서 ${tab.label} 판을 끝까지 풀면 점수가 여기에 남아요.`;
+      el.emptyStartButton.textContent = '온라인 방 열기';
+      el.empty.hidden = false;
+      return;
+    }
+    el.list.hidden = false;
+    board.entries.forEach((entry) => el.list.append(createOnlineItem(entry)));
   }
 
   // ── 전체 초기화 (FR-6.6) ───────────────────────────────────────
@@ -329,9 +583,35 @@ export function createRankingScreen(
   // 글자를 그린 때와 같은 판정으로 고른다. 열 수 없는 판을 열려다 홈으로 튕기지 않는다
   el.emptyStartButton.addEventListener('click', () => {
     const { target } = currentTab();
-    if (canStart(target)) onStart(target);
-    else onHome();
+    if (emptyAction === 'retry') {
+      const hadFocus = document.activeElement === el.emptyStartButton;
+      void render().then(() => keepFocus(hadFocus, () => el.empty.hidden));
+    } else if (emptyAction === 'online') {
+      online?.onOpenOnline();
+    } else if (emptyAction === 'start' && canStart(target)) {
+      onStart(target);
+    } else {
+      onHome();
+    }
   });
+
+  function chooseScope(next: RankingScope): void {
+    if (activeScope() === next) return;
+    scope = next;
+    highlightId = null;
+    void render();
+  }
+  el.scopeOnline.addEventListener('click', () => chooseScope('online'));
+  el.scopeLocal.addEventListener('click', () => chooseScope('local'));
+
+  function choosePeriod(next: OnlineRankingPeriod): void {
+    if (period === next) return;
+    period = next;
+    void render();
+  }
+  el.periodWeek.addEventListener('click', () => choosePeriod('week'));
+  el.periodAll.addEventListener('click', () => choosePeriod('all'));
+
   el.clearButton.addEventListener('click', openClearDialog);
   el.dialogCancel.addEventListener('click', closeClearDialog);
   el.dialogConfirm.addEventListener('click', confirmClear);
@@ -348,10 +628,17 @@ export function createRankingScreen(
 
   return {
     hide() {
+      onlineRequest += 1; // 떠난 화면에 늦은 응답을 그리지 않는다
       walker.hide();
     },
 
-    async show({ target = null, highlightId: nextHighlight = null, characterId } = {}) {
+    async show({
+      target = null,
+      highlightId: nextHighlight = null,
+      characterId,
+      scope: nextScope,
+      period: nextPeriod,
+    } = {}) {
       walker.show(characterId);
       if (target) {
         const matched = TABS.find(
@@ -361,6 +648,10 @@ export function createRankingScreen(
         );
         if (matched) activeKey = matched.key;
       }
+      // 부른 곳이 범위를 말하면 그것이고(결과 화면의 «랭킹 보기»는 이 브라우저의 기록, 온라인 결과의 «온라인
+      // 랭킹 보기»는 온라인), 아니면 이 페이지에서 마지막으로 본 범위, 처음이면 온라인 랭킹(있으면)이다
+      scope = nextScope ?? scope ?? (onlineOffered() ? 'online' : 'local');
+      if (nextPeriod) period = nextPeriod;
 
       highlightId = nextHighlight;
       closeClearDialog();

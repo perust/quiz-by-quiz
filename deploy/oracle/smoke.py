@@ -4,22 +4,24 @@
 운영 호스트의 시스템 python3(3.8 이상) 하나로 돈다. 표준 라이브러리만 쓴다 — curl·jq·openssl·
 requests·websockets가 없어도 된다::
 
-    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-010 API
-    python3 deploy/oracle/smoke.py baseline-migrated   # migration 011 뒤에도 아직 도는 그 API
-    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-011 API
+    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-011 API
+    python3 deploy/oracle/smoke.py baseline-migrated   # migration 012 뒤에도 아직 도는 그 API
+    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-012 API
     python3 deploy/oracle/smoke.py candidate --resolve-to 127.0.0.1
     python3 deploy/oracle/smoke.py candidate --api http://127.0.0.1:18083
 
-한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션, 공개 2인 방, 방의 문항 시간(candidate만),
-이벤트 WebSocket을 차례로 지나고, 끝에는 언제나 방을 나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
+한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션, 닉네임 금칙 규칙과 온라인 랭킹 읽기
+(candidate만), 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로 지나고, 끝에는 언제나 방을
+나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
 멈췄어도 그렇다. 단계마다 ``ok <step>: ...`` 또는 ``FAIL <step>: <reason>`` 한 줄이고, 다시 묻는
 것은 stderr에 적는다. 종료 코드는 모든 줄이 ``ok``일 때만 0이다(그 밖에는 1, Ctrl-C 뒤 130,
 SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티켓·응답 본문은 출력하지 않고
 상태 코드·오류 코드·확인한 필드만 적는다.
 
-``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 011인데 010 API가
+``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 012인데 011 API가
 아직 돈다. 그 API의 gate는 503 ``migration-required``로 닫혀 있는 것이 정상이므로 이 모드는 그
-답만 ok로 보고, 방과 소켓은 baseline과 같이 돌아야 한다.
+답만 ok로 보고, 방과 소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지 않는다 — 이
+점검은 판을 열지 않으므로 랭킹 기록도 남기지 않는다.
 
 ``--resolve-to IP``는 TCP만 그 IP로 붙고 Host 헤더와 TLS SNI·인증서 검증은 URL 호스트로 한다
 (제 공인 주소로 돌아오지 못하는 호스트의 hairpin NAT). ``http://``는 브라우저 화면처럼 루프백
@@ -56,7 +58,7 @@ CANDIDATE = "candidate"
 MODES = (BASELINE, MIGRATED_BASELINE, CANDIDATE)
 # 모드마다 공개 release gate가 답해야 하는 migration 판
 # (server/app/main.py의 RELEASE_SCHEMA_VERSION)
-SCHEMA_VERSIONS = {BASELINE: 10, CANDIDATE: 11}
+SCHEMA_VERSIONS = {BASELINE: 11, CANDIDATE: 12}
 # DB가 그 API의 판이 아니면 gate가 이 오류 코드의 503으로 닫힌다. baseline-migrated는 이것만 받는다.
 MIGRATION_REQUIRED_CODE = "migration-required"
 WEBSOCKET_PROTOCOL = "qbb.v1"
@@ -66,7 +68,7 @@ OPCODE_TEXT = 0x1
 OPCODE_CLOSE = 0x8
 CLOSE_NORMAL = 1000
 # 브라우저가 소켓을 열자마자 보내는 움직임과 같은 모양이다(src/online/network-rooms.ts의
-# movementPayload). viewport 없는 옛 모양이라 010·011 API가 모두 받는다.
+# movementPayload). viewport 없는 옛 모양이라 011·012 API가 모두 받는다.
 PROBE_MOVEMENT = {"type": "movement", "x": 0.5, "y": 0.5, "moving": False}
 # 소켓에서 움직임이 되돌아오고 close에 답이 오기를 각각 이만큼까지 기다린다.
 WEBSOCKET_REPLY_SECONDS = 3.0
@@ -78,6 +80,27 @@ LONG_QUESTION_TIME_MS = 40_000
 REJECTED_QUESTION_TIME_MS = 30_000
 REJECTED_QUESTION_TIME_CODE = "invalid-question-time"
 NICKNAME = "점검"
+# migration 012 API의 닉네임 금칙 규칙(server/app/nickname_filter.py)이 개인 정보 모양으로 거절하는
+# 이름. 거절된 세션 PUT은 프로필을 바꾸지 않는다.
+REJECTED_NICKNAME = "점검@test.kr"
+REJECTED_NICKNAME_CODE = "nickname-personal-info"
+# 공개 랭킹 읽기 (GET /v1/rankings). 읽기만 한다
+RANKING_LIMIT = 10
+RANKING_TIME_ZONE = "Asia/Seoul"
+RANKING_FIELDS = frozenset({"mode", "categoryId", "period", "window", "limit", "entries"})
+RANKING_ENTRY_FIELDS = frozenset(
+    {
+        "rank",
+        "nickname",
+        "characterId",
+        "score",
+        "correctCount",
+        "totalCount",
+        "recordedAt",
+        "isMine",
+    }
+)
+REJECTED_RANKING_CODE = "invalid-ranking"
 CHARACTER_ID = "slime-blue"
 ROOM_NAME = "배포 점검"
 USER_AGENT = "quiz-by-quiz-smoke/1"
@@ -602,15 +625,21 @@ class Smoke:
         interrupted: KeyboardInterrupt | None = None
         try:
             # release gate가 틀려도 나머지를 본다 — 무엇이 더 깨졌는지 한 번에 보이게 한다.
-            # migration 011 직후의 010 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
+            # migration 012 직후의 011 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
             self._step("readiness", self.readiness)
             self._step("session", self.session)
-            if not self.session_ready:
-                self.report.fail("room", "not run (no session)")
-            else:
-                self._step("room", self.create_room)
-            later = [("room-settings", self.room_settings)] if self.candidate else []
-            later.append(("websocket", self.websocket))
+            # 닉네임 금칙 규칙과 공개 랭킹 읽기는 migration 012 API의 것이다. 판을 열지 않으므로
+            # 랭킹을 쓰지 않고, 거절된 닉네임은 프로필을 바꾸지 않는다
+            needs_session = [("nickname", self.nickname), ("rankings", self.rankings)]
+            if not self.candidate:
+                needs_session = []
+            needs_session.append(("room", self.create_room))
+            for name, action in needs_session:
+                if not self.session_ready:
+                    self.report.fail(name, "not run (no session)")
+                else:
+                    self._step(name, action)
+            later = [("room-settings", self.room_settings), ("websocket", self.websocket)]
             for name, action in later:
                 if self.room_code is None:
                     self.report.fail(name, "not run (no room)")
@@ -677,11 +706,11 @@ class Smoke:
             problems = cors_problems(reply)
             if problems:
                 raise Failure("; ".join(problems))
-            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 011)"
+            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 012)"
         if migration_required and self.mode == BASELINE:
             raise Failure(
                 f"{status_text(reply)}, expected 200 "
-                f"(after migration 011 run {MIGRATED_BASELINE} instead)"
+                f"(after migration 012 run {MIGRATED_BASELINE} instead)"
             )
         expect_status(reply, 200)
         version = SCHEMA_VERSIONS[self.mode]
@@ -698,13 +727,98 @@ class Smoke:
             {"nickname": NICKNAME, "characterId": CHARACTER_ID},
         )
         expect_status(reply, 200)
-        if reply.json_object().get("playerId") != self.player_id:
+        session = reply.json_object()
+        if session.get("playerId") != self.player_id:
             raise Failure("playerId is not this identity")
         self.session_ready = True
         problems = cors_problems(reply)
+        # migration 012 API는 끝난 판을 서버 랭킹에 남긴다고 알린다. 화면은 이것으로 랭킹을 보인다
+        if self.candidate:
+            problems += field_problems(session, {"rankings": True})
         if problems:
             raise Failure("; ".join(problems))
+        if self.candidate:
+            return "HTTP 200 playerId is this identity, rankings true"
         return "HTTP 200 playerId is this identity"
+
+    def nickname(self) -> str:
+        reply = self.call(
+            "PUT",
+            "/v1/session",
+            {"nickname": REJECTED_NICKNAME, "characterId": CHARACTER_ID},
+        )
+        if reply.status != 400 or reply.error_code() != REJECTED_NICKNAME_CODE:
+            raise Failure(f"{status_text(reply)}, expected HTTP 400 {REJECTED_NICKNAME_CODE}")
+        problems = cors_problems(reply)
+        if problems:
+            raise Failure("; ".join(problems))
+        return f"HTTP 400 {REJECTED_NICKNAME_CODE} for an e-mail-shaped nickname"
+
+    def _ranking_problems(self, value: object, *, period: str) -> list[str]:
+        problems = field_problems(value, {"period": period, "limit": RANKING_LIMIT})
+        if not isinstance(value, dict):
+            return problems
+        missing = sorted(RANKING_FIELDS - set(value))
+        extra = sorted(str(key) for key in value if key not in RANKING_FIELDS)
+        if missing:
+            problems.append(f"missing field(s) {', '.join(missing)}")
+        if extra:
+            problems.append(f"unexpected field(s) {', '.join(extra)}")
+        window = value.get("window")
+        if period == "week":
+            if not isinstance(window, dict) or set(window) != {"start", "end", "timeZone"}:
+                problems.append("window is not {start, end, timeZone}")
+            elif window.get("timeZone") != RANKING_TIME_ZONE:
+                problems.append(f"window.timeZone={_show(window.get('timeZone'))}")
+        elif window is not None:
+            problems.append("window is not null for period all")
+        entries = value.get("entries")
+        if not isinstance(entries, list) or len(entries) > RANKING_LIMIT:
+            problems.append(f"entries is not a list of at most {RANKING_LIMIT}")
+            return problems
+        for index, item in enumerate(entries, start=1):
+            if not isinstance(item, dict) or set(item) != RANKING_ENTRY_FIELDS:
+                problems.append(f"entry {index} does not carry exactly the public fields")
+                break
+            if item.get("rank") != index or not isinstance(item.get("isMine"), bool):
+                problems.append(f"entry {index} rank or isMine is malformed")
+                break
+        return problems
+
+    def rankings(self) -> str:
+        # 신분 없이: 공개 읽기다. 아무것도 내 기록이 아니다
+        path = "/v1/rankings?mode=all&period=week"
+        reply = self.call("GET", path, auth=False)
+        expect_status(reply, 200, what="anonymous week")
+        board = reply.json()
+        problems = self._ranking_problems(board, period="week") + cors_problems(reply)
+        problems += field_problems(board, {"mode": "all", "categoryId": None})
+        entries = board.get("entries") if isinstance(board, dict) else None
+        if isinstance(entries, list) and any(
+            isinstance(item, dict) and item.get("isMine") is True for item in entries
+        ):
+            problems.append("an anonymous read marked an entry as mine")
+        if problems:
+            raise Failure("anonymous week: " + "; ".join(problems))
+        count = len(entries) if isinstance(entries, list) else 0
+
+        # 이 신분으로: 같은 인증을 지난다. 새 신분이라 내 기록은 없다
+        reply = self.call("GET", "/v1/rankings?mode=category&category=history&period=all")
+        expect_status(reply, 200, what="history all-time")
+        problems = self._ranking_problems(reply.json(), period="all")
+        problems += field_problems(reply.json(), {"mode": "category", "categoryId": "history"})
+        if problems:
+            raise Failure("history all-time: " + "; ".join(problems))
+
+        reply = self.call("GET", "/v1/rankings?mode=season&period=week", auth=False)
+        if reply.status != 400 or reply.error_code() != REJECTED_RANKING_CODE:
+            raise Failure(
+                f"unknown board: {status_text(reply)}, expected HTTP 400 {REJECTED_RANKING_CODE}"
+            )
+        return (
+            f"anonymous week HTTP 200 ({count} entries, window {RANKING_TIME_ZONE}); "
+            f"history all-time HTTP 200; unknown board -> 400 {REJECTED_RANKING_CODE}"
+        )
 
     def _only_me(self, players: object) -> dict[str, object] | None:
         if not isinstance(players, list) or len(players) != 1:
@@ -716,7 +830,7 @@ class Smoke:
 
     def create_room(self) -> str:
         self.room_requested = True
-        # questionTimeMs를 보내지 않는다 — 010 API는 모르는 필드를 거절하고, 011 API는 20초로 둔다.
+        # questionTimeMs를 보내지 않는다 — 구버전 화면처럼 보내지 않은 방은 011·012 API 모두 20초다.
         reply = self.call(
             "POST",
             "/v1/rooms",
@@ -729,27 +843,26 @@ class Smoke:
         if not isinstance(code, str) or not _ROOM_CODE.fullmatch(code):
             raise Failure("room code is missing or malformed")
         self.room_code = code
-        want: dict[str, object] = {"capacity": 2, "isPublic": True}
-        if self.candidate:
-            want.update(
-                questionTimeMs=DEFAULT_QUESTION_TIME_MS,
-                status="waiting",
-                inMatch=False,
-            )
+        # 011 API부터의 방 모양이다. 이 경계(012)의 baseline도 그 API라 모든 모드가 본다
+        want: dict[str, object] = {
+            "capacity": 2,
+            "isPublic": True,
+            "questionTimeMs": DEFAULT_QUESTION_TIME_MS,
+            "status": "waiting",
+            "inMatch": False,
+        }
         problems = field_problems(room, want)
         me = self._only_me(room.get("players"))
         if me is None:
             problems.append("players is not exactly this identity")
-        elif self.candidate and me.get("connected") is not True:
+        elif me.get("connected") is not True:
             problems.append(f"connected={_show(me.get('connected', _MISSING))} (want true)")
         if problems:
             raise Failure(f"room {code}: " + "; ".join(problems))
-        if self.candidate:
-            return (
-                f"HTTP 201 room {code} questionTimeMs {DEFAULT_QUESTION_TIME_MS}, waiting, "
-                "inMatch false, only me, connected true"
-            )
-        return f"HTTP 201 room {code} public, capacity 2, only me"
+        return (
+            f"HTTP 201 room {code} questionTimeMs {DEFAULT_QUESTION_TIME_MS}, waiting, "
+            "inMatch false, only me, connected true"
+        )
 
     def room_settings(self) -> str:
         path = f"/v1/rooms/{self.room_code}"
@@ -936,9 +1049,9 @@ def main(argv: list[str] | None = None) -> int:
         "mode",
         choices=MODES,
         help=(
-            "baseline: the serving migration-010 API; "
-            "baseline-migrated: that API after migration 011 ran (gate 503 migration-required); "
-            "candidate: the migration-011 API"
+            "baseline: the serving migration-011 API; "
+            "baseline-migrated: that API after migration 012 ran (gate 503 migration-required); "
+            "candidate: the migration-012 API"
         ),
     )
     parser.add_argument("--api", default=DEFAULT_API, help=f"API base URL (default {DEFAULT_API})")

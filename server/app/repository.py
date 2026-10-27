@@ -135,6 +135,9 @@ class MatchView:
     # 이 판의 문항 시간(ms). 시작할 때 방 설정에서 옮겨 와 판 내내 같다 —
     # 모든 문항 마감이 이 값이다.
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 끝난 판에서만: 묻는 사람의 이 판 결과가 온라인 랭킹에 남았는가 (FR-7.13 2단계). 판을 닫은
+    # transaction이 남기므로 012 API가 닫은 판이면 언제나 true다(011 API가 닫은 판은 false).
+    ranking_recorded: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,9 @@ class CleanupCounts:
     hosts_transferred: int = 0
     matches_deleted: int = 0
     players_deleted: int = 0
+    # 보존 기간(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄)을 넘겨 지운 랭킹 기록
+    # (migration 012)
+    rankings_pruned: int = 0
 
     @property
     def changed(self) -> bool:
@@ -216,8 +222,41 @@ class CleanupCounts:
                 self.hosts_transferred,
                 self.matches_deleted,
                 self.players_deleted,
+                self.rankings_pruned,
             )
         )
+
+
+# 온라인 랭킹의 판: 전체 도전('all')과 분야 다섯. migration 012의 board 열과 같은 값이다.
+RANKING_BOARDS = ("all", "history", "science", "geography", "general", "art")
+RankingPeriod = Literal["week", "all"]
+# 한 번에 내보내는 순위 수 (FR-6.4의 상위 10과 같다)
+RANKING_LIMIT = 10
+
+
+@dataclass(frozen=True)
+class RankingEntryView:
+    """랭킹 한 줄. 브라우저 신분(player_id)은 싣지 않는다 — 묻는 사람의 것인지만 알린다."""
+
+    rank: int
+    nickname: str
+    character_id: str
+    score: int
+    correct_count: int
+    total_count: int
+    recorded_at: str
+    is_mine: bool
+
+
+@dataclass(frozen=True)
+class RankingBoardView:
+    """판 하나의 한 기간 상위 기록. «이번 주»면 서울 시각 월요일 0시부터 다음 월요일까지다."""
+
+    board: str
+    period: RankingPeriod
+    entries: tuple[RankingEntryView, ...]
+    window_start: str | None = None
+    window_end: str | None = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +436,18 @@ class RoomsRepository(Protocol):
 
     # 운영 요약(5분마다)의 기다리는 방·게임 중인 방·도는 판 수
     async def ops_counts(self) -> RoomCounts: ...
+
+    # 온라인 랭킹 상위 기록 (FR-7.13 2단계). actor_id가 있으면 그 브라우저 신분의 기록에 is_mine을
+    # 단다. at은 «이번 주»를 고를 시각이다(None이면 DB의 지금) — 테스트가 주의 경계를 고른다.
+    async def list_rankings(
+        self,
+        *,
+        board: str,
+        period: RankingPeriod,
+        actor_id: UUID | None = None,
+        at: datetime | None = None,
+        limit: int = RANKING_LIMIT,
+    ) -> RankingBoardView: ...
 
     async def advance_expired_matches(
         self,

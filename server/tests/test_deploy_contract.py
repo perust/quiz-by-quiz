@@ -57,13 +57,24 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "service_completed_successfully" not in api_service
     guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
     normalized_guide = " ".join(guide.split())
-    # 011(방장이 고르는 문항 시간)은 더하기만 해서 010의 API가 도는 동안 먼저 올린다
+    # 012(온라인 랭킹)는 더하기만 해서 011의 API가 도는 동안 먼저 올린다. 앞선 두 경계의 기록도
+    # 그 아래에 차례로 남는다 — 지금 경계가 맨 위다
+    assert "migration 012 → API → Pages" in normalized_guide
     assert "migration 011 → API → Pages" in normalized_guide
     assert "API → migration 010 → Pages" in normalized_guide
-    assert normalized_guide.index("migration 011 → API → Pages") < normalized_guide.index(
-        "API → migration 010 → Pages"
+    assert (
+        normalized_guide.index("migration 012 → API → Pages")
+        < normalized_guide.index("migration 011 → API → Pages")
+        < normalized_guide.index("API → migration 010 → Pages")
     )
+    assert "schemaVersion: 12" in normalized_guide
     assert "schemaVersion: 11" in normalized_guide
+    assert "online_rankings_match_player_key" in normalized_guide
+    assert "prune_online_rankings()" in normalized_guide
+    # 011 API는 012가 도는 동안에도 돌고, 그 API의 gate는 그때 503 migration-required로 닫힌다.
+    # 012 API는 011 DB 위에서 돌지 않는다
+    assert "migration-required" in normalized_guide
+    assert "must not replace the 011 API before ledger version 012 exists" in normalized_guide
     assert "rooms_question_time_check" in normalized_guide
     assert "match_answers_elapsed_ms_range_check" in normalized_guide
 
@@ -156,8 +167,10 @@ def test_pages_workflow_verifies_client_server_and_container_before_deploy() -> 
     assert "/v1/release-readiness" in workflow
     assert "jq -e '. == {" in workflow
     assert '"contract": "character-only-v1"' in workflow
-    # 이 client는 questionTimeMs를 보낸다. 010의 API는 모르는 필드를 거절하므로 011 API를 기다린다
-    assert '"schemaVersion": 11' in workflow
+    # 이 client는 온라인 랭킹을 보이고 결과 화면이 «랭킹에 기록됐어요»를 말한다. 그 API(012)를
+    # 기다린다 — 012 없는 API에서는 화면이 랭킹을 숨기지만 gate는 그 API를 기다리지 않는다
+    assert '"schemaVersion": 12' in workflow
+    assert '"schemaVersion": 11' not in workflow
     assert '"schemaVersion": 10' not in workflow
 
 

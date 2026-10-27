@@ -65,7 +65,14 @@ EVENT_FIELDS: dict[str, frozenset[str]] = {
     "match_started": frozenset({"room", "players", "category", "questionTimeMs", "questions"}),
     "match_finished": frozenset({"room", "via"}),
     "cleanup": frozenset(
-        {"roomsDeleted", "membersRemoved", "hostsTransferred", "matchesDeleted", "playersDeleted"}
+        {
+            "roomsDeleted",
+            "membersRemoved",
+            "hostsTransferred",
+            "matchesDeleted",
+            "playersDeleted",
+            "rankingsPruned",
+        }
     ),
     "server_error": frozenset({"method", "route", "error"}),
     "summary": frozenset(
@@ -250,6 +257,7 @@ def cleanup(counts: CleanupCounts) -> None:
             "hostsTransferred": _count(counts.hosts_transferred),
             "matchesDeleted": _count(counts.matches_deleted),
             "playersDeleted": _count(counts.players_deleted),
+            "rankingsPruned": _count(counts.rankings_pruned),
         },
     )
 
