@@ -202,10 +202,12 @@ test('온라인 퀴즈: 바닥 위의 내 자리를 무대 좌표로 보내고, 
   });
   const friend = remoteNode('online-remote-characters');
   assert.equal(friend.style.transform, 'translate(195px, 626px) translate(-50%, -100%)');
-  // 스크롤하면 바닥과 함께 움직인다
+  assert.equal(friend.classList.contains('walker--relayout'), false, '이동 frame 사이는 전환으로 잇는다');
+  // 스크롤하면 바닥과 함께 움직인다 — 전환 없이(바닥을 늦게 따라 미끄러지지 않는다)
   tiles.box = { ...tiles.box, top: 500 };
   scroll();
   assert.equal(friend.style.transform, 'translate(195px, 586px) translate(-50%, -100%)');
+  assert.equal(friend.classList.contains('walker--relayout'), true);
 
   // 무대 좌표가 없는 이전 화면의 친구는 예전처럼 화면 중심의 px다
   quiz.updateMovement({
@@ -214,6 +216,7 @@ test('온라인 퀴즈: 바닥 위의 내 자리를 무대 좌표로 보내고, 
     sequence: 2, connectionGeneration: 1,
   });
   assert.match(friend.style.transform, /^translate\(clamp\(/);
+  assert.equal(friend.classList.contains('walker--relayout'), false, '다음 이동이 전환을 되살린다');
 
   // 공개 카드로 스크롤한 뒤 arena가 캐릭터를 바닥의 같은 자리(3번 칸)로 옮겨 놓았다 — 이동은 알리지 않는다.
   // 보낼 때는 지금 그려진 캐릭터로 재므로 바닥 위 자리가 그대로다(표본의 옛 자리로 재면 바닥 밖이다)
@@ -296,6 +299,17 @@ test('대기실: 라운지 바닥의 내 자리를 보내고, 친구는 이 화�
   assert.ok(Math.abs(Number(match[1]) - (16 + 179)) < 0.5);
   // 이 화면 라운지의 바닥 아래 끝(760)에서도 30px 위다 — 소파·탁자와 같은 자리
   assert.ok(Math.abs(760 - Number(match[2]) - 30) < 0.5, friend.style.transform);
+  assert.equal(friend.classList.contains('walker--relayout'), false);
+
+  // 라운지가 스크롤로 올라가면 바닥과 함께, 전환 없이 옮긴다 — 보간하면 스크롤 중에 바닥에서 떨어진다
+  lounge.box = { ...lounge.box, top: 300 };
+  scroll();
+  const scrolled = friend.style.transform.match(/^translate\(([\d.]+)px, ([\d.]+)px\)/);
+  assert.ok(scrolled, friend.style.transform);
+  assert.ok(Math.abs(660 - Number(scrolled[2]) - 30) < 0.5, friend.style.transform);
+  assert.equal(friend.classList.contains('walker--relayout'), true);
+  lounge.box = { ...lounge.box, top: 400 };
+  scroll();
 
   // 라운지에서 보낸 것이 아닌 무대(퀴즈 바닥)는 예전 길로 그린다
   roomEvents({

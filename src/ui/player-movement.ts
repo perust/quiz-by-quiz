@@ -12,6 +12,12 @@
 // 함께 보내고, 같은 무대를 가진 수신 화면은 제 무대의 같은 자리에 세운다. 무대 밖(설정 칸·채팅칸·보기
 // 버튼 위)이거나 무대 좌표를 모르는 이전 화면의 이동, 또는 지금 그 무대를 보이지 않는 화면은 예전대로
 // 화면 중심의 px로 그린다. 무대가 스크롤과 함께 움직이므로 무대 좌표는 보낼 때 다시 잰다(`restage`).
+//
+// **배치가 바뀌어 다시 세운 자리는 보간하지 않는다.** 125ms마다 오는 이동 사이는 CSS 전환(145ms)이 잇지만,
+// 무대에 맞춘 자리는 스크롤·크기가 바뀔 때마다 px가 바뀐다. 그때도 전환하면 캐릭터가 바닥·칸을 늦게 따라
+// 미끄러지고(빠르게 스크롤하면 바닥에서 80px 남짓 떨어진다), 공개 카드로 한 번에 스크롤하면 질문이나 다른
+// 칸 위를 지나 제 칸으로 간다. 그래서 `refresh`·`reconcile`·`bind`가 바꾼 자리는 `walker--relayout`을 달아
+// 곧바로 옮기고, 다음 이동(`update`·`clearSeat`)이 그것을 뗀다. 좌석에 앉은 사람과 같은 까닭이다.
 
 import {
   isMovementStageId,
@@ -190,9 +196,12 @@ export interface PlayerMovementController {
   bind(playerId: string, node: HTMLElement): void;
   /** DOM만 떼고 좌표는 보존한다. */
   unbindAll(): void;
-  /** 스크롤·resize 뒤 논리 좌석의 현재 client 좌표로 다시 맞춘다. */
+  /**
+   * 스크롤·resize 뒤 논리 좌석·공유 무대의 현재 client 좌표로 다시 맞춘다. 이동이 아니라 배치가 바뀐 것이라
+   * 전환 없이 옮긴다(`walker--relayout`, U31).
+   */
   refresh(): void;
-  /** 인증된 server event를 적용한다. invalid/stale이면 false다. */
+  /** 인증된 server event를 적용한다. invalid/stale이면 false다. 앞 자리에서 전환으로 잇는다. */
   update(movement: RemoteMovement): boolean;
   /** heartbeat lease가 끝난 좌석만 지우고 좌표·sequence는 보존한다. */
   clearSeat(playerId: string): void;
@@ -321,11 +330,28 @@ function clampSeatPoint(
   };
 }
 
+/** 이동이 아니라 배치가 바뀌어 다시 세운 자리. CSS가 이 동안 전환을 끈다 (`.walker--remote.walker--relayout`) */
+const RELAYOUT_CLASS = 'walker--relayout';
+
+/**
+ * 왜 다시 세우는가. `movement`는 새 이동이나 좌석 lease 만료라 전환이 앞 자리에서 잇는다. `relayout`은 이 화면의
+ * 배치(스크롤·크기·다시 그린 DOM)가 바뀐 것이라 전환 없이 옮긴다.
+ */
+type ProjectionCause = 'movement' | 'relayout';
+
+/**
+ * 캐릭터마다 마지막으로 쓴 transform. 배치가 바뀌어도 쓸 값이 같으면(화면 중심의 px 자리는 스크롤해도 같다)
+ * 전환을 끄지 않는다 — 걷는 frame 사이를 잇던 전환이 중간에 끊겨 튀지 않게 한다. `style.transform`을 다시 읽어
+ * 견주지 않는 것은 브라우저가 `calc`·`clamp`를 다르게 적어 돌려주기 때문이다.
+ */
+const writtenTransforms = new WeakMap<HTMLElement, string>();
+
 function project(
   node: HTMLElement,
   state: MovementState,
   seatPoint: PlayerMovementControllerOptions['seatPoint'],
   frameFor: StageFrameResolver,
+  cause: ProjectionCause,
 ): void {
   // 새로 bind된 remote walker는 hidden 상태다. 먼저 표시해야 offsetHeight를 쓰는
   // 좌석 좌표 계산이 0이 아닌 실제 캐릭터 높이를 읽는다. 같은 task 안에서
@@ -340,13 +366,23 @@ function project(
   const stagePoint = seatAnchor ? null : remoteStagePoint(state, frameFor);
   const offset = remoteMovementOffset(state);
   const projected = projectedUnitPosition(node, state, offset, stagePoint);
-  node.style.transform = validSeatPoint(seatAnchor)
+  const transform = validSeatPoint(seatAnchor)
     ? `translate(${cssNumber(seatAnchor.x)}px, ${cssNumber(seatAnchor.y)}px) translate(-50%, -100%)`
     : stagePoint
       ? `translate(${cssNumber(stagePoint.x)}px, ${cssNumber(stagePoint.y)}px) translate(-50%, -100%)`
       : offset
         ? `translate(${centeredAxis('50vw', '100vw', offset.x)}, ${centeredAxis('50vh', '100vh', offset.y)}) translate(-50%, -100%)`
         : `translate(${state.x * 100}vw, ${state.y * 100}vh) translate(-50%, -100%)`;
+  if (cause === 'movement') {
+    // 같은 task 안에서 떼고 쓰므로 새 자리로 가는 전환은 그대로 돈다(전환은 바뀐 뒤의 스타일을 따른다)
+    node.classList.toggle(RELAYOUT_CLASS, false);
+    node.style.transform = transform;
+    writtenTransforms.set(node, transform);
+  } else if (writtenTransforms.get(node) !== transform) {
+    node.classList.toggle(RELAYOUT_CLASS, true);
+    node.style.transform = transform;
+    writtenTransforms.set(node, transform);
+  }
   const seated = state.seatId !== undefined && seatAnchor !== null;
   node.classList.toggle('walker--seated', seated);
   node.classList.toggle('walker--walking', state.moving && !seated);
@@ -375,7 +411,7 @@ export function createPlayerMovementController(
         if (!allowed.has(playerId)) states.delete(playerId);
         else {
           const node = nodes.get(playerId);
-          if (node) project(node, state, seatPoint, frameFor);
+          if (node) project(node, state, seatPoint, frameFor, 'relayout');
         }
       }
       for (const [playerId, node] of nodes) {
@@ -392,7 +428,7 @@ export function createPlayerMovementController(
       }
       nodes.set(playerId, node);
       const state = states.get(playerId);
-      if (state) project(node, state, seatPoint, stageFrameResolver(stageFrame));
+      if (state) project(node, state, seatPoint, stageFrameResolver(stageFrame), 'relayout');
       else node.hidden = true;
     },
 
@@ -405,7 +441,7 @@ export function createPlayerMovementController(
       const frameFor = stageFrameResolver(stageFrame);
       for (const [playerId, node] of nodes) {
         const state = states.get(playerId);
-        if (state && allowed.has(playerId)) project(node, state, seatPoint, frameFor);
+        if (state && allowed.has(playerId)) project(node, state, seatPoint, frameFor, 'relayout');
       }
     },
 
@@ -464,7 +500,7 @@ export function createPlayerMovementController(
       states.set(movement.playerId, state);
       if (!allowed.has(movement.playerId)) return true;
       const node = nodes.get(movement.playerId);
-      if (node) project(node, state, seatPoint, stageFrameResolver(stageFrame));
+      if (node) project(node, state, seatPoint, stageFrameResolver(stageFrame), 'movement');
       return true;
     },
 
@@ -476,7 +512,7 @@ export function createPlayerMovementController(
       states.set(playerId, standing);
       if (!allowed.has(playerId)) return;
       const node = nodes.get(playerId);
-      if (node) project(node, standing, seatPoint, stageFrameResolver(stageFrame));
+      if (node) project(node, standing, seatPoint, stageFrameResolver(stageFrame), 'movement');
     },
 
     reset() {

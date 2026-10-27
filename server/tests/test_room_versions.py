@@ -345,6 +345,122 @@ def test_a_reconnected_member_is_unsettled_until_the_sweep_announces_it() -> Non
     assert hub.presence_settled("ABC234")
 
 
+def test_a_member_back_before_the_sweep_saw_the_drop_is_still_announced() -> None:
+    # 유예를 넘겨 끊긴 친구를 sweep(5초 주기)이 알리기 전에 방을 읽은 화면은 «연결 끊김»을 들었다.
+    # 친구가 그 sweep보다 먼저 다시 붙으면 알린 끊김과 지금이 같아 보여 아무도 알리지 않았고, 같은
+    # 번호의 snapshot끼리 접속 상태가 달랐다. 다음 sweep이 이 방을 한 번 알리고 그때까지는 흔들린다.
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    socket = object()
+    assert hub.connect("ABC234", OTHER_ID, socket)  # type: ignore[arg-type]
+    hub.disconnect("ABC234", socket)  # type: ignore[arg-type]
+    clock.now += 61
+    assert not hub.is_present("ABC234", OTHER_ID)  # 이때 읽은 snapshot은 connected: false
+
+    again = object()
+    assert hub.connect("ABC234", OTHER_ID, again)  # type: ignore[arg-type]
+    assert hub.is_present("ABC234", OTHER_ID)
+    assert not hub.presence_settled("ABC234")
+    assert hub.sweep_presence() == frozenset({"ABC234"})
+    assert hub.presence_settled("ABC234")
+    # 한 번만 알린다
+    assert hub.sweep_presence() == frozenset()
+
+    # 유예 안에 다시 붙은 것은 아무 snapshot도 바꾸지 않았다 — 알리지 않는다
+    hub.disconnect("ABC234", again)  # type: ignore[arg-type]
+    clock.now += 30
+    third = object()
+    assert hub.connect("ABC234", OTHER_ID, third)  # type: ignore[arg-type]
+    assert hub.presence_settled("ABC234")
+    assert hub.sweep_presence() == frozenset()
+    # 같은 사람의 두 번째 소켓도 다시 붙은 것이 아니다
+    fourth = object()
+    clock.now += 61
+    assert hub.connect("ABC234", OTHER_ID, fourth)  # type: ignore[arg-type]
+    assert hub.presence_settled("ABC234")
+
+
+class _QuietSocket:
+    """방송을 받아 버리기만 하는 소켓 (hub에 직접 붙인 친구의 화면)."""
+
+    async def send_json(self, event: dict[str, object]) -> None:
+        return None
+
+    async def close(self, code: int = 1000) -> None:
+        return None
+
+
+class GatedSweepHub(EventHub):
+    """앱의 presence sweep을 테스트가 연다. 열기 전에는 아무것도 보지 않은 것처럼 돈다."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.opened = threading.Event()
+
+    def sweep_presence(self) -> frozenset[str]:
+        return super().sweep_presence() if self.opened.is_set() else frozenset()
+
+    def absent_by_room(self) -> dict[str, frozenset[UUID]]:
+        return super().absent_by_room() if self.opened.is_set() else {}
+
+
+def test_no_ready_change_rides_on_a_snapshot_that_saw_an_unannounced_drop() -> None:
+    # 리뷰의 순서 그대로다: 친구가 끊기고 유예가 지났다 → 화면 하나가 방을 읽어
+    # «연결 끊김»(번호 0)을 들었다 → sweep보다 먼저 친구가 다시 붙었다 → 같은 번호 0의
+    # 방이 이제 «접속 중»이다. 여기에 준비를 덧대게 하면 그 화면은 다음 준비 토글들 내내
+    # 친구를 끊긴 사람으로 그리고, 친구가 준비하지 않았는데도 「게임 시작」을 켰다.
+    # 고칠 거리를 싣지 않아 모두 다시 읽게 하고, 다음 sweep이 방을 알린다.
+    repository = VersionedRepository()
+    clock = FakeClock()
+    hub = GatedSweepHub(presence_grace_seconds=60, clock=clock)
+    versions = RoomVersions()
+    app = create_app(
+        repository=repository,
+        event_hub=hub,
+        room_versions=versions,
+        presence_interval_seconds=0.01,
+    )
+    with TestClient(app) as client:
+        register(client)
+        with _connect(client) as websocket:
+            wait_until(lambda: hub.is_present("ABC234", PLAYER_ID), "socket was not activated")
+            friend = _QuietSocket()
+            assert hub.connect("ABC234", OTHER_ID, friend)  # type: ignore[arg-type]
+            hub.disconnect("ABC234", friend)  # type: ignore[arg-type]
+            clock.now += 61
+            stale = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+
+            back = _QuietSocket()
+            assert hub.connect("ABC234", OTHER_ID, back)  # type: ignore[arg-type]
+            fresh = client.get("/v1/rooms/ABC234", headers=HEADERS).json()
+            client.put("/v1/rooms/ABC234/ready", headers=HEADERS, json={"isReady": True})
+            unsettled = websocket.receive_json()
+
+            before_sweep = versions.label()
+            hub.opened.set()
+            wait_until(
+                lambda: versions.label() > before_sweep,
+                "the sweep did not announce the room",
+            )
+            announced = websocket.receive_json()
+            client.put("/v1/rooms/ABC234/ready", headers=HEADERS, json={"isReady": False})
+            settled = websocket.receive_json()
+
+    assert [player["connected"] for player in stale["players"]] == [True, False]
+    assert [player["connected"] for player in fresh["players"]] == [True, True]
+    # 같은 번호의 두 snapshot이 접속 상태가 다르다 — 그 번호에 덧대면 안 된다
+    assert stale["roomVersion"] == fresh["roomVersion"] == 0
+    assert unsettled["type"] == "room-invalidated"
+    assert "readyChange" not in unsettled
+    assert announced == {
+        "type": "room-invalidated",
+        "roomEpoch": versions.epoch,
+        "roomVersion": unsettled["roomVersion"] + 1,
+    }
+    # 알린 뒤에는 다시 덧댈 수 있다 — 바로 앞 번호가 sweep의 알림이다
+    assert settled["readyChange"]["previousVersion"] == announced["roomVersion"]
+
+
 # ── 공유 무대 좌표 (U31) ───────────────────────────────────────────────
 
 

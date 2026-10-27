@@ -412,6 +412,10 @@ class EventHub:
         self._live_actor_counts: dict[tuple[str, UUID], int] = {}
         self._absent_since: dict[tuple[str, UUID], float] = {}
         self._announced_absent: set[tuple[str, UUID]] = set()
+        # 유예를 넘겨 끊긴 것을 sweep이 알리기 전에 다시 붙은 사람이 있는 방. 그사이 방을 읽은
+        # 화면은 `connected: false`를 들고 있는데 끊김도 다시 붙음도 방송되지 않았다 — 다음
+        # sweep이 이 방을 알리고, 그때까지 준비 토글은 고칠 거리를 싣지 않는다.
+        self._presence_dirty: set[str] = set()
 
     def reserve(self, code: str, actor_id: UUID, websocket: WebSocket) -> bool:
         if not self._accepting:
@@ -442,6 +446,13 @@ class EventHub:
         if websocket not in sockets:
             sockets.add(websocket)
             actor_room = (code, actor_id)
+            if (
+                actor_room not in self._announced_absent
+                and self._is_absent(actor_room, self._clock())
+            ):
+                # 방 snapshot은 이미 «연결 끊김»을 실었을 수 있는데 sweep은 아직 알리지 않았다.
+                # 그대로 두면 알린 것과 지금이 같아 보여 sweep이 이 방을 놓친다.
+                self._presence_dirty.add(code)
             self._live_actor_counts[actor_room] = (
                 self._live_actor_counts.get(actor_room, 0) + 1
             )
@@ -666,7 +677,11 @@ class EventHub:
         )
 
     def sweep_presence(self) -> frozenset[str]:
-        """끊김으로 바뀌었거나 다시 붙어 `connected`가 달라진 방들."""
+        """끊김으로 바뀌었거나 다시 붙어 `connected`가 달라진 방들.
+
+        유예를 넘긴 뒤 이 sweep이 알리기 전에 다시 붙은 사람의 방도 든다(`_presence_dirty`).
+        알린 끊김과 지금은 같아 보이지만, 그사이 방을 읽은 화면은 `connected: false`를 들고 있다.
+        """
         now = self._clock()
         for actor_room, since in tuple(self._absent_since.items()):
             if now - since >= PRESENCE_RECORD_SECONDS:
@@ -679,16 +694,22 @@ class EventHub:
             if self._is_absent(actor_room, now)
         }
         changed = frozenset(code for code, _ in absent ^ self._announced_absent)
+        changed |= self._presence_dirty
+        self._presence_dirty = set()
         self._announced_absent = absent
         return changed
 
     def presence_settled(self, code: str) -> bool:
         """이 방의 접속 상태 변화가 모두 방송됐는가 (room-invalidated 줄이기).
 
-        유예를 넘겨 끊겼는데 아직 sweep이 알리지 않았거나, 알린 뒤 다시 붙었으면 False다. 그동안
-        방 snapshot의 `connected`는 이미 달라져 있다 — 준비 토글을 GET 없이 고치게 하면 화면이 낡은
-        접속 상태를 이어 쓰므로, 그때는 고칠 거리(`readyChange`)를 싣지 않아 모두 다시 읽게 한다.
+        유예를 넘겨 끊겼는데 아직 sweep이 알리지 않았거나, 알린 뒤 다시 붙었거나, 알리기 전에
+        끊겼다 다시 붙었으면(`_presence_dirty`) False다. 그동안 방 snapshot의 `connected`는 이미
+        달라져 있거나 같은 번호의 snapshot끼리 다르다 — 준비 토글을 GET 없이 고치게 하면 화면이
+        낡은 접속 상태를 이어 쓰므로, 그때는 고칠 거리(`readyChange`)를 싣지 않아 모두 다시
+        읽게 한다.
         """
+        if code in self._presence_dirty:
+            return False
         now = self._clock()
         for actor_room in self._absent_since:
             if actor_room[0] == code and (

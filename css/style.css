@@ -1922,6 +1922,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   transition: none;
 }
 
+/* 공유 무대(라운지·퀴즈 바닥)에 맞춘 자리도 같다 (U31). 이동이 아니라 scroll·resize·다시 그린 명단으로
+   다시 세운 자리는 곧바로 옮긴다 — 보간하면 바닥·칸을 늦게 따라 미끄러지고, 한 번에 스크롤하면 질문 위를
+   지나간다. 다음 이동이 오면 player-movement.ts가 떼어 125ms frame 사이는 다시 잇는다. */
+.walker--remote.walker--relayout {
+  transition: none;
+}
+
 .walker__name {
   position: absolute;
   top: calc(100% + var(--space-2));

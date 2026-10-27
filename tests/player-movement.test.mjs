@@ -732,3 +732,83 @@ test('U31: 지금 그려진 캐릭터의 발끝이 표본보다 먼저다 — �
   assert.equal(walkerFootPoint({ getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0, bottom: 0 }) }), null);
   assert.equal(withMovementStage(stale, { id: 'arena', frame: PHONE_ARENA, foot: null }).stage, 'arena');
 });
+
+test('U31: 배치가 바뀌어 다시 세운 자리는 전환 없이 옮기고, 다음 이동이 오면 다시 잇는다', async () => {
+  const { createPlayerMovementController } = await import('../js/ui/player-movement.js');
+  const { loadStyles, node: cssNode, valueOf, DESKTOP } = await import('./css-cascade.mjs');
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const transitionOf = (classes) => valueOf(
+    rules,
+    cssNode(`div.walker.walker--remote${classes}`, cssNode('div#online-remote-characters', cssNode('body'))),
+    'transition',
+    DESKTOP,
+  );
+  // 125ms frame 사이는 전환이 잇지만, 배치 때문에 다시 세운 자리는 곧바로 옮긴다 (앉은 자리와 같다)
+  assert.match(transitionOf(''), /^transform 145ms/);
+  assert.equal(transitionOf('.walker--relayout'), 'none');
+  assert.equal(transitionOf('.walker--seated'), 'none');
+
+  let arena = DESKTOP_ARENA;
+  const movement = createPlayerMovementController({
+    stageFrame: (stage) => (stage === 'arena' ? arena : null),
+  });
+  const node = createNode({ width: 1440, height: 900 });
+  const relayout = () => node.classList.contains('walker--relayout');
+  movement.reconcile(['phone', 'legacy']);
+  movement.bind('phone', node);
+  movement.update({
+    playerId: 'phone', x: 0.25, y: 0.8, moving: true,
+    viewportWidth: 390, viewportHeight: 844,
+    stage: 'arena', stageX: 0.25, stageY: 0.8,
+    sequence: 1, connectionGeneration: 1,
+  });
+  assert.equal(node.style.transform, 'translate(600px, 517.6px) translate(-50%, -100%)');
+  assert.equal(relayout(), false, '새 이동은 앞 자리에서 전환으로 잇는다');
+
+  // 다시 그렸지만 쓸 자리가 같다(바닥이 그대로다) — 걷는 사이를 잇던 전환을 끊지 않는다
+  movement.refresh();
+  assert.equal(relayout(), false);
+
+  // 스크롤로 바닥이 올라갔다 — 바닥을 늦게 따라 미끄러지지 않게 곧바로 옮긴다
+  arena = { ...DESKTOP_ARENA, top: 280 };
+  movement.refresh();
+  assert.equal(node.style.transform, 'translate(600px, 417.6px) translate(-50%, -100%)');
+  assert.equal(relayout(), true);
+  // 공개 카드로 한 번에 내려가도 같다 — 질문 위를 지나 제 칸으로 가지 않는다
+  arena = { ...DESKTOP_ARENA, top: -120 };
+  movement.refresh();
+  assert.equal(node.style.transform, 'translate(600px, 17.6px) translate(-50%, -100%)');
+  assert.equal(relayout(), true);
+
+  // 다음 이동이 오면 떼어 그 자리에서 새 자리로 잇는다
+  movement.update({
+    playerId: 'phone', x: 0.3, y: 0.8, moving: true,
+    viewportWidth: 390, viewportHeight: 844,
+    stage: 'arena', stageX: 0.3, stageY: 0.8,
+    sequence: 2, connectionGeneration: 1,
+  });
+  assert.equal(node.style.transform, 'translate(624px, 17.6px) translate(-50%, -100%)');
+  assert.equal(relayout(), false);
+
+  // 명단을 다시 그려 새 DOM에 붙인 캐릭터도 배치다 — 기본 자리에서 미끄러져 오지 않는다
+  const rebound = createNode({ width: 1440, height: 900 });
+  movement.unbindAll();
+  movement.reconcile(['phone', 'legacy']);
+  movement.bind('phone', rebound);
+  assert.equal(rebound.style.transform, 'translate(624px, 17.6px) translate(-50%, -100%)');
+  assert.equal(rebound.classList.contains('walker--relayout'), true);
+
+  // 화면 중심의 px 자리(무대 좌표 없는 이전 화면)는 스크롤해도 쓸 값이 같아 예전처럼 전환을 그대로 둔다
+  const legacy = createNode({ width: 1440, height: 900 });
+  movement.bind('legacy', legacy);
+  movement.update({
+    playerId: 'legacy', x: 0.75, y: 0.25, moving: true,
+    viewportWidth: 390, viewportHeight: 844,
+    sequence: 1, connectionGeneration: 1,
+  });
+  assert.equal(legacy.classList.contains('walker--relayout'), false);
+  arena = { ...DESKTOP_ARENA, top: 40 };
+  movement.refresh();
+  assert.equal(legacy.classList.contains('walker--relayout'), false);
+  assert.equal(rebound.classList.contains('walker--relayout'), true);
+});
