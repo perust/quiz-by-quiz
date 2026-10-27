@@ -3,6 +3,7 @@
 
 import { CATEGORIES, POINTS_PER_CORRECT } from '../constants.js';
 import type {
+  AnsweredReview,
   AnswerRecord,
   CategoryId,
   CategoryScore,
@@ -62,6 +63,27 @@ function tallyByCategory(questions: Question[], answers: AnswerRecord[]): Catego
 }
 
 /**
+ * 답한 문항 하나를 풀이 한 줄로 (FR-5.4, N04). 결과의 오답 풀이와 중간에 나온 판의 «푼 문제»가 함께 쓴다.
+ */
+function toReviewItem(question: Question, answer: AnswerRecord): ReviewItem {
+  return {
+    id: question.id,
+    category: question.category,
+    question: question.question,
+    // 신고 링크가 질문·보기·정답을 함께 싣는다 (FR-5.8). 원본 배열을 나눠 갖지 않게 복사한다
+    choices: [...question.choices],
+    explanation: question.explanation,
+    correctChoice: question.choices[question.answerIndex],
+    // 시간 초과면 고른 보기가 없다.
+    // 뒤집으면 timedOut이 false일 때 choiceIndex는 반드시 number인데(session이 그렇게
+    // 만든다) 그 계약이 AnswerRecord의 두 필드에 나뉘어 있어 TS는 잇지 못한다
+    chosenChoice: answer.timedOut ? null : question.choices[answer.choiceIndex!],
+    correct: answer.correct,
+    timedOut: answer.timedOut,
+  };
+}
+
+/**
  * 틀린 문제 목록 (FR-5.4). 시간 초과도 오답으로 함께 담는다.
  * answers[i]는 questions[i]에 대한 응답이다.
  */
@@ -69,20 +91,7 @@ function collectReview(questions: Question[], answers: AnswerRecord[]): ReviewIt
   return answers
     .map((answer, index) => ({ answer, question: questions[index] }))
     .filter(({ answer, question }) => question && !answer.correct)
-    .map(({ answer, question }) => ({
-      id: question.id,
-      category: question.category,
-      question: question.question,
-      // 신고 링크가 질문·보기·정답을 함께 싣는다 (FR-5.8). 원본 배열을 나눠 갖지 않게 복사한다
-      choices: [...question.choices],
-      explanation: question.explanation,
-      correctChoice: question.choices[question.answerIndex],
-      // 시간 초과면 고른 보기가 없다.
-      // 뒤집으면 timedOut이 false일 때 choiceIndex는 반드시 number인데(session이 그렇게
-      // 만든다) 그 계약이 AnswerRecord의 두 필드에 나뉘어 있어 TS는 잇지 못한다
-      chosenChoice: answer.timedOut ? null : question.choices[answer.choiceIndex!],
-      timedOut: answer.timedOut,
-    }));
+    .map(({ answer, question }) => toReviewItem(question, answer));
 }
 
 /**
@@ -143,5 +152,27 @@ export function summarizeRound({ questions, answers, mode, categoryId = null }: 
     // 문제 텍스트는 넣지 않는다 — data/*.json 과 중복되고 용량만 늘어난다.
     // 선생님 모드가 id로 문제 은행과 이어 붙여 문항 단위 정답률을 낸다.
     questionResults: collectQuestionResults(questions, answers),
+  };
+}
+
+/**
+ * 중간에 나온 판에서 푼 문제 (N04). 나가기 확인의 «나가고 푼 문제 해설 보기»가 그린다.
+ *
+ * **점수·등급·소요 시간을 만들지 않는다.** 끝까지 풀지 않은 판은 기록되지 않고(FR-3.6) 최고 점수와도
+ * 견주지 않는다 — 그래서 `summarizeRound` 를 쓰지 않고 랭킹 레코드가 될 수 있는 모양도 돌려주지 않는다.
+ * 맞힌 문제까지 푼 순서대로 담는다. answers[i]는 questions[i]에 대한 응답이다.
+ */
+export function reviewAnswered({ questions, answers, mode, categoryId = null }: SummarizeParams): AnsweredReview {
+  const items = answers
+    .map((answer, index) => ({ answer, question: questions[index] }))
+    .filter(({ question }) => question)
+    .map(({ answer, question }) => toReviewItem(question, answer));
+  return {
+    mode,
+    categoryId: mode === 'all' ? null : categoryId,
+    totalCount: questions.length,
+    answeredCount: items.length,
+    correctCount: items.filter((item) => item.correct).length,
+    items,
   };
 }

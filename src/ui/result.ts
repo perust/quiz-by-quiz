@@ -16,7 +16,7 @@ import {
 } from './report-link.js';
 import type { CategoryId, ReviewItem, RoundSummary } from '../types.js';
 
-/** 전체 도전 오답 풀이의 한 묶음 (N04) */
+/** 전체 도전 풀이의 한 묶음 (N04). 결과는 오답만, 중간에 나온 판의 «푼 문제»는 푼 것 모두다 */
 export interface ReviewGroup {
   id: CategoryId;
   name: string;
@@ -24,8 +24,8 @@ export interface ReviewGroup {
 }
 
 /**
- * 틀린 문제를 분야별로 묶는다 (N04). 묶음 순서는 분야 정의 순서(결과의 «카테고리별 정답»과 같다)이고
- * 틀린 문제가 없는 분야는 뺀다. 한 묶음 안은 푼 순서 그대로다.
+ * 풀이를 분야별로 묶는다 (N04). 묶음 순서는 분야 정의 순서(결과의 «카테고리별 정답»과 같다)이고
+ * 풀이가 없는 분야는 뺀다. 한 묶음 안은 푼 순서 그대로다.
  */
 export function groupReviewByCategory(review: ReviewItem[]): ReviewGroup[] {
   return CATEGORIES
@@ -35,6 +35,111 @@ export function groupReviewByCategory(review: ReviewItem[]): ReviewGroup[] {
       items: review.filter((item) => item.category === category.id),
     }))
     .filter((group) => group.items.length > 0);
+}
+
+// text가 null일 수 있는 것은 시간 초과 때문이다. 그때는 이 함수를 부르는 쪽이
+// '시간 초과'를 대신 넣으므로 실제로 null이 오지는 않지만, textContent가 그대로
+// 받는 값이라 좁히지 않고 둔다.
+function createReviewRow(tag: string, text: string | null, modifier: string): HTMLParagraphElement {
+  const row = document.createElement('p');
+  row.className = `review__row review__row--${modifier}`;
+
+  const label = document.createElement('span');
+  label.className = 'review__tag';
+  label.textContent = tag;
+
+  const value = document.createElement('span');
+  value.textContent = text;
+
+  row.append(label, value);
+  return row;
+}
+
+/**
+ * 풀이 한 문제: 질문 · 내 답 · 정답 · 해설 · «이 문제 이상해요».
+ * 맞힌 문제(중간에 나온 판의 «푼 문제», N04)는 온라인 «문제 다시 보기»처럼 «내 답 · 정답» 한 줄이다.
+ * 결과 화면과 «푼 문제» 화면(`quiz-review.ts`)이 함께 쓴다 — 모양을 두 벌 두지 않는다.
+ */
+export function createReviewItem(item: ReviewItem): HTMLLIElement {
+  const entry = document.createElement('li');
+  entry.className = 'review__item';
+
+  const question = document.createElement('p');
+  question.className = 'review__question';
+  question.textContent = item.question;
+
+  const explanation = document.createElement('p');
+  explanation.className = 'review__explanation';
+  explanation.textContent = item.explanation;
+
+  // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
+  const answerRows = item.correct
+    ? [createReviewRow('내 답 · 정답', item.correctChoice, 'mine-correct')]
+    : [
+      createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
+      createReviewRow('정답', item.correctChoice, 'answer'),
+    ];
+
+  entry.append(
+    question,
+    ...answerRows,
+    explanation,
+    // 공개 은행의 문제라 질문·보기·저장된 정답까지 싣는다 (FR-5.8). 내 답·점수·닉네임은 싣지 않는다
+    createQuestionReportLink(
+      localQuestionReportUrl({
+        id: item.id,
+        category: item.category,
+        question: item.question,
+        choices: item.choices,
+        answer: item.correctChoice,
+      }),
+      questionReportLabel(questionReportSubject(item.question)),
+    ),
+  );
+  return entry;
+}
+
+/** 묶음 펼침 줄의 개수 알약. 기본은 결과의 «틀린 문제 N개»다 */
+export interface ReviewGroupCount {
+  text: string;
+  /** 틀린 문제가 없는 묶음이다. 코랄(오답) 대신 정답 색 알약으로 그린다 */
+  clear?: boolean;
+}
+
+/**
+ * 분야 하나의 풀이 묶음 (N04). 펼침은 네이티브 `<details>`/`<summary>` 다 — `summary` 는 워커의
+ * «밟을 수 있는 것»에 들어 있어 걸어가 Enter·선택으로 누르면 진짜 `click()` 이 여닫고, Tab·Enter·Space
+ * 와 «펼침/접힘» 낭독도 브라우저가 맡는다. 펼침 표식은 디자인 층이 아이콘으로 그린다(글리프 없음).
+ */
+export function createReviewGroup(
+  group: ReviewGroup,
+  open: boolean,
+  { text, clear = false }: ReviewGroupCount = { text: `틀린 문제 ${group.items.length}개` },
+): HTMLLIElement {
+  const entry = document.createElement('li');
+  entry.className = 'review-group';
+
+  const details = document.createElement('details');
+  details.className = 'review-group__details';
+  details.open = open;
+
+  const head = document.createElement('summary');
+  head.className = 'review-group__summary';
+  const name = document.createElement('span');
+  name.className = 'review-group__name';
+  name.textContent = group.name;
+  const count = document.createElement('span');
+  count.className = clear ? 'review-group__count review-group__count--clear' : 'review-group__count';
+  count.textContent = text;
+  head.append(name, count);
+
+  const list = document.createElement('ol');
+  list.className = 'review review-group__list';
+  for (const item of group.items) list.append(createReviewItem(item));
+
+  details.append(head, list);
+  entry.append(details);
+  return entry;
 }
 
 /** 랭킹에 등록한 결과. app.ts의 어댑터 호출이 이 모양으로 답한다 */
@@ -271,90 +376,6 @@ export function createResultScreen(
       item.append(name, count);
       el.categoryList.append(item);
     }
-  }
-
-  // text가 null일 수 있는 것은 시간 초과 때문이다. 그때는 이 함수를 부르는 쪽이
-  // '시간 초과'를 대신 넣으므로 실제로 null이 오지는 않지만, textContent가 그대로
-  // 받는 값이라 좁히지 않고 둔다.
-  function createReviewRow(tag: string, text: string | null, modifier: string): HTMLParagraphElement {
-    const row = document.createElement('p');
-    row.className = `review__row review__row--${modifier}`;
-
-    const label = document.createElement('span');
-    label.className = 'review__tag';
-    label.textContent = tag;
-
-    const value = document.createElement('span');
-    value.textContent = text;
-
-    row.append(label, value);
-    return row;
-  }
-
-  /** 틀린 문제 하나: 질문 · 내 답 · 정답 · 해설 · «이 문제 이상해요» */
-  function createReviewItem(item: ReviewItem): HTMLLIElement {
-    const entry = document.createElement('li');
-    entry.className = 'review__item';
-
-    const question = document.createElement('p');
-    question.className = 'review__question';
-    question.textContent = item.question;
-
-    const explanation = document.createElement('p');
-    explanation.className = 'review__explanation';
-    explanation.textContent = item.explanation;
-
-    entry.append(
-      question,
-      // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
-      createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
-      createReviewRow('정답', item.correctChoice, 'answer'),
-      explanation,
-      // 공개 은행의 문제라 질문·보기·저장된 정답까지 싣는다 (FR-5.8). 내 답·점수·닉네임은 싣지 않는다
-      createQuestionReportLink(
-        localQuestionReportUrl({
-          id: item.id,
-          category: item.category,
-          question: item.question,
-          choices: item.choices,
-          answer: item.correctChoice,
-        }),
-        questionReportLabel(questionReportSubject(item.question)),
-      ),
-    );
-    return entry;
-  }
-
-  /**
-   * 분야 하나의 오답 묶음 (N04). 펼침은 네이티브 `<details>`/`<summary>` 다 — `summary` 는 워커의
-   * «밟을 수 있는 것»에 들어 있어 걸어가 Enter·선택으로 누르면 진짜 `click()` 이 여닫고, Tab·Enter·Space
-   * 와 «펼침/접힘» 낭독도 브라우저가 맡는다. 펼침 표식은 디자인 층이 아이콘으로 그린다(글리프 없음).
-   */
-  function createReviewGroup(group: ReviewGroup, open: boolean): HTMLLIElement {
-    const entry = document.createElement('li');
-    entry.className = 'review-group';
-
-    const details = document.createElement('details');
-    details.className = 'review-group__details';
-    details.open = open;
-
-    const head = document.createElement('summary');
-    head.className = 'review-group__summary';
-    const name = document.createElement('span');
-    name.className = 'review-group__name';
-    name.textContent = group.name;
-    const count = document.createElement('span');
-    count.className = 'review-group__count';
-    count.textContent = `틀린 문제 ${group.items.length}개`;
-    head.append(name, count);
-
-    const list = document.createElement('ol');
-    list.className = 'review review-group__list';
-    for (const item of group.items) list.append(createReviewItem(item));
-
-    details.append(head, list);
-    entry.append(details);
-    return entry;
   }
 
   /** 틀린 문제를 정답·해설과 함께 (FR-5.4) */
