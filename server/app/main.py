@@ -35,6 +35,7 @@ from .domain import (
     ALLOWED_CAPACITIES,
     ALLOWED_CATEGORIES,
     DEFAULT_QUESTION_TIME_MS,
+    MIN_MATCH_PLAYERS,
     DomainError,
     normalize_code,
     validate_chat,
@@ -67,6 +68,7 @@ from .repository import (
     RoomNotFound,
     RoomsRepository,
     RoomView,
+    StandingAnswer,
     TokenConflict,
 )
 from .tickets import WebSocketTickets
@@ -80,6 +82,17 @@ WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
 MOVEMENT_VIEWPORT_CAPABILITY = "sender-css-pixels-v1"
 WAITING_ROOM_SEAT_CAPABILITY = "waiting-room-seat-v1"
+# 방 소켓이 발밑 칸 초안(`standing-answer`)을 받는다 (U13). 이 값을 모르는 이전 API는
+# 모르는 메시지를 버리기만 하지만(아래 receive 루프), 화면은 티켓이 이 값을 줄 때만 보낸다 —
+# 소켓마다 다시 묻는다.
+STANDING_ANSWER_CAPABILITY = "standing-answer-v1"
+# 초안을 기억하는 시간. 문항은 길어야 40초라 그보다 오래된 초안은 쓸 데가 없다. 마감 sweep이 잠깐
+# 실패해도 다음 sweep이 쓸 수 있게 여유를 둔다(그보다 늦으면 예전처럼 시간 초과가 된다).
+STANDING_ANSWER_RECORD_SECONDS = 90.0
+# (방, 참가자)마다 하나뿐이라 붙은 소켓 수를 넘지 않는다. 위조 세션이 몰려도 메모리를 묶는다.
+MAX_STANDING_ANSWERS = 4_096
+# 답안 제출(AnswerBody)과 같은 문항 순서 한도
+MAX_MATCH_POSITION = 25
 WAITING_ROOM_SEAT_IDS = frozenset(
     {"chair-left", "sofa-left", "sofa-right", "chair-right"}
 )
@@ -198,6 +211,40 @@ def _movement_message(
             return None
         seat_id = candidate
     return x, y, value["moving"], viewport_width, viewport_height, seat_id
+
+
+def _standing_answer_message(message: str) -> tuple[UUID, int, int | None] | None:
+    """발밑 칸 초안 하나 (U13). 판·문항 순서·칸(없으면 null, 칸에서 내려섰다)만 받는다.
+
+    누구의 초안인지는 소켓 티켓이 정한다. 이 판·지금 문항·판의 참가자인지는 쓸 때(마감이 빈 답을
+    채울 때) 잠근 판에서 다시 본다 — 받는 순간 견주면 그사이 문항이 넘어가도 알 수 없다.
+    """
+    if len(message) > 256 or '"standing-answer"' not in message:
+        return None
+    try:
+        value = json.loads(message)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    if set(value) != {"type", "matchId", "position", "choiceIndex"}:
+        return None
+    if value["type"] != "standing-answer":
+        return None
+    raw_match_id = value["matchId"]
+    position = value["position"]
+    choice_index = value["choiceIndex"]
+    if not isinstance(raw_match_id, str) or len(raw_match_id) != 36:
+        return None
+    try:
+        match_id = UUID(raw_match_id)
+    except ValueError:
+        return None
+    if type(position) is not int or not 1 <= position <= MAX_MATCH_POSITION:
+        return None
+    if choice_index is not None and (type(choice_index) is not int or choice_index not in range(4)):
+        return None
+    return match_id, position, choice_index
 
 
 class StrictBody(BaseModel):
@@ -665,6 +712,146 @@ class RemovedMembers:
             del self._records[key]
 
 
+@dataclass(frozen=True)
+class _StandingDraft:
+    match_id: UUID
+    position: int
+    answer: StandingAnswer
+    # 기억한 때(monotonic). 오래된 것부터 버린다
+    recorded_at: float
+
+
+class StandingAnswers:
+    """발밑 칸 초안 (U13). 시간이 끝나면 선 칸이 답이라는 혼자 하기 규칙을 온라인에도 쓴다.
+
+    화면은 실제로 움직인 뒤 선 칸이 바뀔 때만(잠깐 멈췄다 보내는 debounce) 방 소켓으로
+    보내고, 칸에서 내려서면 지운다. 서버 권위는 그대로다 — 이것은 «모두 답했다»에 세지 않고
+    (앞당긴 공개는 여전히 직접 낸 답만 기다린다), 마감이 빈 답을 채울 때만 그 칸을 보통 답으로
+    남긴다(`_record_standing_answers`).
+
+    presence·`RemovedMembers` 처럼 메모리에만 있어 **단일 worker 계약**에 기댄다. API를 다시
+    띄우면 잃는다 — 다시 붙은 화면이 마지막 초안을 다시 보내지만, 그 전에 마감이 오면 예전처럼
+    시간 초과다. (방, 참가자)마다 하나만 둔다: 새 초안이 앞 초안을 갈아 치우므로 문항이 넘어가도
+    쌓이지 않는다. 문항이 넘어가거나 판이 끝나면(`settle`) 그 판의 지난 초안을 버리고, 오래된
+    것(`record_seconds`)과 넘치는 것(`max_records`, 가장 오래된 것부터)도 버린다.
+    """
+
+    def __init__(
+        self,
+        *,
+        record_seconds: float = STANDING_ANSWER_RECORD_SECONDS,
+        max_records: int = MAX_STANDING_ANSWERS,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        if record_seconds <= 0 or max_records < 1:
+            raise ValueError("standing answer records must be positive")
+        self._record_seconds = record_seconds
+        self._max_records = max_records
+        self._clock = clock
+        self._wall_clock = wall_clock
+        # 넣은 순서가 곧 시각 순서다(같은 열쇠는 빼고 다시 넣는다)
+        self._drafts: dict[tuple[str, UUID], _StandingDraft] = {}
+        # 방마다 초안이 있는 참가자. 마감 sweep이 방 하나의 초안만 훑는다
+        self._rooms: dict[str, set[UUID]] = defaultdict(set)
+
+    def _drop(self, key: tuple[str, UUID]) -> None:
+        if self._drafts.pop(key, None) is None:
+            return
+        code, player_id = key
+        players = self._rooms.get(code)
+        if players is not None:
+            players.discard(player_id)
+            if not players:
+                del self._rooms[code]
+
+    def _expire(self, now: float) -> None:
+        # 넣은 순서가 시각 순서라 앞에서부터 오래된 것만 본다 — 마감 sweep이 초마다 판마다 부른다
+        while self._drafts:
+            key, draft = next(iter(self._drafts.items()))
+            if now - draft.recorded_at < self._record_seconds:
+                break
+            self._drop(key)
+
+    def record(
+        self,
+        code: str,
+        player_id: UUID,
+        *,
+        match_id: UUID,
+        position: int,
+        choice_index: int,
+    ) -> None:
+        now = self._clock()
+        self._expire(now)
+        key = (code, player_id)
+        self._drop(key)
+        self._drafts[key] = _StandingDraft(
+            match_id=match_id,
+            position=position,
+            answer=StandingAnswer(choice_index=choice_index, received_at=self._wall_clock()),
+            recorded_at=now,
+        )
+        self._rooms[code].add(player_id)
+        while len(self._drafts) > self._max_records:
+            self._drop(next(iter(self._drafts)))
+
+    def clear(self, code: str, player_id: UUID) -> None:
+        """칸에서 내려섰다. 그 사람의 초안을 지운다."""
+        self._drop((code, player_id))
+
+    def for_question(
+        self,
+        code: str,
+        match_id: UUID,
+        position: int,
+    ) -> dict[UUID, StandingAnswer]:
+        self._expire(self._clock())
+        result: dict[UUID, StandingAnswer] = {}
+        for player_id in tuple(self._rooms.get(code, ())):
+            draft = self._drafts.get((code, player_id))
+            if draft is not None and draft.match_id == match_id and draft.position == position:
+                result[player_id] = draft.answer
+        return result
+
+    def settle(
+        self,
+        code: str,
+        match_id: UUID,
+        *,
+        through_position: int | None,
+    ) -> None:
+        """그 판의 문항이 닫혔다. 그 문항(`through_position`)까지의 초안을 버린다.
+
+        None이면 판이 끝났다 — 그 판의 초안을 모두 버린다.
+        """
+        for player_id in tuple(self._rooms.get(code, ())):
+            draft = self._drafts.get((code, player_id))
+            if draft is None or draft.match_id != match_id:
+                continue
+            if through_position is None or draft.position <= through_position:
+                self._drop((code, player_id))
+
+    def settle_view(self, code: str, match: MatchView) -> None:
+        """API가 읽은 판의 모습으로 지난 초안을 버린다. 도는 문항의 초안은 그대로 둔다."""
+        if match.state == "running":
+            self.settle(code, match.id, through_position=match.current_position - 1)
+        elif match.state == "revealing":
+            self.settle(code, match.id, through_position=match.current_position)
+        else:
+            self.settle(code, match.id, through_position=None)
+
+    def forget_member(self, code: str, player_id: UUID) -> None:
+        self._drop((code, player_id))
+
+    def forget_room(self, code: str) -> None:
+        for player_id in tuple(self._rooms.get(code, ())):
+            self._drop((code, player_id))
+
+    def __len__(self) -> int:
+        return len(self._drafts)
+
+
 def _error(
     status: int,
     code: str,
@@ -758,6 +945,8 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         "createdAt": room.created_at,
         "status": room.status,
         "inMatch": room.in_match,
+        # 판을 여는 데 필요한 세는 사람 수. 방장 혼자서도 연다 — 이 필드가 없는 이전 API는 둘이었다
+        "minPlayers": MIN_MATCH_PLAYERS,
     }
 
 
@@ -848,6 +1037,10 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
         "questionTimeMs": match.question_time_ms,
         "deadlineAt": match.deadline_at,
         "remainingMs": _remaining_ms(match, now or datetime.now(UTC)),
+        # 시간이 끝나면 발밑 칸이 답이다(U13, 혼자 하기와 같다). 화면이 초안을 보내고 규칙을
+        # 그렇게 말한다. 이 필드가 없는 이전 API에서는 직접 낸 답만 세고, 화면은 초안을
+        # 보내지 않는다.
+        "standingAnswers": True,
         "question": question,
         "ownSubmission": (
             _own_submission_payload(match.own_answer)
@@ -900,6 +1093,7 @@ def create_app(
     presence_interval_seconds: float = 5.0,
     event_hub: EventHub | None = None,
     removed_members: RemovedMembers | None = None,
+    standing_answers: StandingAnswers | None = None,
 ) -> FastAPI:
     if (
         isinstance(cleanup_interval_seconds, bool)
@@ -935,6 +1129,7 @@ def create_app(
     ticket_store = tickets or WebSocketTickets()
     hub = event_hub or EventHub()
     removed = removed_members or RemovedMembers()
+    standing = standing_answers if standing_answers is not None else StandingAnswers()
     ingress_limiter = AtomicMultiWindowLimiter()
     authenticated_ingress_limiter = AtomicMultiWindowLimiter()
     join_limiter = AtomicMultiWindowLimiter()
@@ -1016,7 +1211,7 @@ def create_app(
             while True:
                 await asyncio.sleep(1)
                 try:
-                    advances = await repo.advance_expired_matches()
+                    advances = await repo.advance_expired_matches(standing_answers=standing)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -1024,6 +1219,13 @@ def create_app(
                     logger.warning("match expiry sweep failed", exc_info=True)
                     advances = []
                 for advance in advances:
+                    if advance.match_id is not None:
+                        # 넘긴 문항까지의 초안은 이제 쓸 데가 없다. 판이 닫혔으면 모두 버린다
+                        standing.settle(
+                            advance.code,
+                            advance.match_id,
+                            through_position=None if advance.finished else advance.position,
+                        )
                     await hub.broadcast(advance.code, {"type": "match-invalidated"})
                     if advance.finished:
                         # 방이 다시 기다리는 방이 됐다. 판에서 빠진 멤버의 대기실이 다시 읽는다.
@@ -1077,6 +1279,7 @@ def create_app(
                                 advanced = await repo.advance_past_absent_players(
                                     code,
                                     absent,
+                                    standing_answers=standing,
                                 )
                             except asyncio.CancelledError:
                                 raise
@@ -1216,7 +1419,7 @@ def create_app(
         request: Request,
         body: SessionBody,
         identity: Identity = Depends(_identity),
-    ) -> dict[str, str]:
+    ) -> dict[str, object]:
         client_key = _client_key(request)
         wait = ingress_limiter.try_acquire(
             (
@@ -1251,7 +1454,13 @@ def create_app(
                 "identity-conflict",
                 "이 브라우저 식별자를 다시 만들 필요가 있어요.",
             ) from error
-        return {"playerId": str(identity.player_id)}
+        return {
+            "playerId": str(identity.player_id),
+            # 방 snapshot이 아직 없는 화면(홈·빈 로비·「게임 방법」)이 이 API의 규칙을 말할 수 있게
+            # 함께 알린다. 이 필드가 없는 이전 API는 둘부터였고 직접 낸 답만 셌다.
+            "minPlayers": MIN_MATCH_PLAYERS,
+            "standingAnswers": True,
+        }
 
     @app.get("/v1/rooms")
     async def list_rooms(
@@ -1467,10 +1676,12 @@ def create_app(
             ) from error
         await hub.disconnect_actor(code, actor_id)
         hub.forget_presence(code, actor_id)
+        standing.forget_member(code, actor_id)
         if room is None:
             # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다.
             hub.retain_presence(code, None)
             removed.forget_room(code)
+            standing.forget_room(code)
         else:
             await hub.broadcast(code, {"type": "room-invalidated"})
         return Response(status_code=204)
@@ -1552,6 +1763,7 @@ def create_app(
         await hub.send_actor(code, player_id, {"type": "removed", "reason": reason})
         await hub.disconnect_actor(code, player_id)
         hub.forget_presence(code, player_id)
+        standing.forget_member(code, player_id)
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
 
@@ -1727,7 +1939,7 @@ def create_app(
             raise _error(
                 409,
                 "not-ready",
-                "연결된 참가자가 두 명 이상이고 방장 말고 모두 준비해야 시작할 수 있어요.",
+                "방장 말고 연결된 참가자가 모두 준비해야 시작할 수 있어요.",
             ) from error
         except MatchInProgress as error:
             raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
@@ -1748,10 +1960,12 @@ def create_app(
             actor_id,
             code,
             absent_player_ids=match_absent_ids(code, actor_id),
+            standing_answers=standing,
         )
         match = match_read.match
         if match is None:
             raise _error(404, "no-active-match", "진행하거나 방금 끝난 게임이 없어요.")
+        standing.settle_view(code, match)
         payload = _match_payload(match)
         if match_read.advanced:
             await hub.broadcast(code, {"type": "match-invalidated", "matchId": str(match.id)})
@@ -1790,6 +2004,7 @@ def create_app(
                 position=body.position,
                 choice_index=body.choice_index,
                 absent_player_ids=match_absent_ids(code, actor_id),
+                standing_answers=standing,
             )
         except DomainError as error:
             raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
@@ -1799,6 +2014,7 @@ def create_app(
             raise _error(409, "stale-question", "이미 다음 문제로 넘어갔어요.") from error
         except NotMember as error:
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.") from error
+        standing.settle_view(code, submission.match)
         if submission.advanced:
             # 이 답으로 모두 답해 공개로 넘어갔다. 방 전체가 다시 읽는다.
             await hub.broadcast(
@@ -1849,6 +2065,7 @@ def create_app(
             "ticket": ticket_store.issue(actor_id, code),
             "movementViewport": MOVEMENT_VIEWPORT_CAPABILITY,
             "movementSeat": WAITING_ROOM_SEAT_CAPABILITY,
+            "standingAnswer": STANDING_ANSWER_CAPABILITY,
         }
 
     @app.websocket("/v1/rooms/{raw_code}/events")
@@ -1907,6 +2124,22 @@ def create_app(
                     return
                 if touch_gate.allow():
                     await repo.touch_member(actor_id, code)
+                standing_answer = _standing_answer_message(message)
+                if standing_answer is not None:
+                    # 방송하지 않는다 — 남의 발밑 칸은 아직 고르는 사람에게 보이지 않는다(PRD 2.1).
+                    # 메모리에 두기만 하고 마감이 빈 답을 채울 때 잠근 판에서 다시 본다.
+                    draft_match_id, draft_position, draft_choice = standing_answer
+                    if draft_choice is None:
+                        standing.clear(code, actor_id)
+                    else:
+                        standing.record(
+                            code,
+                            actor_id,
+                            match_id=draft_match_id,
+                            position=draft_position,
+                            choice_index=draft_choice,
+                        )
+                    continue
                 movement = _movement_message(message)
                 if movement is None:
                     continue

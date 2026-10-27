@@ -89,9 +89,13 @@ test('빈 방 목록은 방 만들기·혼자 연습하기 또는 필터 초기�
   assert.match(online, /emptyTitle: need\('room-empty-title'\)/);
   assert.match(online, /emptyCopy: need\('room-empty-copy'\)/);
   assert.match(online, /emptyAction: need<HTMLButtonElement>\('room-empty-action'\)/);
-  // 혼자 온 사람에게 2명부터라는 것을 먼저 말하고, 혼자서도 갈 길을 둔다 (U29)
-  assert.match(online, /'친구를 불러야 시작할 수 있어요 \(2명부터\)'/);
-  assert.match(online, /'방 만들고 친구 부르기'/);
+  // 혼자 온 사람에게 막다른 길이 되지 않게 한다 (U29). 말은 세션이 알려 준 시작 인원으로 고른다 —
+  // 혼자서도 여는 API면 만들기로, 둘부터인 이전 API면 «친구를 불러야» + 「혼자 연습하기」로 (rules.ts)
+  assert.match(online, /showEmptyState\(\{ \.\.\.lobbyEmptyCopy\(roomStore\.onlineRules\(\)\?\.minPlayers \?\? null\), action: 'create' \}\);/);
+  const rules = await import('../js/online/rules.js');
+  assert.equal(rules.lobbyEmptyCopy(2).title, '친구를 불러야 시작할 수 있어요 (2명부터)');
+  assert.equal(rules.lobbyEmptyCopy(2).label, '방 만들고 친구 부르기');
+  assert.equal(rules.lobbyEmptyCopy(2).practice, true);
   assert.match(lobby, /id="room-empty-secondary"[^>]*hidden>혼자 연습하기</);
   assert.match(online, /el\.emptySecondary\.addEventListener\('click', leaveForPractice\)/);
   assert.match(online, /'필터 초기화'/);

@@ -166,6 +166,8 @@ const lobby = createOnlineScreen({
     me: () => 'me',
     listRooms: () => listRooms(),
     createRoom: (spec) => createRoom(spec),
+    // 세션이 알려 준 규칙(U13·혼자 여는 방). 묻지 않은 것처럼 둔다 — 빈 로비는 이전 API의 말이다
+    onlineRules: () => null,
   },
   onHome: () => {},
   onPractice: () => {},

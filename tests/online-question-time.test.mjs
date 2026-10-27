@@ -96,7 +96,8 @@ test('방 만들기 폼은 «문항 시간»을 인원 다음에 고르게 하�
   assert.match(form, /<label class="room-form__label" for="create-question-time">문항 시간<\/label>\s*<select class="room-form__input" id="create-question-time"><\/select>/);
   assert.ok(form.indexOf('create-capacity-help') < form.indexOf('create-question-time'), '인원 도움말 다음이다');
   assert.ok(form.indexOf('create-question-time') < form.indexOf('create-private'), '잠그기 앞이다');
-  assert.match(html, /분야와 인원, 문항 시간을 정하고 친구를 기다려요\./);
+  // 방장 혼자서도 연다 — «친구를 기다려요»로 끝내지 않는다
+  assert.match(html, /분야와 인원, 문항 시간을 정해 방을 열어요\./);
 
   assert.match(online, /for \(const time of ONLINE_QUESTION_TIME_CHOICES\) \{\s*appendOption\(el\.createQuestionTime, String\(time\), onlineQuestionTimeLabel\(time\)\);/);
   assert.match(online, /questionTimeMs: onlineQuestionTimeOrDefault\(Number\(el\.createQuestionTime\.value\)\),/);

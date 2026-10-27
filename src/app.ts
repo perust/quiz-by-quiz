@@ -160,7 +160,11 @@ async function main(): Promise<void> {
   settingsDialog.set(settings);
 
   // 「게임 방법」 (U01). 홈에서 판을 열기 전에 읽는다 — 시간이 흐르지 않는다. 문항 시간은 지금 고른 값이다
-  const rulesDialog = createRulesDialog({ getTimeLimit: () => timeLimitMs });
+  // 온라인 한 줄은 세션을 열 때 서버가 알려 준 규칙을 말한다. 묻기 전이면 어느 API든 맞는 말이다 (U13)
+  const rulesDialog = createRulesDialog({
+    getTimeLimit: () => timeLimitMs,
+    getOnlineRules: () => roomStore.onlineRules(),
+  });
 
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
@@ -228,7 +232,11 @@ async function main(): Promise<void> {
     myRooms: () => roomStore.myRooms(),
     activeRoomCode: () => activeRoomCode,
     navigation: () => waitingRoomEntryGeneration,
-    show: (room) => homeScreen.setRoomNote(room),
+    show: (room) => {
+      homeScreen.setRoomNote(room);
+      // 방을 물으며 세션을 열었다. 이제 이 API가 몇 명부터 여는지 안다
+      homeScreen.setOnlineMinPlayers(roomStore.onlineRules()?.minPlayers ?? null);
+    },
   });
 
   // 온라인 로비. 방을 어디에 두는지는 어댑터가 정하고 화면은 모른다
@@ -370,6 +378,12 @@ async function main(): Promise<void> {
       const code = onlineMatchRoomCode;
       if (!code || !ownsOnlineMatchNavigation()) return;
       roomStore.sendMovement({ code, ...sample });
+    },
+    // 시간이 끝나면 답이 될 발밑 칸 (U13). 저장소가 그 소켓의 서버가 받는지 다시 보고 보낸다
+    onStandingAnswer: (draft) => {
+      const code = onlineMatchRoomCode;
+      if (!code || !ownsOnlineMatchNavigation()) return;
+      roomStore.sendStandingAnswer({ code, ...draft });
     },
     onSendChat: async (text) => {
       const code = onlineMatchRoomCode;
@@ -684,6 +698,8 @@ async function main(): Promise<void> {
     stopOnlineMatch();
     const bestScores = await loadBestScores();
     if (!isCurrentNavigation(navigationGeneration)) return false;
+    // 온라인 입구의 보조 줄: 혼자서도 여는 API인지는 세션을 연 뒤에야 안다(묻기 전이면 어느 쪽이든 맞는 말)
+    homeScreen.setOnlineMinPlayers(roomStore.onlineRules()?.minPlayers ?? null);
     homeScreen.render({
       categories: CATEGORIES,
       banks,

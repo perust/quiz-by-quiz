@@ -13,6 +13,7 @@ import type {
   OnlineMatchQuestion,
   OnlineMatchSnapshot,
   OnlineOwnSubmission,
+  OnlineRules,
   OnlineReveal,
   OnlineRevealingMatch,
   OnlineReviewItem,
@@ -28,13 +29,16 @@ import type {
   RoomPatch,
   RoomStore,
   ReadyResult,
+  StandingAnswerDraft,
   StartGameResult,
   Unsubscribe,
 } from './adapter.js';
 import {
   isWaitingRoomSeatId,
+  MAX_STANDING_ANSWER_POSITION,
   MOVEMENT_VIEWPORT_CAPABILITY,
   type MovementViewport,
+  STANDING_ANSWER_CAPABILITY,
   type WaitingRoomSeatId,
   validMovementViewportDimension,
   WAITING_ROOM_SEAT_CAPABILITY,
@@ -42,6 +46,7 @@ import {
 import {
   ApiFailure,
   isOnlineQuestionTime,
+  LEGACY_MIN_PLAYERS,
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
@@ -102,6 +107,10 @@ interface MovementChannel {
   socket: WebSocketLike | null;
   supportsViewport: boolean;
   supportsSeat: boolean;
+  /** 이 소켓의 서버가 발밑 칸 초안을 받는다고 알렸는가 (U13). 소켓마다 다시 묻는다 */
+  supportsStandingAnswer: boolean;
+  /** 마지막으로 보낸(보내려던) 초안. 소켓이 다시 붙으면 다시 보낸다 — 지우기(null)도 */
+  latestStanding: StandingAnswerDraft | null;
   latest: ({
     type: 'movement';
     x: number;
@@ -290,6 +299,12 @@ function parseRoom(value: unknown): PublicRoom {
   // 방장 자동 준비(U28)와 접속 상태(U24)는 같은 API에서 함께 생겼다. 참가자마다 `connected`를
   // 보내지 않는 이전 API는 방장의 준비도 요구하므로, 화면이 시작 앞에 준비를 먼저 보낸다.
   const hostReadyImplicit = players.every((player) => isObject(player) && Object.hasOwn(player, 'connected'));
+  // 판을 여는 인원 (방장 혼자서도 연다). 이 필드를 모르는 이전 API는 둘부터였다. 있는데 정원 밖이면
+  // 다른 계약이라 믿지 않는다
+  const minPlayers = value.minPlayers === undefined ? LEGACY_MIN_PLAYERS : value.minPlayers;
+  if (!Number.isInteger(minPlayers) || (minPlayers as number) < 1 || (minPlayers as number) > capacity) {
+    throw new Error('서버 방 시작 인원이 올바르지 않습니다.');
+  }
 
   return {
     code: value.code,
@@ -307,6 +322,8 @@ function parseRoom(value: unknown): PublicRoom {
     status,
     inMatch,
     hostReadyImplicit,
+    // 바로 위에서 정수인 것을 확인했다
+    minPlayers: minPlayers as number,
   };
 }
 
@@ -499,6 +516,8 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     currentPosition,
     totalQuestions,
     ...(isOnlineQuestionTime(questionTimeMs) ? { questionTimeMs } : {}),
+    // 시간이 끝나면 발밑 칸이 답인 판 (U13). true만 믿는다 — 없거나 다른 값이면 이전 규칙(직접 낸 답만)이다
+    ...(value.standingAnswers === true ? { standingAnswers: true as const } : {}),
   };
   const activeDeadlineAt = (): string => {
     const deadlineAt = value.deadlineAt;
@@ -585,6 +604,21 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
   throw new Error('서버 매치 상태가 올바르지 않습니다.');
 }
 
+/**
+ * 세션 응답이 알려 주는 이 API의 규칙. 방 snapshot이 아직 없는 화면(홈 입구·빈 로비·「게임 방법」)이 쓴다.
+ * 필드를 모르는 이전 API는 둘부터·직접 낸 답만 세었다. 시작 인원이 깨졌으면 이전 규칙으로 읽는다 —
+ * 말 하나 때문에 세션을 거절하지 않는다.
+ */
+function sessionRules(body: Record<string, unknown>): OnlineRules {
+  const minPlayers = body.minPlayers;
+  return {
+    minPlayers: Number.isInteger(minPlayers) && (minPlayers as number) >= 1
+      ? minPlayers as number
+      : LEGACY_MIN_PLAYERS,
+    standingAnswers: body.standingAnswers === true,
+  };
+}
+
 async function responseBody(response: Response): Promise<unknown> {
   if (response.status === 204) return null;
   const text = await response.text();
@@ -626,6 +660,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     characterId: DEFAULT_CHARACTER_ID,
   };
   let sessionFingerprint: string | null = null;
+  /** 세션을 열 때 서버가 알려 준 규칙. 묻기 전에는 null — 화면은 어느 쪽이든 맞는 말을 한다 */
+  let learnedRules: OnlineRules | null = null;
   let roomSnapshotRequestGeneration = 0;
   const activeRoomMutationStates = new Map<string, {
     committedGeneration: number;
@@ -752,6 +788,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         if (!isObject(body) || body.playerId !== identity.id) {
           throw new Error('온라인 서버가 다른 참가자 식별자를 돌려줬습니다.');
         }
+        learnedRules = sessionRules(body);
       };
 
       try {
@@ -1045,6 +1082,40 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     }
   }
 
+  /** 초안 하나를 소켓에 싣는다. 그 소켓의 서버가 받는다고 알렸을 때만 (U13) */
+  function sendStandingPayload(channel: MovementChannel, draft: StandingAnswerDraft): boolean {
+    const socket = channel.socket;
+    if (!channel.supportsStandingAnswer || socket?.readyState !== 1) return false;
+    try {
+      socket.send(JSON.stringify({
+        type: 'standing-answer',
+        matchId: draft.matchId,
+        position: draft.position,
+        choiceIndex: draft.choiceIndex,
+      }));
+      return true;
+    } catch {
+      socket.close();
+      return false;
+    }
+  }
+
+  function sendStandingAnswer({
+    code: rawCode, matchId, position, choiceIndex,
+  }: { code: string } & StandingAnswerDraft): boolean {
+    const code = normalizeCode(rawCode);
+    if (
+      !CODE_PATTERN.test(code)
+      || typeof matchId !== 'string' || !UUID_PATTERN.test(matchId)
+      || !Number.isInteger(position) || position < 1 || position > MAX_STANDING_ANSWER_POSITION
+      || (choiceIndex !== null && (!Number.isInteger(choiceIndex) || choiceIndex < 0 || choiceIndex > 3))
+    ) return false;
+    const channel = movementChannels.get(code);
+    if (!channel) return false;
+    channel.latestStanding = { matchId, position, choiceIndex };
+    return sendStandingPayload(channel, channel.latestStanding);
+  }
+
   function subscribe(rawCode: string, handler: RoomEventHandler): Unsubscribe {
     const code = normalizeCode(rawCode);
     if (!CODE_PATTERN.test(code)) return () => undefined;
@@ -1066,6 +1137,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       socket: null,
       supportsViewport: false,
       supportsSeat: false,
+      supportsStandingAnswer: false,
+      latestStanding: null,
       latest: null,
     };
     movementChannels.set(code, movementChannel);
@@ -1266,6 +1339,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       // cached new client sending payload fields that the legacy strict parser discards.
       movementChannel.supportsViewport = false;
       movementChannel.supportsSeat = false;
+      movementChannel.supportsStandingAnswer = false;
       try {
         const ticketBody = await request(`/v1/rooms/${encodeURIComponent(code)}/ws-ticket`, {
           method: 'POST',
@@ -1279,6 +1353,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         );
         movementChannel.supportsSeat = movementChannel.supportsViewport
           && ticketBody.movementSeat === WAITING_ROOM_SEAT_CAPABILITY;
+        // 모르는 메시지를 버리기만 하는 이전 API에도 초안은 보내지 않는다 (U13)
+        movementChannel.supportsStandingAnswer = ticketBody.standingAnswer === STANDING_ANSWER_CAPABILITY;
 
         const url = new URL(endpoint(`/v1/rooms/${encodeURIComponent(code)}/events`));
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1295,6 +1371,10 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           if (latest && connected.readyState === 1) {
             connected.send(JSON.stringify(latest));
           }
+          // 끊긴 사이의 초안을 다시 맞춘다 (U13). API를 다시 띄웠으면 메모리의 초안이 사라졌고, 끊긴 사이
+          // 칸에서 내려섰으면 서버에 남은 앞 칸을 지워야 한다 — 마지막 초안(지우기 포함)을 다시 보낸다
+          const standing = movementChannel.latestStanding;
+          if (standing) sendStandingPayload(movementChannel, standing);
           // 연결이 끊긴 동안 room-invalidated를 놓쳤을 수 있으므로 room과 match를
           // 모두 권위 있는 REST snapshot으로 다시 맞춘다.
           requestRoomRefresh();
@@ -1312,6 +1392,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             movementChannel.socket = null;
             movementChannel.supportsViewport = false;
             movementChannel.supportsSeat = false;
+            movementChannel.supportsStandingAnswer = false;
           }
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = null;
@@ -1340,6 +1421,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       movementChannel.socket = null;
       movementChannel.supportsViewport = false;
       movementChannel.supportsSeat = false;
+      movementChannel.supportsStandingAnswer = false;
+      movementChannel.latestStanding = null;
       movementChannel.latest = null;
       if (movementChannels.get(code) === movementChannel) movementChannels.delete(code);
       releaseRoomMutationState(code, mutationState);
@@ -1407,6 +1490,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }
     },
     sendMovement,
+    sendStandingAnswer,
+    onlineRules: () => learnedRules,
     startGame,
     getMatch,
     submitMatchAnswer,

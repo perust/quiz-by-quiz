@@ -158,6 +158,68 @@ export function onlineQuestionTimeLabel(value: OnlineQuestionTime): string {
   return `${Math.round(value / 1000)}초`;
 }
 
+// ── 판을 여는 인원 ─────────────────────────────────────────────
+// 지금 API와 로컬 방은 방장 혼자서도 판을 연다(서버 `MIN_MATCH_PLAYERS`, 소유자 방향: 혼자 하고 싶은
+// 사람도 온라인 방을 만들어 푼다). 화면(Pages)이 API보다 먼저 나갈 수 있으므로 이 규칙을 모르는 이전
+// API도 받는다 — `minPlayers`를 보내지 않는 방·세션은 예전처럼 둘부터다.
+
+/** `minPlayers`를 보내지 않는 이전 API의 시작 인원 */
+export const LEGACY_MIN_PLAYERS = 2;
+
+/** 이전 API의 온라인 규칙: 둘부터, 직접 낸 답만 센다 */
+export const LEGACY_ONLINE_RULES = { minPlayers: LEGACY_MIN_PLAYERS, standingAnswers: false } as const;
+
+/** 이 방의 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 모르면 이전 API의 2다 */
+export function roomMinPlayers(room: { minPlayers?: number }): number {
+  const value = room.minPlayers;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : LEGACY_MIN_PLAYERS;
+}
+
+/** 홈의 온라인 입구 보조 줄과 그 이름(`aria-label`). 서버에 묻기 전(null)에는 어느 쪽이든 맞는 말이다 */
+export function onlineEntryCopy(minPlayers: number | null): { desc: string; label: string } {
+  if (minPlayers === null) return { desc: '방을 만들거나 참가해요', label: '온라인, 방을 만들거나 참가해요' };
+  if (minPlayers <= 1) return { desc: '혼자서도 · 친구와 함께', label: '온라인, 혼자서도 친구와 함께' };
+  return { desc: `친구와 함께 · ${minPlayers}명부터`, label: `온라인, 친구와 함께 ${minPlayers}명부터` };
+}
+
+/** 빈 로비(방이 하나도 없다)의 말. `practice`는 홈의 「혼자 연습하기」를 함께 보일지다 */
+export interface LobbyEmptyCopy {
+  title: string;
+  copy: string;
+  label: string;
+  practice: boolean;
+}
+
+/**
+ * 방이 하나도 없는 로비 (U29). 혼자 온 사람에게 막다른 길이 되지 않게 한다 — 방장 혼자서도 여는
+ * API라면 «방을 만들면 혼자서도 바로 시작한다»를 먼저 말하고 만들기로 잇는다(혼자 연습하러 홈으로
+ * 돌려보낼 까닭이 없다). 둘부터인 이전 API(또는 아직 모르면)는 예전처럼 «친구를 불러야» +
+ * 「혼자 연습하기」다. 짧은 touch 화면은 설명 줄을 접으므로 핵심은 제목에 둔다.
+ */
+export function lobbyEmptyCopy(minPlayers: number | null): LobbyEmptyCopy {
+  if (minPlayers !== null && minPlayers <= 1) {
+    return {
+      title: '방을 만들면 혼자서도 바로 시작할 수 있어요',
+      copy: '아직 열린 방이 없어요. 혼자 풀어도 되고, 코드를 알려 주면 친구도 들어와요.',
+      label: '방 만들기',
+      practice: false,
+    };
+  }
+  const minimum = minPlayers ?? LEGACY_MIN_PLAYERS;
+  return {
+    title: `친구를 불러야 시작할 수 있어요 (${minimum}명부터)`,
+    copy: '아직 열린 방이 없어요. 방을 만들고 코드를 친구에게 알려 주세요.',
+    label: '방 만들고 친구 부르기',
+    practice: true,
+  };
+}
+
+/** 방 만들기 폼의 인원 도움말. «최대 인원»이 모여야 시작하는 줄 알지 않게 시작 인원을 따로 말한다 */
+export function capacityHelpText(minPlayers: number | null): string {
+  if (minPlayers !== null && minPlayers <= 1) return '혼자서도 바로 시작할 수 있어요';
+  return `${minPlayers ?? LEGACY_MIN_PLAYERS}명부터 시작할 수 있어요`;
+}
+
 /**
  * 방 안에서 겹치지 않는 이름을 만든다. 겹치면 뒤에 1부터 숫자를 붙인다.
  *

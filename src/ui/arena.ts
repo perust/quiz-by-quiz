@@ -30,6 +30,11 @@ export interface ArenaDeps {
   /** 온라인 무대가 같은 방 참가자에게 현재 화면 좌표를 보낼 때 쓴다. */
   onMove?: (point: Point, moving: boolean) => void;
   /**
+   * `standingIndex()`가 바뀔 때마다 (실제로 움직인 뒤의 발밑 칸, 아니면 null). 온라인 무대가 시간이
+   * 끝나면 답이 될 칸을 서버에 초안으로 알릴 때 쓴다 (U13). 새 문항(`reset`)·끄기는 null로 알린다.
+   */
+  onStandingChange?: (index: number | null) => void;
+  /**
    * 위 패널의 보기 버튼들. 캐릭터가 그 위에 서도 같은 번호로 본다.
    *
    * 배열이 아니라 «훑을 수 있는 것»으로 받는다 — 퀴즈 화면은 `querySelectorAll`의
@@ -106,6 +111,7 @@ export interface Arena {
 export function createArena({
   onChoose,
   onMove,
+  onStandingChange,
   getChoiceNodes,
   trapFocus,
   onDialogClose,
@@ -127,6 +133,8 @@ export function createArena({
   const tileNodes: HTMLElement[] = [];
   /** 도움말을 연 버튼. 닫을 때 포커스를 되돌려 준다 */
   let helpOpener: HTMLElement | null = null;
+  /** 마지막으로 알린 발밑 칸. 같은 값은 다시 알리지 않는다 */
+  let reportedStanding: number | null = null;
 
   /** 발밑이 바닥 칸이면 그 번호. 위 보기나 다른 버튼이면 null */
   function tileIndexOf(node: HTMLElement | null): number | null {
@@ -144,6 +152,7 @@ export function createArena({
         const standing = walker.standingElement();
         standing?.classList.add('is-standing');
         markArenaTarget(getChoiceNodes(), tileIndexOf(standing));
+        reportStanding();
       }
       onMove?.(point, moving);
     },
@@ -152,6 +161,7 @@ export function createArena({
     onStep: (node) => {
       if (!movedSinceReset && indexOfNode(node) !== null) node?.classList.remove('is-standing');
       markArenaTarget(getChoiceNodes(), movedSinceReset ? tileIndexOf(node) : null);
+      reportStanding();
     },
     // 무대 밖으로도 걸어 나가 화면의 아무 버튼이나 밟고 누를 수 있다.
     // 답으로 세는 것은 바닥 칸과 위 보기뿐이므로(indexOfNode), 나가기나 ? 위에
@@ -176,6 +186,19 @@ export function createArena({
     if (tile !== null) return tile;
     const choice = [...getChoiceNodes()].indexOf(node);
     return choice === -1 ? null : choice;
+  }
+
+  /** 시간이 끝나면 답이 될 칸. 실제로 움직이기 전에는 우연히 겹친 칸도 답이 아니다 */
+  function currentStanding(): number | null {
+    return enabled && movedSinceReset ? indexOfNode(walker.standingElement()) : null;
+  }
+
+  /** 발밑 칸이 바뀌었으면 화면에 알린다 (U13). 같은 값은 되풀이하지 않는다 */
+  function reportStanding(): void {
+    const next = currentStanding();
+    if (next === reportedStanding) return;
+    reportedStanding = next;
+    onStandingChange?.(next);
   }
 
   // ── 도움말 ─────────────────────────────────────────────────────
@@ -257,6 +280,7 @@ export function createArena({
         walker.setEnabled(false);
         // 워커는 꺼질 때 발밑 표시만 거두고 onStep 을 부르지 않는다. 위 보기의 표시도 함께 거둔다
         markArenaTarget(getChoiceNodes(), null);
+        reportStanding();
         closeHelp(); // 무대가 사라지면 도움말도 함께 닫는다
         return;
       }
@@ -280,6 +304,8 @@ export function createArena({
     reset(choiceCount) {
       movedSinceReset = false;
       buildTiles(choiceCount);
+      // 새 문항은 다시 중립이다. 지난 문항의 발밑 칸을 들고 가지 않는다
+      reportStanding();
       el.character.classList.remove('walker--sad');
       if (!enabled) return;
 
@@ -292,11 +318,13 @@ export function createArena({
     /** 이동은 유지한 채 답 칸을 고를 수 있는지만 바꾼다. */
     setSelectionEnabled(value) {
       setTileSelectionEnabled(value);
+      reportStanding();
     },
 
     /**
      * 지금 밟고 있는 칸. 아무 칸도 아니면 null.
-     * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다.
+     * 시간이 다 됐을 때 퀴즈 화면이 이 값을 답으로 넘긴다. `currentStanding()`과 같은 판정이라
+     * 로컬의 시간 초과 답과 온라인의 발밑 칸 초안(U13)이 같은 칸을 본다.
      */
     standingIndex() {
       return enabled && movedSinceReset ? indexOfNode(walker.standingElement()) : null;

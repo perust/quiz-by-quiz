@@ -7,6 +7,13 @@
 export const MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192;
 export const MOVEMENT_VIEWPORT_CAPABILITY = 'sender-css-pixels-v1';
 export const WAITING_ROOM_SEAT_CAPABILITY = 'waiting-room-seat-v1';
+/**
+ * 방 소켓이 발밑 칸 초안(`standing-answer`, U13)을 받는다는 ws-ticket의 표시. 이 값을 주지 않는 이전
+ * API는 모르는 메시지를 버리기만 하지만, 그래도 보내지 않는다 — 소켓을 다시 열 때마다 다시 묻는다.
+ */
+export const STANDING_ANSWER_CAPABILITY = 'standing-answer-v1';
+/** 초안의 문항 순서 한도. 서버의 답안 제출(1~25)과 같다 */
+export const MAX_STANDING_ANSWER_POSITION = 25;
 
 /** 서버가 relay할 수 있는 논리 좌석. 테이블처럼 앉지 않는 가구는 포함하지 않는다. */
 export const WAITING_ROOM_SEAT_IDS = [

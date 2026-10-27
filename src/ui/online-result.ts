@@ -53,6 +53,8 @@ export function onlineFinalResultView(
 export function onlineFinalSummary(view: OnlineFinalResultView, totalQuestions: number): string {
   const me = view.entries.find(({ isMe }) => isMe);
   if (!me || view.myPlace === null) return '최종 순위가 나왔어요.';
+  // 방장 혼자 연 판(혼자 여는 온라인 방). 혼자서 «최종 1위»는 순위가 아니다 — 푼 결과만 말한다
+  if (view.entries.length === 1) return `혼자 푼 판 · ${me.score}점 · ${me.correctCount}/${totalQuestions} 정답`;
   const place = view.myTied ? onlinePlaceLabel(view.myPlace, true) : `최종 ${view.myPlace}위`;
   return `${place} · ${me.score}점 · ${me.correctCount}/${totalQuestions} 정답`;
 }

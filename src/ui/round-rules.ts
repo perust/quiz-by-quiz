@@ -61,14 +61,34 @@ export function answerRule(limitMs: number | null): string {
 /** 「게임 방법」의 «기록» 줄. 랭킹 화면·결과 등록 칸과 같은 범위다 (FR-6.10) */
 export const RECORD_RULE = '이 브라우저에만 저장돼요';
 
+/** 「게임 방법」 온라인 줄이 말할 규칙. `online/adapter.ts`의 `OnlineRules`와 같은 모양이다 */
+export interface OnlineRuleFacts {
+  minPlayers: number;
+  standingAnswers: boolean;
+}
+
+/** `minPlayers`·`standingAnswers`를 모르는 이전 API: 둘부터, 직접 낸 답만 센다 */
+const LEGACY_ONLINE_RULE_FACTS: OnlineRuleFacts = { minPlayers: 2, standingAnswers: false };
+
 /**
- * 「게임 방법」의 «온라인» 한 줄 (local-ux-1). 위 줄들은 **혼자 하기** 규칙이고 온라인은 둘이 다르다 —
- * 칸에 서 있기만 해서는 제출되지 않고(시간이 끝나도 선 칸을 내지 않는다), 문항 시간은 설정이 아니라
- * 방장이 방마다 고른다. 온라인 조작법(`#online-help-dialog`)·설정의 문항 시간 도움말과 같은 말이다.
+ * 「게임 방법」의 «온라인» 한 줄 (local-ux-1). 위 줄들은 **혼자 하기** 규칙이다. 온라인의 문항 시간은
+ * 설정이 아니라 방장이 방마다 고른다. 답하기는 판의 서버가 정한다 —
+ * - 지금 API(`standingAnswers`): 혼자 하기와 같다 — 시간이 끝나면 선 칸이 답이다 (U13). 방장 혼자서도 연다
+ * - 이전 API(인자를 넘기지 않음): 칸에 서 있기만 해서는 제출되지 않는다(시간이 끝나도 선 칸을 내지 않는다)
+ * - 아직 묻지 않음(null): 둘 다에 맞는 말만 — 누르면 바로 제출된다는 것과 문항 시간
+ * 온라인 조작법(`#online-help-dialog`)·설정의 문항 시간 도움말과 같은 말이다.
  */
-export function onlineRule(): string {
+export function onlineRule(rules: OnlineRuleFacts | null = LEGACY_ONLINE_RULE_FACTS): string {
   const times = ONLINE_QUESTION_TIME_CHOICES.map((ms) => `${Math.round(ms / 1000)}초`).join('나 ');
-  return `칸에 서 있기만 해서는 제출되지 않아요. 선택 버튼이나 Enter · Space를 눌러요. 문항 시간은 방장이 ${times}로 정해요.`;
+  const time = `문항 시간은 방장이 ${times}로 정해요.`;
+  if (rules === null) {
+    return `보기·바닥 칸을 누르거나 칸 위에서 선택 버튼 · Enter · Space를 누르면 바로 제출돼요. ${time}`;
+  }
+  const solo = rules.minPlayers <= 1 ? ' 방을 만들면 혼자서도 시작할 수 있어요.' : '';
+  if (rules.standingAnswers) {
+    return `답하기는 혼자 하기와 같아요 — 시간이 끝나면 캐릭터가 서 있는 칸이 답이에요. ${time}${solo}`;
+  }
+  return `칸에 서 있기만 해서는 제출되지 않아요. 선택 버튼이나 Enter · Space를 눌러요. ${time}${solo}`;
 }
 
 /** 무대 아래 규칙 한 줄 (U01). 조작이 아니라 «무엇이 답이 되는가»를 말한다 */

@@ -31,10 +31,12 @@ import {
   JOIN_MESSAGES,
   LEAVE_MESSAGES,
   LeaveRoomRejected,
+  capacityHelpText,
   checkCodeInput,
   checkRoomName,
   hasHangul,
   isValidCode,
+  lobbyEmptyCopy,
   normalizeCode,
   onlineErrorText,
   onlineQuestionTimeLabel,
@@ -119,6 +121,7 @@ export function createOnlineScreen(
     createName: need<HTMLInputElement>('create-name'),
     createCategory: need<HTMLSelectElement>('create-category'),
     createCapacity: need<HTMLSelectElement>('create-capacity'),
+    createCapacityHelp: need('create-capacity-help'),
     createQuestionTime: need<HTMLSelectElement>('create-question-time'),
     createPrivate: need<HTMLInputElement>('create-private'),
     createPasswordRow: need('create-password-row'),
@@ -520,6 +523,8 @@ export function createOnlineScreen(
   function renderList(): void {
     const filters = currentFilters();
     syncFilterToggle(filters);
+    // 만들기 폼의 시작 인원. 세션을 연 뒤에야 안다(목록을 읽으며 연다). 모르면 이전 API의 말이다
+    el.createCapacityHelp.textContent = capacityHelpText(roomStore.onlineRules()?.minPlayers ?? null);
 
     if (listError !== null) {
       el.list.replaceChildren();
@@ -551,16 +556,10 @@ export function createOnlineScreen(
         });
         return;
       }
-      // 혼자 온 사람에게 막다른 길이 되지 않게, 2명부터라는 것을 먼저 말하고 혼자서도
-      // 할 수 있는 길을 함께 둔다. 가짜 대기 인원이나 봇으로 메우지 않는다 (U29).
-      // 짧은 touch 화면은 설명 줄을 접으므로 핵심은 제목에 둔다.
-      showEmptyState({
-        title: '친구를 불러야 시작할 수 있어요 (2명부터)',
-        copy: '아직 열린 방이 없어요. 방을 만들고 코드를 친구에게 알려 주세요.',
-        action: 'create',
-        label: '방 만들고 친구 부르기',
-        practice: true,
-      });
+      // 혼자 온 사람에게 막다른 길이 되지 않게 한다. 가짜 대기 인원이나 봇으로 메우지 않는다 (U29).
+      // 방장 혼자서도 여는 API면 «혼자서도 바로 시작»을 먼저 말하고 만들기로 잇는다. 둘부터인
+      // 이전 API면 «친구를 불러야 (2명부터)»와 홈의 「혼자 연습하기」다 — 세션이 알려 준 규칙을 따른다.
+      showEmptyState({ ...lobbyEmptyCopy(roomStore.onlineRules()?.minPlayers ?? null), action: 'create' });
       return;
     }
 

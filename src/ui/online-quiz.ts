@@ -14,8 +14,10 @@ import type {
   OnlineRunningMatch,
   PublicRoom,
   RoomEvent,
+  StandingAnswerDraft,
 } from '../online/adapter.js';
 import { onlineErrorText } from '../online/rules.js';
+import { createStandingAnswerPublisher, onlineStandingDraft } from '../online/standing-answer.js';
 import type { Arena, ArenaDeps } from './arena.js';
 import { choiceLayout } from './choice-layout.js';
 import {
@@ -218,6 +220,9 @@ export function reconcileOnlineChoiceNodes<T>(
   };
 }
 
+/** 시간이 끝나면 선 칸이 답인 판(U13)의 상태 줄. 로컬 무대 아래 규칙 줄과 같은 규칙이다 */
+export const ONLINE_STANDING_STATUS = '보기를 누르면 바로 제출돼요. 시간이 끝나면 서 있는 칸이 답이에요.';
+
 /** 서버가 남은 시간을 보내지 않을 때(구버전 서버)의 안내. 카운트다운은 그리지 않는다. */
 export const ONLINE_TIME_NOTICE = '시간이 끝나면 다 같이 결과를 확인해요.';
 
@@ -396,10 +401,13 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
       canSubmit: canAttemptOnlineSubmission(snapshot),
       selectedChoiceIndex: submission?.choiceIndex ?? null,
       reveal: null,
-      // 로컬과 달리 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
-      status: submission === null
-        ? '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.'
-        : '제출 완료! 다른 친구를 기다리는 중이에요.',
+      // 답하는 규칙은 판이 정한다 (U13). 지금 판은 혼자 하기와 같다 — 시간이 끝나면 선 칸이 답이다.
+      // 그 필드가 없는 이전 API의 판은 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
+      status: submission !== null
+        ? '제출 완료! 다른 친구를 기다리는 중이에요.'
+        : snapshot.standingAnswers === true
+          ? ONLINE_STANDING_STATUS
+          : '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
       showFinalResult: false,
     };
   }
@@ -462,6 +470,11 @@ export function handleOnlineMovementKey(
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   onMovement: (sample: MovementSample) => void;
+  /**
+   * 발밑 칸 초안 (U13). 시간이 끝나면 선 칸이 답인 판에서, 실제로 움직인 뒤 선 칸이 바뀔 때만 부른다
+   * (칸에서 내려서면 `choiceIndex: null`). 보낼 소켓이 그 초안을 받는지는 저장소가 다시 본다
+   */
+  onStandingAnswer?: (draft: StandingAnswerDraft) => void;
   onSendChat: (text: string) => Promise<{ ok: boolean }>;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
@@ -502,6 +515,7 @@ export function createOnlineQuizScreen(
   {
     onSubmit,
     onMovement,
+    onStandingAnswer = () => undefined,
     onSendChat,
     onExit,
     onFinished,
@@ -539,6 +553,10 @@ export function createOnlineQuizScreen(
     chatSubmit: need<HTMLButtonElement>('online-chat-submit'),
     chatLog: need('online-chat-log'),
     exit: need<HTMLButtonElement>('online-quiz-exit'),
+    // 답하는 규칙(U13)이 판마다 다르다 — 시간이 끝나면 선 칸이 답인 판과 직접 낸 답만 세는 이전 API의 판
+    hintRule: need('online-arena-hint-rule'),
+    helpRuleStanding: need('online-help-rule-standing'),
+    helpRuleSubmit: need('online-help-rule-submit'),
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
   let snapshot: OnlineMatchSnapshot | null = null;
@@ -580,6 +598,21 @@ export function createOnlineQuizScreen(
       if (presenceActive) onMovement(sample);
     },
   });
+  // 시간이 끝나면 답이 될 칸을 서버에 알린다 (U13). 스쳐 지나간 칸은 보내지 않고, 멈춰 서면 곧바로 보낸다
+  const standingPublisher = createStandingAnswerPublisher({
+    send: (draft) => {
+      if (presenceActive) onStandingAnswer(draft);
+    },
+  });
+
+  /** 지금 판·문항·제출 상태로 발밑 칸 초안을 다시 맞춘다. 초안을 쓰지 않는 때면 기다리던 것도 버린다 */
+  function syncStandingDraft(standingIndex: number | null): void {
+    standingPublisher.update(onlineStandingDraft(
+      snapshot,
+      standingIndex,
+      snapshot !== null && submissionGate.pendingFor(snapshot),
+    ));
+  }
 
   const arena = createCharacterArena({
     onChoose: (index) => { void submitChoice(index); },
@@ -589,8 +622,11 @@ export function createOnlineQuizScreen(
         height: window.innerHeight,
       });
       if (sample) movementPublisher.update(sample);
+      // 멈춰 섰다. 선 칸을 기다리지 않고 알린다 — 마감 직전에 선 칸도 늦지 않게
+      if (!moving) standingPublisher.flush();
       if (!el.bubble.hidden) fitChatBubble(el.bubble);
     },
+    onStandingChange: (index) => syncStandingDraft(index),
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
     trapFocus,
     ids: {
@@ -611,6 +647,7 @@ export function createOnlineQuizScreen(
     clearInterval(movementHeartbeat);
     movementHeartbeat = undefined;
     movementPublisher.reset();
+    standingPublisher.reset();
     remoteMovements.reset();
     chatBubbles.reset();
     chatBubbleNodes.clear();
@@ -1186,6 +1223,16 @@ export function createOnlineQuizScreen(
     if (document.activeElement !== el.chatInput) window.scrollTo(0, 0);
   }
 
+  /**
+   * 답하는 규칙을 판마다 고른다 (U13). 시간이 끝나면 선 칸이 답인 판이면 무대 아래 규칙 줄과 조작법의
+   * 그 문단을, 직접 낸 답만 세는 이전 API의 판이면 «선택을 눌러야 제출» 문단을 보인다.
+   */
+  function renderAnswerRule(standing: boolean): void {
+    el.hintRule.hidden = !standing;
+    el.helpRuleStanding.hidden = !standing;
+    el.helpRuleSubmit.hidden = standing;
+  }
+
   function render(nextSnapshot: OnlineMatchSnapshot): void {
     submissionGate.reconcile(nextSnapshot);
     snapshot = nextSnapshot;
@@ -1221,13 +1268,18 @@ export function createOnlineQuizScreen(
     renderStandings(nextSnapshot, view);
     playRevealSound(nextSnapshot, view);
 
+    renderAnswerRule(nextSnapshot.standingAnswers === true);
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
     if (arenaQuestionKey !== lastArenaQuestionKey) {
       lastArenaQuestionKey = arenaQuestionKey;
+      // 새 문항은 다시 중립이다. 지난 문항에 보낸 초안의 기억을 들고 가지 않는다
+      standingPublisher.reset();
       arena.setEnabled(true);
       arena.reset(question.choices.length);
     }
     arena.setSelectionEnabled(onlineArenaSelectionEnabled(view, isSubmitPending));
+    // 공개로 넘어갔거나 답을 냈으면 초안은 끝이다. 아직 고르는 중이면 지금 선 칸을 다시 맞춘다
+    syncStandingDraft(arena.standingIndex());
     if (view.reveal !== null) {
       arena.showOutcome({
         answerIndex: view.reveal.answerIndex,
