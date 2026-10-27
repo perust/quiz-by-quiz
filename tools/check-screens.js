@@ -70,6 +70,12 @@
 //      방장의 «내보내기»(U24)가 그려지지 않는다. 로컬 방에 점검용 손님을 잠깐 넣어 본다
 //   ㉑ 랭킹의 «기록 내보내기»(N02)는 선생님 모드 로더가 읽는 파일을 만든다(student 칸 없음, 문항별 정오 포함).
 //      내려받기와 클립보드는 가로채 실제 파일·클립보드를 건드리지 않는다
+//   ㉒ 25문제 전체 도전의 24번에서 나가면 남는 것이 없었다 (N04). 나가기 확인의 «나가고 푼 문제 N개 해설 보기»가
+//      한 문제라도 풀었을 때만 보이는지, Tab 이 확인창 안에서 도는지, 그 화면(`quiz-review`)이 걷는 화면의 계약을
+//      지키는지(조작부·방향키·빈자리 시작·안내 글을 덮지 않음), 판이 깨어나지 않는지, 「뒤로」로 떠나도
+//      **랭킹에 아무것도 남지 않는지** 본다 — 결과 화면이 아니라 떠날 때의 자동 저장(⑪)이 없어야 한다.
+//      마지막 문제까지 답했으면 같은 자리가 «결과 보기»여서 결과로 가고 기록이 남는지도 본다 — 한때 다 푼 판을
+//      기록 없는 «푼 문제»로 보내 버렸다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -695,20 +701,102 @@
     잠든퀴즈를깨워본다('답을 낸 채 나온 홈');
     살펴본곳.push('퀴즈에서 나오기');
 
+    // ㉒ 나가면서 푼 문제 보기 (N04). 끝까지 풀지 않은 판이라 아무 길로 떠나도 기록이 남으면 안 된다
+    const 나가기전랭킹 = localStorage.getItem('quiz.rankings');
+    document.querySelector('.category-card').click();
+    await 잠깐(800);
+    await 눌러('quiz-exit', 300);
+    const 해설보기 = document.getElementById('exit-review');
+    결과.push({
+      자리: '퀴즈', 이름: '한 문제도 풀지 않았으면 나가기 확인에 «해설 보기»가 없다',
+      통과: !document.getElementById('exit-dialog').hidden && 해설보기.hidden,
+      무엇: 해설보기.hidden ? '없음' : `!! ${해설보기.textContent.trim()}`,
+    });
+    await 눌러('exit-cancel', 200);
+    for (let i = 0; i < 2; i += 1) {
+      [...document.querySelectorAll('#choices .choice')].find((보기) => !보기.disabled)?.click();
+      await 잠깐(150);
+      document.getElementById('next-button').click();
+      await 잠깐(150);
+    }
+    await 눌러('quiz-exit', 300);
+    결과.push({
+      자리: '퀴즈', 이름: '두 문제를 풀고 나가면 확인창이 «나가고 푼 문제 2개 해설 보기»를 준다',
+      통과: !해설보기.hidden && 해설보기.textContent.trim() === '나가고 푼 문제 2개 해설 보기'
+        && document.activeElement === document.getElementById('exit-cancel'),
+      무엇: `${해설보기.hidden ? '!! 숨김' : 해설보기.textContent.trim()} · 포커스 ${document.activeElement?.id || '(없음)'}`,
+    });
+    해설보기.focus();
+    해설보기.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    결과.push({
+      자리: '퀴즈', 이름: '덧붙은 행동에서 Tab 은 확인창 안의 처음(«계속 풀기»)으로 돈다',
+      통과: document.activeElement === document.getElementById('exit-cancel'),
+      무엇: document.activeElement?.id || document.activeElement?.tagName || '(없음)',
+    });
+    await 눌러('exit-review', 700);
+    살펴본다('푼 문제', 'quiz-review', true);
+    잠든퀴즈를깨워본다('푼 문제');
+    프레임돌리기(3);
+    const 푼문제발밑 = document.querySelector('[data-screen="quiz-review"] .is-standing');
+    결과.push({
+      자리: '푼 문제', 이름: '버튼을 밟지 않은 자리에서 시작한다',
+      통과: !푼문제발밑,
+      무엇: 푼문제발밑 ? `!! ${푼문제발밑.id || 푼문제발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
+    });
+    const 겹친푼문제글 = 겹친글자줄(document.getElementById('quiz-review-scope'),
+      document.getElementById('quiz-review-character').getBoundingClientRect());
+    결과.push({
+      자리: '푼 문제', 이름: '주차한 캐릭터가 «기록은 남지 않아요» 안내 글을 덮지 않는다',
+      통과: 겹친푼문제글.length === 0,
+      무엇: `겹친 글자 줄 ${겹친푼문제글.length}개`,
+    });
+    const 풀이줄 = document.querySelectorAll('#quiz-review-list > .review__item');
+    결과.push({
+      자리: '푼 문제', 이름: '푼 두 문제가 풀이로 보이고 등록 칸·점수는 없다',
+      통과: 풀이줄.length === 2 && !document.querySelector('[data-screen="quiz-review"] input')
+        && [...풀이줄].every((줄) => 줄.querySelector('a.review__report-link')),
+      무엇: `${풀이줄.length}문제 · ${document.getElementById('quiz-review-summary').textContent.trim()}`,
+    });
+    history.back();
+    await 화면기다리기('home');
+    살펴본다('푼 문제에서 「뒤로」', 'home', true);
+    결과.push({
+      자리: '푼 문제', 이름: '중간에 나온 판은 «푼 문제»를 보고 떠나도 랭킹에 남지 않는다',
+      통과: localStorage.getItem('quiz.rankings') === 나가기전랭킹,
+      무엇: localStorage.getItem('quiz.rankings') === 나가기전랭킹 ? '그대로다' : '!! 기록이 늘었다',
+    });
+    살펴본곳.push('나가고 푼 문제 보기');
+
     // 퀴즈를 끝까지 풀어 결과로 간 뒤, 「다시 하기」로 되돌아온다.
     // 결과 화면의 조작부가 따라오면 여기서 걸린다 (#65)
     // ⑪ 「등록」 없이 떠나도 저장되는지 세려고 랭킹을 비워 둔다 (끝나면 되돌린다)
     localStorage.setItem('quiz.rankings', '[]');
     document.querySelector('.category-card').click();
     await 잠깐(800);
+    let 다푼판의덧붙은행동 = null;
     for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
       const 보기 = [...document.querySelectorAll('.choice')].find((b) => !b.disabled);
       if (보기) 보기.click();
       await 잠깐(120);
+      // ㉒ 마지막 문제까지 답한 뒤의 나가기 확인은 «나가고 푼 문제 N개 해설 보기»가 아니라 «결과 보기»다 —
+      // 한때 다 푼 판을 기록 없는 «푼 문제» 화면으로 보내 버렸다. 그 행동으로 결과에 가고, 아래 ⑪이 기록을 센다
+      if (!document.getElementById('feedback').hidden
+        && document.getElementById('next-label').textContent.trim() === '결과 보기') {
+        await 눌러('quiz-exit', 300);
+        다푼판의덧붙은행동 = document.getElementById('exit-review').hidden
+          ? '(숨김)' : document.getElementById('exit-review').textContent.trim();
+        await 눌러('exit-review', 800);
+        break;
+      }
       const 다음 = document.getElementById('next-button');
       if (다음 && !다음.hidden) 다음.click();
       await 잠깐(150);
     }
+    결과.push({
+      자리: '퀴즈', 이름: '마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동은 «결과 보기»이고 결과로 간다',
+      통과: 다푼판의덧붙은행동 === '결과 보기' && 지금화면() === 'result',
+      무엇: `${다푼판의덧붙은행동 ?? '!! 마지막 문제에 닿지 못했다'} → ${지금화면()}`,
+    });
     살펴본다('결과', 'result', true);
     // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
     // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다

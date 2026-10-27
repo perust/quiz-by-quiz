@@ -2000,6 +2000,12 @@ select.room-form__input {
   line-height: 24px;
 }
 
+/* 틀린 문제가 없는 묶음 — 중간에 나온 판의 «푼 문제»(N04)에만 생긴다. 뜻은 «N문제 모두 정답» 글이 말한다 */
+.review-group__count--clear {
+  background: var(--correct-soft);
+  color: var(--correct-ink);
+}
+
 /* 걸어서 올라선 표시는 다른 버튼과 같은 초점 고리다 (24절) */
 .review-group__summary.is-standing {
   outline: var(--focus-width) solid var(--focus);
@@ -2775,7 +2781,7 @@ select.room-form__input {
   color: var(--wrong-ink);
 }
 
-/* 맞힌 문제의 «내 답 · 정답» 한 줄 (온라인 «문제 다시 보기», U38) */
+/* 맞힌 문제의 «내 답 · 정답» 한 줄 (온라인 «문제 다시 보기», U38 · 중간에 나온 판의 «푼 문제», N04) */
 .review__row--mine-correct .review__tag {
   --icon: var(--i-check);
   background: var(--correct-soft);

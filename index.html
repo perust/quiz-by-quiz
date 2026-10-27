@@ -779,6 +779,33 @@
       </div>
     </section>
 
+    <!-- ─────────── 중간에 나온 판의 푼 문제 (N04, FR-3.6) ───────────
+         나가기 확인의 «나가고 푼 문제 해설 보기»가 연다. 결과 화면이 아니다 — 끝까지 풀지 않은 판이라
+         점수·최고 기록·랭킹 등록이 없고 떠나도 저장하지 않는다. 풀이는 결과의 오답 풀이와 같은 모양이다 -->
+    <section class="screen" data-screen="quiz-review" aria-labelledby="quiz-review-title" tabindex="-1" hidden>
+      <header class="ranking-header">
+        <h1 class="ranking-title" id="quiz-review-title">푼 문제 다시 보기</h1>
+        <!-- 방에서 연 판이면 이름이 «대기실»이다. quiz-review.ts 가 바꾼다 -->
+        <button type="button" class="button button--ghost" id="quiz-review-leave">
+          <span class="icon" data-icon="arrow-left" aria-hidden="true"></span><span id="quiz-review-leave-label">홈</span>
+        </button>
+      </header>
+
+      <!-- 저장 범위 안내 줄(FR-6.10)과 같은 모양이다. 이 판은 남지 않는다 -->
+      <p class="ranking-scope" id="quiz-review-scope">끝까지 풀지 않은 판이라 점수와 기록은 남지 않아요.</p>
+
+      <div class="result-block">
+        <h2 class="result-block__title quiz-review__summary" id="quiz-review-summary"></h2>
+        <!-- 문제마다 «이 문제 이상해요» 신고 링크가 붙는다 (FR-5.8, result.ts 의 createReviewItem) -->
+        <ol class="review" id="quiz-review-list" aria-labelledby="quiz-review-summary"></ol>
+      </div>
+
+      <!-- 이 화면도 걸어 다닐 수 있다. 화면에 붙어(fixed) 있어 자리를 차지하지 않는다 -->
+      <div class="walker walker--home" id="quiz-review-character" aria-hidden="true">
+        <span class="walker__shadow"></span>
+      </div>
+    </section>
+
     <!-- ─────────── 랭킹 (FR-6.2 ~ FR-6.12) ─────────── -->
     <section class="screen" data-screen="ranking" aria-labelledby="ranking-title" tabindex="-1" hidden>
       <header class="ranking-header">
@@ -1044,6 +1071,10 @@
         <button type="button" class="button button--ghost" id="exit-cancel">계속 풀기</button>
         <button type="button" class="button button--danger" id="exit-confirm">나가기</button>
       </div>
+      <!-- 한 문제라도 풀었을 때만 (N04). 나가면서 푼 문제를 해설과 함께 본다 — 기록은 여전히 남지 않는다.
+           글(개수)은 quiz.ts 가 확인창을 열 때와 그 뒤에서 시간이 끝났을 때 쓴다. 마지막 문제까지 답했으면
+           글이 «결과 보기»이고 결과 화면으로 간다 — 끝까지 푼 판이라 기록이 남는다 -->
+      <button type="button" class="button button--ghost dialog__extra" id="exit-review" hidden>나가고 푼 문제 해설 보기</button>
     </div>
   </div>
 

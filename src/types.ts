@@ -24,7 +24,10 @@ export interface Question {
   /** choices 안의 자리. **화면에 뜬 문제는 셔플된 뒤라 JSON 의 값과 다르다** */
   answerIndex: number;
   explanation: string;
-  /** v1 에서는 출제에 쓰지 않는다. v2 에서 일괄 수정을 피하려고 스키마에 둔다 */
+  /**
+   * 한 판의 난이도 비율을 은행에 맞추는 데만 쓴다 (FR-1.10, `core/sampler.ts`). 배점에는 쓰지 않는다 (FR-5.1).
+   * `validate.ts` 가 보지 않는 값이라 셋 밖이 올 수 있고, 출제는 그런 문제를 «모름» 한 칸에 모은다
+   */
   difficulty: Difficulty;
   tags: string[];
 }
@@ -163,7 +166,27 @@ export interface ReviewItem {
   chosenChoice: string | null;
   correctChoice: string;
   explanation: string;
+  /** 맞혔는가. 결과의 오답 풀이에서는 언제나 false 이고, 중간에 나온 판의 «푼 문제»에는 맞힌 것도 온다 (N04) */
+  correct: boolean;
   timedOut: boolean;
+}
+
+/**
+ * 중간에 나온 판에서 푼 문제 (N04, `core/scoring.ts` 의 `reviewAnswered`). 나가기 확인의
+ * «나가고 푼 문제 해설 보기»가 그린다. **점수·등급·소요 시간이 없다** — 끝까지 풀지 않은 판은
+ * 랭킹에 남지 않고(FR-3.6) 최고 점수와도 견주지 않으므로 `RoundSummary` 를 쓰지 않는다.
+ */
+export interface AnsweredReview {
+  mode: RoundMode;
+  /** 전체 모드(all)에서는 언제나 null 이다 */
+  categoryId: CategoryId | null;
+  /** 그 판에 나온 문항 수 */
+  totalCount: number;
+  /** 답한 문항 수 (시간 초과 포함) */
+  answeredCount: number;
+  correctCount: number;
+  /** 푼 순서 그대로. 맞힌 문제도 담는다 */
+  items: ReviewItem[];
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession, type QuizSession } from './core/session.js';
-import { summarizeRound } from './core/scoring.js';
+import { reviewAnswered, summarizeRound } from './core/scoring.js';
 import { buildRecordsExport, recordsExportFileName } from './core/records-export.js';
 import { preferences, rankingStore } from './storage/adapter.js';
 import { playToggleOn, setEnabled as setSoundEnabled } from './audio.js';
@@ -43,6 +43,7 @@ import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
 import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
+import { createQuizReviewScreen } from './ui/quiz-review.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
 import { withTopic } from './ui/korean.js';
@@ -311,16 +312,23 @@ async function main(): Promise<void> {
     onBack: goHome,
   });
 
+  /** 판을 그만두고 나가는 곳. 방에서 시작한 판이면 그만둘 때도 대기실로 돌아간다 */
+  const leaveRound = (): void => {
+    if (activeRoomCode) void openWaitingRoom(activeRoomCode);
+    else void goHome();
+  };
+
   const quizScreen = createQuizScreen({
-    // 방에서 시작한 판이면 그만둘 때도 대기실로 돌아간다
-    onExit: () => {
-      if (activeRoomCode) openWaitingRoom(activeRoomCode);
-      else goHome();
-    },
+    onExit: leaveRound,
     onComplete: showResult,
+    // 나가기 확인의 «나가고 푼 문제 해설 보기» (N04). 기록하지 않는다 (FR-3.6)
+    onReview: showAnsweredReview,
   });
 
   quizScreen.setCharacter(characterId);
+
+  // 중간에 나온 판의 «푼 문제» (N04). 떠나는 곳은 나가기와 같다
+  const quizReviewScreen = createQuizReviewScreen({ onLeave: leaveRound });
 
   // 결과 화면은 아직 남기지 않은 기록을 저장한 **뒤에** 이 콜백들을 부른다 (FR-6.1).
   // 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려준다
@@ -573,6 +581,7 @@ async function main(): Promise<void> {
     quiz: () => quizScreen.hide(),
     'online-quiz': () => onlineQuizScreen.hide(),
     result: () => resultScreen.hide(),
+    'quiz-review': () => quizReviewScreen.hide(),
     'online-result': () => {
       resultKeepalive.release();
       onlineResultScreen.hide();
@@ -790,6 +799,30 @@ async function main(): Promise<void> {
 
   function labelFor({ mode, categoryId }: Round): string {
     return mode === 'all' ? ALL_MODE_LABEL : (categoryId ? categoryNames.get(categoryId) ?? '' : '');
+  }
+
+  // ── 중간에 나온 판의 푼 문제 (N04) ──────────────────────────────
+
+  /**
+   * 나가기 확인의 «나가고 푼 문제 해설 보기». **기록하지 않는다** (FR-3.6) — 끝까지 풀지 않은 판이라
+   * `pending` 을 만들지 않고 `registerRecord`·`getBestScore` 를 부르지 않는다. 결과 화면이 아니므로
+   * 떠날 때의 자동 저장(FR-6.1, `pagehide` 의 `flush` 포함)도 타지 않는다. 최근 출제 기록(FR-1.4)은
+   * 판을 열 때 이미 남았다 — 나가기와 같다.
+   */
+  function showAnsweredReview(session: QuizSession): void {
+    const review = reviewAnswered({
+      questions: session.getQuestions(),
+      answers: session.getAnswers(),
+      mode: session.mode,
+      categoryId: session.categoryId,
+    });
+    quizReviewScreen.show({
+      review,
+      modeLabel: labelFor({ mode: session.mode, categoryId: session.categoryId }),
+      characterId,
+      inRoom: Boolean(activeRoomCode),
+    });
+    goTo('quiz-review');
   }
 
   // ── 결과 ───────────────────────────────────────────────────────

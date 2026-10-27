@@ -1170,6 +1170,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   flex: 1;
 }
 
+/* 확정 줄 아래의 덧붙은 한 행동 — 나가기 확인의 «나가고 푼 문제 해설 보기» (N04). 이름이 길어 줄을 다 쓴다 */
+.dialog__extra {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
 /* ── 조작법 목록 ── */
 .help-list {
   margin: 0 0 var(--space-5);
@@ -3879,6 +3885,7 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
 
 /* 결과 첫 화면은 점수·세 통계·다음 행동만 띄우고, 상세 기록은 아래로 스크롤한다. */
 [data-screen='result'] > :not(.walker):not(.sr-only),
+[data-screen='quiz-review'] > :not(.walker):not(.sr-only),
 [data-screen='online-result'] > :not(.walker):not(.sr-only),
 [data-screen='ranking'] > :not(.walker):not(.sr-only),
 [data-screen='characters'] > :not(.walker):not(.sr-only),
