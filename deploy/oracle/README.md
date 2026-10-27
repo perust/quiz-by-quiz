@@ -298,3 +298,52 @@ does not run on a migration-009 database.
 If a stage fails, remove or stop only the task-owned release/service artifacts.
 Do not restart, reload, alter, or roll back unrelated n8n, BTC, Caddy,
 PostgreSQL, or platform resources.
+
+### Read-only release checks
+
+`python -m app.release_check` ships in the runtime image and replaces the
+hand-written SQL and shell checks of the staging order. It runs through the
+existing services, so it needs no new secret or mount. It never writes to the
+database (every transaction is `default_transaction_read_only`), never reads
+`QUIZ_DB_PASSWORD` or touches the runtime role, and never prints a connection
+string, question content, or question id. Each line is `OK`, `FAIL`, `WARN`, or
+`INFO` plus a check name, the last line is the verdict, and the exit status is
+0 only when no line is `FAIL`. Stop on a non-zero exit. In the commands below,
+`docker compose …` is the platform base rendered with this overlay.
+
+- **Step 3, before the migration** (candidate image, migration-010 API still
+  serving):
+  `docker compose … --profile migration run --rm --no-deps quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check db --expect 10`.
+  It requires ledger 1–10 and `character_only_schema_version() = 10`, the five
+  010 character-only constraints, no 011 column or constraint, the single
+  `elapsed_ms` check of 0..20000, a safe `quiz_by_quiz_app` (the attributes
+  `app.migrate` demands, `EXECUTE` on the schema-version function, no access to
+  the ledger), and the statement-logging preflight above: `log_statement`,
+  `log_min_duration_statement`, `log_duration` and statement sampling must be
+  off (`FAIL`); `log_min_error_statement` and any per-database or per-role
+  logging setting are `WARN`, because a failed `ALTER ROLE … PASSWORD` could be
+  logged with the password. `pending-migrations` names what this image's
+  `app.migrate` would apply (`11`), `migration-lock` warns while another
+  migrator holds the advisory lock, and `active-matches`/`recent-members` report
+  activity as `INFO`; add `--require-idle` to fail while a match is running or
+  revealing.
+- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 11`.
+  It requires ledger 1–11, both `question_time_ms` columns as `integer NOT NULL
+  DEFAULT 20000`, validated `rooms_question_time_check`,
+  `matches_question_time_check` and `match_answers_elapsed_ms_range_check`,
+  exactly one `elapsed_ms` check of 0..40000, and the runtime role's effective
+  `SELECT`/`INSERT`/`UPDATE` on `question_time_ms` (the 004 table grants cover
+  it) still without ledger access. `question-time-values` counts the stored
+  values and fails on anything but `20000`/`40000`; before step 4 only `20000`
+  can appear.
+- **Step 4, the private bank** (after building the candidate API image, before
+  replacing the container):
+  `docker compose … run --rm --no-deps quiz-by-quiz-api /app/.venv/bin/python -m app.release_check bank`.
+  It loads `QUESTION_BANK_DIR` exactly as the API does and prints counts only:
+  questions per category (`FAIL` below the 10 a category round needs), ids
+  without the `online-` prefix (`FAIL` — a copy of the public Pages bank keeps
+  its public ids), ids that are not `online-<category>-<digits>` (`WARN`, ids
+  reach public issue reports), any `CatalogError` with its class and message (a
+  known id in the message is shown as `<id>`), the public `data/` path (`FAIL`),
+  and other-user access to the mount (`WARN`). A serving API answers the same
+  through `docker compose … exec quiz-by-quiz-api …`.
