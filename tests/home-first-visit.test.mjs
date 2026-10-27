@@ -116,6 +116,11 @@ Object.assign(fakeDocument, {
   },
 });
 fakeDocument.activeElement = fakeDocument.body;
+fakeDocument.documentElement.style = {
+  setProperty: (name, value) => { rootStyle.set(name, value); },
+  removeProperty: (name) => { rootStyle.delete(name); },
+  getPropertyValue: (name) => rootStyle.get(name) ?? '',
+};
 globalThis.document = fakeDocument;
 globalThis.HTMLElement = FakeElement;
 globalThis.window = {
@@ -123,6 +128,15 @@ globalThis.window = {
   addEventListener() {}, removeEventListener() {}, scrollBy() {}, scrollTo() {},
 };
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+/** 홈이 단 MutationObserver 들. 무엇을 어떤 옵션으로 보는지와 콜백을 남긴다 (layout-01) */
+const mutationObservers = [];
+globalThis.MutationObserver = class {
+  constructor(callback) { this.callback = callback; this.targets = []; mutationObservers.push(this); }
+  observe(target, options) { this.targets.push({ target, options }); }
+  disconnect() {}
+};
+/** 문서 뿌리의 사용자 속성(--home-dock-h)을 읽을 수 있게 한다 */
+const rootStyle = new Map();
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 
@@ -206,9 +220,40 @@ test('홈 dock 캡션: 어두운 dock 위의 보조 글자이고, 짧은 가로 
   assert.equal(valueOf(rules, caption, 'clip-path', landscape), 'inset(50%)', '분야 칸 묶음의 이름으로는 그대로 읽힌다');
 });
 
+// ── dock 높이 (layout-01) ──────────────────────────────────────────
+
+test('dock 높이: dock 안의 DOM 이나 홈의 hidden 이 바뀌면 MutationObserver 가 그 틱 안에서 --home-dock-h 를 맞춘다', () => {
+  // ResizeObserver 는 다음 프레임 직전에야 알리고 숨은 탭에서는 알리지 않는다. 그동안 조작부·두 입구가
+  // 대체값(148px)에 서서 선택 원이 「게임 방법」을, 스틱이 dock 을 덮었다
+  const dock = byId('home-quests');
+  const watcher = mutationObservers.find((observer) => observer.targets.some(({ target }) => target === dock));
+  assert.ok(watcher, 'dock 을 보는 MutationObserver 가 있다');
+  const onDock = watcher.targets.find(({ target }) => target === dock).options;
+  assert.equal(onDock.subtree, true);
+  assert.equal(onDock.childList, true, '분야 칸·표식 글을 바꾸면');
+  assert.equal(onDock.characterData, true, '«연결 중…» 같은 글이 바뀌면');
+  assert.deepEqual(onDock.attributeFilter, ['hidden'], '방 복귀 줄·표식을 펴고 접으면 — 워커의 is-standing 같은 class 는 보지 않는다');
+  const onScreen = watcher.targets.find(({ target }) => target === homeScreenElement)?.options;
+  assert.deepEqual(onScreen?.attributeFilter, ['hidden'], '홈이 다시 보이면(숨은 동안 화면 크기가 바뀌었을 수 있다)');
+  assert.notEqual(onScreen?.subtree, true);
+
+  let height = 128;
+  dock.getBoundingClientRect = () => ({ left: 0, top: 232, right: 700, bottom: 360, width: 700, height });
+  watcher.callback([]);
+  assert.equal(rootStyle.get('--home-dock-h'), '128px');
+  height = 71.5;
+  watcher.callback([]);
+  assert.equal(rootStyle.get('--home-dock-h'), '72px', '올려 잡아 dock 위 1px 도 덮지 않는다');
+  // 숨은 홈(높이 0)에서는 맞추지 않는다 — 다시 보일 때 맞춘다
+  height = 0;
+  watcher.callback([]);
+  assert.equal(rootStyle.get('--home-dock-h'), '72px');
+  delete dock.getBoundingClientRect;
+});
+
 // ── 「게임 방법」 (U01) ────────────────────────────────────────────
 
-test('「게임 방법」 입구: 홈 화면 안의 edge HUD 원이고, 설정 버튼 바로 아래 44px 이다', () => {
+test('「게임 방법」 입구: 홈 화면 안의 edge HUD 원이고, 설정 버튼 바로 아래(높이 480px 이하는 옆) 44px 이다', () => {
   const homeMarkup = between(html, 'data-screen="home"', 'data-screen="quiz"');
   const shortcuts = between(homeMarkup, '<nav class="home-menu"', '</nav>');
   assert.match(shortcuts, /<button type="button" class="icon-button home-rules" id="open-rules" aria-haspopup="dialog">\s*<span class="icon-button__icon icon" data-icon="question" aria-hidden="true"><\/span>\s*<span class="sr-only">게임 방법<\/span>/);
@@ -223,6 +268,18 @@ test('「게임 방법」 입구: 홈 화면 안의 edge HUD 원이고, 설정 �
     assert.equal(lengthOf(rules, valueOf(rules, button, 'width', env), env), 44);
     assert.ok(lengthOf(rules, valueOf(rules, button, 'min-height', env), env) >= 44);
     assert.equal(valueOf(rules, button, 'z-index', env), null, 'z-index 없이 DOM 순서로 그린다');
+    assert.equal(lengthOf(rules, valueOf(rules, button, 'right', env), env), 12, '설정 버튼과 같은 오른쪽 끝');
+  }
+  // 높이 480px 이하는 설정 버튼 왼쪽 옆 같은 줄이다 (layout-01). 아래로 쌓은 오른쪽 HUD 열(위 여백 + 96px)이
+  // 568×320 에서는 dock 위 모서리의 랭킹 입구와, 740×360 에서는 방 복귀 줄로 올라온 선택 원과 겹쳤다
+  const touch = (width, height) => ({ width, height, pointer: 'coarse', hover: 'none', reducedMotion: false });
+  for (const env of [touch(740, 360), touch(568, 320), touch(844, 390), touch(926, 428), { ...DESKTOP, width: 740, height: 360 }]) {
+    const at = `${env.width}×${env.height} ${env.pointer}`;
+    assert.equal(lengthOf(rules, valueOf(rules, button, 'top', env), env), 12, `${at}: 설정 버튼과 같은 줄`);
+    assert.equal(lengthOf(rules, valueOf(rules, button, 'right', env), env), 12 + 44 + 8, `${at}: 설정 버튼 왼쪽 8px`);
+  }
+  for (const env of [touch(375, 667), touch(320, 568), touch(1024, 768)]) {
+    assert.equal(lengthOf(rules, valueOf(rules, button, 'top', env), env), 12 + 44 + 8, `${env.width}×${env.height}: 높은 화면은 아래 그대로`);
   }
   const hovered = node('button.icon-button.home-rules#open-rules:hover', node('nav.home-menu', stage));
   assert.equal(valueOf(rules, hovered, 'background', DESKTOP), 'var(--hud-bg)', 'hover 에도 흰 아이콘이 어두운 HUD 위에 남는다');

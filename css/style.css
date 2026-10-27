@@ -988,14 +988,6 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: var(--space-2) 0 0;
 }
 
-/* 320px 에서도 캐릭터 칸을 접지 않고 이름 자리를 남긴다 */
-@media (max-width: 360px) {
-  .online-final-ranking__item {
-    gap: var(--space-2);
-    padding: var(--space-3);
-  }
-}
-
 .online-final-ranking__place {
   display: grid;
   place-items: center;
@@ -1009,6 +1001,34 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 폭 420px 이하의 휴대폰에서는 점수를 이름 아래 줄로 내린다 (layout-04). 한 줄에 순위·캐릭터·이름·점수를
+   다 두면 공동 순위(«공동 1위» 80px)인 내 축하 별 줄에서 이름 칸이 320px 에 11px(«…»만), 375–390px 에도
+   46–61px(세 글자)뿐이었다. 순위 칸과 캐릭터는 두 줄에 걸쳐 가운데에 서고(금·은·동 칸과 40px 캐릭터는 그대로),
+   이름이 셋째 칸을 다 쓴다. 줄 높이는 캐릭터(48px)가 정하므로 늘지 않는다 */
+@media (max-width: 420px) {
+  .online-final-ranking__item {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: var(--space-2);
+    row-gap: 0;
+    padding: var(--space-3);
+  }
+
+  .online-final-ranking__place,
+  .online-final-ranking__figure {
+    grid-row: span 2;
+  }
+
+  .online-final-ranking__name {
+    align-self: end;
+  }
+
+  .online-final-ranking__score {
+    grid-column: 3;
+    align-self: start;
+    min-width: 0;
+  }
 }
 
 /* ── 피드백 ──
@@ -2107,6 +2127,23 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 .walk-controls[data-placement='home-dock'] {
   --walk-controls-bottom: calc(var(--home-dock-h, 160px) + 20px + env(safe-area-inset-bottom, 0px));
+  /* 위 HUD 두 열의 높이(위 여백 아래부터). 오른쪽은 설정 + 「게임 방법」(.home-rules), 왼쪽은 닉네임 카드
+     (.menu-card--wide 의 min-height). 높이 480px 이하에서 「게임 방법」이 설정 옆으로 가면 오른쪽은 설정뿐이다 */
+  --home-hud-right: calc(var(--tap) + var(--space-2) + var(--tap));
+  --home-hud-left: 52px;
+}
+
+/* 홈 조작부는 위 HUD 열 아래 8px 보다 위로 오르지 않는다 (layout-01). dock이 커지면(방 복귀 줄 등)
+   anchor가 따라 올라가는데, 한때 선택 원이 「게임 방법」·설정 위로 올라와 그 버튼 대신 눌렸다.
+   스틱과 선택은 같은 바닥을 쓰므로 두 열 가운데 더 깊은 쪽(제 크기를 더해)에 맞춘다. 100% 는 fixed 의
+   기준 상자인 화면 높이다 */
+.walk-controls[data-placement='home-dock'] .walk-stick,
+.walk-controls[data-placement='home-dock'] .walk-confirm {
+  bottom: min(
+    var(--walk-controls-bottom),
+    calc(100% - max(var(--space-3), env(safe-area-inset-top)) - var(--space-2)
+      - max(var(--home-hud-right) + var(--walk-confirm-size), var(--home-hud-left) + var(--walk-stick-size)))
+  );
 }
 
 .walk-stick {
@@ -2202,8 +2239,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-/* 공용 크기는 theme token이 줄인다. 가로 홈은 상단 HUD를 피해 anchor만 안쪽에 둔다. */
-@media (pointer: coarse) and (max-height: 420px) and (min-width: 480px) {
+/* 공용 크기는 theme token이 줄인다. 두 줄 dock의 가로 홈은 상단 HUD를 피해 anchor만 안쪽에 둔다.
+   높이 421–480px(눕힌 큰 휴대폰의 전체 화면)도 dock이 두 줄(약 174px)이라 같다 — 모서리에 두면 방 복귀 줄이
+   dock을 키울 때 선택 원이 설정·「게임 방법」에, 스틱이 닉네임에 닿았다 (layout-01). 한 줄 dock은 아래 규칙이 모서리로 되돌린다 */
+@media (pointer: coarse) and (max-height: 480px) and (min-width: 480px) {
   .walk-controls[data-placement='home-dock'] {
     --walk-stick-left: calc(50% - 140px);
     --walk-confirm-right: calc(50% - 140px);
@@ -2222,7 +2261,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 /* 폭 640px 이상의 짧은 가로 홈은 dock이 한 줄로 낮아져(section 30 끝, U07) 입구 한 줄 위의 양쪽
    모서리가 닉네임·설정 HUD에서 멀다. 그래서 anchor를 다른 화면과 같은 양쪽 모서리(엄지 자리)로
    되돌린다. 모서리에서는 바로 아래가 두 보조 입구라, 360px 이하에서도 입구 한 줄 위의 거리를
-   700px 이하와 같게 둔다(낮은 dock이라 위 HUD와 닿지 않는다). 크기·모양은 위 규칙 그대로다. */
+   700px 이하와 같게 둔다. 크기·모양은 위 규칙 그대로다. 방 복귀 줄로 dock이 커져도 위 HUD에 닿지 않는 것은
+   「게임 방법」이 설정 옆으로 비킨 덕이고(.home-rules, 높이 480px 이하), 그래도 넘치면 위의 HUD 한도가 막는다. */
 @media (pointer: coarse) and (max-height: 420px) and (min-width: 640px) {
   .walk-controls[data-placement='home-dock'] {
     --walk-controls-bottom: calc(var(--home-dock-h, 148px) + 92px + env(safe-area-inset-bottom, 0px));
@@ -3597,6 +3637,20 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
   right: max(var(--space-3), env(safe-area-inset-right));
   width: var(--tap);
   padding: 0;
+}
+
+/* 높이 480px 이하에서는 설정 버튼 왼쪽 옆, 같은 줄에 선다 (layout-01). 아래로 쌓으면 오른쪽 HUD 열이
+   위 여백 + 96px까지 내려와, dock 위 모서리의 랭킹 입구(568×320)나 방 복귀 줄로 올라온 선택 원(740×360)과
+   겹쳤다. 위 가운데의 브랜드(폭 42vw 이하)와 왼쪽 닉네임 카드에서는 떨어져 있다 */
+@media (max-height: 480px) {
+  .home-rules {
+    top: max(var(--space-3), env(safe-area-inset-top));
+    right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--tap) + var(--space-2));
+  }
+
+  .walk-controls[data-placement='home-dock'] {
+    --home-hud-right: var(--tap);
+  }
 }
 
 .home-header {

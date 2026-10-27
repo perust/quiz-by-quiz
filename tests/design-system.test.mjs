@@ -611,6 +611,8 @@ test('월드 배경은 문서가 아니라 화면 크기로 맞춰 위에 붙이
     ['랭킹 탭', nodeFromHtml(html, 'ranking-tabs')],
     ['랭킹 목록', nodeFromHtml(html, 'ranking-list')],
     ['빈 랭킹', nodeFromHtml(html, 'ranking-empty')],
+    // 빈 상태를 본떠 만든 패널이 옛 흐림까지 옮겨 왔다 (layout-03) — 새 읽는 표면은 여기 더한다
+    ['기록 내보내기', nodeFromHtml(html, 'ranking-export')],
     ['로비 안내', nodeFromHtml(html, 'online-note')],
     ['방 목록', nodeFromHtml(html, 'room-browser')],
     ['코드 참가', nodeFromHtml(html, 'private-join-block')],

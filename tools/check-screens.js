@@ -51,13 +51,15 @@
 //      넘친다(tests/home-interface.test.mjs 의 셈이 먼저 잡았다). 셈은 맑은 고딕의 1em 을 가정하므로
 //      실제 글꼴로 글자 크기·다섯 칸 한 줄·이름이 잘리지 않는지를 지금 창 폭에서 본다
 //   ⑯ 짧은 가로 홈(U07)의 두 줄 dock이 화면의 절반을 먹어 두 보조 입구와 조작부가 위 가운데로 밀려
-//      올라왔다. dock 한 줄·되살린 브랜드·가장자리 조각끼리 겹치지 않음·캐릭터 시작 자리를 본다
+//      올라왔다. dock 한 줄·되살린 브랜드·가장자리 조각끼리 겹치지 않음·캐릭터 시작 자리를 본다. 방 복귀 줄이
+//      dock 을 키우면 올라온 선택 원이 「게임 방법」·설정을 덮었다(layout-01) — 줄을 잠깐 펼친 자리도 본다.
+//      자리는 실제로 그려진 프레임에서 잰다(dock 높이는 ResizeObserver 가 다음 프레임 직전에 맞춘다)
 //   ⑰ 짧은 가로 touch 퀴즈(U15)에서 바닥이 접힘 아래로 밀리고 조작부가 보기를 덮었다. 두 열 배치에서
 //      답하기 전에 스크롤 없이 다 보이는지, 답한 뒤 「다음 문제」가 패널 안에 잘리지 않는지 본다.
 //      짧은 가로 검사는 그 화면 크기(touch · 높이 480px 이하 가로 / 높이 420px 이하 · 폭 640px 이상)에서만
 //      돈다 — 740×360 · 667×375 · 844×390 · 915×412 를 touch 에뮬레이션으로 열고 붙여넣는다
 //   ⑱ 처음 온 사람은 판을 열기 전에는 규칙을 읽을 길이 없었다 — 퀴즈의 `?`는 시간이 흐르는 동안
-//      열린다 (U01). 홈의 「게임 방법」이 설정 버튼 아래에 겹치지 않고 서는지, 지금 고른 문항 시간을
+//      열린다 (U01). 홈의 「게임 방법」이 설정 버튼 곁(아래, 높이 480px 이하는 옆)에 겹치지 않고 서는지, 지금 고른 문항 시간을
 //      말하는지, 열린 동안 캐릭터가 걷지 않고 Esc 로 닫으면 그 버튼으로 돌아오는지 본다. dock 은
 //      «분야 골라 10문제», 기록 없는 전체 도전은 «25문제»를 말한다 (U04). 처음 세 판은 짧은 화면에서도
 //      무대 아래 규칙 줄이 보인다
@@ -120,6 +122,16 @@
    * 앞당긴 채로 두면 그다음에 여는 판이 매 문항 즉시 시간 초과된다.
    * 그래서 `잠든퀴즈를깨워본다` 는 언제나 짝을 맞춰 되돌린다.
    */
+  /**
+   * 브라우저가 실제로 한 프레임을 그릴 때까지 기다린다(진짜 rAF 두 번). 홈 dock 높이(--home-dock-h)는
+   * ResizeObserver 가 그 프레임을 그리기 직전에 맞추므로, 화면 크기를 바꾸거나 dock 을 키운 **바로 그 틱**에
+   * 재면 사람 눈에는 한 번도 칠해지지 않는 낡은 자리를 잰다 — 자동화가 창 크기를 바꾸자마자 붙여 넣으면
+   * 조작부가 dock·「게임 방법」을 덮는 것으로 나왔다. 숨은 탭은 rAF 가 오지 않으므로 잠깐만 기다리고 넘어간다
+   */
+  const 그려질때까지 = () => new Promise((r) => {
+    const 끝 = setTimeout(r, 300);
+    진짜raf(() => 진짜raf(() => { clearTimeout(끝); r(); }));
+  });
   const 시간앞당기기 = (ms) => { 시간밀기 += ms; 프레임돌리기(); };
   const 시간되돌리기 = (ms) => { 시간밀기 -= ms; };
 
@@ -340,7 +352,9 @@
       무엇: 잘린이름.join(', ') || 보이는이름.map((이름) => 이름?.textContent ?? '(없음)').join(' · '),
     });
     // ⑯ 짧은 가로 홈(U07). 두 줄 dock이 화면의 절반(740×360에서 171px)을 먹어 두 보조 입구와 조작부가
-    // 위 가운데까지 밀려 올라왔고 브랜드는 접혀 있었다. 가장자리 조각끼리 겹치지 않는 것은 어느 화면에서나 본다
+    // 위 가운데까지 밀려 올라왔고 브랜드는 접혀 있었다. 가장자리 조각끼리 겹치지 않는 것은 어느 화면에서나 본다.
+    // 실제로 그려진 자리를 잰다 — dock 높이는 다음 프레임 직전에 맞춰진다(그려질때까지)
+    await 그려질때까지();
     const 홈조각 = {
       dock: document.getElementById('home-quests'),
       캐릭터입구: document.getElementById('open-characters'),
@@ -351,22 +365,46 @@
       스틱: document.querySelector('.walk-stick'),
       선택: document.querySelector('.walk-confirm'),
     };
-    const 홈상자 = Object.entries(홈조각)
-      .map(([이름, 요소]) => [이름, 요소.getBoundingClientRect()])
-      // 접은 브랜드(1px)·조작부가 없는 마우스 기기의 빈 상자는 뺀다
-      .filter(([, 상자]) => 상자.width > 1 && 상자.height > 1);
-    const 겹친홈조각 = [];
-    for (let 앞 = 0; 앞 < 홈상자.length; 앞 += 1) {
-      for (let 뒤 = 앞 + 1; 뒤 < 홈상자.length; 뒤 += 1) {
-        const 넓이 = 겹친넓이(홈상자[앞][1], 홈상자[뒤][1]);
-        if (넓이 > 0) 겹친홈조각.push(`${홈상자[앞][0]}×${홈상자[뒤][0]} ${Math.round(넓이)}px²`);
+    const 홈겹침 = (조각) => {
+      const 상자들 = Object.entries(조각)
+        .map(([이름, 요소]) => [이름, 요소.getBoundingClientRect()])
+        // 접은 브랜드(1px)·조작부가 없는 마우스 기기의 빈 상자는 뺀다
+        .filter(([, 상자]) => 상자.width > 1 && 상자.height > 1);
+      const 겹친것 = [];
+      for (let 앞 = 0; 앞 < 상자들.length; 앞 += 1) {
+        for (let 뒤 = 앞 + 1; 뒤 < 상자들.length; 뒤 += 1) {
+          const 넓이 = 겹친넓이(상자들[앞][1], 상자들[뒤][1]);
+          if (넓이 > 0) 겹친것.push(`${상자들[앞][0]}×${상자들[뒤][0]} ${Math.round(넓이)}px²`);
+        }
       }
-    }
+      return 겹친것;
+    };
+    const 겹친홈조각 = 홈겹침(홈조각);
     결과.push({
       자리: '홈', 이름: '가장자리 입구·dock·브랜드·조작부가 서로 겹치지 않는다',
       통과: 겹친홈조각.length === 0,
       무엇: `${innerWidth}×${innerHeight} · ${겹친홈조각.join(', ') || '겹침 없음'}`,
     });
+    // ⑯ 방 복귀 줄(U35)이 뜨면 dock 이 한 줄만큼 커지고 입구·조작부 anchor 가 따라 올라간다. 740×360 에서
+    // 선택 원이 「게임 방법」을, 높이 421–480px 에서는 설정·닉네임까지 덮었다 (layout-01). 이 점검은 로컬이라
+    // 줄이 뜨지 않으므로 잠깐 펼쳐 dock 이 다시 재어진 뒤(그려질때까지)의 자리를 보고 되돌린다
+    const 복귀줄 = document.getElementById('home-room-note');
+    const 복귀줄글 = document.getElementById('home-room-note-text');
+    const 원래복귀줄 = { 숨김: 복귀줄.hidden, 글: 복귀줄글.textContent };
+    const 줄전dock = Math.round(홈조각.dock.getBoundingClientRect().height);
+    복귀줄.hidden = false;
+    복귀줄글.textContent = '「점검용 방」 방에 아직 있어요';
+    await 그려질때까지();
+    const 줄뒤dock = Math.round(홈조각.dock.getBoundingClientRect().height);
+    const 줄뒤겹침 = 홈겹침({ ...홈조각, 게임방법: document.getElementById('open-rules') });
+    결과.push({
+      자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
+      통과: 줄뒤dock > 줄전dock && 줄뒤겹침.length === 0,
+      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
+    });
+    복귀줄.hidden = 원래복귀줄.숨김;
+    복귀줄글.textContent = 원래복귀줄.글;
+    await 그려질때까지();
     if (matchMedia('(max-height: 420px) and (min-width: 640px)').matches) {
       const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
       const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
