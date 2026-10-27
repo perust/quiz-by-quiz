@@ -119,6 +119,7 @@ class FakeApi:
         terminate: tuple[str, str] | None = None,
         question_time: bool = True,
         rankings: bool = True,
+        solo_play: bool | None = None,
         nickname_filter: bool = True,
         ranking_extra: dict | None = None,
         ranking_entry_extra: dict | None = None,
@@ -141,6 +142,8 @@ class FakeApi:
         self.question_time = question_time
         # migration 012 API의 것: 세션의 rankings, 닉네임 금칙 규칙, GET /v1/rankings
         self.rankings = rankings
+        # 이 후보(FR-7.13 3단계)의 것: 세션의 soloPlay. 기본은 랭킹과 같다 — #108만의 API는 랭킹만 있다
+        self.solo_play = rankings if solo_play is None else solo_play
         self.nickname_filter = nickname_filter
         self.ranking_extra = dict(ranking_extra or {})
         self.ranking_entry_extra = dict(ranking_entry_extra or {})
@@ -269,6 +272,8 @@ class FakeApi:
             session = {"playerId": player, "minPlayers": 1, "standingAnswers": True}
             if self.rankings:
                 session["rankings"] = True
+            if self.solo_play:
+                session["soloPlay"] = True
             return self._ok(200, session, headers)
         if player not in self.players:
             return error(401, "unauthorized")
@@ -469,7 +474,10 @@ class SmokeRunTests(unittest.TestCase):
             ],
         )
         self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12")
-        self.assertIn("rankings true", run.lines[1])
+        self.assertEqual(
+            run.lines[1],
+            "ok session: HTTP 200 playerId is this identity, rankings true, soloPlay true",
+        )
         self.assertEqual(
             run.lines[2],
             "ok nickname: HTTP 400 nickname-personal-info for an e-mail-shaped nickname",
@@ -667,12 +675,25 @@ class SmokeRunTests(unittest.TestCase):
         # 011 API를 candidate로 보면: 세션이 랭킹을 알리지 않고, 닉네임을 거절하지 않고, 경로가 없다
         run = Run("candidate", FakeApi(rankings=False, nickname_filter=False))
         self.assertEqual(run.code, 1)
-        self.assertEqual(run.lines[1], "FAIL session: rankings=missing (want true)")
+        self.assertEqual(
+            run.lines[1],
+            "FAIL session: rankings=missing (want true); soloPlay=missing (want true)",
+        )
         self.assertEqual(
             run.lines[2], "FAIL nickname: HTTP 200, expected HTTP 400 nickname-personal-info"
         )
         self.assertEqual(run.lines[3], "FAIL rankings: anonymous week: HTTP 404, expected 200")
         self.assertEqual(run.lines[6], WEBSOCKET_OK)
+        self.assert_left_the_room(run)
+
+    def test_candidate_against_a_rankings_only_api_fails_the_session(self):
+        # #108만의 API도 readiness schemaVersion 12에 랭킹을 안다. 혼자 온라인 판(soloPlay)이 없으면
+        # 이 후보가 아니다 — 단계 4가 그것을 잡아야 Pages가 혼자 판을 모르는 API 위로 나가지 않는다
+        run = Run("candidate", FakeApi(solo_play=False))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12")
+        self.assertEqual(run.lines[1], "FAIL session: soloPlay=missing (want true)")
+        self.assertTrue(run.lines[3].startswith("ok rankings"), run.lines[3])
         self.assert_left_the_room(run)
 
     def test_rankings_must_carry_exactly_the_public_fields(self):

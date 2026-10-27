@@ -128,7 +128,9 @@ Persistent growth is bounded by a two-hour player lifetime, an independent
 12-player room is never returned partially. At the process-wide ceilings, the
 unreferenced player bound is at most `300/minute × 120 minutes = 36,000` live
 rows, and newly created rooms are at most `100/hour × 24 hours = 2,400` before
-activity extensions and periodic cleanup. Active room or match references may
+activity extensions and periodic cleanup. Solo rooms (FR-7.13 step 3, "Solo
+online play" below) do not take the room-create bucket; they have their own
+hard ceiling of 1,200 at once. Active room or match references may
 outlive the base player TTL only while protected by their own bounded lifecycle.
 Cleanup failures are logged and retried on the next tick.
 
@@ -336,9 +338,11 @@ playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
 weeks. The 250,000-row ceiling bounds the table at roughly 110 MB (about 140 MB
 with the per-player index) plus 600 retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
 ten 8-second reveals (80 s, 200 s for the all-categories round), a room holds one
-match at a time with at most 12 players, and match starts share the
-600/process/minute room-mutation bucket, so ingest cannot exceed 7,200 rows a
-minute even in theory, below the 10,000 rows the prune may delete each minute
+match at a time with at most 12 players, match starts share the
+600/process/minute room-mutation bucket (12 rows each) and solo starts have
+their own 600/process/minute bucket (1 row each, "Solo online play" below), so
+ingest cannot exceed 7,800 rows a minute even in theory, below the 10,000 rows
+the prune may delete each minute
 (a 5,000-row batch took 0.12–0.19 s on 100,000 rows). Reads are bounded by the
 1,200/process/minute ranking bucket (at most 20 index scans a second); the API
 keeps nothing about rankings in memory. Changing the retention, the ceiling,
@@ -376,18 +380,57 @@ and the Pages client also leaves it out of its own lobby list (the home's
 tab close and reconnect follow the existing online rules: the match continues
 on the server and is recorded when it closes.
 
-Limits and envelope: `POST /v1/solo` takes 12 per player, 300 per address and
+Limits and envelope: `POST /v1/solo` takes 12 per player, 120 per address and
 600 per process per minute; a starting request needs no running match, and a
 match takes at least ten 8-second reveals, so one player starts at most about
-one match a minute and owns at most one solo room. Rooms, matches and records
-therefore stay inside the existing envelope (each player adds at most one room
-and one running match). The ops log writes one `solo_started` line per started
-solo match instead of `room_created` and `match_started`.
+one match a minute and owns at most one solo room. Solo rooms do **not** take
+the room-create bucket (100/process/hour), and the client's 홈으로 deletes the
+solo room, so every round started from home creates a room. Because session
+identities are cheap (60 per address, 300 per process a minute), the per-player
+bound alone does not bound rooms or concurrent matches, so a **new** solo room
+is admitted only when both of these hold (reusing a player's live solo room —
+다시 하기, a resumed match — pays neither):
+
+- Hard ceiling: fewer than `SOLO_ROOM_CEILING` = 1,200 solo rooms exist
+  (`SELECT count(*) FROM quiz_online.solo_rooms` inside the creating
+  transaction; concurrent creators can overshoot by at most their own number).
+  At the ceiling `POST /v1/solo` answers 503 `solo-busy` and the Pages client
+  falls back to practice ("not recorded") like any 5xx.
+- Creation budget: `solo-create:client` 720 per address and
+  `solo-create:process` 2,400 per process per hour (429 with an hourly
+  `Retry-After`). 720 lets 36 players behind one address start a new round from
+  home every 3 minutes; an abandoned solo room lives until the 30-minute
+  stale-member cleanup, so one address can hold at most about half its hourly
+  budget (about 360 rooms, 30% of the ceiling) at once.
+
+Concurrent matches are therefore at most 1,200 solo (one per solo room) plus the
+2,400-room bound of the other rooms. 1,200 idle solo matches at 20-second
+questions need two deadline transitions per 28 seconds each, about 86 per
+second, within the deadline sweep's 100 matches a second; the combined
+theoretical maximum (3,600 idle matches, about 257 transitions a second) would
+exceed one sweep's pace, so deadlines and reveals would lag rather than fail —
+the same theoretical state the 2,400-room bound already allowed before solo
+play. Solo rooms add at most 1,200 room, member and mark rows. Rows written to
+the ranking table stay within the ingest bound of "Online rankings" above.
+Changing the ceiling, the creation budget or the start bucket is a
+resource-envelope review boundary like the others. The ops log writes one
+`solo_started` line per started solo match instead of `room_created` and
+`match_started`.
 
 Rollback: an API without solo play (the 011 API, or #108) does not know the
-marks and lists a leftover solo room like any public room until it expires or
-its member leaves; the client of this branch only creates solo rooms against
-an API that announced `soloPlay`.
+marks and would list every leftover solo room as an ordinary public, joinable
+room named «혼자 하기» — first in its member's list, taking lobby slots (the
+100-room lobby cap) and joinable by strangers once its match ended. Before the
+older API serves again, run as the migrator:
+
+```sql
+DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s WHERE s.room_id = r.id;
+```
+
+The delete cascades to members, matches and marks; solo matches still running
+are lost unrecorded, which is acceptable on rollback. Finished solo matches are
+already in the ranking table, which has no foreign key and stays. The client of
+this branch only creates solo rooms against an API that announced `soloPlay`.
 
 ## Caddy integration
 
@@ -434,6 +477,20 @@ solo online play of FR-7.13 step 3 ("Solo online play" above) is part of the
 same candidate: its table and index are folded into the not yet applied
 migration 012, so its server changes deploy with #108's rankings as one API
 candidate and do not add a boundary.
+
+**Hard rule: do not deploy #108 on its own while the solo-play PR is open.**
+Editing migration 012 in place makes ledger version 12 mean two schemas, and
+the migrator compares version numbers only (no checksums), so on a database
+where #108's 012 was applied this 012 would never run. This API's room SQL reads
+`quiz_online.solo_rooms` in every lobby, room, join and access query, so there
+it would fail all of them. Its public readiness therefore checks the table as
+well as the number: on a version-12 ledger without `quiz_online.solo_rooms` it
+answers 503 `migration-required` (`solo_rooms_ready`), and the Pages gate stays
+closed. If ledger 012 already exists without the table (`release_check`
+`solo-rooms-table` FAIL at step 3), move the `solo_rooms` table, its grant and
+`online_rankings_player_board_order_idx` into a new `013_solo_rooms.sql`, set
+`RELEASE_SCHEMA_VERSION = 13` and the Pages readiness gate to 13, restore 012 to
+the #108 text, and repeat this order with ledger versions 001–013.
 Production runs the migration-010 API until #106 (migration 011, below) is
 deployed; #107 follows it without a migration, so this boundary starts from the
 migration-011 API (readiness `schemaVersion: 11`). Migration 012 adds the online
@@ -481,7 +538,8 @@ online ranking" line is always backed by a recording API.
    expected fail-closed state, not an outage.
 4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
    internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`
-   and `soloPlay: true`
+   and `soloPlay: true` (a #108-only API also reports `schemaVersion: 12`;
+   `soloPlay` tells them apart — `smoke.py candidate` checks both)
    and refuses an e-mail-shaped nickname with 400 `nickname-personal-info`,
    that `GET /v1/rankings?mode=all&period=week` answers 200 with at most 10
    entries and an Asia/Seoul window, and require the exact public
@@ -635,7 +693,8 @@ when every step is `ok`.
 - After step 3: `python3 deploy/oracle/smoke.py baseline-migrated` (the same
   API on a migration-12 database; readiness must be 503 `migration-required`).
 - After step 4: `python3 deploy/oracle/smoke.py candidate` (readiness
-  `schemaVersion: 12`; the session answers `rankings: true`; an e-mail-shaped
+  `schemaVersion: 12`; the session answers `rankings: true` and `soloPlay: true`
+  — a #108-only API fails here; an e-mail-shaped
   nickname is refused with 400 `nickname-personal-info` without changing the
   profile; an anonymous `GET /v1/rankings?mode=all&period=week` and an
   identified all-time history read answer 200 with exactly the public fields,

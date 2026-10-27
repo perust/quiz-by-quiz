@@ -52,6 +52,9 @@ export const LEGACY_LOCAL_SCOPE_NOTE = '이 브라우저에 남은 예전 기록
 const ONLINE_ONLY_SCOPE_NOTE = '혼자 푼 판도, 온라인 방에서 끝까지 푼 판도 모두 남아요. 같은 점수면 먼저 남긴 기록이 위예요.';
 const LOCAL_SCOPE_LABEL = '이 브라우저의 기록';
 
+/** 연습(기록 안 남음)만 열 때 빈 탭이 덧붙이는 말 (FR-7.13 3단계) — 시작하면 기록이 생길 것처럼 말하지 않는다 */
+export const PRACTICE_EMPTY_NOTE = '지금은 연습만 할 수 있어 풀어도 기록이 남지 않아요.';
+
 /** 기록 내보내기 안내 (N02). 범위마다 무엇을 담는지 말한다 */
 const LOCAL_EXPORT_NOTE = '이 브라우저에 남은 기록을 파일로 내보내요. 랭킹 탭마다 상위 10개까지만 남아 있어요.';
 export const ONLINE_EXPORT_NOTE =
@@ -98,6 +101,12 @@ export interface RankingScreenDeps {
    * 문제를 불러오지 못한 분야에 「… 시작하기」를 권하면 눌렀을 때 홈으로 튕겨 나간다
    */
   canStart: (target: RankingTarget) => boolean;
+  /**
+   * 지금 분야 칸이 연습(기록 안 남음)을 여는가 (FR-7.13 3단계, 서버에 닿지 않는다·서버 없이 열었다). 그러면 빈 탭의
+   * 「… 시작하기」는 기록이 남지 않는 연습이다 — «기록이 아직 없어요»에 기록이 남을 것처럼 시작을 권하지 않고
+   * 「… 연습하기」로 그렇다고 말한다. 없으면 늘 false다
+   */
+  isPractice?: () => boolean;
   loadRankings: (target: RankingTarget) => Promise<ScoreRecord[]>;
   clearRankings: () => Promise<void>;
   /**
@@ -161,7 +170,9 @@ export function onlineRankingSummary(
 }
 
 export function createRankingScreen(
-  { onHome, onStart, canStart, loadRankings, clearRankings, exportRecords, online }: RankingScreenDeps,
+  {
+    onHome, onStart, canStart, isPractice = () => false, loadRankings, clearRankings, exportRecords, online,
+  }: RankingScreenDeps,
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
@@ -246,6 +257,25 @@ export function createRankingScreen(
   /** 혼자 하기가 온라인으로 옮겼는가 (FR-7.13 3단계). 그러면 이 브라우저의 기록은 «예전 기록»이다 */
   function onlineOnly(): boolean {
     return onlineOffered() && online?.onlineOnly?.() === true;
+  }
+
+  /**
+   * 빈 칸의 시작 버튼 글 (`emptyAction`이 start·home일 때). 연습이면 «… 연습하기»이고 이름 끝에 «기록 안 남음»을 단다 —
+   * 홈의 분야 칸 이름과 같은 말이다
+   */
+  function setEmptyStart(label: string): void {
+    if (emptyAction !== 'start') {
+      el.emptyStartButton.removeAttribute('aria-label');
+      el.emptyStartButton.textContent = '홈으로';
+      return;
+    }
+    if (isPractice()) {
+      el.emptyStartButton.textContent = `${label} 연습하기`;
+      el.emptyStartButton.setAttribute('aria-label', `${label} 연습하기, 기록 안 남음`);
+      return;
+    }
+    el.emptyStartButton.removeAttribute('aria-label');
+    el.emptyStartButton.textContent = `${label} 시작하기`;
   }
 
   // ── 탭 ─────────────────────────────────────────────────────────
@@ -446,6 +476,7 @@ export function createRankingScreen(
       if (onlineOnly()) {
         emptyAction = 'scope-online';
         el.emptyMessage.textContent = `이 브라우저에 남은 예전 ${tab.label} 기록이 없어요.`;
+        el.emptyStartButton.removeAttribute('aria-label');
         el.emptyStartButton.textContent = '온라인 랭킹 보기';
         el.empty.hidden = false;
         el.list.hidden = true;
@@ -455,8 +486,10 @@ export function createRankingScreen(
       // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
       // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
       emptyAction = canStart(tab.target) ? 'start' : 'home';
-      el.emptyMessage.textContent = `${tab.label} 기록이 아직 없어요.`;
-      el.emptyStartButton.textContent = emptyAction === 'start' ? `${tab.label} 시작하기` : '홈으로';
+      el.emptyMessage.textContent = isPractice()
+        ? `${tab.label} 기록이 아직 없어요. ${PRACTICE_EMPTY_NOTE}`
+        : `${tab.label} 기록이 아직 없어요.`;
+      setEmptyStart(tab.label);
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -520,6 +553,7 @@ export function createRankingScreen(
       setOnlineStatus('온라인 랭킹을 불러오지 못했어요.');
       emptyAction = toHome ? 'home' : 'retry';
       el.emptyMessage.textContent = result.message;
+      el.emptyStartButton.removeAttribute('aria-label');
       el.emptyStartButton.textContent = toHome ? '홈으로' : '다시 시도';
       el.empty.hidden = false;
       return;
@@ -534,8 +568,10 @@ export function createRankingScreen(
     if (board.entries.length === 0 && onlineOnly()) {
       // 혼자 푼 판도 여기에 남는다(FR-7.13 3단계). 첫 판은 이 탭의 판이다 — 홈의 분야 칸처럼 곧바로 연다 (FR-6.12)
       emptyAction = canStart(tab.target) ? 'start' : 'home';
-      el.emptyMessage.textContent = `아직 ${tab.label} 온라인 기록이 없어요. 끝까지 풀면 점수가 여기에 남아요.`;
-      el.emptyStartButton.textContent = emptyAction === 'start' ? `${tab.label} 시작하기` : '홈으로';
+      el.emptyMessage.textContent = isPractice()
+        ? `아직 ${tab.label} 온라인 기록이 없어요. ${PRACTICE_EMPTY_NOTE}`
+        : `아직 ${tab.label} 온라인 기록이 없어요. 끝까지 풀면 점수가 여기에 남아요.`;
+      setEmptyStart(tab.label);
       el.empty.hidden = false;
       return;
     }
@@ -545,6 +581,7 @@ export function createRankingScreen(
       el.emptyMessage.textContent = tab.target.mode === 'all'
         ? '온라인 방에서 전체 도전 판을 끝까지 풀면 점수가 여기에 남아요.'
         : `온라인 방에서 ${tab.label} 판을 끝까지 풀면 점수가 여기에 남아요.`;
+      el.emptyStartButton.removeAttribute('aria-label');
       el.emptyStartButton.textContent = '온라인 방 열기';
       el.empty.hidden = false;
       return;

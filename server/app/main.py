@@ -80,6 +80,8 @@ from .repository import (
     RoomNotFound,
     RoomsRepository,
     RoomView,
+    SoloCreateLimited,
+    SoloRoomsFull,
     StandingAnswer,
     TokenConflict,
     ranking_owner_key,
@@ -90,7 +92,10 @@ from .tickets import WebSocketTickets
 logger = logging.getLogger(__name__)
 # 이 API가 읽고 쓰는 마지막 migration. 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하고(닫는
 # transaction이 기록을 남긴다) 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지 못하므로
-# 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
+# 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md). 012는 아직
+# 어디에도 올리지 않은 채 혼자 방 표(FR-7.13 3단계)를 더해 고쳤다 — #108만의 012도 같은 12라
+# readiness는 그 표도 본다(`solo_rooms_ready`). #108만의 012 위에서는 503
+# `migration-required`다.
 RELEASE_SCHEMA_VERSION = 12
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
@@ -165,11 +170,21 @@ RANKING_TIME_ZONE = "Asia/Seoul"
 # 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo)의 몫. 판 하나는 빨라도 1분 남짓(공개 8초 ×
 # 문항 수)이라 한 사람이 1분에 여는 판은 많아야 하나다 — 판이 도는 동안의 요청은 새 판을 열지 않고
 # 그 판을 돌려준다(resumed). 사람 칸은 두 번 누르기·다른 탭·이어 풀기를 넉넉히 품는다. 한
-# 교실(한 주소 뒤 36명)이 함께 판을 열어도 IP 칸 300에 들고, 프로세스 600은 방 변경 몫과 같다.
+# 교실(한 주소 뒤 36명)이 함께 판을 열어도 1분에 30번 남짓이라 IP 칸 120에 들고, 프로세스 600은 방
+# 변경 몫과 같다.
 SOLO_ACTOR_LIMIT = 12
-SOLO_CLIENT_LIMIT = 300
+SOLO_CLIENT_LIMIT = 120
 SOLO_PROCESS_LIMIT = 600
 SOLO_WINDOW_SECONDS = 60
+# 혼자 방을 **새로 만드는** 몫 (한 시간). 다시 쓰는 판(«다시 하기»·풀던 판)은 먹지 않는다.
+# «홈으로»가 혼자 방을 지우므로 홈에서 고른 판마다 새 방이다 — 한 주소 뒤 36명이 3분마다 홈에서
+# 새 판을 열어도(시간당 720번) 든다. 버리는 신분을 마구 만들어도 한 주소가 한 시간에 만드는 혼자
+# 방은 이만큼이고, 버려진 방은 30분 정리까지 남으므로 한 주소가 함께 쥐는 혼자 방은 많아야 이것의
+# 절반 남짓이다(동시 한도 `SOLO_ROOM_CEILING` 1,200의 30%). 프로세스 칸은 서비스 전체의 새 혼자
+# 방이다 — 방 만들기의 100/시간과 같은 결의 상한이다.
+SOLO_CREATE_CLIENT_LIMIT = 720
+SOLO_CREATE_PROCESS_LIMIT = 2_400
+SOLO_CREATE_WINDOW_SECONDS = 3_600
 # 내 최고 기록(홈을 열 때마다 한 번)과 기록 내보내기의 몫. 인증 몫도 함께 먹는다
 OWN_BEST_ACTOR_LIMIT = 30
 OWN_RECORDS_ACTOR_LIMIT = 6
@@ -1735,7 +1750,8 @@ def create_app(
         if wait is not None:
             raise _rate_limited("요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         version = await repo.schema_version()
-        if version != RELEASE_SCHEMA_VERSION:
+        # 번호가 같아도 #108만의 012(혼자 방 표가 없다)면 이 API는 방을 읽지 못한다 — 닫힌 채 둔다
+        if version != RELEASE_SCHEMA_VERSION or not await repo.solo_rooms_ready():
             raise _error(
                 503,
                 "migration-required",
@@ -1978,14 +1994,42 @@ def create_app(
             )
         except DomainError as error:
             raise _error(400, error.code, str(error)) from error
+        client_key = _client_key(request)
+
+        def may_create() -> float | None:
+            # 새 혼자 방을 만들 때만 먹는다 — 다시 쓰는 판은 이 몫과 무관하다
+            return ingress_limiter.try_acquire(
+                (
+                    RateLimitClaim(
+                        key=f"solo-create:client:{client_key}",
+                        limit=SOLO_CREATE_CLIENT_LIMIT,
+                        window_seconds=SOLO_CREATE_WINDOW_SECONDS,
+                    ),
+                    RateLimitClaim(
+                        key="solo-create:process",
+                        limit=SOLO_CREATE_PROCESS_LIMIT,
+                        window_seconds=SOLO_CREATE_WINDOW_SECONDS,
+                    ),
+                )
+            )
+
         # 번호는 DB를 읽기 전에 읽는다 — 이 번호까지 알린 변화는 이미 commit됐다
         label = versions.label()
         try:
-            started = await repo.start_solo(actor_id, spec)
+            started = await repo.start_solo(actor_id, spec, may_create=may_create)
         except NotMember as error:
             raise _error(401, "unauthorized", "온라인 세션이 만료됐어요.") from error
         except MatchInProgress as error:
             raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+        except SoloRoomsFull as error:
+            # 혼자 방이 동시 한도까지 찼다. 5xx라 화면은 결정 #1처럼 연습(기록 안 남음)을 연다
+            raise _error(
+                503,
+                "solo-busy",
+                "지금은 혼자 판 자리가 모두 찼어요. 잠시 뒤 다시 시도해 주세요.",
+            ) from error
+        except SoloCreateLimited as error:
+            raise _rate_limited("판은 잠시 뒤 다시 열 수 있어요.", error.retry_after) from error
         room = started.room
         if started.match is not None:
             # 판 시작은 준비를 되돌린다 — 번호를 올려 둔다(«게임 시작»과 같다). 혼자 방에는 그

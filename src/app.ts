@@ -49,12 +49,16 @@ import { createRoomKeepalive } from './online/room-keepalive.js';
 import { nicknameProblem } from './online/nickname-rules.js';
 import { isNicknameRejection, normalizeCode, onlineErrorText, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import {
+  dockNoticeNote,
   OFFLINE_NO_PRACTICE_MESSAGE,
   OFFLINE_PRACTICE,
   practiceNote,
   practiceRetryDelay,
+  practiceStillMessage,
   probeResult,
   soloQuestionTime,
+  soloStillRunningMessage,
+  type DockNoticeKind,
   type HomePlayMode,
   type PlayProbe,
   type PracticeReason,
@@ -167,15 +171,21 @@ async function main(): Promise<void> {
   let practiceReason: PracticeReason | null = roomStore.isNetworked ? null : 'no-server';
   /** 서버의 내 판마다 최고 기록 (홈의 별 점수, FR-2.3). 혼자 온라인 판을 아는 API에서만 채운다 */
   let serverBest: OnlineBestScores = {};
-  /** 묻는 중인 요청. 겹쳐 보내지 않는다 */
-  let probing: Promise<void> | null = null;
+  /** 묻는 중인 요청과 그 답. 겹쳐 보내지 않는다 */
+  let probing: Promise<{ probe: PlayProbe; wasPractice: boolean }> | null = null;
   /** 연습 중 다시 연결을 묻는 시계와 그 차례 (30초 → 1분 → 2분) */
   let practiceRetryTimer: number | undefined;
   let practiceRetryAttempt = 0;
   /** 지금 들어가 있는 혼자 방. 대기실이 없는 방이라 `activeRoomCode`와 따로 둔다 */
   let soloRoomCode: string | null = null;
-  /** 결과 화면이 보이는 혼자 판의 방과 그 판 종류. 「다시 하기」·「홈으로」가 쓴다 */
+  /**
+   * 결과 화면이 **지금 보이는** 혼자 판의 방과 그 판 종류. 「다시 하기」·「홈으로」·「온라인 랭킹 보기」가 쓴다.
+   * 그 화면의 것이다 — 친구와 푼 판의 결과를 보이거나 결과 화면을 떠나면(closers) 비운다. 남아 있으면 다음 친구 방
+   * 결과의 「한 판 더」가 혼자 판을 열었다
+   */
   let soloResult: { code: string; round: Round } | null = null;
+  /** 홈 dock 줄에 잠시 띄운 알림 (요청 한도에 걸린 혼자 판·사라진 혼자 판). 연습 안내가 있으면 그것이 먼저다 */
+  let dockNotice: { kind: DockNoticeKind; round: Round | null } | null = null;
   /** 혼자 판을 여는 중이다. 겹쳐 열지 않는다 */
   let soloStarting = false;
   /** 나가는 중인 혼자 방. 그 사이 홈이 목록을 읽어도 다시 나가거나 «풀던 혼자 판»으로 보이지 않는다 */
@@ -269,7 +279,8 @@ async function main(): Promise<void> {
       if (solo) void resumeSolo(code);
       else void openWaitingRoom(code);
     },
-    onRetryOnline: () => { void probePlayMode({ busy: true }); },
+    // 안내 줄의 행동: 연습이면 다시 묻고(«다시 연결»·«다시 확인»·«다시 시도»), 알림이면 그 알림의 일이다
+    onRetryOnline: () => { void pressDockNote(); },
     onNickname: (value) => {
       savedNickname = value;
       syncRoomPlayer();
@@ -290,14 +301,22 @@ async function main(): Promise<void> {
     // 나간다(방이 지워진다) — 결과 화면을 닫거나 새로고침해 「홈으로」를 거치지 않은 방이다
     myRooms: async () => {
       const rooms = await roomStore.myRooms();
-      const kept: Array<{ code: string; name: string; solo?: boolean }> = [];
+      const kept: Array<{ code: string; name: string; solo?: boolean; label?: string }> = [];
       for (const room of rooms) {
         if (room.solo !== true) {
           kept.push({ code: room.code, name: room.name });
         } else if (leavingSolo.has(room.code)) {
           // 「홈으로」가 이미 나가는 중이다
         } else if (room.status === 'playing' && room.inMatch) {
-          kept.push({ code: room.code, name: room.name, solo: true });
+          // 판 이름(분야·전체 도전)을 함께 말한다 — 고른 칸과 다른 판이 도는 까닭이 보인다
+          kept.push({
+            code: room.code,
+            name: room.name,
+            solo: true,
+            label: labelFor(room.categoryId === null
+              ? { mode: 'all', categoryId: null }
+              : { mode: 'category', categoryId: room.categoryId }),
+          });
         } else if (room.code !== onlineMatchRoomCode && soloResult?.code !== room.code) {
           void leaveSoloRoom(room.code);
         }
@@ -429,6 +448,8 @@ async function main(): Promise<void> {
     canStart: (target) => (target.mode === 'all'
       ? allModeCount() > 0
       : (target.category ? banks[target.category]?.length ?? 0 : 0) > 0),
+    // 지금 분야 칸이 연습(기록 안 남음)을 연다 — 빈 탭이 «시작하면 기록이 남는다»고 약속하지 않는다
+    isPractice: () => playMode === 'practice',
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
     // 선생님께 낼 기록 파일 (N02). 저장소는 여기서만 부른다 — 화면은 받은 파일을 내려받기만 한다
@@ -542,7 +563,8 @@ async function main(): Promise<void> {
   onlineQuizScreen.setCharacter(characterId);
 
   const onlineResultScreen = createOnlineResultScreen({
-    // 혼자 푼 판의 «다시 하기»는 같은 혼자 방에서 곧바로 새 판을 연다(대기실이 없다)
+    // 혼자 푼 판의 «다시 하기»는 같은 혼자 방에서 곧바로 새 판을 연다(대기실이 없다). `soloResult`는 지금 보이는
+    // 결과가 혼자 판일 때만 있다 — 친구와 푼 판의 「한 판 더」는 언제나 그 방의 대기실이다
     onAgain: () => (soloResult ? startSoloOnline(soloResult.round) : playAgain()),
     onRoom: () => {
       if (activeRoomCode) void openWaitingRoom(activeRoomCode);
@@ -550,15 +572,24 @@ async function main(): Promise<void> {
     },
     // 혼자 푼 판의 «홈으로»는 혼자 방을 나간다 — 마지막 사람이 나가 방이 지워진다. 친구와 푼 판은 예전처럼 방에 남는다
     onHome: () => {
-      const solo = soloResult;
-      soloResult = null;
-      if (solo) void leaveSoloRoom(solo.code);
+      leaveSoloResult();
       void goHome();
     },
     getPlayerId: () => roomStore.me(),
-    // 이 판이 남은 이번 주 랭킹을 연다 (FR-7.13 2단계). 결과 화면을 떠나므로 방 소켓은 closers가 놓는다
-    onOpenRanking: (target) => { void openRanking(target, { scope: 'online', period: 'week' }); },
+    // 이 판이 남은 이번 주 랭킹을 연다 (FR-7.13 2단계). 결과 화면을 떠나므로 방 소켓은 closers가 놓는다. 혼자 판의
+    // 결과에서 떠나면 «홈으로»와 같이 혼자 방을 나간다 — 돌아올 결과 화면이 없다
+    onOpenRanking: (target) => {
+      leaveSoloResult();
+      void openRanking(target, { scope: 'online', period: 'week' });
+    },
   });
+
+  /** 혼자 판의 결과 화면을 떠난다 — 그 혼자 방을 나가 지운다(«홈으로»·«온라인 랭킹 보기») */
+  function leaveSoloResult(): void {
+    const solo = soloResult;
+    soloResult = null;
+    if (solo) void leaveSoloRoom(solo.code);
+  }
   /** 최종 순위를 읽는 동안 방 소켓을 붙든다. 1분 넘게 읽어도 «연결 끊김»이 되지 않게 (U24) */
   const resultKeepalive = createRoomKeepalive(roomStore);
 
@@ -572,10 +603,14 @@ async function main(): Promise<void> {
       if (!ownsOnlineMatchNavigation()) return;
       const code = onlineMatchRoomCode;
       stopOnlineMatch();
-      // 풀던 혼자 판이 없다(오래 비워 정리됐다). 방을 나가고 홈에서 그렇다고 말한다
+      // 풀던 혼자 판이 없다(오래 비워 정리됐다). 방을 나가고 홈에서 그렇다고 말한다 — 눈으로도(dock 알림) 낭독으로도
       if (code !== null && code === soloRoomCode) {
         void leaveSoloRoom(code);
-        void goHome().then(() => announce('풀던 혼자 판을 찾지 못했어요. 다시 골라 시작해 주세요.'));
+        void goHome().then(() => {
+          if (currentScreen !== 'home') return;
+          setDockNotice({ kind: 'missing', round: null });
+          announce('풀던 혼자 판을 찾지 못했어요. 다시 골라 시작해 주세요.');
+        });
         return;
       }
       if (code && activeRoomCode === code) void openWaitingRoom(code);
@@ -614,7 +649,9 @@ async function main(): Promise<void> {
       if (snapshot.rankingRecorded === true) void showSoloBest(snapshot);
       return;
     }
-    // 「한 판 더」·「대기실로」는 아직 들어가 있는 방으로 돌아간다. 방 밖이면 「한 판 더」를 그리지 않는다
+    // 「한 판 더」·「대기실로」는 아직 들어가 있는 방으로 돌아간다. 방 밖이면 「한 판 더」를 그리지 않는다.
+    // 이 결과는 혼자 판이 아니다 — 앞서 본 혼자 판의 결과가 「한 판 더」를 가로채지 않게 비운다
+    soloResult = null;
     onlineResultScreen.show(snapshot, { inRoom: activeRoomCode !== null });
     goTo('online-result');
     // 아직 그 방에 있으면 소켓을 이어 붙든다. 화면을 떠나면 closers가 놓는다 — 대기실로 가면
@@ -773,6 +810,9 @@ async function main(): Promise<void> {
     'quiz-review': () => quizReviewScreen.hide(),
     'online-result': () => {
       resultKeepalive.release();
+      // 혼자 판의 결과는 이 화면의 것이다. 떠나면(다시 하기가 다른 화면으로 옮김·뒤로·연결 실패) 비운다 — 판이 끝난
+      // 혼자 방은 다음 홈이 조용히 나간다(homeRoomNote의 myRooms)
+      soloResult = null;
       onlineResultScreen.hide();
     },
     ranking: () => rankingScreen.hide(),
@@ -912,12 +952,9 @@ async function main(): Promise<void> {
   function setPlayMode(mode: HomePlayMode, reason: PracticeReason | null = null): void {
     playMode = mode;
     practiceReason = mode === 'practice' ? reason : null;
-    const note = mode === 'practice' && reason !== null ? practiceNote(reason) : null;
-    homeScreen.setPlayMode({
-      practice: mode === 'practice' && OFFLINE_PRACTICE,
-      note: note && note.action !== null ? { text: note.text, action: note.action } : null,
-      soloOnline: mode === 'online',
-    });
+    // 연습이면 그 안내가 먼저다. 알림(요청 한도·사라진 판)은 연습과 함께 두지 않는다 — 까닭이 달라졌다
+    if (mode === 'practice') dockNotice = null;
+    renderPlayView();
     settingsDialog.setOnlineSolo(roomStore.onlineRules()?.soloPlay === true);
     void homeBestScores().then((scores) => {
       if (playMode === mode) homeScreen.setBestScores(scores);
@@ -928,15 +965,48 @@ async function main(): Promise<void> {
       practiceRetryAttempt = 0;
       return;
     }
-    if (reason !== 'offline') return;
+    if (reason !== 'offline' && reason !== 'full') return;
     // 서버가 다시 답하면 온라인으로 돌아온다. 홈이 보이고 탭이 보일 때만 묻는다 (30초 → 1분 → 2분)
     const delay = practiceRetryDelay(practiceRetryAttempt);
     practiceRetryAttempt += 1;
     practiceRetryTimer = window.setTimeout(() => {
       practiceRetryTimer = undefined;
       if (currentScreen === 'home' && document.visibilityState !== 'hidden') void probePlayMode();
-      else setPlayMode('practice', 'offline');
+      else setPlayMode('practice', reason);
     }, delay);
+  }
+
+  /** 홈의 판 종류·dock 안내 줄을 그린다. 연습 안내가 있으면 그것, 없으면 잠시 띄운 알림이다 */
+  function renderPlayView(): void {
+    const practice = playMode === 'practice' && practiceReason !== null ? practiceNote(practiceReason) : null;
+    const note = practice && practice.action !== null
+      ? { text: practice.text, action: practice.action }
+      : (playMode !== 'practice' && dockNotice ? dockNoticeNote(dockNotice.kind) : null);
+    homeScreen.setPlayMode({
+      practice: playMode === 'practice' && OFFLINE_PRACTICE,
+      note,
+      soloOnline: playMode === 'online',
+    });
+  }
+
+  /** dock 알림을 띄우거나(null이면) 거둔다. 누른 줄이 사라지면 홈이 포커스를 분야 dock으로 옮긴다 */
+  function setDockNotice(notice: typeof dockNotice): void {
+    dockNotice = notice;
+    renderPlayView();
+  }
+
+  /** dock 안내 줄을 눌렀다. 연습이면 다시 묻고, 요청 한도 알림이면 같은 판을 다시 열고, 사라진 판 알림이면 거둔다 */
+  async function pressDockNote(): Promise<void> {
+    if (playMode === 'practice') {
+      await probePlayMode({ busy: true });
+      return;
+    }
+    const notice = dockNotice;
+    if (notice?.kind === 'limited' && notice.round) {
+      await playRound(notice.round);
+      return;
+    }
+    setDockNotice(null);
   }
 
   /**
@@ -954,22 +1024,25 @@ async function main(): Promise<void> {
           probe = probeResult({ supported: result.supported });
         } catch (error) {
           console.warn('[혼자 판] 온라인을 확인하지 못했습니다', error);
-          probe = probeResult({ error });
+          // 앞서 배운 규칙으로 정한다. 모르면(요청 한도·규칙 전에 지은 닉네임으로 세션을 열지 못했다) 오늘의 혼자
+          // 하기다 — 이 기능을 모르는 API일 수 있다. 판 종류는 언제나 정해진다(`checking`에 남지 않는다)
+          probe = probeResult({ error }, roomStore.onlineRules());
         }
-        if (probe.mode === 'unchanged') {
-          // 서버는 답했지만 지금은 거절했다(요청 한도 등). 배운 규칙이 있으면 그것을 따르고 판 종류는 그대로 둔다
-          const rules = roomStore.onlineRules();
-          if (playMode === 'checking' && rules) setPlayMode(rules.soloPlay ? 'online' : 'local');
-          if (busy) announce(probe.message);
-          return;
-        }
+        const wasPractice = playMode === 'practice';
         setPlayMode(probe.mode, probe.mode === 'practice' ? probe.reason : null);
-        if (busy && probe.mode === 'online') announce('온라인에 다시 연결됐어요.');
+        return { probe, wasPractice };
       })();
     }
     if (busy) homeScreen.setPlayBusy(true);
     try {
-      await probing;
+      const { probe, wasPractice } = await probing;
+      // 누른 사람에게 결과를 말한다 — 다시 물어도 연습이면 눈으로 보는 줄이 그대로라 아무 일도 없어 보였다.
+      // 이미 돌던 물음(물러서는 재시도)에 얹혀도 누른 사람은 듣는다
+      if (busy) {
+        if (probe.mode === 'practice') announce(practiceStillMessage(probe.reason));
+        else if (probe.refused) announce(probe.refused);
+        else if (wasPractice) announce('온라인에 다시 연결됐어요.');
+      }
     } finally {
       probing = null;
       if (busy) homeScreen.setPlayBusy(false);
@@ -995,12 +1068,9 @@ async function main(): Promise<void> {
       await startRound(round, undefined, { practice: true });
       return;
     }
-    if (playMode === 'local') {
-      await startRound(round);
-      return;
-    }
-    // 서버가 답했지만 규칙을 배우지 못했다(요청 한도에 걸린 세션 등). 판 종류를 지어내지 않고 다시 시도하게 한다
-    announce('잠시 후 다시 시도해 주세요.');
+    // `local`이다. 물음은 언제나 판 종류를 정하므로 `checking`이 남을 수 없지만, 남았다면 이 API가 아는지 모르는 것이라
+    // 오늘의 혼자 하기를 연다 — 분야 칸이 아무 일도 하지 않는 일은 없다
+    await startRound(round);
   }
 
   /**
@@ -1021,18 +1091,29 @@ async function main(): Promise<void> {
           questionTimeMs: soloQuestionTime(timeLimitMs),
         });
       } catch (error) {
-        const probe = probeResult({ error });
+        console.warn('[혼자 판] 판을 열지 못했습니다', error);
+        const probe = probeResult({ error }, roomStore.onlineRules());
         if (probe.mode === 'practice') {
           setPlayMode('practice', probe.reason);
           const message = probe.reason === 'nickname'
             ? onlineErrorText(error, '홈에서 닉네임을 바꿔 주세요.')
-            : OFFLINE_PRACTICE
-              ? '온라인에 연결할 수 없어요. 연습(기록 안 남음)은 할 수 있어요.'
-              : OFFLINE_NO_PRACTICE_MESSAGE;
+            : !OFFLINE_PRACTICE
+              ? OFFLINE_NO_PRACTICE_MESSAGE
+              : probe.reason === 'full'
+                ? '지금은 혼자 판 자리가 모두 찼어요. 연습(기록 안 남음)은 할 수 있어요.'
+                : '온라인에 연결할 수 없어요. 연습(기록 안 남음)은 할 수 있어요.';
           if (currentScreen !== 'home' && isCurrentNavigation(navigation)) await goHome();
           announce(message);
-        } else if (probe.mode === 'unchanged') {
-          announce(probe.message);
+        } else if (probe.mode === 'local') {
+          // 이 API가 혼자 판을 아는지 모른다(세션을 열지 못했다) — 오늘의 혼자 하기로 연다
+          setPlayMode('local');
+          if (isCurrentNavigation(navigation)) await startRound(round);
+        } else {
+          // 서버가 지금은 거절했다(요청 한도). 홈의 dock 줄이 눈으로도 말하고 «다시 시도»가 같은 판을 다시 연다 —
+          // 결과·랭킹 화면에서 눌렀으면 홈으로 가서 보인다(그 화면에는 말할 자리가 없다)
+          if (currentScreen !== 'home' && isCurrentNavigation(navigation)) await goHome();
+          if (currentScreen === 'home') setDockNotice({ kind: 'limited', round });
+          announce(probe.refused ?? '잠시 후 다시 시도해 주세요.');
         }
         return;
       }
@@ -1047,8 +1128,15 @@ async function main(): Promise<void> {
       homeRoomNote.enter(code);
       soloRoomCode = code;
       soloResult = null;
+      if (dockNotice) setDockNotice(null);
       // 그사이 다른 화면으로 옮겼으면 그 화면을 빼앗지 않는다. 판은 홈의 «이어 풀기»로 돌아올 수 있다
       if (!isCurrentNavigation(navigation)) return;
+      if (result.resumed && result.room.categoryId !== round.categoryId) {
+        // 풀던 혼자 판이 아직 돈다 — 고른 것과 다른 판이다. 말없이 그 판을 열면 «한국사»를 누른 사람이 까닭 없이
+        // «과학» 판에 들어간다. 홈에 남아 그 판으로 돌아갈 줄을 보이고 까닭을 말한다(판은 마감까지 계속된다)
+        await showSoloStillRunning(code, result.room.name, result.room.categoryId);
+        return;
+      }
       await openOnlineMatch(code, {
         notice: result.resumed ? '진행 중이던 혼자 판을 이어서 풀어요.' : undefined,
       });
@@ -1056,6 +1144,18 @@ async function main(): Promise<void> {
       soloStarting = false;
       homeScreen.setPlayBusy(false);
     }
+  }
+
+  /**
+   * 고른 판과 다른 혼자 판이 아직 돈다 (`resumed`). 홈에 그 판의 «이어 풀기» 줄을 곧바로 보이고(다시 묻지 않는다) 까닭을
+   * 알린다. 결과·랭킹 화면에서 눌렀으면 홈으로 간다 — 그 화면에는 그 줄이 없다
+   */
+  async function showSoloStillRunning(code: string, name: string, categoryId: CategoryId | null): Promise<void> {
+    const label = labelFor(categoryId === null ? { mode: 'all', categoryId: null } : { mode: 'category', categoryId });
+    if (currentScreen !== 'home') await goHome();
+    if (currentScreen !== 'home') return;
+    homeRoomNote.present({ code, name, solo: true, label });
+    announce(soloStillRunningMessage(label));
   }
 
   /** 홈의 «풀던 혼자 판» 줄 (FR-7.13 3단계). 그 판으로 돌아간다 — 그사이 끝났으면 결과, 없으면 홈이 말한다 */
@@ -1091,6 +1191,9 @@ async function main(): Promise<void> {
     stopOnlineMatch();
     const bestScores = await homeBestScores();
     if (!isCurrentNavigation(navigationGeneration)) return false;
+    // 지난 홈에 띄운 알림은 그때의 것이다. 새 홈에서 다시 띄울 까닭이 있으면 부른 쪽이 그 뒤에 띄운다
+    dockNotice = null;
+    renderPlayView();
     // 온라인 입구의 보조 줄: 혼자서도 여는 API인지는 세션을 연 뒤에야 안다(묻기 전이면 어느 쪽이든 맞는 말)
     homeScreen.setOnlineMinPlayers(roomStore.onlineRules()?.minPlayers ?? null);
     homeScreen.render({

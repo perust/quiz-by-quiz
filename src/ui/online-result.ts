@@ -7,6 +7,7 @@ import type { OnlineFinishedMatch, OnlineReviewItem, OnlineScore } from '../onli
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { createQuestionReportLink, onlineQuestionReportUrl, questionReportLabel } from './report-link.js';
 import { bestComparisonText } from './best-score.js';
+import { announce } from './screens.js';
 import { createBody } from './sprite.js';
 import type { RankingTarget } from '../types.js';
 
@@ -318,8 +319,11 @@ export function createOnlineResultScreen(
       if (matchId !== shownMatchId || shownScore === null || previous === undefined) return;
       const { text, isNew } = bestComparisonText(shownScore, previous);
       el.best.classList.toggle('result-best--new', isNew);
-      el.best.textContent = text;
+      // 먼저 펼치고 넣은 뒤 알린다 — 이 칩은 서버의 답이 온 뒤(화면이 보인 뒤)에 채워진다. 요약을 이미 들은 사람이
+      // 놓치지 않게 한 번 낭독한다. 칩은 라이브 리전이 아니다(로컬 결과의 같은 칩은 화면을 열 때 이미 있다)
       el.best.hidden = false;
+      el.best.textContent = text;
+      announce(text);
     },
     hide() {
       el.list.replaceChildren();

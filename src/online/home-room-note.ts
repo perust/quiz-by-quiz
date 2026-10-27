@@ -20,6 +20,8 @@ export interface HomeRoomNoteRoom {
   name: string;
   /** 혼자 푸는 온라인 판의 방이다 (FR-7.13 3단계). 홈은 «풀던 혼자 판»으로 말하고 그 판으로 돌아간다 */
   solo?: boolean;
+  /** 혼자 판의 이름(분야·전체 도전). 홈이 «풀던 «과학» 판»으로 말한다 — 고른 칸과 다른 판이 도는 까닭이 보인다 */
+  label?: string;
 }
 
 export interface HomeRoomNoteDeps {
@@ -46,6 +48,11 @@ export interface HomeRoomNote {
   leave(code: string): void;
   /** 로비를 다녀왔다. 다음 홈에서 한 번 다시 묻는다 */
   visitOnline(): void;
+  /**
+   * 묻지 않고도 아는 방을 곧바로 보인다 — 혼자 판을 열려다 풀던 혼자 판이 아직 돈다는 답을 받았다(FR-7.13 3단계).
+   * 흔적도 남긴다. 다음 홈의 물음이 서버의 답으로 다시 고친다
+   */
+  present(room: HomeRoomNoteRoom): void;
   /**
    * 홈이 보인 **직후**(`goTo('home')` 뒤)에 부른다. 부르는 순간의 화면 세대를 쥐고, 답이 오기 전에
    * 화면을 옮겼으면 그 답으로 그리지 않고 다음 홈에서 다시 묻는다.
@@ -74,7 +81,14 @@ export function createHomeRoomNote(deps: HomeRoomNoteDeps): HomeRoomNote {
 
   function display(room: HomeRoomNoteRoom | null): void {
     shownCode = room?.code ?? null;
-    show(room ? { code: room.code, name: room.name, ...(room.solo === true ? { solo: true } : {}) } : null);
+    show(room
+      ? {
+        code: room.code,
+        name: room.name,
+        ...(room.solo === true ? { solo: true } : {}),
+        ...(room.solo === true && room.label ? { label: room.label } : {}),
+      }
+      : null);
   }
 
   return {
@@ -92,6 +106,11 @@ export function createHomeRoomNote(deps: HomeRoomNoteDeps): HomeRoomNote {
     visitOnline() {
       wentOnline = true;
       stale = true;
+    },
+
+    present(room) {
+      if (isNetworked) remember(room.code);
+      display(room);
     },
 
     async refresh() {

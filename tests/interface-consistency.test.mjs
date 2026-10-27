@@ -84,7 +84,8 @@ test('빈 랭킹은 설명으로 막지 않고 그 탭의 판을 곧바로 여�
   // 예전에는 홈으로만 돌려보내 분야를 다시 골라야 했다 (U23). 이제 그 탭의 판을 연다. 같은 버튼이 온라인
   // 랭킹(FR-7.13 2단계)에서는 «온라인 방 열기»·«다시 시도»가 되므로, 하는 일은 그린 때 정한 emptyAction이다
   assert.match(ranking, /emptyAction = canStart\(tab\.target\) \? 'start' : 'home';/);
-  assert.match(ranking, /el\.emptyStartButton\.textContent = emptyAction === 'start' \? `\$\{tab\.label\} 시작하기` : '홈으로';/);
+  // 글은 `setEmptyStart`가 그 판정 그대로 쓴다 — 연습(기록 안 남음)만 열 때는 «… 연습하기» (FR-7.13 3단계)
+  assert.match(ranking, /function setEmptyStart\(label: string\): void \{\s*if \(emptyAction !== 'start'\) \{[\s\S]*?el\.emptyStartButton\.textContent = '홈으로';[\s\S]*?el\.emptyStartButton\.textContent = `\$\{label\} 연습하기`;[\s\S]*?el\.emptyStartButton\.textContent = `\$\{label\} 시작하기`;\s*\}/);
   assert.match(ranking, /el\.emptyStartButton\.addEventListener\('click', \(\) => \{\s*const \{ target \} = currentTab\(\);/);
   assert.match(ranking, /\} else if \(emptyAction === 'start' && canStart\(target\)\) \{\s*onStart\(target\);\s*\} else \{\s*onHome\(\);/);
   assert.doesNotMatch(ranking, /emptyHomeButton|ranking-empty-home/);

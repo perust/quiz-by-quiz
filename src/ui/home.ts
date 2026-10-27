@@ -16,6 +16,7 @@ import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
 import { onlineEntryCopy, SOLO_ONLINE_ENTRY } from '../online/rules.js';
+import { soloRoomNoteText } from '../online/solo-play.js';
 import { NICKNAME_PROBLEM_MESSAGES, nicknameProblem } from '../online/nickname-rules.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
@@ -43,13 +44,16 @@ export interface HomeScreenDeps {
 export interface HomeRoomNote {
   code: string;
   name: string;
-  /** 혼자 푸는 온라인 판의 방이면 «풀던 혼자 판이 있어요 · 이어 풀기»다 (FR-7.13 3단계) */
+  /** 혼자 푸는 온라인 판의 방이면 «풀던 «과학» 판이 아직 진행 중이에요 · 이어 풀기»다 (FR-7.13 3단계) */
   solo?: boolean;
+  /** 혼자 판의 이름(분야·전체 도전). 없으면 «풀던 혼자 판이 있어요»다 */
+  label?: string;
 }
 
 /**
  * 분야 칸·전체 도전이 여는 것 (FR-7.13 3단계). `practice`면 연습(기록 안 남음)이라 별 점수가 없고 칸의 이름이
- * «연습하기»이며, `note`가 있으면 dock 맨 위 안내 줄이 까닭과 다시 연결할 길을 말한다(복귀 줄 자리를 쓴다).
+ * «연습하기»이며, `note`가 있으면 dock 맨 위 안내 줄이 까닭과 다시 할 일을 말한다(복귀 줄 자리를 쓴다). 연습이 아닌데
+ * `note`가 있으면 잠시 띄우는 알림이다(요청 한도에 걸린 혼자 판·사라진 혼자 판, `data-kind="notice"`).
  * `online`·`local`·`checking`은 이름이 같다 — 기록이 어디에 남는지는 「게임 방법」과 결과 화면이 말한다
  */
 export interface HomePlayView {
@@ -275,7 +279,9 @@ export function createHomeScreen({
     onOpenOnline();
   });
   el.roomNote.addEventListener('click', () => {
-    // 연습 안내 줄이 그 자리를 쓰는 동안은 «다시 연결»이다
+    // 다시 묻는 중이면 겹쳐 보내지 않는다 (줄이 «연결 중…»을 말하고 있다)
+    if (playBusy) return;
+    // 연습 안내·알림이 그 자리를 쓰는 동안은 «다시 연결»·«다시 시도»·«확인»이다 — 무엇을 할지는 app.ts가 안다
     if (play.note) {
       onRetryOnline();
       return;
@@ -283,24 +289,39 @@ export function createHomeScreen({
     if (roomNote) onReturnToRoom(roomNote.code, roomNote.solo === true);
   });
 
+  /** 분야 dock에서 처음 누를 수 있는 칸 (없으면 전체 도전) */
+  function focusFirstPlayable(): void {
+    const first = el.grid.querySelector<HTMLButtonElement>('.category-card:not(:disabled)');
+    (first ?? el.startAll).focus({ preventScroll: true });
+  }
+
   /**
-   * dock 맨 위 한 줄 (U35·FR-7.13 3단계). 연습 안내가 있으면 그것이 먼저다 — 서버에 닿지 않는 동안에는 돌아갈 방을
-   * 물을 수도 없다. 한 자리를 나눠 써서 짧은 화면의 dock 높이 계약(복귀 줄 자리)이 그대로다
+   * dock 맨 위 한 줄 (U35·FR-7.13 3단계). 연습 안내·알림이 있으면 그것이 먼저다 — 서버에 닿지 않는 동안에는 돌아갈 방을
+   * 물을 수도 없다. 한 자리를 나눠 써서 짧은 화면의 dock 높이 계약(복귀 줄 자리)이 그대로다.
+   *
+   * 다시 묻는 동안(`playBusy`)은 그 줄의 행동 글이 «연결 중…»이고 `aria-busy`다 — 누른 줄 자신이 상태를 말한다.
+   * **누른 줄이 사라지면 포커스를 분야 dock으로 옮긴다** — «다시 연결»이 통하거나 «확인»으로 거두면 그 버튼이 숨어
+   * 포커스가 <body>로 떨어졌다. 캐릭터가 밟아 누른 것이면 포커스가 줄에 없으니 옮기지 않는다(다음 Enter는 발밑이다)
    */
   function renderDockNote(): void {
+    const hadFocus = document.activeElement === el.roomNote;
     const note = play.note;
-    el.roomNote.dataset.kind = note ? 'practice' : 'room';
+    el.roomNote.dataset.kind = note ? (play.practice ? 'practice' : 'notice') : 'room';
     if (note) {
       el.roomNoteText.textContent = note.text;
-      el.roomNoteAction.textContent = note.action;
+      el.roomNoteAction.textContent = playBusy ? '연결 중…' : note.action;
+      if (playBusy) el.roomNote.setAttribute('aria-busy', 'true');
+      else el.roomNote.removeAttribute('aria-busy');
       el.roomNote.hidden = false;
       return;
     }
+    el.roomNote.removeAttribute('aria-busy');
     el.roomNoteText.textContent = roomNote
-      ? (roomNote.solo ? '풀던 혼자 판이 있어요' : `「${roomNote.name}」 방에 아직 있어요`)
+      ? (roomNote.solo ? soloRoomNoteText(roomNote.label) : `「${roomNote.name}」 방에 아직 있어요`)
       : '';
     el.roomNoteAction.textContent = roomNote?.solo ? '이어 풀기' : '돌아가기';
     el.roomNote.hidden = !roomNote;
+    if (hadFocus && el.roomNote.hidden) focusFirstPlayable();
   }
 
   // ── 문제 은행 알림 (U06) ───────────────────────────────────────
@@ -580,11 +601,10 @@ export function createHomeScreen({
       el.caption.textContent = busy ? '연결 중…' : homeDockCaption(play.practice);
       if (busy) el.quests.setAttribute('aria-busy', 'true');
       else el.quests.removeAttribute('aria-busy');
+      // 안내 줄의 «다시 연결»을 눌렀으면 그 줄이 «연결 중…»을 말한다
+      renderDockNote();
     },
 
-    focusPractice() {
-      const first = el.grid.querySelector<HTMLButtonElement>('.category-card:not(:disabled)');
-      (first ?? el.startAll).focus({ preventScroll: true });
-    },
+    focusPractice: focusFirstPlayable,
   };
 }

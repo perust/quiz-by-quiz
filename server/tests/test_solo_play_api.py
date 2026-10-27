@@ -11,11 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
+import pytest
 from test_api import (
     HEADERS,
     MATCH_ID,
@@ -26,17 +27,28 @@ from test_api import (
     room_view,
 )
 
+from app import main as api_main
 from app import ops_log
-from app.main import OWN_BEST_ACTOR_LIMIT, SOLO_ACTOR_LIMIT
+from app.main import (
+    OWN_BEST_ACTOR_LIMIT,
+    SOLO_ACTOR_LIMIT,
+    SOLO_CLIENT_LIMIT,
+    SOLO_CREATE_CLIENT_LIMIT,
+    SOLO_CREATE_PROCESS_LIMIT,
+    SOLO_CREATE_WINDOW_SECONDS,
+)
 from app.repository import (
     OWN_RECORDS_LIMIT,
     RANKING_BOARDS,
+    SOLO_ROOM_CEILING,
     AccessInfo,
     MatchInProgress,
     MatchSetup,
     OwnBestView,
     OwnRecordsView,
     OwnRecordView,
+    SoloCreateLimited,
+    SoloRoomsFull,
     SoloStart,
     ranking_owner_key,
 )
@@ -61,6 +73,9 @@ class SoloRepository(FakeRepository):
     def __init__(self) -> None:
         super().__init__()
         self.solo_calls: list[Any] = []
+        # 이번 요청이 새 혼자 방을 만드는가. 만들 때만 저장소가 만드는 몫(`may_create`)을 먹는다
+        self.creates = True
+        self.create_charges = 0
         self.solo_result: SoloStart | Exception = SoloStart(
             room=solo_room(status="playing", in_match=True),
             match=MatchSetup(
@@ -103,10 +118,21 @@ class SoloRepository(FakeRepository):
             truncated=False,
         )
 
-    async def start_solo(self, actor_id: UUID, spec: Any) -> SoloStart:
+    async def start_solo(
+        self,
+        actor_id: UUID,
+        spec: Any,
+        *,
+        may_create: Callable[[], float | None] | None = None,
+    ) -> SoloStart:
         self.solo_calls.append((actor_id, spec))
         if isinstance(self.solo_result, Exception):
             raise self.solo_result
+        if self.creates and may_create is not None:
+            wait = may_create()
+            if wait is not None:
+                raise SoloCreateLimited(wait)
+            self.create_charges += 1
         return self.solo_result
 
     async def own_best_scores(
@@ -239,6 +265,49 @@ def test_solo_start_is_rate_limited_per_player_with_retry_after() -> None:
     assert responses[-1].status_code == 429
     assert responses[-1].headers["Retry-After"].isdigit()
     assert len(repository.solo_calls) == SOLO_ACTOR_LIMIT
+
+
+def test_solo_start_answers_503_solo_busy_when_the_solo_room_ceiling_is_reached() -> None:
+    # 혼자 방이 동시 한도까지 찼다. 5xx라 화면은 결정 #1처럼 연습(기록 안 남음)을 열고 그
+    # 까닭을 말한다
+    assert SOLO_ROOM_CEILING == 1_200
+    repository = SoloRepository()
+    repository.solo_result = SoloRoomsFull()
+    with make_client(repository) as client:
+        full = client.post("/v1/solo", headers=HEADERS, json={"categoryId": "history"})
+
+    assert full.status_code == 503
+    assert full.json()["detail"]["code"] == "solo-busy"
+
+
+def test_solo_room_creation_has_its_own_hourly_budget_that_reuse_never_pays(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 버리는 신분을 마구 만들어도 한 주소가 한 시간에 만드는 혼자 방은 이만큼이다. 다시 쓰는
+    # 판은 먹지 않는다
+    assert (SOLO_CREATE_CLIENT_LIMIT, SOLO_CREATE_PROCESS_LIMIT) == (720, 2_400)
+    assert SOLO_CREATE_WINDOW_SECONDS == 3_600
+    # 한 교실(36명)이 1분에 함께 판을 열어도(30번 남짓) 주소 칸에 든다
+    assert SOLO_CLIENT_LIMIT == 120
+    monkeypatch.setattr(api_main, "SOLO_CREATE_CLIENT_LIMIT", 2)
+    repository = SoloRepository()
+    with make_client(repository) as client:
+        created = [
+            client.post("/v1/solo", headers=HEADERS, json={"categoryId": "history"})
+            for _ in range(2)
+        ]
+        refused = client.post("/v1/solo", headers=HEADERS, json={"categoryId": "history"})
+        # 같은 혼자 방을 다시 쓰는 판(«다시 하기»·풀던 판)은 만드는 몫과 무관하다
+        repository.creates = False
+        reused = client.post("/v1/solo", headers=HEADERS, json={"categoryId": "history"})
+
+    assert [response.status_code for response in created] == [201, 201]
+    assert refused.status_code == 429
+    assert refused.json()["detail"]["code"] == "rate-limited"
+    # 한 시간 창이다 — 1분 몫의 Retry-After(60초 안)와 다르다
+    assert 3_500 <= int(refused.headers["Retry-After"]) <= 3_600
+    assert reused.status_code == 201
+    assert repository.create_charges == 2
 
 
 def test_solo_start_logs_one_line_without_personal_data() -> None:

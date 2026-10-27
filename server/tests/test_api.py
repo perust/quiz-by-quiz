@@ -96,6 +96,8 @@ class FakeRepository:
         self.authenticate_calls = 0
         self.current_schema_version = 12
         self.schema_version_calls = 0
+        # 012의 혼자 방 표가 있는가 (FR-7.13 3단계). #108만의 012면 False다
+        self.solo_rooms_table = True
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
         self.transfer_requested = threading.Event()
@@ -124,6 +126,9 @@ class FakeRepository:
     async def schema_version(self) -> int:
         self.schema_version_calls += 1
         return self.current_schema_version
+
+    async def solo_rooms_ready(self) -> bool:
+        return self.solo_rooms_table
 
     async def upsert_player(
         self,
@@ -342,6 +347,20 @@ def test_release_readiness_requires_character_only_contract_and_migration_12() -
             blocked = client.get("/v1/release-readiness")
             assert blocked.status_code == 503
             assert blocked.json()["detail"]["code"] == "migration-required"
+
+
+def test_release_readiness_stays_closed_on_a_rankings_only_migration_12() -> None:
+    # 012를 제자리에서 고쳐 혼자 방 표를 더했다 — #108만의 012도 번호는 12다. 이 API는 그
+    # 위에서 방을 읽지 못하므로(방 SQL이 solo_rooms를 본다) 번호가 같아도 닫힌 채 둔다.
+    # Pages gate가 지나가지 않는다
+    repository = FakeRepository()
+    repository.solo_rooms_table = False
+    with make_client(repository) as client:
+        blocked = client.get("/v1/release-readiness")
+        assert blocked.status_code == 503
+        assert blocked.json()["detail"]["code"] == "migration-required"
+        repository.solo_rooms_table = True
+        assert client.get("/v1/release-readiness").status_code == 200
 
 
 def test_release_readiness_database_queries_are_rate_limited() -> None:

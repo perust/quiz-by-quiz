@@ -28,7 +28,7 @@ from test_online_rankings_integration import (
 )
 
 from app.domain import validate_player, validate_solo_room
-from app.repository import RoomNotFound
+from app.repository import RoomNotFound, SoloCreateLimited, SoloRoomsFull
 
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not set")
 
@@ -56,6 +56,73 @@ def test_postgres_own_best_and_records_read_only_the_owners_rows() -> None:
 @pytest.mark.integration
 def test_postgres_runtime_role_cannot_delete_solo_marks_directly() -> None:
     asyncio.run(_exercise_solo_grants())
+
+
+@pytest.mark.integration
+def test_postgres_new_solo_rooms_stop_at_the_ceiling_and_pay_the_creation_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncio.run(_exercise_solo_ceiling(monkeypatch))
+
+
+async def _exercise_solo_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import postgres
+
+    repository = await _repository()
+    first, second, third = uuid4(), uuid4(), uuid4()
+    codes: list[str] = []
+    try:
+        await _register(repository, {first: "첫째", second: "둘째", third: "셋째"})
+        # 한도는 지금 있는 혼자 방 수 + 1이다 — 다른 시험이 남긴 방과 무관하게 이 시험의 첫 방이
+        # 마지막 자리다
+        monkeypatch.setattr(postgres, "SOLO_ROOM_CEILING", await _solo_rooms_now() + 1)
+        charges: list[str] = []
+
+        def charge() -> float | None:
+            charges.append("charged")
+            return None
+
+        started = await repository.start_solo(
+            first,
+            validate_solo_room(category_id="science", question_time_ms=20_000),
+            may_create=charge,
+        )
+        codes.append(started.room.code)
+        assert started.created is True and charges == ["charged"]
+
+        # 자리가 찼다: 새 혼자 방은 만들지 않고, 만드는 몫도 먹지 않는다
+        with pytest.raises(SoloRoomsFull):
+            await repository.start_solo(
+                second,
+                validate_solo_room(category_id="history", question_time_ms=20_000),
+                may_create=charge,
+            )
+        assert charges == ["charged"] and await _solo_marks(second) == 0
+
+        # 이미 있는 혼자 방을 다시 쓰는 판은 막지 않는다(도는 판이면 그 판, resumed)
+        again = await repository.start_solo(
+            first,
+            validate_solo_room(category_id="science", question_time_ms=20_000),
+            may_create=charge,
+        )
+        assert again.resumed is True and charges == ["charged"]
+
+        # 자리는 있어도 만드는 몫이 찼으면 만들지 않는다 — 방·멤버십·표시가 하나도 남지 않는다
+        monkeypatch.setattr(postgres, "SOLO_ROOM_CEILING", await _solo_rooms_now() + 1)
+        with pytest.raises(SoloCreateLimited) as limited:
+            await repository.start_solo(
+                third,
+                validate_solo_room(category_id=None, question_time_ms=20_000),
+                may_create=lambda: 42.0,
+            )
+        assert limited.value.retry_after == 42.0
+        assert await _solo_marks(third) == 0
+        assert not [room for room in await repository.list_rooms(third) if room.solo]
+    finally:
+        await repository.close()
+        for code in codes:
+            await _cleanup([], code)
+        await _cleanup([first, second, third], None)
 
 
 async def _exercise_solo_lifecycle() -> None:
@@ -323,6 +390,15 @@ async def _solo_marks(player_id: UUID) -> int:
         cursor = await connection.execute(
             "SELECT count(*) FROM quiz_online.solo_rooms WHERE player_id = %s", (player_id,)
         )
+        row = await cursor.fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+async def _solo_rooms_now() -> int:
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        cursor = await connection.execute("SELECT count(*) FROM quiz_online.solo_rooms")
         row = await cursor.fetchone()
     assert row is not None
     return int(row[0])

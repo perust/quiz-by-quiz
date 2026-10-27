@@ -494,10 +494,11 @@ export function handleOnlineMovementKey(
 
 /**
  * 혼자 판의 나가기 확인 (FR-7.13 3단계). 친구와 푸는 방과 같은 규칙이다 — 판은 서버에서 계속되고 방에서 나간 것도
- * 아니다. 돌아오는 길은 로비 목록이 아니라 홈의 «이어 풀기» 줄이고, 끝까지 가면 그 점수가 기록된다
+ * 아니다. 돌아오는 길은 로비 목록이 아니라 홈의 «이어 풀기» 줄이고, 끝까지 가면 그 점수가 기록된다. 판이 끝날 때까지
+ * 다른 혼자 판은 열 수 없다는 것도 미리 말한다 — 홈의 분야 칸을 누르면 이 판으로 돌아갈 줄만 보인다
  */
 export const SOLO_EXIT_BODY =
-  '나가도 판은 계속 진행돼요. 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인 랭킹에 남아요.';
+  '나가도 판은 계속 진행되고, 끝날 때까지 새 혼자 판은 열 수 없어요. 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인 랭킹에 남아요.';
 
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;

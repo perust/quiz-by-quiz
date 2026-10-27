@@ -732,13 +732,14 @@ class Smoke:
             raise Failure("playerId is not this identity")
         self.session_ready = True
         problems = cors_problems(reply)
-        # migration 012 API는 끝난 판을 서버 랭킹에 남긴다고 알린다. 화면은 이것으로 랭킹을 보인다
+        # migration 012 API는 끝난 판을 서버 랭킹에 남기고(rankings) 홈의 혼자 온라인 판을 연다고
+        # (soloPlay, FR-7.13 3단계) 알린다. #108만의 API도 같은 schemaVersion 12라 soloPlay가 그 둘을 가른다
         if self.candidate:
-            problems += field_problems(session, {"rankings": True})
+            problems += field_problems(session, {"rankings": True, "soloPlay": True})
         if problems:
             raise Failure("; ".join(problems))
         if self.candidate:
-            return "HTTP 200 playerId is this identity, rankings true"
+            return "HTTP 200 playerId is this identity, rankings true, soloPlay true"
         return "HTTP 200 playerId is this identity"
 
     def nickname(self) -> str:

@@ -41,6 +41,7 @@ class FakeElement extends EventTarget {
   querySelectorAll() { return []; }
   closest() { return null; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  removeAttribute(name) { delete this.attributes[name]; }
   getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
   focus() { globalThis.document.activeElement = this; }
   blur() { globalThis.document.activeElement = globalThis.document.body; }
@@ -91,10 +92,13 @@ const record = (id, category) => ({
 const started = [];
 /** 문제를 불러오지 못해 열 수 없는 판. 키는 'all' 또는 카테고리 id */
 let unavailable = new Set();
+/** 홈의 분야 칸이 지금 연습(기록 안 남음)을 여는가 (FR-7.13 3단계) */
+let practice = false;
 const ranking = createRankingScreen({
   onHome: () => started.push('home'),
   onStart: (target) => started.push(target),
   canStart: (target) => !unavailable.has(keyOf(target)),
+  isPractice: () => practice,
   loadRankings: async (target) => stored[keyOf(target)] ?? [],
   clearRankings: async () => { stored = {}; },
 });
@@ -162,6 +166,35 @@ test('문제를 불러오지 못한 분야의 빈 탭은 시작을 권하지 않
     assert.deepEqual(started, [{ mode: 'category', category: 'history' }]);
   } finally {
     unavailable = new Set();
+    started.length = 0;
+  }
+});
+
+test('연습만 열 수 있으면 빈 탭은 기록이 남을 것처럼 시작을 권하지 않는다 — «… 연습하기, 기록 안 남음» (FR-7.13 3단계)', async () => {
+  // 서버에 닿지 않거나 서버 없이 연 화면이면 빈 탭의 판은 연습이다. «기록이 아직 없어요 · 시작하기»는 풀어도 채워지지
+  // 않는 약속이었다 — 홈의 분야 칸과 같은 말로 그렇다고 말하고, 누르면 그대로 그 탭의 판(연습)을 연다
+  try {
+    stored = {};
+    practice = true;
+    started.length = 0;
+    await ranking.show({ target: { mode: 'category', category: 'science' } });
+    assert.equal(
+      byId('ranking-empty-message').textContent,
+      '과학 기록이 아직 없어요. 지금은 연습만 할 수 있어 풀어도 기록이 남지 않아요.',
+    );
+    assert.equal(byId('ranking-empty-start').textContent, '과학 연습하기');
+    assert.equal(byId('ranking-empty-start').attributes['aria-label'], '과학 연습하기, 기록 안 남음');
+    byId('ranking-empty-start').click();
+    assert.deepEqual(started, [{ mode: 'category', category: 'science' }]);
+
+    // 다시 온라인이 되면 예전 말로 돌아오고 접근 가능한 이름도 거둔다(버튼 글자가 이름이다)
+    practice = false;
+    await ranking.show({ target: { mode: 'all', category: null } });
+    assert.equal(byId('ranking-empty-message').textContent, '전체 도전 기록이 아직 없어요.');
+    assert.equal(byId('ranking-empty-start').textContent, '전체 도전 시작하기');
+    assert.equal(byId('ranking-empty-start').attributes['aria-label'], undefined);
+  } finally {
+    practice = false;
     started.length = 0;
   }
 });

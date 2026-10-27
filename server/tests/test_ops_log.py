@@ -379,6 +379,9 @@ class OpsRepository:
     async def schema_version(self) -> int:
         return RELEASE_SCHEMA_VERSION
 
+    async def solo_rooms_ready(self) -> bool:
+        return True
+
     async def upsert_player(self, *args: Any, **kwargs: Any) -> None:
         return None
 

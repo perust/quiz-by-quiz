@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -24,6 +24,7 @@ from .question_catalog import (
 from .repository import (
     OWN_RECORDS_LIMIT,
     RANKING_BOARDS,
+    SOLO_ROOM_CEILING,
     AbsentHostSweep,
     AccessInfo,
     CleanupCounts,
@@ -55,6 +56,8 @@ from .repository import (
     RoomFull,
     RoomNotFound,
     RoomView,
+    SoloCreateLimited,
+    SoloRoomsFull,
     SoloStart,
     StandingAnswerSource,
     TokenConflict,
@@ -493,6 +496,18 @@ class PostgresRoomsRepository:
         if row is None:
             return 0
         return int(row["schema_version"])
+
+    async def solo_rooms_ready(self) -> bool:
+        """012의 혼자 방 표가 있는가. #108만의 012(같은 번호, 이 표가 없다) 위에서는 False다."""
+        try:
+            async with self._pool.connection(timeout=3) as connection:
+                cursor = await connection.execute(
+                    "SELECT to_regclass('quiz_online.solo_rooms') IS NOT NULL AS ready"
+                )
+                row = await cursor.fetchone()
+        except errors.Error:
+            return False
+        return bool(row and row["ready"])
 
     async def upsert_player(
         self,
@@ -1330,7 +1345,13 @@ class PostgresRoomsRepository:
             player_count=len(members),
         )
 
-    async def start_solo(self, actor_id: UUID, spec: ValidatedRoom) -> SoloStart:
+    async def start_solo(
+        self,
+        actor_id: UUID,
+        spec: ValidatedRoom,
+        *,
+        may_create: Callable[[], float | None] | None = None,
+    ) -> SoloStart:
         """혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계, POST /v1/solo).
 
         그 사람의 혼자 방을 다시 쓴다 — 같은 방의 지난 판을 피해 출제하므로(N08)
@@ -1340,6 +1361,11 @@ class PostgresRoomsRepository:
         판이나 나갔다 온 판을 화면이 이어 그린다. 분야·문항 시간은 이번에 고른 값으로
         바꾼다. 두 요청이 겹쳐 둘 다 방을 만들려 하면 solo_rooms의 UNIQUE가 하나를
         되돌리고 다시 읽는다.
+
+        새로 만들 때만 두 가지를 본다 — 다시 쓰는 판은 막지 않는다. 혼자 방이 `SOLO_ROOM_CEILING`
+        만큼 있으면 SoloRoomsFull이고(혼자 판의 동시 수를 묶는다), 아니면 `may_create`가 만드는
+        몫(주소·프로세스, 한 시간)을 먹는다 — 찼으면 SoloCreateLimited다. 한도는 같은 순간의
+        transaction 둘이 함께 넘을 수 있는 느슨한 상한이다(넘는 만큼은 동시에 만든 수뿐이다).
         """
         for _ in range(10):
             try:
@@ -1368,6 +1394,17 @@ class PostgresRoomsRepository:
                             )
                             room = None
                         if room is None:
+                            cursor = await connection.execute(
+                                "SELECT count(*) >= %s AS at_ceiling FROM quiz_online.solo_rooms",
+                                (SOLO_ROOM_CEILING,),
+                            )
+                            ceiling = await cursor.fetchone()
+                            if ceiling is not None and ceiling["at_ceiling"]:
+                                raise SoloRoomsFull
+                            if may_create is not None:
+                                wait = may_create()
+                                if wait is not None:
+                                    raise SoloCreateLimited(wait)
                             room = await self._insert_solo_room(connection, actor_id, spec, player)
                             created = True
                         else:

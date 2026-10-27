@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
@@ -288,6 +288,13 @@ RANKING_LIMIT = 10
 # 기록 내보내기가 한 번에 싣는 내 기록 수. 최근 것부터 고른다 — 보존(최근 8주 + 판마다 전체 상위
 # 100)이 남긴 것 가운데서다
 OWN_RECORDS_LIMIT = 500
+# 동시에 있을 수 있는 혼자 방의 수 (FR-7.13 3단계). 혼자 방 하나에 도는 판은 많아야 하나라 이것이
+# 혼자 판의 동시 수도 묶는다 — 아무도 답하지 않는 혼자 판 1,200개는 20초 문항이면 28초마다 마감
+# 넘김이 두 번이라 초당 약 86번이고, 마감 sweep(1초마다 판 100개)이 따라간다. 이미 있는 혼자 방을
+# 다시 쓰는 판은 세지 않는다 — 새로 만들 때만 본다. 찬 동안 새 판은 503 `solo-busy`이고 화면은
+# 연습(기록 안 남음)을 연다. 이 값을 바꾸는 것은 자원 envelope 검토다
+# (deploy/oracle/README.md «Solo online play»)
+SOLO_ROOM_CEILING = 1_200
 
 # «내 기록»(isMine)을 가리는 열쇠의 앞말. 열쇠는 브라우저 비밀(토큰)의 해시에서 나온다.
 _RANKING_OWNER_PREFIX = b"qbb-ranking-owner:"
@@ -378,6 +385,22 @@ class MatchPositionMismatch(RepositoryFailure):
     pass
 
 
+class SoloRoomsFull(RepositoryFailure):
+    """혼자 방이 한도(`SOLO_ROOM_CEILING`)까지 찼다 (FR-7.13 3단계). 새 혼자 방을 만들지 않는다.
+
+    이미 있는 혼자 방을 다시 쓰는 판은 막지 않는다 — 만들 때만 센다. API는 503 `solo-busy`로 알리고
+    화면은 결정 #1처럼 연습(기록 안 남음)을 연다.
+    """
+
+
+class SoloCreateLimited(RepositoryFailure):
+    """새 혼자 방을 만드는 몫(주소·프로세스, 한 시간)이 찼다. `retry_after`초 뒤에 자리가 난다."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__("solo room creation budget exhausted")
+        self.retry_after = retry_after
+
+
 class MemberConnected(RepositoryFailure):
     """내보내려는 참가자가 아직 접속 중이다 (U24).
 
@@ -394,6 +417,11 @@ class RoomsRepository(Protocol):
     async def health(self) -> bool: ...
 
     async def schema_version(self) -> int: ...
+
+    # 이 API가 쓰는 012의 혼자 방 표(`quiz_online.solo_rooms`)가 있는가. 012를 제자리에서 고쳐
+    # #108의 012와 이 PR의 012가 같은 번호(12)다 — 번호만 보는 release readiness가 #108의 012 위에서
+    # ready를 말하지 않게 함께 본다 (deploy/oracle/README.md «Fail-closed staging order»)
+    async def solo_rooms_ready(self) -> bool: ...
 
     async def upsert_player(
         self,
@@ -544,7 +572,15 @@ class RoomsRepository(Protocol):
 
     # 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo). 그 사람의 혼자 방을 다시 쓰고(없으면
     # 만든다) 곧바로 판을 연다. 혼자 방에 판이 돌고 있으면 새 판을 열지 않고 그 방을 돌려준다.
-    async def start_solo(self, actor_id: UUID, spec: ValidatedRoom) -> SoloStart: ...
+    # 새 혼자 방은 한도(`SOLO_ROOM_CEILING`) 안에서만 만들고(넘으면 SoloRoomsFull), 만들 때만
+    # `may_create`(만드는 몫, 남은 대기 초 또는 None)를 먹는다 — 넘으면 SoloCreateLimited.
+    async def start_solo(
+        self,
+        actor_id: UUID,
+        spec: ValidatedRoom,
+        *,
+        may_create: Callable[[], float | None] | None = None,
+    ) -> SoloStart: ...
 
     async def advance_expired_matches(
         self,
