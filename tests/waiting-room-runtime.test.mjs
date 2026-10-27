@@ -55,6 +55,17 @@ class FakeElement extends EventTarget {
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
     this.parentElement = null;
   }
+  get nextElementSibling() {
+    const siblings = this.parentElement?.children.filter((child) => child instanceof FakeElement) ?? [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }
+  insertBefore(node, reference) {
+    node.remove();
+    const at = reference === null ? this.children.length : this.children.indexOf(reference);
+    node.parentElement = this;
+    this.children.splice(at, 0, node);
+    return node;
+  }
   querySelector() { return null; }
   querySelectorAll() { return []; }
   closest() { return null; }

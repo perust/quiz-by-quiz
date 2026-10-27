@@ -9,6 +9,7 @@
 
 import {
   CATEGORIES,
+  ONLINE_QUESTION_TIME_CHOICES,
   POINTS_PER_CORRECT,
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
@@ -59,6 +60,16 @@ export function answerRule(limitMs: number | null): string {
 
 /** 「게임 방법」의 «기록» 줄. 랭킹 화면·결과 등록 칸과 같은 범위다 (FR-6.10) */
 export const RECORD_RULE = '이 브라우저에만 저장돼요';
+
+/**
+ * 「게임 방법」의 «온라인» 한 줄 (local-ux-1). 위 줄들은 **혼자 하기** 규칙이고 온라인은 둘이 다르다 —
+ * 칸에 서 있기만 해서는 제출되지 않고(시간이 끝나도 선 칸을 내지 않는다), 문항 시간은 설정이 아니라
+ * 방장이 방마다 고른다. 온라인 조작법(`#online-help-dialog`)·설정의 문항 시간 도움말과 같은 말이다.
+ */
+export function onlineRule(): string {
+  const times = ONLINE_QUESTION_TIME_CHOICES.map((ms) => `${Math.round(ms / 1000)}초`).join('나 ');
+  return `칸에 서 있기만 해서는 제출되지 않아요. 선택 버튼이나 Enter · Space를 눌러요. 문항 시간은 방장이 ${times}로 정해요.`;
+}
 
 /** 무대 아래 규칙 한 줄 (U01). 조작이 아니라 «무엇이 답이 되는가»를 말한다 */
 export function arenaRuleHint(limitMs: number | null): string {

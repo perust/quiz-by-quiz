@@ -5,6 +5,8 @@
 // 동안 열려 그 시간도 흐른다(FR-3.12 일시정지 없음) — 여기서는 아무 시간도 흐르지 않는다.
 // 시작 시트·카운트다운·코치마크는 두지 않는다. 판마다 행동이 하나 늘어난다 (design-system §1).
 //
+// 용어 목록은 **혼자 하기** 규칙이고, 온라인은 다른 둘(제출·문항 시간)만 아래 한 줄로 따로 말한다 (local-ux-1).
+//
 // 숫자는 `round-rules.ts` 가 상수에서 만든다. 문항 시간은 **열 때마다** 지금 고른 값으로 다시 쓴다 —
 // 설정에서 40초로 바꾸고 다시 열면 40초라고 말해야 한다.
 //
@@ -14,7 +16,7 @@
 
 import { need, needOne } from '../dom.js';
 import { trapFocus } from './quiz.js';
-import { RECORD_RULE, answerRule, roundLengthRule, scoreRule, timeRule } from './round-rules.js';
+import { RECORD_RULE, answerRule, onlineRule, roundLengthRule, scoreRule, timeRule } from './round-rules.js';
 
 export interface RulesDialogDeps {
   /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). null 이면 제한 없음 */
@@ -37,6 +39,7 @@ export function createRulesDialog({ getTimeLimit }: RulesDialogDeps): RulesDialo
     score: need('rules-score'),
     answer: need('rules-answer'),
     record: need('rules-record'),
+    online: need('rules-online'),
   };
 
   /** 대화상자를 연 자리. 닫을 때 포커스를 돌려준다 */
@@ -49,6 +52,7 @@ export function createRulesDialog({ getTimeLimit }: RulesDialogDeps): RulesDialo
     el.score.textContent = scoreRule();
     el.answer.textContent = answerRule(limitMs);
     el.record.textContent = RECORD_RULE;
+    el.online.textContent = onlineRule();
   }
 
   function open(): void {

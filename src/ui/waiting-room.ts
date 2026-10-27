@@ -41,6 +41,7 @@ import {
   waitingRoomRemoveDialogText,
   waitingRoomRemoveLabel,
   type WaitingRoomPortrait,
+  type WaitingRoomPortraitActions,
 } from './waiting-room-portrait.js';
 import { chatMuteNotice, createChatMutes, type ChatMutes } from './chat-mutes.js';
 import { trapFocus } from './quiz.js';
@@ -91,6 +92,66 @@ interface RoundCategory {
 }
 
 const ALL_CATEGORY: RoundCategory = { id: null, name: '전체 도전' };
+
+/**
+ * 명단의 액자 한 칸 (a11y-03). room snapshot마다 다시 만들지 않고 제자리에서 고친다. 버튼의 click은
+ * 만들 때의 값이 아니라 `player`(마지막으로 그린 그 사람)를 읽는다 — 끊겼다 다시 붙은 사람의 내보내기
+ * 확인창이 처음 본 상태로 말하면 안 된다.
+ */
+interface RosterEntry {
+  item: HTMLLIElement;
+  portraitCrop: HTMLElement;
+  identity: HTMLElement;
+  readiness: HTMLElement;
+  mute: HTMLButtonElement | null;
+  remove: HTMLButtonElement | null;
+  player: WaitingRoomPortrait;
+  /** 지금 그려 둔 캐릭터와 이름 줄. 바뀌었을 때만 다시 그린다 */
+  drawnCharacter: string | null;
+  drawnIdentity: string | null;
+}
+
+/** 같은 값을 다시 쓰지 않는다 — 바뀐 것이 없는 snapshot이 접근성 트리를 건드리지 않게 */
+function setAttributeIfChanged(element: Element, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+}
+
+/**
+ * `parent`의 자식을 `desired` 순서로 맞춘다. 제자리에 있는 것은 건드리지 않고, `keep`(포커스를 품은 액자)은
+ * **옮기지 않는다** — DOM에서 옮기는 순간 그 안의 포커스가 풀려 `<body>`로 떨어진다. 나머지를 그 앞뒤로 옮겨
+ * 같은 순서를 만든다(방장이 바뀌면 새 방장이 맨 앞으로 온다). `desired`에 없는 자식은 미리 빼 둔다.
+ */
+function arrangeChildren(parent: HTMLElement, desired: readonly HTMLElement[], keep: HTMLElement | null): void {
+  desired.forEach((node, index) => {
+    if (node === keep) return;
+    const slot = index === 0 ? parent.firstElementChild : desired[index - 1].nextElementSibling;
+    if (slot !== node) parent.insertBefore(node, slot);
+  });
+}
+
+/** 액자 아래 이름 줄: 닉네임 · 방장 왕관 · «나» 표식 */
+function identityParts(player: WaitingRoomPortrait): HTMLElement[] {
+  const name = document.createElement('span');
+  name.className = 'lounge__name';
+  name.textContent = player.nickname;
+  const parts: HTMLElement[] = [name];
+  if (player.isHost) {
+    // 왕관은 디자인 층의 crown 아이콘이다. 번들 픽셀 글꼴에 없는 글리프를 쓰지 않는다
+    const host = document.createElement('span');
+    host.className = 'lounge__host';
+    host.title = '방장';
+    host.setAttribute('aria-hidden', 'true');
+    parts.push(host);
+  }
+  if (player.isMe) {
+    const meBadge = document.createElement('span');
+    meBadge.className = 'lounge__me';
+    meBadge.textContent = '나';
+    meBadge.setAttribute('aria-hidden', 'true');
+    parts.push(meBadge);
+  }
+  return parts;
+}
 
 export interface WaitingRoomDeps {
   roomStore: RoomStore;
@@ -228,10 +289,12 @@ export function createWaitingRoom(
   /** 화면 가장자리 안으로 말풍선을 맞추기 위한 현재 player figure lookup. */
   const remoteBubbleNodes = new Map<string, HTMLElement>();
   /**
-   * 액자의 작은 버튼(말 숨기기·내보내기). room snapshot이 올 때마다 명단을 다시 만들므로, 그 버튼에
-   * 있던 포커스를 새 버튼으로 옮겨 줄 때 찾는다 — 아니면 준비 토글 하나에 키보드 자리가 `<body>`로 떨어진다.
+   * 액자의 작은 버튼(말 숨기기·내보내기), «player-id:mute» 열쇠. 포커스가 있던 버튼이 아직 있는지, 확인창을
+   * 닫을 때 돌아갈 버튼이 어느 것인지 여기서 찾는다.
    */
   const portraitButtons = new Map<string, HTMLButtonElement>();
+  /** 명단의 액자 칸. room snapshot마다 다시 만들지 않고 제자리에서 고친다 (a11y-03) */
+  const roster = new Map<string, RosterEntry>();
   /**
    * 내보내기 확인을 연 액자와 그때의 방. 확인창이 닫혀 있으면 null. `connected`는 확인창이 말한
    * 그 사람의 상태이고 그대로 요청에 실린다 — 서버는 그 말과 다른 일을 하지 않는다.
@@ -441,72 +504,10 @@ export function createWaitingRoom(
     remoteBubbles.unbindAll();
     remoteBubbleNodes.clear();
     const focusedAction = focusedPortraitAction();
-    portraitButtons.clear();
-    el.players.replaceChildren();
+    const portraits = waitingRoomPortraits(room.players, roomStore.me());
+    renderRoster(portraits);
     el.remoteCharacters.replaceChildren();
-    for (const player of waitingRoomPortraits(room.players, roomStore.me())) {
-      const item = document.createElement('li');
-      item.className = 'lounge__player';
-      item.classList.toggle('lounge__player--me', player.isMe);
-      item.classList.toggle('lounge__player--ready', player.isReady);
-      item.classList.toggle('lounge__player--offline', !player.connected);
-      item.dataset.playerId = player.id;
-      item.setAttribute('aria-label', [
-        player.nickname,
-        player.isHost ? '방장' : '',
-        player.isMe ? '나' : '',
-        player.statusLabel,
-      ].filter(Boolean).join(', '));
-
-      const portrait = document.createElement('span');
-      portrait.className = 'lounge__portrait';
-      portrait.setAttribute('aria-hidden', 'true');
-      const portraitCrop = document.createElement('span');
-      portraitCrop.className = 'lounge__portrait-crop';
-      portraitCrop.append(createBody(player.characterId));
-      portrait.append(portraitCrop);
-
-      const identity = document.createElement('span');
-      identity.className = 'lounge__identity';
-
-      const name = document.createElement('span');
-      name.className = 'lounge__name';
-      name.textContent = player.nickname;
-      identity.append(name);
-
-      if (player.isHost) {
-        // 왕관은 디자인 층의 crown 아이콘이다. 번들 픽셀 글꼴에 없는 글리프를 쓰지 않는다
-        const host = document.createElement('span');
-        host.className = 'lounge__host';
-        host.title = '방장';
-        host.setAttribute('aria-hidden', 'true');
-        identity.append(host);
-      }
-
-      if (player.isMe) {
-        const meBadge = document.createElement('span');
-        meBadge.className = 'lounge__me';
-        meBadge.textContent = '나';
-        meBadge.setAttribute('aria-hidden', 'true');
-        identity.append(meBadge);
-      }
-
-      const readiness = document.createElement('span');
-      readiness.className = 'lounge__ready';
-      readiness.classList.toggle('lounge__ready--on', player.isReady);
-      // 색만이 아니라 경고 표식과 «연결 끊김» 글자로 알린다 (디자인 시스템 §6, FR-4.1·4.2의 비색 단서)
-      readiness.classList.toggle('lounge__ready--offline', !player.connected);
-      readiness.textContent = player.statusLabel;
-
-      item.append(portrait, identity, readiness);
-      const actions = waitingRoomPortraitActions(player, {
-        isHost: room.isMine,
-        muted: chatMutes.isMuted(room.code, player.id),
-      });
-      if (actions.mute) item.append(muteButton(player, actions.muted));
-      if (actions.remove) item.append(removeButton(player));
-      el.players.append(item);
-
+    for (const player of portraits) {
       // 오래 끊긴 사람의 캐릭터는 바닥에 세워 두지 않는다. 마지막 좌표는 movement
       // controller가 들고 있어 다시 붙으면 그 자리로 돌아온다.
       if (player.isMe || !player.connected) continue;
@@ -534,14 +535,137 @@ export function createWaitingRoom(
       if (!bubble.hidden) fitChatBubble(bubble);
     }
     if (focusedAction) {
-      // 그 사람이 나갔거나 내보내져 버튼이 없어졌으면 <body>로 떨어뜨리지 않는다
-      const next = portraitButtons.get(focusedAction);
-      if (next) next.focus();
-      else focusWaitingFallback();
+      // 포커스가 있던 버튼이 제자리에 남았으면 아무것도 하지 않는다 — 같은 버튼에 focus()를 다시 부르면
+      // 남의 준비 토글마다 그 버튼이 다시 낭독된다 (a11y-03). 그 사람이 나갔거나 내보내져, 또는 방장이 바뀌어
+      // 버튼이 없어졌으면 <body>로 떨어뜨리지 않는다
+      const kept = portraitButtons.get(focusedAction);
+      if (!kept) focusWaitingFallback();
+      else if (document.activeElement !== kept) kept.focus();
     }
     movementPublisher.resend();
     // 새로 만든 버튼 위에 캐릭터가 서 있으면 밟은 표시를 다시 단다
     walker.refresh();
+  }
+
+  // ── 명단 액자 (a11y-03) ──────────────────────────────────────────
+
+  /**
+   * 명단을 이번 snapshot에 맞춘다. 사람마다 한 칸(`roster`)을 두고 **제자리에서 고친다** — 다시 만들면 액자
+   * 버튼에 있던 포커스를 새 버튼으로 옮겨야 했고, 그때마다 스크린리더가 남의 준비 토글 하나에도
+   * «민수 님 말 숨기기, 전환 버튼»을 다시 읽어 읽던 대화를 끊었다. 나간 사람의 칸만 빼고 새로 온 사람의
+   * 칸만 만들며, 포커스를 품은 칸은 자리를 옮기지 않는다(`arrangeChildren`).
+   */
+  function renderRoster(portraits: readonly WaitingRoomPortrait[]): void {
+    const current = room;
+    if (!current) return;
+    const present = new Set(portraits.map(({ id }) => id));
+    for (const [playerId, entry] of roster) {
+      if (present.has(playerId)) continue;
+      entry.item.remove();
+      roster.delete(playerId);
+      portraitButtons.delete(`${playerId}:mute`);
+      portraitButtons.delete(`${playerId}:remove`);
+    }
+    const items = portraits.map((player) => {
+      const entry = roster.get(player.id) ?? createRosterEntry(player);
+      updateRosterEntry(entry, player, waitingRoomPortraitActions(player, {
+        isHost: current.isMine,
+        muted: chatMutes.isMuted(current.code, player.id),
+      }));
+      return entry.item;
+    });
+    const active = document.activeElement;
+    const holder = [...roster.values()].find((entry) => active !== null
+      && (entry.mute === active || entry.remove === active));
+    arrangeChildren(el.players, items, holder?.item ?? null);
+  }
+
+  function createRosterEntry(player: WaitingRoomPortrait): RosterEntry {
+    const item = document.createElement('li');
+    item.className = 'lounge__player';
+    item.dataset.playerId = player.id;
+    const portrait = document.createElement('span');
+    portrait.className = 'lounge__portrait';
+    portrait.setAttribute('aria-hidden', 'true');
+    const portraitCrop = document.createElement('span');
+    portraitCrop.className = 'lounge__portrait-crop';
+    portrait.append(portraitCrop);
+    const identity = document.createElement('span');
+    identity.className = 'lounge__identity';
+    const readiness = document.createElement('span');
+    readiness.className = 'lounge__ready';
+    item.append(portrait, identity, readiness);
+    const entry: RosterEntry = {
+      item, portraitCrop, identity, readiness, mute: null, remove: null, player,
+      drawnCharacter: null, drawnIdentity: null,
+    };
+    roster.set(player.id, entry);
+    return entry;
+  }
+
+  /** 바뀐 것만 고친다. 버튼은 생기거나 없어질 때만 만들고 뺀다 — 있던 버튼은 이름·상태만 고친다 */
+  function updateRosterEntry(
+    entry: RosterEntry,
+    player: WaitingRoomPortrait,
+    actions: WaitingRoomPortraitActions,
+  ): void {
+    entry.player = player;
+    const { item, readiness } = entry;
+    item.classList.toggle('lounge__player--me', player.isMe);
+    item.classList.toggle('lounge__player--ready', player.isReady);
+    item.classList.toggle('lounge__player--offline', !player.connected);
+    setAttributeIfChanged(item, 'aria-label', [
+      player.nickname,
+      player.isHost ? '방장' : '',
+      player.isMe ? '나' : '',
+      player.statusLabel,
+    ].filter(Boolean).join(', '));
+
+    if (entry.drawnCharacter !== player.characterId) {
+      entry.drawnCharacter = player.characterId;
+      entry.portraitCrop.replaceChildren(createBody(player.characterId));
+    }
+    const identityKey = JSON.stringify([player.nickname, player.isHost, player.isMe]);
+    if (entry.drawnIdentity !== identityKey) {
+      entry.drawnIdentity = identityKey;
+      entry.identity.replaceChildren(...identityParts(player));
+    }
+
+    readiness.classList.toggle('lounge__ready--on', player.isReady);
+    // 색만이 아니라 경고 표식과 «연결 끊김» 글자로 알린다 (디자인 시스템 §6, FR-4.1·4.2의 비색 단서)
+    readiness.classList.toggle('lounge__ready--offline', !player.connected);
+    if (readiness.textContent !== player.statusLabel) readiness.textContent = player.statusLabel;
+
+    // 액자 끝에 말 숨기기 → 내보내기 순서로 둔다
+    if (actions.mute && !entry.mute) {
+      entry.mute = muteButton(player.id);
+      item.insertBefore(entry.mute, entry.remove);
+    } else if (!actions.mute && entry.mute) {
+      entry.mute.remove();
+      entry.mute = null;
+      portraitButtons.delete(`${player.id}:mute`);
+    }
+    if (entry.mute) {
+      setAttributeIfChanged(entry.mute, 'aria-label', waitingRoomMuteLabel(player.nickname));
+      setAttributeIfChanged(entry.mute, 'aria-pressed', String(actions.muted));
+    }
+    // 내보내기는 방장 화면에만 있다 — 방장이 바뀌면 생기거나 없어진다
+    if (actions.remove && !entry.remove) {
+      entry.remove = removeButton(player.id);
+      item.append(entry.remove);
+    } else if (!actions.remove && entry.remove) {
+      entry.remove.remove();
+      entry.remove = null;
+      portraitButtons.delete(`${player.id}:remove`);
+    }
+    if (entry.remove) setAttributeIfChanged(entry.remove, 'aria-label', waitingRoomRemoveLabel(player.nickname));
+  }
+
+  /** 다른 방·다음 입장은 빈 명단에서 시작한다 */
+  function resetRoster(): void {
+    portraitButtons.clear();
+    roster.clear();
+    el.players.replaceChildren();
   }
 
   // ── 액자의 작은 버튼 (N06 말 숨기기 · U24 내보내기) ─────────────────
@@ -560,15 +684,12 @@ export function createWaitingRoom(
     return portraitPlayer && portraitAction ? `${portraitPlayer}:${portraitAction}` : null;
   }
 
-  function portraitButton(
-    player: WaitingRoomPortrait,
-    action: 'mute' | 'remove',
-  ): HTMLButtonElement {
+  function portraitButton(playerId: string, action: 'mute' | 'remove'): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
-    button.dataset.portraitPlayer = player.id;
+    button.dataset.portraitPlayer = playerId;
     button.dataset.portraitAction = action;
-    portraitButtons.set(`${player.id}:${action}`, button);
+    portraitButtons.set(`${playerId}:${action}`, button);
     return button;
   }
 
@@ -576,12 +697,11 @@ export function createWaitingRoom(
    * 그 사람의 말풍선과 대화 줄을 **내 화면에서만** 그리지 않는다 (N06). 서버에 보내지 않는다.
    * 이름은 그대로 두고 숨김 여부는 `aria-pressed`가 말한다 — «다시 보기»로 이름을 바꾸면
    * «다시 보기, 눌림»으로 뜻이 뒤집혀 읽힌다(설정 토글의 U54와 같은 이유). 아이콘은 디자인 층이 상태를 보고 그린다.
+   * 이름과 `aria-pressed`는 `updateRosterEntry`가 단다.
    */
-  function muteButton(player: WaitingRoomPortrait, muted: boolean): HTMLButtonElement {
-    const button = portraitButton(player, 'mute');
+  function muteButton(playerId: string): HTMLButtonElement {
+    const button = portraitButton(playerId, 'mute');
     button.className = 'lounge__mute';
-    button.setAttribute('aria-label', waitingRoomMuteLabel(player.nickname));
-    button.setAttribute('aria-pressed', String(muted));
     // 누르는 자리는 44px, 보이는 것은 액자 귀퉁이의 작은 배지다 (명단을 늘리지 않는다)
     const badge = document.createElement('span');
     badge.className = 'lounge__mute-badge';
@@ -590,18 +710,26 @@ export function createWaitingRoom(
     icon.className = 'icon lounge__mute-icon';
     badge.append(icon);
     button.append(badge);
-    button.addEventListener('click', () => toggleMute(player.id, player.nickname, button));
+    button.addEventListener('click', () => {
+      const player = roster.get(playerId)?.player;
+      if (player) toggleMute(player.id, player.nickname, button);
+    });
     return button;
   }
 
-  /** 방장에게만, 내 액자 말고 모든 액자에 그린다. 누르면 그 사람의 지금 상태로 인페이지 확인을 연다 */
-  function removeButton(player: WaitingRoomPortrait): HTMLButtonElement {
-    const button = portraitButton(player, 'remove');
+  /**
+   * 방장에게만, 내 액자 말고 모든 액자에 그린다. 누르면 그 사람의 **지금** 상태(마지막으로 그린 snapshot)로
+   * 인페이지 확인을 연다. 이름은 `updateRosterEntry`가 단다
+   */
+  function removeButton(playerId: string): HTMLButtonElement {
+    const button = portraitButton(playerId, 'remove');
     button.className = 'button button--ghost button--small lounge__remove';
     button.textContent = '내보내기';
-    button.setAttribute('aria-label', waitingRoomRemoveLabel(player.nickname));
     button.setAttribute('aria-haspopup', 'dialog');
-    button.addEventListener('click', () => openRemoveDialog(player.id, player.nickname, player.connected));
+    button.addEventListener('click', () => {
+      const player = roster.get(playerId)?.player;
+      if (player) openRemoveDialog(player.id, player.nickname, player.connected);
+    });
     return button;
   }
 
@@ -1191,7 +1319,7 @@ ${me.nickname}`;
       // 확인창은 <main> 밖이라 화면과 함께 숨지 않는다. 다른 방·화면 위에 남지 않게 닫기만 한다
       closeRemoveDialog(false);
       setRemovePending(false);
-      portraitButtons.clear();
+      resetRoster();
       el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;
@@ -1269,7 +1397,7 @@ ${me.nickname}`;
       // 확인창은 <main> 밖이라 화면과 함께 숨지 않는다. 다른 방·화면 위에 남지 않게 닫기만 한다
       closeRemoveDialog(false);
       setRemovePending(false);
-      portraitButtons.clear();
+      resetRoster();
       el.chatSubmit.disabled = true;
       clearTimeout(bubbleTimer);
       bubbleTimer = undefined;

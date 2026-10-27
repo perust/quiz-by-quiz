@@ -123,8 +123,9 @@ test('점수판은 공개 카드 안 해설 뒤에 있고, «정답 n/m명»만 
   assert.ok(reveal.indexOf('id="online-reveal-explanation"') < reveal.indexOf('id="online-standings"'));
   assert.match(reveal, /<div class="online-standings" id="online-standings" hidden><\/div>/);
 
-  // 순위 목록은 라이브 리전에서 뺀다. 숨긴 채로 채우지 않는다 (먼저 펼치고 넣는다)
-  assert.match(quiz, /list\.setAttribute\('aria-live', 'off'\);/);
+  // 순위 목록과 «그 밖에 N명»은 한 덩어리로 라이브 리전에서 뺀다 (a11y-04). 숨긴 채로 채우지 않는다 (먼저 펼치고 넣는다)
+  assert.match(quiz, /board\.setAttribute\('aria-live', 'off'\);/);
+  assert.match(quiz, /board\.append\(list\);\s*if \(standings\.hiddenCount > 0\) \{[\s\S]*?board\.append\(more\);\s*\}\s*children\.push\(board\);/);
   assert.match(quiz, /el\.standings\.hidden = false;[\s\S]*?el\.standings\.replaceChildren\(\.\.\.children\);/);
   // 내용이 바뀔 때만 다시 만든다 — 같은 공개를 다시 읽어도 다시 낭독하지 않는다
   assert.match(quiz, /if \(key === standingsKey\) return;/);
@@ -179,7 +180,7 @@ test('내 결과 효과음은 문항마다 처음 공개될 때 한 번, audio.t
 
 test('점수판 칸: 금·은·동은 표시 순위로 칠하고, 내 줄은 보라 바탕·왼쪽 띠, 정오 표식은 모양으로 읽힌다', () => {
   const card = node('section.online-reveal#online-reveal', node("section.screen[data-screen='online-quiz']", node('body')));
-  const list = node('ol.online-standings__list', node('div.online-standings#online-standings', card));
+  const list = node('ol.online-standings__list', node('div.online-standings__board', node('div.online-standings#online-standings', card)));
   const item = (state = '') => node(`li.online-standings__item${state}`, list);
   for (const env of [DESKTOP, MOBILE]) {
     for (const [place, medal] of [['1', 'gold'], ['2', 'silver'], ['3', 'bronze']]) {

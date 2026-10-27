@@ -1156,6 +1156,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: 0 0 var(--space-2);
 }
 
+/* 대화상자 안 묶음의 이름. 「게임 방법」의 «혼자 하기»·«온라인» (local-ux-1) */
+.dialog__heading {
+  margin: 0 0 var(--space-2);
+}
+
 .dialog__body {
   margin: 0 0 var(--space-5);
   word-break: keep-all;

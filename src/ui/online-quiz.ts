@@ -1055,9 +1055,9 @@ export function createOnlineQuizScreen(
   }
 
   /**
-   * 공개 카드 아래의 미니 점수판 (U30). 공개 카드(`aria-live`) 안이지만 순위 목록은 `aria-live="off"`라
-   * «정답 n/m명» 한 줄만 낭독된다 — 문항마다 순위를 다 읽어 주면 판정·해설을 덮는다. 목록은 브라우즈
-   * 모드로 찾아 읽는다. 공개가 아니면 비우고 접는다(숨기기만 하지 않는다).
+   * 공개 카드 아래의 미니 점수판 (U30). 공개 카드(`aria-live`) 안이지만 순위 목록과 «그 밖에 N명»은
+   * `aria-live="off"` 덩어리라 «정답 n/m명» 한 줄만 낭독된다 — 문항마다 순위를 다 읽어 주면 판정·해설을
+   * 덮는다. 목록은 브라우즈 모드로 찾아 읽는다. 공개가 아니면 비우고 접는다(숨기기만 하지 않는다).
    */
   function renderStandings(active: OnlineActiveMatch, view: OnlineQuizView): void {
     const standings = view.reveal === null ? null : onlineRevealStandings(active, getPlayerId());
@@ -1089,18 +1089,23 @@ export function createOnlineQuizScreen(
       line.textContent = tally;
       children.push(line);
     }
+    // 순위 목록과 «그 밖에 N명»은 한 덩어리로 라이브 리전에서 뺀다 — 목록 없이 낭독된 «그 밖에 2명»은
+    // 무엇의 수인지 알 수 없다 (a11y-04). 줄 수가 달라지지 않게 «그 밖에»를 목록의 줄로 넣지는 않는다
+    const board = document.createElement('div');
+    board.className = 'online-standings__board';
+    board.setAttribute('aria-live', 'off');
     const list = document.createElement('ol');
     list.className = 'online-standings__list';
     list.setAttribute('aria-label', '지금 순위');
-    list.setAttribute('aria-live', 'off');
     for (const row of standings.rows) list.append(createStandingRow(row));
-    children.push(list);
+    board.append(list);
     if (standings.hiddenCount > 0) {
       const more = document.createElement('p');
       more.className = 'online-standings__more';
       more.textContent = `그 밖에 ${standings.hiddenCount}명`;
-      children.push(more);
+      board.append(more);
     }
+    children.push(board);
     el.standings.replaceChildren(...children);
   }
 

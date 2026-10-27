@@ -51,13 +51,35 @@ class FakeElement extends EventTarget {
     }
   }
   replaceChildren(...nodes) {
+    for (const child of this.children) if (child instanceof FakeElement) child.detach();
     this.children = [];
     this.append(...nodes);
   }
   remove() {
     if (!this.parentElement) return;
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+    this.detach();
+  }
+  /** 진짜 DOM 처럼 포커스를 품은 요소가 문서에서 떨어지면 포커스가 <body> 로 떨어진다 (옮기는 것도 같다) */
+  detach() {
     this.parentElement = null;
+    for (let node = globalThis.document.activeElement; node; node = node.parentElement) {
+      if (node === this) {
+        globalThis.document.activeElement = globalThis.document.body;
+        break;
+      }
+    }
+  }
+  get nextElementSibling() {
+    const siblings = this.parentElement?.children.filter((child) => child instanceof FakeElement) ?? [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }
+  insertBefore(node, reference) {
+    node.remove();
+    const at = reference === null ? this.children.length : this.children.indexOf(reference);
+    node.parentElement = this;
+    this.children.splice(at, 0, node);
+    return node;
   }
   querySelector() { return null; }
   querySelectorAll() { return []; }
@@ -241,16 +263,66 @@ test('말 숨기기를 켜면 그 사람의 줄·말풍선이 내 화면에서 �
   waiting.hide();
 });
 
-test('방 snapshot 이 명단을 다시 만들어도 액자 버튼의 키보드 자리를 잃지 않는다', async () => {
-  await enter(snapshot([player(ME, '퀴즈왕'), player('guest', '민수')]));
-  portraitButton('guest', 'mute').focus();
-  roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수', { isReady: true })]) });
-  assert.equal(globalThis.document.activeElement, portraitButton('guest', 'mute'), '새로 만든 같은 버튼으로 옮긴다');
+/** 이 테스트 동안 부른 focus() 를 센다 — 같은 요소에 다시 부르면 스크린리더가 그 버튼을 다시 읽는다 */
+function countFocusCalls() {
+  const original = FakeElement.prototype.focus;
+  const calls = [];
+  FakeElement.prototype.focus = function focus(...args) {
+    calls.push(this);
+    return original.apply(this, args);
+  };
+  return { calls, restore: () => { FakeElement.prototype.focus = original; } };
+}
 
-  // 그 사람이 나가 버튼이 없어지면 <body> 로 떨어뜨리지 않는다
-  roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕')]) });
+const playerOrder = () => byId('lounge-players').children.map((child) => child.dataset.playerId);
+const portraitItem = (playerId) => byId('lounge-players').children.find((child) => child.dataset.playerId === playerId);
+
+test('방 snapshot 이 와도 액자 버튼을 다시 만들지 않는다 — 포커스가 그 자리에 남고 focus() 를 다시 부르지 않는다 (a11y-03)', async () => {
+  await enter(snapshot([player(ME, '퀴즈왕'), player('guest', '민수'), player('friend', '지수')]));
+  const mute = portraitButton('guest', 'mute');
+  const friendItem = portraitItem('friend');
+  mute.focus();
+  const focus = countFocusCalls();
+  try {
+    // 남의 준비 토글 · 새 사람 · 연결 끊김 · 이름 바꿈 — 어느 것도 이 버튼을 다시 만들거나 다시 포커스하지 않는다
+    roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수'), player('friend', '지수', { isReady: true })]) });
+    roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수'), player('friend', '지수', { isReady: true }), player('new', '새친구')]) });
+    roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수', { connected: false }), player('friend', '지수', { isReady: true }), player('new', '새친구')]) });
+    roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수2'), player('friend', '지수', { isReady: true }), player('new', '새친구')]) });
+    assert.equal(portraitButton('guest', 'mute'), mute, '같은 버튼이다');
+    assert.equal(globalThis.document.activeElement, mute, '포커스가 그 자리에 남는다');
+    assert.deepEqual(focus.calls, [], 'focus() 를 다시 부르지 않는다');
+    assert.equal(mute.getAttribute('aria-label'), '민수2 님 말 숨기기', '바뀐 이름은 제자리에서 고친다');
+    assert.equal(portraitItem('friend'), friendItem, '남의 액자도 다시 만들지 않는다');
+    assert.equal(friendItem.getAttribute('aria-label'), '지수, 준비', '준비 상태는 제자리에서 고친다');
+    assert.deepEqual(playerOrder(), [ME, 'guest', 'friend', 'new']);
+
+    // 방장이 바뀌어 민수가 맨 앞으로 와도 포커스를 품은 민수의 액자는 옮기지 않는다 — 나머지가 비켜 같은 순서를
+    // 만든다. 나는 이제 방장이 아니라 내보내기가 모두 사라진다
+    roomEvents({ type: 'room', room: snapshot([player('guest', '민수2'), player(ME, '퀴즈왕'), player('friend', '지수', { isReady: true }), player('new', '새친구')], { isMine: false }) });
+    assert.deepEqual(playerOrder(), ['guest', ME, 'friend', 'new'], '방장이 맨 앞이다');
+    assert.equal(globalThis.document.activeElement, mute, '옮기다 포커스를 놓치지 않는다');
+    assert.deepEqual(focus.calls, []);
+    assert.equal(portraitItem('guest').getAttribute('aria-label'), '민수2, 방장, 준비');
+    assert.equal(portraitButton('friend', 'remove'), undefined, '방장이 아니면 내보내기가 없다');
+    assert.ok(portraitButton('friend', 'mute'));
+  } finally {
+    focus.restore();
+  }
+
+  // 포커스가 있던 버튼이 사라지면(그 사람이 나갔다) <body> 로 떨어뜨리지 않는다
+  roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('friend', '지수')]) });
   assert.notEqual(globalThis.document.activeElement, globalThis.document.body);
   assert.ok([byId('waiting-start'), screen].includes(globalThis.document.activeElement));
+  waiting.hide();
+});
+
+test('방장이 바뀌어 포커스가 있던 내보내기가 없어지면 갈 곳으로 옮긴다', async () => {
+  await enter(snapshot([player(ME, '퀴즈왕'), player('guest', '민수'), player('friend', '지수')]));
+  portraitButton('guest', 'remove').focus();
+  roomEvents({ type: 'room', room: snapshot([player('guest', '민수'), player(ME, '퀴즈왕'), player('friend', '지수')], { isMine: false }) });
+  assert.equal(portraitButton('guest', 'remove'), undefined);
+  assert.ok([byId('waiting-start'), screen].includes(globalThis.document.activeElement), '<body> 로 떨어뜨리지 않는다');
   waiting.hide();
 });
 
