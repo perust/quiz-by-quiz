@@ -10,6 +10,7 @@
 // 키와 스틱은 모듈 하나에 모아두고 지금 켜진 워커에게만 전달한다.
 
 import {
+  DEFAULT_WALKER_HIT_ANCHOR,
   walkerHitPoint,
   type WalkerHitAnchor,
 } from './walker-geometry.js';
@@ -53,7 +54,10 @@ export interface WalkerConfig {
   standClass?: string;
   /** 현재 선택 대상이 바뀔 때 */
   onStep?: (element: HTMLElement | null) => void;
-  /** 선택을 판정할 위치. 퀴즈 칸은 발밑, 일반 버튼 화면은 시각 중심을 쓴다 */
+  /**
+   * 선택을 판정할 위치(선택점). 기본은 몸통 가운데이고 모든 화면이 그것을 쓴다 (U10).
+   * 넘기는 곳은 퀴즈 무대(`'foot'`) 하나뿐이다 — 바닥 칸과 칸 사이 틈이 답을 정한다 (`walker-geometry.ts`)
+   */
   hitAnchor?: WalkerHitAnchor;
   /** 화면 좌표가 바뀌거나 걷기/정지가 전환될 때 */
   onMove?: (point: Point, moving: boolean) => void;
@@ -287,7 +291,7 @@ export function createWalker(config: WalkerConfig): Walker {
     // 입력칸도 넣는다 — 걸어 다니는 사람만 «여기는 못 간다»가 되면 화면 절반이
     // 캐릭터에게 막힌 셈이다. 로비의 방 코드, 대기실의 채팅칸이 그렇다
     pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
-    onStep, onMove, standClass = 'is-standing', hitAnchor = 'foot', edge = 7, startAt,
+    onStep, onMove, standClass = 'is-standing', hitAnchor = DEFAULT_WALKER_HIT_ANCHOR, edge = 7, startAt,
     canPick = () => true,
     controls: controlOptions,
   } = config;
@@ -330,7 +334,8 @@ export function createWalker(config: WalkerConfig): Walker {
   }
 
   /**
-   * 설정된 선택점에 있는 «누를 수 있는 것».
+   * 설정된 선택점에 있는 «누를 수 있는 것». 선택점은 `walkerHitPoint`가 정한다 — 화면은 이 계산을
+   * 따로 두지 않는다.
    *
    * 캐릭터 자신은 `.walker`가 `pointer-events: none`이라 잡히지 않는다.
    * 화면에 띄운 조작부(스틱·확정 버튼)는 어느 화면의 자손도 아니고 늘 같은 자리에

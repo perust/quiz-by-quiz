@@ -97,7 +97,9 @@ export function createCharactersScreen(
       const index = CHARACTERS.findIndex((character) => character.id === currentId);
       const box = cards[index]?.getBoundingClientRect();
       if (!box || box.width === 0) return null;
-      // 카드 아래에는 이름이 있다. 그 위에 서야 가리지 않는다
+      // 카드 아래에는 이름이 있다. 그 위에 서야 가리지 않는다.
+      // 선택점(몸통 가운데, U10)은 이 발끝에서 키의 절반 위라 카드(96px 이상) 안이다 — 들어오면
+      // 지금 입은 카드에 불이 켜진다
       return { x: box.left + box.width / 2, y: box.bottom - 26 };
     },
   });

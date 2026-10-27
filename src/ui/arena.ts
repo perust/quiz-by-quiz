@@ -168,6 +168,11 @@ export function createArena({
     // 서 있다가 시간이 끝나면 아무 칸도 밟지 않은 것이 된다 —
     // 시간 초과의 뜻이 그대로 유지된다
     pickable: '.arena-tile[data-selectable="true"], button, a[href], [role="button"]',
+    // 선택점은 발끝이다 — 다른 모든 화면은 몸통 가운데지만 여기만 다르다 (U10, `walker-geometry.ts`).
+    // 바닥 칸을 밟는 것이 답이고 칸 사이 틈은 «아무 칸도 아님»이다. 몸 가운데(발끝에서 키의 절반 위)로 보면
+    // 발이 십자 틈에 있어도 위 칸이 켜져 «틈에 서 있으면 시간 초과»가 거짓이 된다. 무대 밖의 보기·나가기·?도
+    // 같은 발끝으로 밟는다 — 한 워커에 선택점은 하나다
+    hitAnchor: 'foot',
     // 짧은 viewport의 초기 clamp가 위 보기와 겹쳐도 선택·Enter가 답을 내지 않는다.
     // 도움말·나가기 같은 답이 아닌 버튼과 직접 터치한 보기는 그대로 동작한다.
     canPick: (node) => movedSinceReset || indexOfNode(node) === null,
