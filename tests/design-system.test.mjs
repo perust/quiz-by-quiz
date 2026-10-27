@@ -873,13 +873,21 @@ test('안전 영역: 노치·홈 표시줄이 있는 기기에서도 조작과 �
   assert.match(viewport, /viewport-fit=cover/);
   assert.doesNotMatch(viewport, /user-scalable\s*=\s*(?:no|0)|maximum-scale\s*=/i, '확대를 막지 않는다');
 
+  // 화면의 안전 영역은 화면(.screen) 여백과 홈 월드의 가장자리 HUD 가 진다. 예전에는 .app 의
+  // padding-inline 과 홈 화면의 padding-top 을 보았는데, 둘 다 월드 우선 구성(.app·홈 화면 padding: 0)에
+  // 늘 덮여 화면에 나오지 않는 값이었다 — 그 죽은 선언은 U49 에서 지웠다
   const body = node('body');
   const app = node('main.app', body);
+  const home = node("section.screen[data-screen='home']", app);
+  const stage = node('div.home-stage', home);
   const controls = node("div.walk-controls[data-placement='viewport']#walk-controls", app);
   const checks = [
-    [app, 'padding-inline', /safe-area-inset-left[\s\S]*safe-area-inset-right/],
+    [node("section.screen[data-screen='ranking']", app), 'padding',
+      /safe-area-inset-top[\s\S]*safe-area-inset-right[\s\S]*safe-area-inset-bottom[\s\S]*safe-area-inset-left/],
     [node('div.app-bar', body), 'padding', /safe-area-inset-top/],
-    [node("section.screen[data-screen='home']", app), 'padding-top', /safe-area-inset-top/],
+    [node('div.home-player', stage), 'top', /safe-area-inset-top/],
+    [node('div.home-player', stage), 'left', /safe-area-inset-left/],
+    [node('div.home-quests', stage), 'bottom', /safe-area-inset-bottom/],
     [nodeFromHtml(html, 'feedback'), 'padding', /safe-area-inset-bottom/],
     [controls, '--walk-controls-bottom', /safe-area-inset-bottom/],
     [controls, '--walk-stick-left', /safe-area-inset-left/],

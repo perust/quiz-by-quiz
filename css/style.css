@@ -11,7 +11,12 @@
 
    간격은 --space-* 토큰만 쓴다 (4px 미세 / 8px 기본 격자). 토큰은 voxel-theme.css 의
    :root 에 있고 CSS 변수는 쓰는 자리에서 풀리므로 두 파일의 로드 순서와 무관하다.
-   두 파일은 언제나 함께 로드된다 (index.html). 모바일 우선, 320px 폭까지 맞췄다. */
+   두 파일은 언제나 함께 로드된다 (index.html). 모바일 우선, 320px 폭까지 맞췄다.
+
+   화면 구성은 «월드 우선»이다. 카드 열을 가운데 쌓는 웹앱 골격 대신 화면 전체를 하나의 게임 월드로 쓰고,
+   상시 UI는 가장자리 HUD와 하단 dock뿐이며 긴 목록·폼만 상황별 표면으로 남긴다. 그 배치는 컴포넌트마다
+   제 절에 있다 — 한때 맨 끝 «30. 월드 우선 화면 구성» 절이 앞 절의 같은 선택자를 뒤에서 다시 썼는데,
+   U49 에서 각 절로 녹였다(계산값은 tools/css-snapshot.mjs 로 그대로임을 확인했다). */
 
 * {
   box-sizing: border-box;
@@ -75,16 +80,17 @@ button,
    인라인 스크립트가 3초 뒤 .is-boot-slow(file:// 이면 곧바로 실패)를, 마지막 진척에서 15초 뒤 .is-boot-failed를 붙인다. */
 .app {
   display: none;
-  max-width: var(--content-max);
   margin: 0 auto;
-  /* 노치가 있는 기기를 눕혔을 때 글자가 둥근 모서리에 잘리지 않게 안전 영역만큼 띄운다 */
-  padding-inline: max(var(--page-pad), env(safe-area-inset-left)) max(var(--page-pad), env(safe-area-inset-right));
-  padding-top: 0;
-  padding-bottom: var(--space-12);
+  max-width: none;
+  padding: 0;
 }
 
 body.is-booted .app {
   display: block;
+}
+
+body:has([data-screen='home']:not([hidden])) .app {
+  padding-bottom: 0;
 }
 
 .boot {
@@ -157,12 +163,10 @@ body.is-boot-file .boot__error--net {
 }
 
 /* ── 상단 바 (설정 버튼) ──
-   기본 흐름 규칙. 월드 우선 구성에서는 section 30이 DOM 순서에 맞춰 fixed edge HUD로 덮는다. */
+   오른쪽 위에 고정된 edge HUD다. app-bar는 <main> 뒤에 있어 z-index 없이도 월드 위,
+   피드백·대화상자 아래에 온다. */
 .app-bar {
   display: none;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) 0 max(var(--page-pad), env(safe-area-inset-left));
   justify-content: flex-end;
 }
 
@@ -170,13 +174,16 @@ body.is-booted .app-bar {
   display: flex;
 }
 
-/* 구형 폭 제한 레이아웃의 홈 배치. section 30은 같은 선택자로 fixed 위치를 확정한다. */
+.app-bar,
 body:has([data-screen='home']:not([hidden])) .app-bar {
-  position: absolute;
+  position: fixed;
   top: 0;
-  left: 0;
   right: 0;
-  padding-top: max(var(--space-4), env(safe-area-inset-top));
+  left: auto;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: max(var(--space-3), env(safe-area-inset-top)) max(var(--space-3), env(safe-area-inset-right)) 0 0;
   pointer-events: none;
 }
 
@@ -210,16 +217,50 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   outline: none; /* 화면 전환용 포커스라 테두리를 그리지 않는다 */
 }
 
-/* 홈은 앱 바가 겹쳐 뜨므로 제 위쪽 여백을 직접 둔다.
-   standalone/fullscreen의 노치보다도 안쪽에서 시작한다. */
+.screen {
+  width: 100%;
+  min-height: 100svh;
+  padding: max(var(--space-4), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)) max(var(--page-pad), env(safe-area-inset-left));
+}
+
+/* 홈: 중앙은 월드와 캐릭터에게 비우고 조작부만 가장자리에 둔다. */
 .screen[data-screen='home'] {
-  padding-top: max(var(--space-3), env(safe-area-inset-top));
+  min-height: 100svh;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 결과 첫 화면은 점수·세 통계·다음 행동만 띄우고, 상세 기록은 아래로 스크롤한다. */
+[data-screen='result'] > :not(.walker):not(.sr-only),
+[data-screen='quiz-review'] > :not(.walker):not(.sr-only),
+[data-screen='online-result'] > :not(.walker):not(.sr-only),
+[data-screen='ranking'] > :not(.walker):not(.sr-only),
+[data-screen='characters'] > :not(.walker):not(.sr-only),
+[data-screen='waiting'] > :not(.walker):not(.sr-only) {
+  width: min(100%, 760px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+[data-screen='online'] > :not(.walker) {
+  width: min(100%, 880px);
+  margin-right: auto;
+  margin-left: auto;
 }
 
 /* 읽기 시작점을 위해 프로그램으로 받은 포커스다. 카드 전체를 두르는 고리는 그리지 않고,
    Tab을 누른 뒤 실제 조작부에만 :focus-visible 고리를 보인다. */
 .dialog[tabindex='-1']:focus {
   outline: none;
+}
+
+/* 짧은 가로의 스크롤 화면에서는 고정 설정 버튼이 아래로 올라온 새로고침·필터 같은
+   동작을 덮지 않게 문서와 함께 흘려보낸다. 홈은 더 구체적인 home app-bar 규칙이
+   fixed를 유지해, 스크롤 없는 월드의 edge HUD가 그대로 남는다. */
+@media (max-height: 480px) {
+  .app-bar {
+    position: absolute;
+  }
 }
 
 /* ── 버튼 공통 ── */
@@ -246,29 +287,32 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 /* ── 홈 무대 기본 구조 ──
-   DOM의 읽기 순서와 비-JS fallback을 정한다. section 30이 이를 전체 viewport 월드와 edge HUD로 배치한다. */
+   홈은 화면 전체가 하나의 월드다(.home-stage 가 viewport 높이의 기준 상자). 중앙은 월드와 캐릭터에게
+   비우고, 닉네임·캐릭터·랭킹·게임 방법은 가장자리 HUD 조각으로, 분야와 두 진입점은 하단 dock 에 둔다.
+   DOM 순서가 곧 읽는 순서다. 남아 있는 grid·gap 값 일부(.home-stage·.home-menu)는 지금의 display 에서
+   쓰이지 않는다 — 계산값을 바꾸지 않으려고 U49 정리에서 그대로 두었다 */
 .home-stage {
-  display: grid;
   gap: var(--space-4);
+  position: relative;
+  display: block;
+  min-height: 100svh;
 }
 
 .home-player {
   display: grid;
   gap: var(--space-3);
+  position: absolute;
+  top: max(var(--space-3), env(safe-area-inset-top));
+  left: max(var(--space-3), env(safe-area-inset-left));
+  width: 148px;
 }
 
-/* 랭킹과 온라인 방에서 쓰는 이름의 기본 폭. 월드 HUD에서는 section 30이 148px 슬롯으로 덮는다. */
-.menu-card--wide {
-  width: calc(100% - 44px - var(--space-2));
-  min-height: 52px;
-}
-
-/* 보조 동작의 읽기 순서용 기본 grid. 월드 HUD에서는 display: contents로 가장자리에 흩어진다. */
+/* 보조 입구는 display: contents 로 흩어져 저마다 가장자리 HUD 자리에 선다 */
 .home-menu {
-  display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-1);
   padding: var(--space-1);
+  display: contents;
 }
 
 .menu-card {
@@ -284,7 +328,32 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 .menu-card--wide {
-  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-1) var(--space-2);
+}
+
+.home-menu .menu-card {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: var(--space-1);
+  width: 64px;
+  min-height: 64px;
+  padding: var(--space-1);
+  text-align: center;
+}
+
+@media (max-height: 700px) {
+  /* 짧은 화면은 슬롯 폭을 줄이므로 연필을 거두고 닉네임 자체를 우선한다. 버튼의
+     스크린리더 이름에는 「닉네임·현재 값·바꾸기」가 그대로 남는다. */
+  .menu-card--wide {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
 }
 
 /* 아이콘 자리. 그림은 디자인 층이 data-icon 으로 그린다 */
@@ -298,8 +367,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 .menu-card--wide .menu-card__figure {
-  width: var(--tap);
-  height: var(--tap);
+  width: 36px;
+  height: 36px;
+}
+
+.home-menu .menu-card__figure {
+  width: 28px;
+  height: 28px;
 }
 
 .menu-card__body {
@@ -309,7 +383,19 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   min-width: 0;
 }
 
+.home-menu .menu-card__body {
+  display: block;
+  min-width: 0;
+}
+
 .menu-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-menu .menu-card__name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -321,10 +407,86 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   white-space: nowrap;
 }
 
+.menu-card--wide .menu-card__desc {
+  display: block;
+}
+
+.home-menu .menu-card__desc,
+.home-menu .menu-card__meta,
+.home-menu .menu-card__arrow {
+  display: none;
+}
+
 .menu-card__edit {
   flex: none;
   width: var(--icon-md);
   height: var(--icon-md);
+}
+
+.menu-card--wide .menu-card__edit {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+#open-characters {
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 64px);
+  left: max(var(--space-3), env(safe-area-inset-left));
+}
+
+/* 랭킹 입구는 키 큰 화면에서 높이 42% 에 서되, dock 위 조작부(선택 원)보다 8px 위로 비켜 선다.
+   방 복귀 줄로 dock 이 커지면 조작부의 바닥(dock + 20px)이 따라 올라오는데, 입구가 42% 에 머물러
+   375×812에서 선택 원과 겹쳤다(dock 271 → 327px, 450px²). 60px 는 입구 카드의 높이다 */
+#open-ranking {
+  top: min(
+    42%,
+    calc(100% - var(--home-dock-h, 160px) - 20px - env(safe-area-inset-bottom, 0px)
+      - var(--walk-confirm-size) - var(--space-2) - 60px)
+  );
+  right: max(var(--space-3), env(safe-area-inset-right));
+}
+
+/* 「게임 방법」 (U01). 앱 바의 설정 버튼(같은 44px 원) 바로 아래에 선다. 홈 화면 안에 있어
+   다른 화면의 머리말과 겹칠 일이 없고, z-index 없이 DOM 순서대로 월드 위에 그려진다 */
+.home-rules {
+  position: absolute;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + var(--tap) + var(--space-2));
+  right: max(var(--space-3), env(safe-area-inset-right));
+  width: var(--tap);
+  padding: 0;
+}
+
+/* 높이 480px 이하에서는 설정 버튼 왼쪽 옆, 같은 줄에 선다 (layout-01). 아래로 쌓으면 오른쪽 HUD 열이
+   위 여백 + 96px까지 내려와, dock 위 모서리의 랭킹 입구(568×320)나 방 복귀 줄로 올라온 선택 원(740×360)과
+   겹쳤다. 위 가운데의 브랜드(폭 42vw 이하)와 왼쪽 닉네임 카드에서는 떨어져 있다 */
+@media (max-height: 480px) {
+  .home-rules {
+    top: max(var(--space-3), env(safe-area-inset-top));
+    right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--tap) + var(--space-2));
+  }
+}
+
+/* 200% 확대와 짧은 휴대폰(높이 700px 이하)은 높이가 부족하다. 두 보조 입구를 dock 바로 위 양쪽에
+   둔다(브랜드는 접는다 — 아래 «높이 700px 이하» 블록). 걷기와 직접 누르기는 별개 입력 경로이므로
+   스틱은 거두지 않는다 */
+@media (max-height: 700px) {
+  #open-characters,
+  #open-ranking {
+    top: auto;
+    bottom: calc(var(--home-dock-h, 148px) + 20px + env(safe-area-inset-bottom, 0px));
+    width: 56px;
+    min-height: 56px;
+  }
+
+  #open-characters {
+    left: max(var(--space-3), env(safe-area-inset-left));
+  }
+
+  #open-ranking {
+    right: max(var(--space-3), env(safe-area-inset-right));
+    left: auto;
+    translate: none;
+  }
 }
 
 /* 좁은 화면의 보조 HUD는 아이콘과 짧은 이름만 세로로 쌓는다. */
@@ -333,38 +495,45 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
     flex-direction: column;
     align-items: flex-start;
     justify-content: center;
-    gap: var(--space-1);
-    min-height: 64px;
-  }
-
-  .home-menu .menu-card__desc {
-    display: none;
   }
 }
 
-/* 홈 머리(브랜드). 옛 마을 패널 시절의 두 칸 배치라 지금은 30절의 .home-header 가 위치·폭·display 를
-   다시 정한다 — 30절을 각 절로 옮기는 U49 3단계에서 함께 정리한다 */
+/* 홈 머리(브랜드). 닉네임과 설정 사이, 위 가운데에 뜨는 글자 덩어리다. 앞의 세 줄(두 칸 grid)은
+   옛 마을 패널 시절의 배치라 display: block 아래에서 쓰이지 않는다 */
 .home-header {
-  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   align-items: center;
   gap: var(--space-2);
-  min-height: 160px;
-  padding: var(--space-4) var(--space-2) var(--space-4) var(--space-5);
-  overflow: hidden;
+  position: absolute;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 68px);
+  left: 50%;
+  display: block;
+  width: min(44vw, 360px);
+  min-height: 0;
+  padding: 0;
+  translate: -50% 0;
+  overflow: visible;
+  text-align: center;
+  pointer-events: none;
 }
 
 .home-heading {
   min-width: 0;
 }
 
-.home-title {
-  margin: 0 0 var(--space-2);
+.home-subtitle {
+  word-break: keep-all;
 }
 
+.home-title,
 .home-subtitle {
   margin: 0;
-  word-break: keep-all;
+}
+
+/* 부제의 폭은 디자인 층이 묶는다. 가운데 정렬한 브랜드 바로 아래 가운데에 둔다 —
+   왼쪽에 붙으면 글줄만 가운데이고 덩어리는 왼쪽으로 쏠려 마을 그림 위에 떴다 */
+.home-subtitle {
+  margin-inline: auto;
 }
 
 /* 부제는 말 덩어리 둘(«4지선다 상식 퀴즈» · «혼자·친구와»)이다. 덩어리 안에서 줄이 바뀌면
@@ -377,50 +546,105 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .home-quests {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-3);
+  position: absolute;
+  right: max(var(--space-3), env(safe-area-inset-right));
+  bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  left: max(var(--space-3), env(safe-area-inset-left));
+  width: min(calc(100% - var(--space-6)), 700px);
+  margin: 0 auto;
+  padding: var(--space-2);
 }
 
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-
-/* 카테고리가 홀수 개면 마지막 카드가 한 칸만 채워 오른쪽이 빈다.
-   개수를 세지 않고 «홀수 번째이면서 마지막» 인 카드만 두 칸으로 늘린다.
-   카테고리를 더하거나 빼도 이 규칙 그대로 맞는다. */
-.category-card:nth-child(odd):last-child {
-  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-1);
 }
 
 .category-card {
-  display: grid;
-  grid-template-columns: var(--icon-tile) minmax(0, 1fr);
   grid-template-rows: auto auto 1fr;
   align-items: start;
-  column-gap: var(--space-3);
-  min-width: 0;
-  min-height: 72px;
-  padding: var(--space-3);
-  text-align: left;
   cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  position: relative;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 64px;
+  padding: var(--space-1);
+  text-align: center;
+}
+
+/* 다섯 칸 dock 은 한 줄이라 홀수 개의 마지막 칸도 늘리지 않는다 (옛 2열 목록은 그 칸을 두 칸으로 늘렸다) */
+.category-card:nth-child(odd):last-child {
+  grid-column: auto;
 }
 
 .category-card__icon {
   grid-row: 1 / span 3;
   display: grid;
   place-items: center;
-  width: var(--icon-tile);
-  height: var(--icon-tile);
+  width: 28px;
+  height: 28px;
+}
+
+.category-card__body {
+  display: block;
+  min-width: 0;
 }
 
 .category-card__name {
   min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-card__name--compact {
+  display: none;
+}
+
+/* 다섯 칸 dock 의 분야 이름은 폭 420px 을 넘으면 14px 다(U53, 디자인 층). 「예술과문화」는 14px 에서
+   70px(맑은 고딕)라 폭 467px 까지의 칸 안쪽(421px 에서 61px 남짓)을 넘친다. 그래서 폭 480px 까지는 짧은
+   시각 라벨을 보인다 — 버튼의 낭독 이름은 언제나 전체 이름이다 (home.ts 의 COMPACT_CATEGORY_NAMES).
+   폭마다의 셈은 tests/home-interface.test.mjs 가 한다. 한 줄 dock 의 짧은 가로 홈(U07)과 방 복귀 줄이
+   분야 줄 왼쪽 칸에 드는 568×320 홈(아래 두 블록)도 짧은 이름이다 */
+@media (max-width: 480px) {
+  .category-card__name--full {
+    display: none;
+  }
+
+  .category-card__name--compact {
+    display: block;
+  }
+}
+
+@media (max-height: 420px) and (min-width: 640px) {
+  .category-card__name--full {
+    display: none;
+  }
+
+  .category-card__name--compact {
+    display: block;
+  }
+}
+
+@media (max-height: 360px) and (min-width: 480px) and (max-width: 639px) {
+  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--full {
+    display: none;
+  }
+
+  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--compact {
+    display: block;
+  }
 }
 
 .category-card__desc {
   min-width: 0;
   word-break: keep-all;
+  display: none;
 }
 
 /* 최고 점수 (FR-2.3). 기록이 없으면 아예 그리지 않는다 */
@@ -439,17 +663,20 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   gap: var(--space-2);
+  width: min(568px, 100%);
+  margin: var(--space-2) auto 0;
 }
 
 .challenge-card {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  width: 100%;
-  min-height: 64px;
-  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
   text-align: left;
   cursor: pointer;
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
 }
 
 .challenge-card__icon {
@@ -467,6 +694,18 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   min-width: 0;
 }
 
+.challenge-card__desc {
+  display: none;
+}
+
+/* 온라인만 보조 줄을 남긴다. 혼자서는 시작할 수 없다는 것(2명부터)을 누르기 전에
+   알리고, 로비를 불러오는 동안에는 같은 자리가 «연결 중…»이 된다 (U29·U34).
+   두 줄이 아이콘 칸보다 높아지는 좁은 화면에서도 `.home-primary-actions` 의 같은 높이
+   행(`grid-auto-rows: 1fr`)이 전체 도전과 크기를 맞춘다 */
+.challenge-card--online .challenge-card__desc {
+  display: block;
+}
+
 .challenge-card__meta {
   flex: none;
 }
@@ -482,8 +721,18 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--space-2);
-  margin: var(--space-4) 0 0;
   padding: var(--space-3);
+  position: fixed;
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 148px);
+  left: 50%;
+  width: min(calc(100% - var(--space-6)), 520px);
+  margin: 0;
+  translate: -50% 0;
+}
+
+/* 로드 오류 문구는 행동보다 우선한다. 캐릭터를 잠시 거두면 높이와 무관하게 겹치지 않는다. */
+body:has(.home-note:not([hidden])) #home-character {
+  display: none;
 }
 
 .home-note__text {
@@ -540,6 +789,225 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   flex: none;
 }
 
+/* 긴 내용이 없는 첫 화면에서는 world가 최소 70%가량 드러난다. */
+@media (min-width: 600px) {
+  .home-header {
+    top: max(var(--space-12), env(safe-area-inset-top));
+    width: min(42vw, 520px);
+    padding: 0;
+  }
+
+  .home-menu .menu-card {
+    width: 72px;
+    min-height: 72px;
+  }
+}
+
+/* 중간 폭은 기본적으로 기록 pill까지 한 줄에 우겨 넣지 않는다. 짧은 가로 화면은
+   조작부 공간을 지키기 위해 두 열을 유지하고, 보조 기록만 아래 규칙에서 접는다. */
+@media (max-width: 560px) {
+  .home-primary-actions {
+    grid-template-columns: minmax(0, 280px);
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) and (max-height: 480px) {
+  .home-primary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .home-primary-actions .challenge-card__meta {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .home-header {
+    top: calc(max(var(--space-3), env(safe-area-inset-top)) + 72px);
+    width: 44vw;
+  }
+
+  .home-subtitle {
+    display: none;
+  }
+
+  .home-player {
+    width: 140px;
+  }
+
+  .home-primary-actions {
+    grid-template-columns: minmax(0, 280px);
+    justify-content: center;
+  }
+
+  .home-primary-actions .challenge-card {
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
+  }
+
+  .home-primary-actions .challenge-card__icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .menu-card--wide .menu-card__name,
+  .menu-card--wide .menu-card__desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .home-menu .menu-card {
+    width: 60px;
+    min-height: 60px;
+  }
+}
+
+/* 높이 700px 이하: HUD 조각과 dock 칸을 한 단계 줄이고(닉네임 카드의 연필 칸도 거둔다 — 위 .menu-card--wide)
+   브랜드는 접는다(.home-header 는 눈에서만 숨고 제목으로 읽힌다) */
+@media (max-height: 700px) {
+  .home-player {
+    width: 120px;
+  }
+
+  .menu-card--wide .menu-card__edit {
+    display: none;
+  }
+
+  .home-menu .menu-card {
+    width: 56px;
+    min-height: 56px;
+  }
+
+  .home-quests {
+    padding: var(--space-1);
+  }
+
+  .category-card {
+    min-height: 52px;
+  }
+
+  .challenge-card {
+    min-height: 48px;
+  }
+
+  /* 오류·문항 부족 알림은 direct-entry 줄 위에 두고, 그 드문 상태에서는 캐릭터를
+     거둬 메시지와 겹치지 않게 한다. */
+  .home-note {
+    top: auto;
+    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .home-header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* 짧은 가로 홈(U07): 분야 다섯 칸 | 온라인·전체 도전을 dock 한 줄에 둔다. 두 줄로 쌓으면 740×360에서
+   dock이 171px(화면의 절반)이었고, 그 위에 얹히는 두 보조 입구와 조작부가 위 가운데까지 밀려 올라왔다.
+   한 줄이면 dock이 70px 안팎이라 월드가 돌아온다. 접어 두었던 브랜드는 위 가운데(닉네임과 설정 사이)에
+   작게 되살리고 부제는 접은 채 둔다(글자 크기·dock 안쪽 여백은 디자인 층의 같은 @media).
+   - 온라인·전체 도전은 한 묶음의 같은 두 칸(1fr)이라 크기가 같다. 전체 최고점 pill은 접고 접근 가능한
+     이름에 남긴다. 온라인 보조 줄 «친구와 함께 · 2명부터»는 한 줄로 남는다
+   - 분야 칸이 좁아지므로 짧은 이름(상식·예술)을 보인다(위 분야 이름 블록). 버튼 이름은 전체 이름 그대로다
+   - 두 보조 입구는 여전히 dock 바로 위 양쪽이고(--home-dock-h), 캐릭터는 그 사이 브랜드 아래에서
+     시작한다(walker-geometry.ts의 shortHomeStartPoint) */
+@media (max-height: 420px) and (min-width: 640px) {
+  .home-quests {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    column-gap: var(--space-2);
+  }
+
+  .home-room-note {
+    grid-column: 1 / -1;
+  }
+
+  .home-primary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: auto;
+    margin: 0;
+  }
+
+  .home-primary-actions .challenge-card {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  }
+
+  .home-primary-actions .challenge-card__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .home-primary-actions .challenge-card__meta {
+    display: none;
+  }
+
+  .home-header {
+    top: max(var(--space-4), env(safe-area-inset-top));
+    width: min(42vw, 520px);
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  .home-subtitle {
+    display: none;
+  }
+}
+
+/* 폭 640px 미만의 아주 짧은 가로 홈(568×320)은 dock 이 두 줄(분야 | 온라인·전체 도전)인데, 방 복귀 줄(U35)이
+   그 위에 한 줄을 더 얹으면 dock 이 206px 이 되어 월드가 44px 만 남았다. 그러면 두 보조 입구가 닉네임·설정을,
+   스틱·선택 원이 복귀 줄을 덮었다. 그래서 그동안만 복귀 줄을 분야 줄의 왼쪽 칸으로 옮겨 dock 높이를 복귀
+   줄이 없을 때와 같게 둔다. DOM 순서(복귀 줄 → 분야 → 주요 행동)와 읽는 순서는 그대로다.
+   방 이름은 두 줄까지 보이고 넘치면 말줄임한다. 버튼의 낭독 이름(글 전체)은 잘리지 않는다 */
+@media (max-height: 360px) and (min-width: 480px) and (max-width: 639px) {
+  .home-quests:has(.home-room-note:not([hidden])) {
+    grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+    column-gap: var(--space-1);
+  }
+
+  .home-quests:has(.home-room-note:not([hidden])) .home-primary-actions {
+    grid-column: 1 / -1;
+  }
+
+  .home-room-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-content: center;
+    column-gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .home-room-note::before {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .home-room-note__text {
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: normal;
+    word-break: keep-all;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .home-room-note__action {
+    grid-column: 2;
+  }
+}
+
 /* ── 화면 머리 (제목 + 돌아가기) ── */
 .quiz-header {
   display: flex;
@@ -549,6 +1017,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin-bottom: var(--space-4);
 }
 
+.ranking-header,
+[data-screen='characters'] .quiz-header,
+[data-screen='waiting'] > .quiz-header,
+.online-hero__header {
+  min-height: 52px;
+  padding: var(--space-2) 64px var(--space-2) var(--space-3);
+}
+
 .screen-title {
   margin: 0;
   min-width: 0;
@@ -556,6 +1032,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
 .screen-lead {
   margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
 }
 
 /* ── 퀴즈 HUD ──
@@ -564,11 +1041,68 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
      2줄  ⏱ 남은 시간 18초  타이머
    진행률은 위치 곁의 얇은 막대, 타이머는 글자와 한 줄로 붙은 굵은 막대라 섞이지 않는다.
    좁은 화면에서는 진행률만 위치 아래로 내린다. */
+
+/* 퀴즈 화면(로컬·온라인 모두 .quiz--character): HUD·질문·보기는 좁은 띠로, 남은 공간은 실제 arena로 쓴다. */
+.quiz--character {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+}
+
+/* 결과 패널이 열리면 arena를 화면 바닥에 붙여 두던 빈 높이를 거둔다. 그대로 두면 화면이
+   늘 viewport보다 길어 패널을 보려면 질문까지 화면 위로 밀어야 했다. arena가 보기 바로
+   뒤로 올라오는 것은 quiz.ts의 capture/restoreCharacterAnchor가 캐릭터와 함께 따라간다. */
+body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
+  min-height: 0;
+}
+
+@media (max-width: 420px) {
+  .quiz--character {
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+  }
+}
+
+/* 짧은 가로 touch 화면의 퀴즈(U15): 왼쪽 열에 HUD·질문·보기, 오른쪽 열에 arena(2×2 바닥)를 둔다.
+   세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래로 밀렸고, 고정 스틱·선택이
+   3·4번 보기를 덮었다. 로컬·온라인 퀴즈가 같은 .quiz--character 배치를 쓴다. 조각마다의 규칙은 제 절의
+   같은 @media 에 있다(HUD·보기·무대·결과 공개·피드백).
+   - 양옆 여백은 공용 이동 UI 크기 토큰에서 계산한다(조작부의 바깥 거리 + 크기 + 8px). 조작부를 화면
+     이름으로 바꾸거나 숨기지 않고 내용이 그 아래로 들어가지 않게 자리를 비우므로, 어느 스크롤 위치에서도
+     스틱·선택이 보기나 바닥 칸을 덮지 않고 아래를 스틱 높이만큼 비울 필요도 없다. 오른쪽 여백은 위 끝의
+     설정 버튼(44px)도 품어 HUD가 그 자리를 비우지 않는다
+   - arena는 오른쪽 열 아래쪽(보기 둘째 줄과 같은 바닥선)에 붙는다. 넷째 줄(1fr)은 arena가 왼쪽 열보다
+     길 때만 늘어나 HUD·질문·보기 사이를 벌리지 않는다. 시작 자리는 그대로 바닥 십자 한가운데다
+   - 칸이 좁아지므로 보기는 좁은 화면의 2×2처럼 안쪽 여백을 줄이고 판정 알약은 모양만 보인다(글은
+     낭독되고 결과 패널에 있다). 높이는 44px 아래로 줄이지 않는다. 바닥 칸은 열 폭만큼의 정사각이다
+   - 답한 뒤 결과 패널은 여전히 arena 뒤 문서 흐름이다(<main> 밖). 질문까지 한 화면에 담을 수 없어
+     feedbackScrollTarget이 패널 끝에 맞추므로, 판정·정답 줄·다음 문제가 패널 안 스크롤 없이 한 화면에
+     들도록 패널 높이 한도만 화면 높이에 맞춘다(60vh는 360px 화면에서 216px이라 「다음 문제」가 잘렸다) */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    column-gap: var(--space-3);
+    align-content: start;
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+    padding-right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--walk-confirm-size) + var(--space-2));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(max(var(--space-3), env(safe-area-inset-left)) + var(--walk-stick-size) + var(--space-2));
+  }
+}
+
 .quiz-hud {
   display: grid;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
   padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.quiz--character .quiz-hud {
+  width: min(100%, 1200px);
+  margin: 0 auto var(--space-3);
+  /* 오른쪽 위의 전역 설정 HUD와 나가기 버튼이 겹치지 않게 한 슬롯을 비운다. */
+  padding: var(--space-2) 64px var(--space-2) var(--space-3);
 }
 
 .quiz-meta {
@@ -705,6 +1239,34 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   display: grid;
 }
 
+@media (max-width: 420px) {
+  .quiz--character .quiz-hud {
+    margin-bottom: var(--space-2);
+  }
+}
+
+@media (max-width: 360px) {
+  .quiz--character .quiz-hud {
+    padding-right: 52px;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  /* 설정 버튼이 오른쪽 여백에 있어 HUD 오른쪽 64px 슬롯을 비우지 않는다. 열이 좁아 진행률은 아랫줄이다 */
+  .quiz--character .quiz-hud {
+    margin-bottom: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .quiz--character .quiz-hud .quiz-meta {
+    grid-template-columns: minmax(0, auto) minmax(auto, 1fr);
+  }
+
+  .quiz--character .quiz-hud .progress {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ── 문제와 보기 ── */
 .question {
   margin: 0 0 var(--space-3);
@@ -715,6 +1277,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 /* 화면 전환·문제 이동용 포커스라 테두리를 그리지 않는다 */
 .question:focus {
   outline: none;
+}
+
+.quiz--character .question {
+  width: min(100%, 760px);
+  margin: 0 auto var(--space-3);
+  padding: var(--space-4);
+  text-align: center;
 }
 
 .choices {
@@ -768,28 +1337,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   display: none;
 }
 
-/* 캐릭터 퀴즈에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다.
-   무대와 조작부가 한 화면에 함께 들어와야 게임처럼 읽힌다. */
-.quiz--character .choices {
-  margin-bottom: var(--space-3);
-}
-
-.quiz--character .choice {
-  /* 무대와 함께 보여도 직접 누르는 보기는 공통 터치 목표(44px)를 줄이지 않는다 */
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-}
-
 /* 넓은 화면에서는 보기를 바닥 칸과 같은 2×2로 놓는다. 1·2가 위, 3·4가 아래라
    «2번 칸 = 오른쪽 위 보기»로 자리가 그대로 이어지고, 무대가 피드백 시트 위로 올라와
    채점 표시(✓ ✗)를 가리지 않는다. 좁은 화면은 긴 보기를 먼저 다 읽도록 한 줄에 하나다 —
    다만 아래처럼 넷이 모두 짧으면 좁은 화면도 2×2다. */
 @media (min-width: 600px) {
-  .quiz--character .choices {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   /* 한 줄의 두 보기 높이를 맞춘다. 긴 보기가 두 줄이 되어도 짝이 함께 커진다 */
   .quiz--character .choices > li {
     display: flex;
@@ -797,6 +1349,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 
   .quiz--character .choice {
     flex: 1;
+  }
+
+  .quiz--character .choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -809,6 +1366,13 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* 캐릭터 퀴즈에서는 위 패널이 «문제 + 보기» 창 노릇을 하므로 촘촘하게 줄인다. 무대와 조작부가 한 화면에
+   함께 들어와야 게임처럼 읽힌다. 그래도 직접 누르는 보기는 공통 터치 목표(44px)를 줄이지 않는다 */
+.quiz--character .choices {
+  width: min(100%, 780px);
+  margin: 0 auto var(--space-3);
+}
+
 .quiz--character .choices[data-layout='grid'] > li {
   display: flex;
 }
@@ -817,10 +1381,16 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   flex: 1;
 }
 
+.quiz--character .choice {
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+}
+
 /* 두 열이면 한 칸이 160px 남짓이다. 안쪽 여백을 한 단계 줄여 글자 자리를 넓히고(높이는 그대로
    44px 이상), 띄어 쓸 데 없는 긴 낱말(«21.0975킬로미터»)은 칸 안에서 끊는다.
    판정 알약은 ✓ ✗ ⧗ 모양만 보인다 — 무대 칸과 같은 이유다. 글(«정답»·«오답»·«제출됨»)은 잘려
-   보이지 않을 뿐 낭독되고, 같은 말이 결과 패널에 그대로 있다 */
+   보이지 않을 뿐 낭독되고, 같은 말이 결과 패널에 그대로 있다. 같은 폭에서 보기 사이와 보기 높이(52px)도
+   한 단계 줄인다 */
 @media (max-width: 420px) {
   .quiz--character .choices[data-layout='grid'] .choice {
     gap: var(--space-2);
@@ -832,6 +1402,38 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 
   .quiz--character .choices[data-layout='grid'] .choice__mark {
+    width: calc(var(--icon-sm) + 2 * var(--space-1));
+    padding: 0 var(--space-1);
+    overflow: hidden;
+  }
+
+  .quiz--character .choices {
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+  }
+
+  .quiz--character .choice {
+    min-height: 52px;
+  }
+}
+
+/* 짧은 가로 touch 퀴즈(U15, 위 퀴즈 HUD 절의 .quiz--character)의 좁은 왼쪽 열 */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character .choices {
+    margin-bottom: 0;
+  }
+
+  .quiz--character .choice {
+    gap: var(--space-2);
+    min-height: var(--tap);
+    padding: var(--space-2);
+  }
+
+  .quiz--character .choice__text {
+    overflow-wrap: anywhere;
+  }
+
+  .quiz--character .choice__mark {
     width: calc(var(--icon-sm) + 2 * var(--space-1));
     padding: 0 var(--space-1);
     overflow: hidden;
@@ -1084,6 +1686,14 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   position: relative;
 }
 
+/* 짧은 가로 touch 퀴즈(U15)에서는 판정·정답 줄·「다음 문제」가 패널 안 스크롤 없이 한 화면에 들도록
+   패널 높이 한도를 화면 높이에 맞춘다 (60vh 는 360px 화면에서 216px 이라 「다음 문제」가 잘렸다) */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .feedback {
+    max-height: calc(100svh - var(--space-6));
+  }
+}
+
 /* ── 키 표시 ──
    손이 방향키에 있으므로, 마우스로 옮겨 가지 않아도
    Enter 로 이어갈 수 있다는 것을 버튼에서 바로 알린다.
@@ -1277,6 +1887,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   text-align: center;
 }
 
+[data-screen='result'] .result-header {
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+}
+
 .result-mode {
   display: inline-flex;
   align-items: center;
@@ -1292,6 +1907,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .result-score {
   margin: var(--space-3) 0 var(--space-1);
   font-variant-numeric: tabular-nums;
+}
+
+[data-screen='result'] .result-score {
+  margin: var(--space-2) 0 0;
 }
 
 .result-score__max {
@@ -1324,6 +1943,10 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
   padding: 0;
+}
+
+[data-screen='result'] .result-stats {
+  margin-bottom: var(--space-3);
 }
 
 .result-stats__item {
@@ -1376,7 +1999,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 [data-screen='result'] .result-actions {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
 .result-actions .button {
@@ -1542,6 +2165,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   padding-inline-end: var(--space-3);
 }
 
+@media (max-width: 420px) {
+  [data-screen='result'] .result-header {
+    padding-top: var(--space-8);
+  }
+}
+
 /* ── 랭킹 ── */
 .ranking-header {
   display: flex;
@@ -1561,10 +2190,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   align-items: flex-start;
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
-  padding: var(--space-3);
+  word-break: keep-all;
+  padding-block: var(--space-2);
+  padding-inline-start: var(--space-3);
   /* 화면 워커가 머리말 오른쪽 아래에서 쉬는 동안 안내문을 덮지 않는 주차 공간 */
   padding-inline-end: calc(var(--screen-walker-width) + var(--space-5));
-  word-break: keep-all;
 }
 
 .ranking-tabs {
@@ -1712,6 +2342,11 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 }
 
 /* ── 내 캐릭터 화면 ── */
+.character-stage {
+  min-height: 64svh;
+  padding: var(--space-4);
+}
+
 .character-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1722,10 +2357,9 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   position: relative;
   display: grid;
   place-items: center;
-  /* 이름이 없으니 그림만 들어간다. 여백을 넉넉히 줘 누르기 편하게 한다 */
-  min-height: 96px;
   padding: var(--space-4) var(--space-2);
   cursor: pointer;
+  min-height: 112px;
 }
 
 /* 미리보기는 정지 그림이다. 뛰는 것은 걸어 다니는 캐릭터 하나뿐이라
@@ -1762,6 +2396,15 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: 0 0 var(--space-5);
 }
 
+.quiz--character .arena {
+  display: grid;
+  align-content: end;
+  width: min(88vw, 560px);
+  min-height: 184px;
+  margin: auto auto 0;
+  padding-top: var(--space-3);
+}
+
 .arena__stage {
   position: relative;
   min-width: 0;
@@ -1781,6 +2424,16 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
   padding: var(--space-2);
+}
+
+.quiz--character .arena__grid {
+  padding: var(--space-2);
+}
+
+/* 피드백은 arena 뒤의 문서 흐름에서 이어진다. 결과 바닥을 고정 offset으로 움직이면
+   긴 질문에는 보기를, 긴 해설에는 패널을 덮으므로 어떤 viewport에서도 옮기지 않는다. */
+body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
+  translate: none;
 }
 
 .arena-tile {
@@ -1812,6 +2465,57 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   cursor: default;
 }
 
+.quiz--character .arena-tile {
+  height: clamp(64px, 10vh, 96px);
+}
+
+@media (min-width: 600px) {
+  .quiz--character .arena {
+    min-height: 272px;
+  }
+
+  .quiz--character .arena-tile {
+    height: 104px;
+  }
+}
+
+@media (max-width: 420px) {
+  .quiz--character .arena {
+    width: min(88vw, 360px);
+    min-height: 152px;
+    padding-top: var(--space-2);
+  }
+}
+
+@media (max-height: 700px) {
+  .quiz--character .arena {
+    min-height: 128px;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character > * {
+    grid-column: 1;
+  }
+
+  .quiz--character > .arena {
+    grid-column: 2;
+    grid-row: 1 / 5;
+    width: 100%;
+    min-height: 0;
+    margin: auto 0 0;
+    padding-top: 0;
+  }
+
+  .quiz--character .arena-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    min-height: 64px;
+    max-height: 104px;
+  }
+}
+
 /* ── 무대 아래 한 줄 안내 ── */
 .arena__hint,
 .home-hint {
@@ -1819,8 +2523,20 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   text-align: center;
 }
 
+.quiz--character .arena__hint {
+  margin-bottom: 0;
+}
+
+/* 처음 세 판은 규칙 한 줄을 짧은 touch·좁은 화면에서도 남긴다 (U01, quiz.ts 가 data-pinned 를 단다).
+   아래 두 접기(420px 이하·짧은 touch)보다 구체적이라 이긴다. 스틱이 이미 말하는 조작 줄은 그 두 블록이
+   그대로 접고, 세 판이 지나면 data-pinned 가 false 라 예전처럼 줄째 접힌다 */
+[data-screen='quiz']:not([hidden]) .arena__hint[data-pinned='true'] {
+  display: block;
+}
+
 .home-hint {
   margin-top: var(--space-3);
+  display: none;
 }
 
 /* 무엇이 답이 되는가(규칙)는 제 줄에, 조작은 그 아래 줄에 (U01) */
@@ -1879,6 +2595,45 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
      옮기므로 카드 끝(해설·«내 답» 줄)이 스틱·선택 버튼 위에 멈춘다. 같은 공용 크기를 쓴다. */
   [data-screen='online-quiz'] .online-reveal {
     scroll-margin-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 420px) {
+  .quiz--character .arena__hint {
+    display: none;
+  }
+
+  .arena__hint[data-pinned='true'] .arena__hint-key,
+  .arena__hint[data-pinned='true'] .arena__hint-touch {
+    display: none;
+  }
+}
+
+/* 짧은 touch 퀴즈도 공용 compact 조작부를 유지한다. 이미 보이는 조작 설명만 접어
+   문제·보기·arena에 쓸 세로 공간을 돌려준다. */
+@media (pointer: coarse) and (max-height: 772px) {
+  [data-screen='quiz']:not([hidden]) .arena__hint {
+    display: none;
+  }
+
+  .arena__hint[data-pinned='true'] .arena__hint-key,
+  .arena__hint[data-pinned='true'] .arena__hint-touch {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  /* 온라인의 결과 공개·상태 줄·채팅은 두 열 아래에 폭을 다 쓴다 (여전히 양옆 여백 안이다) */
+  .quiz--character > .online-reveal,
+  .quiz--character > .online-match-status,
+  .quiz--character > .online-quiz-chat {
+    grid-column: 1 / -1;
+  }
+
+  /* 공개 카드도 양옆 여백 안이라 떠 있는 조작부와 겹치지 않는다. 스틱 높이만큼 더 올리면 보기와
+     바닥만 화면 위로 더 밀려나므로, 카드 끝을 화면 아래 여백 안에만 들인다 */
+  [data-screen='online-quiz'] .online-reveal {
+    scroll-margin-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -2281,7 +3036,7 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-/* 폭 640px 이상의 짧은 가로 홈은 dock이 한 줄로 낮아져(section 30 끝, U07) 입구 한 줄 위의 양쪽
+/* 폭 640px 이상의 짧은 가로 홈은 dock이 한 줄로 낮아져(홈 무대 절의 짧은 가로 홈, U07) 입구 한 줄 위의 양쪽
    모서리가 닉네임·설정 HUD에서 멀다. 그래서 anchor를 다른 화면과 같은 양쪽 모서리(엄지 자리)로
    되돌린다. 모서리에서는 바로 아래가 두 보조 입구라, 360px 이하에서도 입구 한 줄 위의 거리를
    700px 이하와 같게 둔다. 크기·모양은 위 규칙 그대로다. 방 복귀 줄로 dock이 커져도 위 HUD에 닿지 않는 것은
@@ -2301,6 +3056,36 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   body:has(.walk-controls--on) .screen:not([data-screen='home']):not([data-screen='quiz']):not([data-screen='online-quiz']) {
     padding-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
+
+  /* 로컬 quiz의 arena는 조작부가 켜진 동안 마지막 콘텐츠다. 공용 크기 토큰과
+     viewport 배치를 그대로 써서 화면마다 숫자를 복사하지 않는다. */
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 높이 480px 이하에서는 「게임 방법」이 설정 버튼 옆으로 비키므로(.home-rules) 홈 조작부가 피할 오른쪽
+   HUD 열은 설정 하나다 (layout-01) */
+@media (max-height: 480px) {
+  .walk-controls[data-placement='home-dock'] {
+    --home-hud-right: var(--tap);
+  }
+}
+
+/* 짧은 가로 touch 퀴즈(U15): 조작부는 양옆 여백에 있으므로 로컬 퀴즈도 아래를 스틱 높이만큼 비우지 않는다 */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 높이 340px 이하의 짧은 가로 퀴즈(568×320)는 두 열 배치가 그대로 들어가는데 아래 여백 12px 때문에 문서가
+   화면보다 4px 길어 스크롤이 생겼다. 아래 여백만 한 단계 줄인다 — 위 여백은 설정 버튼과 줄을 맞춘 채 둔다 */
+@media (pointer: coarse) and (max-height: 340px) and (orientation: landscape) {
+  .quiz--character,
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* ── 온라인 로비 ──
@@ -2308,8 +3093,8 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
    하나씩 열고, 장식은 온라인 화면 안에서만 쓴다. */
 .online-hero {
   margin-bottom: var(--space-3);
-  padding: var(--space-4);
   overflow: hidden;
+  padding: 0;
 }
 
 .online-hero__header {
@@ -2724,10 +3509,6 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
     display: none;
   }
 
-  .online-block {
-    padding: var(--space-3);
-  }
-
   .online-block__head {
     flex-direction: row;
     align-items: center;
@@ -2905,14 +3686,24 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   overflow: visible;
   border: var(--border-1) solid var(--world-wood-edge);
   border-radius: var(--radius-xl);
-  /* 벽 · 걸레받이 4px · 바닥. 바닥 높이는 가구가 놓이는 --lounge-floor 로 고정이다 */
-  background: linear-gradient(
-    to bottom,
-    var(--world-wall) 0 calc(100% - var(--lounge-floor)),
-    var(--world-baseboard) calc(100% - var(--lounge-floor)) calc(100% - var(--lounge-floor) + 4px),
-    var(--world-floor) calc(100% - var(--lounge-floor) + 4px) 100%
-  );
-  box-shadow: var(--elevation-1);
+}
+
+/* 직접 자식인 대기실 행동은 inline-flex 기본값이면 auto margin이 남은 폭을 나누지
+   못한다. 읽기 열과 같은 폭의 block flex로 만들어 모바일·데스크톱 모두 가운데 둔다. */
+[data-screen='waiting'] > .button {
+  display: flex;
+}
+
+[data-screen='waiting'] .lounge {
+  min-height: 58svh;
+}
+
+/* 좁은 휴대폰 세로 화면에서는 방이 화면 높이의 58%(390×844에서 약 490px)를 먹어 채팅이 한참 아래로 밀렸다 (U39).
+   벽의 액자와 바닥 가구가 담기는 기본 높이(360px)까지만 늘린다. 액자가 여러 줄이면 방은 그대로 아래로 자란다 */
+@media (max-width: 480px) {
+  [data-screen='waiting'] .lounge {
+    min-height: min(58svh, 360px);
+  }
 }
 
 /* ── 세계 장식: 픽셀 라운지 가구 ──
@@ -3485,33 +4276,23 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   .arena-tile {
     height: 64px;
   }
+
+  .quiz--character .question {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+  }
+}
+
+/* 짧은 가로 touch 퀴즈(U15)의 왼쪽 열 질문도 같은 만큼 줄인다 */
+@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
+  .quiz--character .question {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+  }
 }
 
 /* ── 좁은 화면 (320px까지) ── */
 @media (max-width: 360px) {
-  /* 분야 칸은 설명을 접고 아이콘 칸을 한 단계 줄여 이름이 한 줄에 들어가게 한다.
-     칸이 세 줄로 길어지면 다섯 분야와 전체 도전이 첫 화면에서 밀려난다 */
-  .category-card__desc,
-  .challenge-card__desc {
-    display: none;
-  }
-
-  .category-card {
-    grid-template-columns: 32px minmax(0, 1fr);
-    min-height: 56px;
-    column-gap: var(--space-2);
-    padding: var(--space-2);
-  }
-
-  .category-card__icon {
-    width: 32px;
-    height: 32px;
-  }
-
-  .home-menu .menu-card {
-    padding-left: var(--space-2);
-  }
-
   /* 칩의 아이콘을 한 단계 줄이고 가로 여백을 조여 「소요 시간」과 값을 온전히 보인다 */
   .result-stats__item {
     grid-template-columns: var(--icon-sm) minmax(0, 1fr);
@@ -3538,955 +4319,12 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   }
 }
 
-/* ── 30. 월드 우선 화면 구성 ─────────────────────────────────────
-   카드 열을 가운데 쌓는 웹앱 골격 대신, 화면 전체를 하나의 게임 월드로 쓴다.
-   상시 UI는 가장자리 HUD와 하단 dock뿐이고 긴 목록·폼만 상황별 표면으로 남긴다.
-   app-bar는 <main> 뒤에 있어 z-index 없이도 월드 위, 피드백·대화상자 아래에 온다. */
-.app {
-  max-width: none;
-  padding: 0;
-}
-
-body:has([data-screen='home']:not([hidden])) .app {
-  padding-bottom: 0;
-}
-
-.screen {
-  width: 100%;
-  min-height: 100svh;
-  padding: max(var(--space-4), env(safe-area-inset-top)) max(var(--page-pad), env(safe-area-inset-right)) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)) max(var(--page-pad), env(safe-area-inset-left));
-}
-
-.app-bar,
-body:has([data-screen='home']:not([hidden])) .app-bar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: auto;
-  width: auto;
-  max-width: none;
-  margin: 0;
-  padding: max(var(--space-3), env(safe-area-inset-top)) max(var(--space-3), env(safe-area-inset-right)) 0 0;
-  pointer-events: none;
-}
-
+/* ── 30. 맨 뒤에 남긴 규칙 ─────────────────────────────────────
+   옛 30절(월드 우선 화면 구성)은 앞 절의 같은 선택자를 뒤에서 다시 쓰는 층이었다. U49 에서 그 규칙을 모두
+   제 절로 옮기고(계산값은 tools/css-snapshot.mjs 로 그대로임을 확인했다) 앞으로 옮기면 값이 달라지는 것만
+   여기 남겼다. 새 규칙을 이 절에 더하지 말 것 — 제 절에 둔다.
+   - .app-bar > * : 앞으로 옮기면 같은 명시도의 .walker(pointer-events: none, 걸어 다니는 캐릭터 절)보다 앞에
+     선다. 앱 바 안에 캐릭터가 들어가는 화면은 없지만, 스냅숏의 증인 사슬에서는 값이 바뀌어 그대로 두었다 */
 .app-bar > * {
   pointer-events: auto;
-}
-
-/* 홈: 중앙은 월드와 캐릭터에게 비우고 조작부만 가장자리에 둔다. */
-.screen[data-screen='home'] {
-  min-height: 100svh;
-  padding: 0;
-  overflow: hidden;
-}
-
-.home-stage {
-  position: relative;
-  display: block;
-  min-height: 100svh;
-}
-
-.home-player {
-  position: absolute;
-  top: max(var(--space-3), env(safe-area-inset-top));
-  left: max(var(--space-3), env(safe-area-inset-left));
-  width: 148px;
-}
-
-.menu-card--wide {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 16px;
-  gap: var(--space-1);
-  width: 100%;
-  min-height: 52px;
-  padding: var(--space-1) var(--space-2);
-}
-
-.menu-card--wide .menu-card__edit {
-  display: block;
-  width: 16px;
-  height: 16px;
-}
-
-.menu-card--wide .menu-card__figure {
-  width: 36px;
-  height: 36px;
-}
-
-.menu-card--wide .menu-card__desc {
-  display: block;
-}
-
-.home-menu {
-  display: contents;
-}
-
-.home-menu .menu-card {
-  position: absolute;
-  display: grid;
-  grid-template-columns: 1fr;
-  justify-items: center;
-  gap: var(--space-1);
-  width: 64px;
-  min-height: 64px;
-  padding: var(--space-1);
-  text-align: center;
-}
-
-.home-menu .menu-card__figure {
-  width: 28px;
-  height: 28px;
-}
-
-.home-menu .menu-card__body {
-  display: block;
-  min-width: 0;
-}
-
-.home-menu .menu-card__name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-menu .menu-card__desc,
-.home-menu .menu-card__meta,
-.home-menu .menu-card__arrow {
-  display: none;
-}
-
-#open-characters {
-  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 64px);
-  left: max(var(--space-3), env(safe-area-inset-left));
-}
-
-/* 랭킹 입구는 키 큰 화면에서 높이 42% 에 서되, dock 위 조작부(선택 원)보다 8px 위로 비켜 선다.
-   방 복귀 줄로 dock 이 커지면 조작부의 바닥(dock + 20px)이 따라 올라오는데, 입구가 42% 에 머물러
-   375×812에서 선택 원과 겹쳤다(dock 271 → 327px, 450px²). 60px 는 입구 카드의 높이다 */
-#open-ranking {
-  top: min(
-    42%,
-    calc(100% - var(--home-dock-h, 160px) - 20px - env(safe-area-inset-bottom, 0px)
-      - var(--walk-confirm-size) - var(--space-2) - 60px)
-  );
-  right: max(var(--space-3), env(safe-area-inset-right));
-}
-
-/* 「게임 방법」 (U01). 앱 바의 설정 버튼(같은 44px 원) 바로 아래에 선다. 홈 화면 안에 있어
-   다른 화면의 머리말과 겹칠 일이 없고, z-index 없이 DOM 순서대로 월드 위에 그려진다 */
-.home-rules {
-  position: absolute;
-  top: calc(max(var(--space-3), env(safe-area-inset-top)) + var(--tap) + var(--space-2));
-  right: max(var(--space-3), env(safe-area-inset-right));
-  width: var(--tap);
-  padding: 0;
-}
-
-/* 높이 480px 이하에서는 설정 버튼 왼쪽 옆, 같은 줄에 선다 (layout-01). 아래로 쌓으면 오른쪽 HUD 열이
-   위 여백 + 96px까지 내려와, dock 위 모서리의 랭킹 입구(568×320)나 방 복귀 줄로 올라온 선택 원(740×360)과
-   겹쳤다. 위 가운데의 브랜드(폭 42vw 이하)와 왼쪽 닉네임 카드에서는 떨어져 있다 */
-@media (max-height: 480px) {
-  .home-rules {
-    top: max(var(--space-3), env(safe-area-inset-top));
-    right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--tap) + var(--space-2));
-  }
-
-  .walk-controls[data-placement='home-dock'] {
-    --home-hud-right: var(--tap);
-  }
-}
-
-.home-header {
-  position: absolute;
-  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 68px);
-  left: 50%;
-  display: block;
-  width: min(44vw, 360px);
-  min-height: 0;
-  padding: 0;
-  translate: -50% 0;
-  overflow: visible;
-  text-align: center;
-  pointer-events: none;
-}
-
-.home-title,
-.home-subtitle {
-  margin: 0;
-}
-
-/* 부제의 폭은 디자인 층이 묶는다. 가운데 정렬한 브랜드 바로 아래 가운데에 둔다 —
-   왼쪽에 붙으면 글줄만 가운데이고 덩어리는 왼쪽으로 쏠려 마을 그림 위에 떴다 */
-.home-subtitle {
-  margin-inline: auto;
-}
-
-.home-quests {
-  position: absolute;
-  right: max(var(--space-3), env(safe-area-inset-right));
-  bottom: max(var(--space-3), env(safe-area-inset-bottom));
-  left: max(var(--space-3), env(safe-area-inset-left));
-  width: min(calc(100% - var(--space-6)), 700px);
-  margin: 0 auto;
-  padding: var(--space-2);
-}
-
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--space-1);
-}
-
-.category-card {
-  display: grid;
-  grid-template-columns: 1fr;
-  justify-items: center;
-  position: relative;
-  gap: var(--space-1);
-  min-width: 0;
-  min-height: 64px;
-  padding: var(--space-1);
-  text-align: center;
-}
-
-.category-card__icon {
-  width: 28px;
-  height: 28px;
-}
-
-.category-card__body {
-  display: block;
-  min-width: 0;
-}
-
-.category-card__name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.category-card__desc {
-  display: none;
-}
-
-.category-card__name--compact {
-  display: none;
-}
-
-/* 기존 2열 카드 목록의 홀수 마지막 확장 규칙을 5칸 game dock에서는 해제한다. */
-.category-card:nth-child(odd):last-child {
-  grid-column: auto;
-}
-
-.home-primary-actions {
-  width: min(568px, 100%);
-  margin: var(--space-2) auto 0;
-}
-
-.challenge-card {
-  width: 100%;
-  min-height: 52px;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-}
-
-.challenge-card__desc {
-  display: none;
-}
-
-/* 온라인만 보조 줄을 남긴다. 혼자서는 시작할 수 없다는 것(2명부터)을 누르기 전에
-   알리고, 로비를 불러오는 동안에는 같은 자리가 «연결 중…»이 된다 (U29·U34).
-   두 줄이 아이콘 칸보다 높아지는 좁은 화면에서도 `.home-primary-actions` 의 같은 높이
-   행(`grid-auto-rows: 1fr`)이 전체 도전과 크기를 맞춘다 */
-.challenge-card--online .challenge-card__desc {
-  display: block;
-}
-
-.home-hint {
-  display: none;
-}
-
-.home-note {
-  position: fixed;
-  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 148px);
-  left: 50%;
-  width: min(calc(100% - var(--space-6)), 520px);
-  margin: 0;
-  translate: -50% 0;
-}
-
-/* 퀴즈: HUD·질문·보기는 좁은 띠로, 남은 공간은 실제 arena로 쓴다. */
-.quiz--character {
-  display: flex;
-  flex-direction: column;
-  min-height: 100svh;
-}
-
-.quiz--character .quiz-hud {
-  width: min(100%, 1200px);
-  margin: 0 auto var(--space-3);
-  /* 오른쪽 위의 전역 설정 HUD와 나가기 버튼이 겹치지 않게 한 슬롯을 비운다. */
-  padding: var(--space-2) 64px var(--space-2) var(--space-3);
-}
-
-.quiz--character .question {
-  width: min(100%, 760px);
-  margin: 0 auto var(--space-3);
-  padding: var(--space-4);
-  text-align: center;
-}
-
-.quiz--character .choices {
-  width: min(100%, 780px);
-  margin: 0 auto var(--space-3);
-}
-
-.quiz--character .choice {
-  min-height: 56px;
-  padding: var(--space-2) var(--space-3);
-}
-
-.quiz--character .arena {
-  display: grid;
-  align-content: end;
-  width: min(88vw, 560px);
-  min-height: 184px;
-  margin: auto auto 0;
-  padding-top: var(--space-3);
-}
-
-.quiz--character .arena__grid {
-  padding: var(--space-2);
-}
-
-/* 피드백은 arena 뒤의 문서 흐름에서 이어진다. 결과 바닥을 고정 offset으로 움직이면
-   긴 질문에는 보기를, 긴 해설에는 패널을 덮으므로 어떤 viewport에서도 옮기지 않는다. */
-body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
-  translate: none;
-}
-
-/* 결과 패널이 열리면 arena를 화면 바닥에 붙여 두던 빈 높이를 거둔다. 그대로 두면 화면이
-   늘 viewport보다 길어 패널을 보려면 질문까지 화면 위로 밀어야 했다. arena가 보기 바로
-   뒤로 올라오는 것은 quiz.ts의 capture/restoreCharacterAnchor가 캐릭터와 함께 따라간다. */
-body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
-  min-height: 0;
-}
-
-.quiz--character .arena-tile {
-  height: clamp(64px, 10vh, 96px);
-}
-
-.quiz--character .arena__hint {
-  margin-bottom: 0;
-}
-
-/* 결과 첫 화면은 점수·세 통계·다음 행동만 띄우고, 상세 기록은 아래로 스크롤한다. */
-[data-screen='result'] > :not(.walker):not(.sr-only),
-[data-screen='quiz-review'] > :not(.walker):not(.sr-only),
-[data-screen='online-result'] > :not(.walker):not(.sr-only),
-[data-screen='ranking'] > :not(.walker):not(.sr-only),
-[data-screen='characters'] > :not(.walker):not(.sr-only),
-[data-screen='waiting'] > :not(.walker):not(.sr-only) {
-  width: min(100%, 760px);
-  margin-right: auto;
-  margin-left: auto;
-}
-
-/* 직접 자식인 대기실 행동은 inline-flex 기본값이면 auto margin이 남은 폭을 나누지
-   못한다. 읽기 열과 같은 폭의 block flex로 만들어 모바일·데스크톱 모두 가운데 둔다. */
-[data-screen='waiting'] > .button {
-  display: flex;
-}
-
-[data-screen='online'] > :not(.walker) {
-  width: min(100%, 880px);
-  margin-right: auto;
-  margin-left: auto;
-}
-
-[data-screen='result'] .result-header {
-  margin-bottom: var(--space-3);
-  padding: var(--space-4);
-}
-
-[data-screen='result'] .result-score {
-  margin: var(--space-2) 0 0;
-}
-
-[data-screen='result'] .result-stats {
-  margin-bottom: var(--space-3);
-}
-
-[data-screen='result'] .result-actions {
-  margin-bottom: var(--space-6);
-}
-
-.ranking-header,
-[data-screen='characters'] .quiz-header,
-[data-screen='waiting'] > .quiz-header,
-.online-hero__header {
-  min-height: 52px;
-  padding: var(--space-2) 64px var(--space-2) var(--space-3);
-}
-
-.ranking-scope {
-  padding-block: var(--space-2);
-  padding-inline-start: var(--space-3);
-  padding-inline-end: calc(var(--screen-walker-width) + var(--space-5));
-}
-
-.screen-lead {
-  padding: var(--space-2) var(--space-3);
-}
-
-.character-stage {
-  min-height: 64svh;
-  padding: var(--space-4);
-}
-
-.character-card {
-  min-height: 112px;
-}
-
-.online-hero {
-  padding: 0;
-}
-
-.online-actions {
-  padding: var(--space-1);
-}
-
-.online-block {
-  padding: var(--space-4);
-}
-
-[data-screen='waiting'] .lounge {
-  min-height: 58svh;
-}
-
-/* 좁은 휴대폰 세로 화면에서는 방이 화면 높이의 58%(390×844에서 약 490px)를 먹어 채팅이 한참 아래로 밀렸다 (U39).
-   벽의 액자와 바닥 가구가 담기는 기본 높이(360px)까지만 늘린다. 액자가 여러 줄이면 방은 그대로 아래로 자란다 */
-@media (max-width: 480px) {
-  [data-screen='waiting'] .lounge {
-    min-height: min(58svh, 360px);
-  }
-}
-
-/* 긴 내용이 없는 첫 화면에서는 world가 최소 70%가량 드러난다. */
-@media (min-width: 600px) {
-  .home-header {
-    top: max(var(--space-12), env(safe-area-inset-top));
-    width: min(42vw, 520px);
-    min-height: 0;
-    padding: 0;
-  }
-
-  .home-menu .menu-card {
-    width: 72px;
-    min-height: 72px;
-  }
-
-  .quiz--character .choices {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .quiz--character .arena {
-    min-height: 272px;
-  }
-
-  .quiz--character .arena-tile {
-    height: 104px;
-  }
-}
-
-/* 중간 폭은 기본적으로 기록 pill까지 한 줄에 우겨 넣지 않는다. 짧은 가로 화면은
-   조작부 공간을 지키기 위해 두 열을 유지하고, 보조 기록만 아래 규칙에서 접는다. */
-@media (max-width: 560px) {
-  .home-primary-actions {
-    grid-template-columns: minmax(0, 280px);
-    justify-content: center;
-  }
-}
-
-@media (max-width: 560px) and (max-height: 480px) {
-  .home-primary-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    justify-content: stretch;
-  }
-
-  .home-primary-actions .challenge-card__meta {
-    display: none;
-  }
-}
-
-/* 다섯 칸 dock 의 분야 이름은 폭 420px 을 넘으면 14px 다(U53, 디자인 층). 「예술과문화」는 14px 에서
-   70px(맑은 고딕)라 폭 467px 까지의 칸 안쪽(421px 에서 61px 남짓)을 넘친다. 그래서 폭 480px 까지는 짧은
-   시각 라벨을 보인다 — 버튼의 낭독 이름은 언제나 전체 이름이다 (home.ts 의 COMPACT_CATEGORY_NAMES).
-   폭마다의 셈은 tests/home-interface.test.mjs 가 한다 */
-@media (max-width: 480px) {
-  .category-card__name--full {
-    display: none;
-  }
-
-  .category-card__name--compact {
-    display: block;
-  }
-}
-
-@media (max-width: 420px) {
-  .home-header {
-    top: calc(max(var(--space-3), env(safe-area-inset-top)) + 72px);
-    width: 44vw;
-    min-height: 0;
-    padding: 0;
-  }
-
-  .home-title {
-    font-size: var(--text-xl);
-  }
-
-  .home-subtitle {
-    display: none;
-  }
-
-  .home-player {
-    width: 140px;
-  }
-
-  .home-primary-actions {
-    grid-template-columns: minmax(0, 280px);
-    justify-content: center;
-  }
-
-  .home-primary-actions .challenge-card {
-    gap: var(--space-2);
-    padding-inline: var(--space-2);
-  }
-
-  .home-primary-actions .challenge-card__icon {
-    width: 36px;
-    height: 36px;
-  }
-
-  .menu-card--wide .menu-card__name,
-  .menu-card--wide .menu-card__desc {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .home-menu .menu-card {
-    width: 60px;
-    min-height: 60px;
-  }
-
-  .quiz--character {
-    padding-top: max(var(--space-3), env(safe-area-inset-top));
-  }
-
-  .quiz--character .quiz-hud {
-    margin-bottom: var(--space-2);
-  }
-
-  .quiz--character .question {
-    margin-bottom: var(--space-2);
-    padding: var(--space-3);
-  }
-
-  .quiz--character .choices {
-    gap: var(--space-1);
-    margin-bottom: var(--space-2);
-  }
-
-  .quiz--character .choice {
-    min-height: 52px;
-  }
-
-  .quiz--character .arena {
-    width: min(88vw, 360px);
-    min-height: 152px;
-    padding-top: var(--space-2);
-  }
-
-  .quiz--character .arena__hint {
-    display: none;
-  }
-
-  [data-screen='result'] .result-header {
-    padding-top: var(--space-8);
-  }
-}
-
-@media (max-width: 360px) {
-  .quiz--character .quiz-hud {
-    padding-right: 52px;
-  }
-}
-
-@media (pointer: coarse) {
-  /* 로컬 quiz의 arena는 조작부가 켜진 동안 마지막 콘텐츠다. 공용 크기 토큰과
-     viewport 배치를 그대로 써서 화면마다 숫자를 복사하지 않는다. */
-  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: calc(var(--walk-stick-size) + var(--space-4) + var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-@media (max-height: 700px) {
-  .home-player {
-    width: 120px;
-  }
-
-  /* 짧은 화면은 슬롯 폭을 줄이므로 연필을 거두고 닉네임 자체를 우선한다. 버튼의
-     스크린리더 이름에는 「닉네임·현재 값·바꾸기」가 그대로 남는다. */
-  .menu-card--wide {
-    grid-template-columns: 36px minmax(0, 1fr);
-  }
-
-  .menu-card--wide .menu-card__edit {
-    display: none;
-  }
-
-  .home-menu .menu-card {
-    width: 56px;
-    min-height: 56px;
-  }
-
-  #open-characters {
-    top: calc(max(var(--space-3), env(safe-area-inset-top)) + 56px);
-  }
-
-  .home-quests {
-    padding: var(--space-1);
-  }
-
-  .category-card {
-    min-height: 52px;
-  }
-
-  .challenge-card {
-    min-height: 48px;
-  }
-
-  /* 오류·문항 부족 알림은 direct-entry 줄 위에 두고, 그 드문 상태에서는 캐릭터를
-     거둬 메시지와 겹치지 않게 한다. */
-  .home-note {
-    top: auto;
-    bottom: calc(var(--home-dock-h, 148px) + 84px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .quiz--character .arena {
-    min-height: 128px;
-  }
-}
-
-/* 200% 확대와 짧은 휴대폰은 높이가 부족하다. 브랜드는 접고 두 보조 입구를 dock 바로 위
-   양쪽에 배치한다. 걷기와 직접 누르기는 별개 입력 경로이므로 스틱은 거두지 않는다. */
-@media (max-height: 700px) {
-  .home-header {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  #open-characters,
-  #open-ranking {
-    top: auto;
-    bottom: calc(var(--home-dock-h, 148px) + 20px + env(safe-area-inset-bottom, 0px));
-    width: 56px;
-    min-height: 56px;
-  }
-
-  #open-characters {
-    left: max(var(--space-3), env(safe-area-inset-left));
-  }
-
-  #open-ranking {
-    right: max(var(--space-3), env(safe-area-inset-right));
-    left: auto;
-    translate: none;
-  }
-}
-
-/* 로드 오류 문구는 행동보다 우선한다. 캐릭터를 잠시 거두면 높이와 무관하게 겹치지 않는다. */
-body:has(.home-note:not([hidden])) #home-character {
-  display: none;
-}
-
-/* 짧은 touch 퀴즈도 공용 compact 조작부를 유지한다. 이미 보이는 조작 설명만 접어
-   문제·보기·arena에 쓸 세로 공간을 돌려준다. */
-@media (pointer: coarse) and (max-height: 772px) {
-  [data-screen='quiz']:not([hidden]) .arena__hint {
-    display: none;
-  }
-}
-
-/* 짧은 가로 touch 화면의 퀴즈(U15): 왼쪽 열에 HUD·질문·보기, 오른쪽 열에 arena(2×2 바닥)를 둔다.
-   세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래로 밀렸고, 고정 스틱·선택이
-   3·4번 보기를 덮었다. 로컬·온라인 퀴즈가 같은 .quiz--character 배치를 쓴다.
-   - 양옆 여백은 공용 이동 UI 크기 토큰에서 계산한다(조작부의 바깥 거리 + 크기 + 8px). 조작부를 화면
-     이름으로 바꾸거나 숨기지 않고 내용이 그 아래로 들어가지 않게 자리를 비우므로, 어느 스크롤 위치에서도
-     스틱·선택이 보기나 바닥 칸을 덮지 않고 아래를 스틱 높이만큼 비울 필요도 없다. 오른쪽 여백은 위 끝의
-     설정 버튼(44px)도 품어 HUD가 그 자리를 비우지 않는다
-   - arena는 오른쪽 열 아래쪽(보기 둘째 줄과 같은 바닥선)에 붙는다. 넷째 줄(1fr)은 arena가 왼쪽 열보다
-     길 때만 늘어나 HUD·질문·보기 사이를 벌리지 않는다. 시작 자리는 그대로 바닥 십자 한가운데다
-   - 칸이 좁아지므로 보기는 좁은 화면의 2×2처럼 안쪽 여백을 줄이고 판정 알약은 모양만 보인다(글은
-     낭독되고 결과 패널에 있다). 높이는 44px 아래로 줄이지 않는다. 바닥 칸은 열 폭만큼의 정사각이다
-   - 답한 뒤 결과 패널은 여전히 arena 뒤 문서 흐름이다(<main> 밖). 질문까지 한 화면에 담을 수 없어
-     feedbackScrollTarget이 패널 끝에 맞추므로, 판정·정답 줄·다음 문제가 패널 안 스크롤 없이 한 화면에
-     들도록 패널 높이 한도만 화면 높이에 맞춘다(60vh는 360px 화면에서 216px이라 「다음 문제」가 잘렸다) */
-@media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
-  .quiz--character {
-    display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr);
-    grid-template-rows: auto auto auto minmax(0, 1fr);
-    column-gap: var(--space-3);
-    align-content: start;
-    padding-top: max(var(--space-3), env(safe-area-inset-top));
-    padding-right: calc(max(var(--space-3), env(safe-area-inset-right)) + var(--walk-confirm-size) + var(--space-2));
-    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-    padding-left: calc(max(var(--space-3), env(safe-area-inset-left)) + var(--walk-stick-size) + var(--space-2));
-  }
-
-  /* 조작부는 양옆 여백에 있으므로 로컬 퀴즈도 아래를 스틱 높이만큼 비우지 않는다 */
-  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-  }
-
-  .quiz--character > * {
-    grid-column: 1;
-  }
-
-  .quiz--character > .arena {
-    grid-column: 2;
-    grid-row: 1 / 5;
-    width: 100%;
-    min-height: 0;
-    margin: auto 0 0;
-    padding-top: 0;
-  }
-
-  /* 온라인의 결과 공개·상태 줄·채팅은 두 열 아래에 폭을 다 쓴다 (여전히 양옆 여백 안이다) */
-  .quiz--character > .online-reveal,
-  .quiz--character > .online-match-status,
-  .quiz--character > .online-quiz-chat {
-    grid-column: 1 / -1;
-  }
-
-  /* 공개 카드도 양옆 여백 안이라 떠 있는 조작부와 겹치지 않는다. 스틱 높이만큼 더 올리면 보기와
-     바닥만 화면 위로 더 밀려나므로, 카드 끝을 화면 아래 여백 안에만 들인다 */
-  [data-screen='online-quiz'] .online-reveal {
-    scroll-margin-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* 설정 버튼이 오른쪽 여백에 있어 HUD 오른쪽 64px 슬롯을 비우지 않는다. 열이 좁아 진행률은 아랫줄이다 */
-  .quiz--character .quiz-hud {
-    margin-bottom: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .quiz--character .quiz-hud .quiz-meta {
-    grid-template-columns: minmax(0, auto) minmax(auto, 1fr);
-  }
-
-  .quiz--character .quiz-hud .progress {
-    grid-column: 1 / -1;
-  }
-
-  .quiz--character .question {
-    margin-bottom: var(--space-2);
-    padding: var(--space-3);
-  }
-
-  .quiz--character .choices {
-    margin-bottom: 0;
-  }
-
-  .quiz--character .choice {
-    gap: var(--space-2);
-    min-height: var(--tap);
-    padding: var(--space-2);
-  }
-
-  .quiz--character .choice__text {
-    overflow-wrap: anywhere;
-  }
-
-  .quiz--character .choice__mark {
-    width: calc(var(--icon-sm) + 2 * var(--space-1));
-    padding: 0 var(--space-1);
-    overflow: hidden;
-  }
-
-  .quiz--character .arena-tile {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1;
-    min-height: 64px;
-    max-height: 104px;
-  }
-
-  .feedback {
-    max-height: calc(100svh - var(--space-6));
-  }
-}
-
-/* 짧은 가로 홈(U07): 분야 다섯 칸 | 온라인·전체 도전을 dock 한 줄에 둔다. 두 줄로 쌓으면 740×360에서
-   dock이 171px(화면의 절반)이었고, 그 위에 얹히는 두 보조 입구와 조작부가 위 가운데까지 밀려 올라왔다.
-   한 줄이면 dock이 70px 안팎이라 월드가 돌아온다. 접어 두었던 브랜드는 위 가운데(닉네임과 설정 사이)에
-   작게 되살리고 부제는 접은 채 둔다(글자 크기·dock 안쪽 여백은 디자인 층 30절 끝).
-   - 온라인·전체 도전은 한 묶음의 같은 두 칸(1fr)이라 크기가 같다. 전체 최고점 pill은 접고 접근 가능한
-     이름에 남긴다. 온라인 보조 줄 «친구와 함께 · 2명부터»는 한 줄로 남는다
-   - 분야 칸이 좁아지므로 짧은 이름(상식·예술)을 보인다. 버튼 이름은 전체 이름 그대로다
-   - 두 보조 입구는 여전히 dock 바로 위 양쪽이고(--home-dock-h), 캐릭터는 그 사이 브랜드 아래에서
-     시작한다(walker-geometry.ts의 shortHomeStartPoint) */
-@media (max-height: 420px) and (min-width: 640px) {
-  .home-quests {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
-    column-gap: var(--space-2);
-  }
-
-  .home-room-note {
-    grid-column: 1 / -1;
-  }
-
-  .home-primary-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: auto;
-    margin: 0;
-  }
-
-  .home-primary-actions .challenge-card {
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
-  }
-
-  .home-primary-actions .challenge-card__icon {
-    width: 28px;
-    height: 28px;
-  }
-
-  .home-primary-actions .challenge-card__meta {
-    display: none;
-  }
-
-  .category-card__name--full {
-    display: none;
-  }
-
-  .category-card__name--compact {
-    display: block;
-  }
-
-  .home-header {
-    top: max(var(--space-4), env(safe-area-inset-top));
-    width: min(42vw, 520px);
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    white-space: normal;
-  }
-
-  .home-subtitle {
-    display: none;
-  }
-}
-
-/* 높이 340px 이하의 짧은 가로 퀴즈(568×320)는 두 열 배치가 그대로 들어가는데 아래 여백 12px 때문에 문서가
-   화면보다 4px 길어 스크롤이 생겼다. 아래 여백만 한 단계 줄인다 — 위 여백은 설정 버튼과 줄을 맞춘 채 둔다 */
-@media (pointer: coarse) and (max-height: 340px) and (orientation: landscape) {
-  .quiz--character,
-  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
-    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-/* 폭 640px 미만의 아주 짧은 가로 홈(568×320)은 dock 이 두 줄(분야 | 온라인·전체 도전)인데, 방 복귀 줄(U35)이
-   그 위에 한 줄을 더 얹으면 dock 이 206px 이 되어 월드가 44px 만 남았다. 그러면 두 보조 입구가 닉네임·설정을,
-   스틱·선택 원이 복귀 줄을 덮었다. 그래서 그동안만 복귀 줄을 분야 줄의 왼쪽 칸으로 옮겨 dock 높이를 복귀
-   줄이 없을 때와 같게 둔다. DOM 순서(복귀 줄 → 분야 → 주요 행동)와 읽는 순서는 그대로다.
-   방 이름은 두 줄까지 보이고 넘치면 말줄임한다. 버튼의 낭독 이름(글 전체)은 잘리지 않는다 */
-@media (max-height: 360px) and (min-width: 480px) and (max-width: 639px) {
-  .home-quests:has(.home-room-note:not([hidden])) {
-    grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
-    column-gap: var(--space-1);
-  }
-
-  .home-quests:has(.home-room-note:not([hidden])) .home-primary-actions {
-    grid-column: 1 / -1;
-  }
-
-  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--full {
-    display: none;
-  }
-
-  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--compact {
-    display: block;
-  }
-
-  .home-room-note {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-content: center;
-    column-gap: var(--space-1);
-    padding: var(--space-1) var(--space-2);
-  }
-
-  .home-room-note::before {
-    grid-row: 1 / span 2;
-    align-self: center;
-  }
-
-  .home-room-note__text {
-    display: -webkit-box;
-    overflow: hidden;
-    overflow-wrap: normal;
-    word-break: keep-all;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .home-room-note__action {
-    grid-column: 2;
-  }
-}
-
-/* 처음 세 판은 규칙 한 줄을 짧은 touch·좁은 화면에서도 남긴다 (U01, quiz.ts 가 data-pinned 를 단다).
-   위 두 접기(420px 이하·짧은 touch)보다 구체적이라 이긴다. 스틱이 이미 말하는 조작 줄은 그대로 접고,
-   세 판이 지나면 data-pinned 가 false 라 예전처럼 줄째 접힌다 */
-[data-screen='quiz']:not([hidden]) .arena__hint[data-pinned='true'] {
-  display: block;
-}
-
-@media (max-width: 420px) {
-  .arena__hint[data-pinned='true'] .arena__hint-key,
-  .arena__hint[data-pinned='true'] .arena__hint-touch {
-    display: none;
-  }
-}
-
-@media (pointer: coarse) and (max-height: 772px) {
-  .arena__hint[data-pinned='true'] .arena__hint-key,
-  .arena__hint[data-pinned='true'] .arena__hint-touch {
-    display: none;
-  }
-}
-
-/* 짧은 가로의 스크롤 화면에서는 고정 설정 버튼이 아래로 올라온 새로고침·필터 같은
-   동작을 덮지 않게 문서와 함께 흘려보낸다. 홈은 더 구체적인 home app-bar 규칙이
-   fixed를 유지해, 스크롤 없는 월드의 edge HUD가 그대로 남는다. */
-@media (max-height: 480px) {
-  .app-bar {
-    position: absolute;
-  }
 }

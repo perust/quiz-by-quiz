@@ -49,11 +49,13 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(homeSource, /--home-dock-h/);
   assert.match(homeSource, /window\.innerHeight <= 700/);
 
-  const worldFirst = between(css, '/* ── 30. 월드 우선 화면 구성', '@media (max-height: 700px)');
+  // 홈의 월드 배치는 홈 무대 절 하나에 있다. 예전에는 맨 끝 30절(월드 우선 화면 구성)이 이 절의 같은
+  // 선택자를 뒤에서 다시 썼는데 U49 에서 이 절로 녹였다 — 아래 «높이 700px 이하»는 이긴 값으로 본다
+  const worldFirst = between(css, '/* ── 홈 무대 기본 구조', '/* ── 화면 머리');
   const narrowHome = between(
     css,
     '@media (max-width: 420px) {\n  .home-header',
-    '@media (max-width: 360px)',
+    '@media (max-height: 700px)',
   );
   assert.match(worldFirst, /\.home-menu \{[\s\S]*?display: contents/);
   assert.match(worldFirst, /#open-ranking \{[\s\S]*?right: max\(/);
@@ -67,15 +69,30 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(worldFirst, /\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\) 16px/);
   assert.match(worldFirst, /\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: block/);
   assert.match(narrowHome, /\.home-primary-actions \{[\s\S]*?grid-template-columns: minmax\(0, 280px\)/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-player \{[\s\S]*?width: 120px[\s\S]*?\.menu-card--wide \{[\s\S]*?grid-template-columns: 36px minmax\(0, 1fr\)[\s\S]*?\.menu-card--wide \.menu-card__edit \{[\s\S]*?display: none/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?#open-characters,[\s\S]*?bottom: calc\(var\(--home-dock-h/);
+  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구가 dock 바로 위로 내려오고 브랜드는 접힌다.
+  // 같은 사실을 파일 안의 글 순서가 아니라 그 환경에서 이긴 값으로 본다 (규칙이 제 절의 여러 블록에 나뉘어 있다)
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const short = { ...MOBILE, width: 390, height: 700 };
+  const homeChain = node("div.home-stage#home-stage", node("section.screen[data-screen='home']"));
+  const player = node('div.home-player', homeChain);
+  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
+  assert.equal(valueOf(rules, player, 'width', short), '120px');
+  assert.equal(valueOf(rules, nickname, 'grid-template-columns', short), '36px minmax(0, 1fr)');
+  assert.equal(valueOf(rules, node('span.menu-card__edit', nickname), 'display', short), 'none');
+  const shortcutsNav = node('nav.home-menu', homeChain);
+  for (const id of ['open-characters', 'open-ranking']) {
+    const entry = node(`button.menu-card#${id}`, shortcutsNav);
+    assert.equal(valueOf(rules, entry, 'top', short), 'auto', `${id} top`);
+    assert.match(valueOf(rules, entry, 'bottom', short), /^calc\(var\(--home-dock-h/, `${id} bottom`);
+  }
+  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'position', short), 'absolute');
+  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'width', short), '1px');
   assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
   assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
   assert.match(css, /\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--home-dock-h/);
   // 두 줄 dock의 짧은 가로 홈은 가운데 anchor다 — 높이 421–480px도 두 줄이다 (layout-01)
   assert.match(css, /@media \(pointer: coarse\) and \(max-height: 480px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
   assert.match(homeSource, /new MutationObserver\(syncDockHeight\)/);
-  assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-header \{[\s\S]*?position: absolute;[\s\S]*?width: 1px/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
   assert.match(css, /\.home-note \{[\s\S]*?bottom: calc\(var\(--home-dock-h/);
   assert.match(css, /body:has\(\.home-note:not\(\[hidden\]\)\) #home-character \{\s*display: none/);
