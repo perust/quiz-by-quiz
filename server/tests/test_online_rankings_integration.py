@@ -275,18 +275,27 @@ async def _exercise_multi_record() -> None:
             renamed_id,
         ]
 
+        finished = await _finished_at(setup.id)
+        # 다시 쓰는 DB 에는 앞선 실행의 «에이스»가 같은 주 판에 남는다(런타임 역할은
+        # 기록을 지울 수 없다). 그래서 상위 10이 아니라 모든 줄에서 이 판이 닫힌 시각의 줄만 본다
         week = await repository.list_rankings(
             board="all",
             period="week",
             actor_id=tied_id,
             owner_key=_owner_key(tied_id),
-            at=await _finished_at(setup.id),
+            at=finished,
+            limit=_EVERY_ROW,
         )
-        mine = [entry for entry in week.entries if entry.is_mine]
+        this_match = [
+            entry
+            for entry in week.entries
+            if abs(datetime.fromisoformat(entry.recorded_at) - finished) < timedelta(seconds=1)
+        ]
+        mine = [entry for entry in this_match if entry.is_mine]
         assert [(entry.nickname, entry.score) for entry in mine] == [("같은이름1", 30)]
         ours = [
             entry.nickname
-            for entry in week.entries
+            for entry in this_match
             if entry.nickname in {"에이스", "같은이름", "같은이름1"}
         ]
         assert ours[:3] == ["에이스", "같은이름", "같은이름1"]
@@ -574,8 +583,8 @@ async def _exercise_reused_player_id() -> None:
         )
         assert _mine_by_name(original.entries, owner_name) == [True]
 
-        # 방을 떠나고 2시간이 지나 players 줄이 지워졌다(정리가 지우는 것과 같다)
-        await _cleanup([victim], room_code)
+        # 방을 떠나고 2시간이 지나 players 줄이 지워졌다(정리가 지우는 것과 같다). 기록은 남는다
+        await _cleanup([victim], room_code, keep_rankings=True)
         room_code = None
         # 다른 사람이 그 id를 제 토큰으로 등록한다 — 줄이 없으니 받아 준다
         thief_hash = _token_hash(victim, browser="thief-browser")
@@ -954,7 +963,9 @@ def _test_catalog() -> QuestionCatalog:
         return QuestionCatalog.from_directory(root)
 
 
-async def _cleanup(player_ids: list[UUID], room_code: str | None) -> None:
+async def _cleanup(
+    player_ids: list[UUID], room_code: str | None, *, keep_rankings: bool = False
+) -> None:
     assert DATABASE_URL is not None
     async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
         if room_code:
@@ -963,3 +974,12 @@ async def _cleanup(player_ids: list[UUID], room_code: str | None) -> None:
             "DELETE FROM quiz_online.players WHERE id = ANY(%s)",
             (player_ids,),
         )
+    # 랭킹 기록은 런타임 역할이 지울 수 없다. test 전용 migrator DB 가 주어졌으면 이 실행의 줄만
+    # 지워 다시 쓰는 DB 에 쌓이지 않게 한다 (새로 만든 무작위 신분이라 다른 줄은 건드리지 않는다).
+    # players 줄이 지워진 «뒤»의 기록을 보는 test 는 keep_rankings 로 남긴다
+    if TEST_MIGRATOR_URL and player_ids and not keep_rankings:
+        async with await AsyncConnection.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+            await connection.execute(
+                "DELETE FROM quiz_online.online_rankings WHERE player_id = ANY(%s)",
+                (player_ids,),
+            )
