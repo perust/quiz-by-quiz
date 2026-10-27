@@ -3,7 +3,8 @@
 // 홈과 내 캐릭터 화면은 «밟으면 미리보기», «처음 설 자리» 같은 저마다의 사정이 있어
 // 직접 워커를 만든다. 결과·랭킹처럼 **걸어가서 버튼을 누르는 것이 전부**인 화면은
 // 이걸 쓴다 — 워커의 자유 방식이 캐릭터와 겹친 버튼을 찾아 진짜로 누르므로,
-// 화면 쪽에서 «어떤 버튼이 어디 있는지» 적어 둘 것이 없다.
+// 화면 쪽에서 «어떤 버튼이 어디 있는지» 적어 둘 것이 없다. 무엇을 밟았는지 보는 자리(선택점)는
+// 직접 워커를 만드는 홈·내 캐릭터와 같다 — 몸통 가운데 (U10, `walker-geometry.ts`).
 
 import { createWalker, type Point } from './walker.js';
 import { paintCharacter } from './sprite.js';
@@ -56,12 +57,11 @@ export function pointBelowRightEdge(
 export function createScreenWalker({
   screen, character, startAt, startPoint, onMove,
 }: ScreenWalkerConfig): ScreenWalker {
+  // 선택점은 넘기지 않는다 — 워커의 기본(몸통 가운데)이 홈·내 캐릭터와 같은 규칙이다 (U10).
+  // 아래 시작 자리와 대기실 좌석 자리(`waitingRoomSeatPoint`)가 그 선택점에 맞춰져 있다
   const walker = createWalker({
     character,
     onMove,
-    // `.walker`의 논리 좌표는 발끝이지만 일반 화면에서는 눈에 보이는 몸통과 겹친
-    // 버튼이 선택되어야 한다. arena의 발밑 칸 선택은 createWalker 기본값으로 남긴다.
-    hitAnchor: 'center',
     // 둘 다 없으면 시작점 함수를 아예 넘기지 않아 워커가 화면 한가운데에 세운다.
     // 함수를 넘기면 워커는 null 을 «아직 잴 수 없다»로 읽고 기다리므로, 시작점을 정하지
     // 않았던 결과 화면에서는 캐릭터가 좌상단에 박힌 채 세우려는 프레임만 끝없이 돌았다.

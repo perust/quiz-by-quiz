@@ -1462,3 +1462,207 @@ test('기다리는 사이 무효화가 오면 재시도 대신 후속 조회 하
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(harness.reads(), 3, '구독을 끝냈으면 다시 보내지 않는다');
 });
+
+// ── 공유 무대 좌표 (U31) ─────────────────────────────────────────────
+
+test('U31: 무대 좌표는 ws-ticket이 받는다고 알린 소켓에만 싣고, #106의 소켓에는 예전 모양 그대로 보낸다', async () => {
+  FakeWebSocket.instances.length = 0;
+  let ticketRequests = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) {
+      ticketRequests += 1;
+      // 1: 무대를 받는 새 API, 2: #106(viewport·좌석만), 3: 무대만 알리고 viewport를 모르는 이상한 API
+      if (ticketRequests === 1) {
+        return json({
+          ticket: 'stage-backend-ticket',
+          movementViewport: 'sender-css-pixels-v1',
+          movementSeat: 'waiting-room-seat-v1',
+          movementStage: 'stage-unit-v1',
+        }, 201);
+      }
+      if (ticketRequests === 2) {
+        return json({
+          ticket: 'pr106-backend-ticket',
+          movementViewport: 'sender-css-pixels-v1',
+          movementSeat: 'waiting-room-seat-v1',
+        }, 201);
+      }
+      return json({ ticket: 'stage-only-ticket', movementStage: 'stage-unit-v1' }, 201);
+    }
+    if (url.endsWith('/v1/rooms/ABC234')) return json(room());
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const staged = {
+    code: 'ABC234', x: 0.25, y: 0.75, moving: false,
+    viewportWidth: 390, viewportHeight: 844,
+    seatId: 'sofa-left', stage: 'lounge', stageX: 0.5, stageY: 0.8,
+  };
+  const unsubscribe = store.subscribe('ABC234', () => undefined);
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'first websocket was not created');
+    const first = FakeWebSocket.instances[0];
+    first.emit('open');
+    assert.equal(store.sendMovement(staged), true);
+    assert.deepEqual(JSON.parse(first.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
+      viewportWidth: 390, viewportHeight: 844,
+      seatId: 'sofa-left', stage: 'lounge', stageX: 0.5, stageY: 0.8,
+    });
+    // #106의 strict parser는 256자를 넘거나 모르는 키가 섞이면 버린다. 가장 긴 모양도 256자 안이다
+    const longest = JSON.stringify({
+      type: 'movement', x: 0.1234, y: 0.1234, moving: false,
+      viewportWidth: 8192, viewportHeight: 8192,
+      seatId: 'chair-right', stage: 'lounge', stageX: 0.1234, stageY: 0.1234,
+    });
+    assert.ok(longest.length <= 256, `${longest.length}`);
+
+    // 셋이 함께가 아니거나 범위 밖이면 보내지 않는다
+    assert.equal(store.sendMovement({ ...staged, stageY: undefined }), false);
+    assert.equal(store.sendMovement({ ...staged, stageX: 1.2 }), false);
+    assert.equal(store.sendMovement({ ...staged, stage: 'table' }), false);
+    assert.equal(first.sent.length, 1);
+
+    first.emit('close');
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    await waitFor(() => FakeWebSocket.instances.length === 2, 'reconnected websocket was not created');
+    const second = FakeWebSocket.instances[1];
+    second.emit('open');
+    // 같은 마지막 이동을 #106의 API에는 무대 없이 다시 보낸다 — 오늘과 한 글자도 같다
+    assert.deepEqual(JSON.parse(second.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
+      viewportWidth: 390, viewportHeight: 844,
+      seatId: 'sofa-left',
+    });
+
+    second.emit('close');
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    await waitFor(() => FakeWebSocket.instances.length === 3, 'third websocket was not created');
+    const third = FakeWebSocket.instances[2];
+    third.emit('open');
+    assert.deepEqual(JSON.parse(third.sent[0]), {
+      type: 'movement', x: 0.25, y: 0.75, moving: false,
+    });
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('U31: 받은 이동의 무대 좌표는 셋이 맞을 때만 싣고, 어긋나면 무대만 버리고 이동은 넘긴다', async () => {
+  FakeWebSocket.instances.length = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) return json({ ticket: 'stage-event-ticket' }, 201);
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const events = [];
+  const unsubscribe = store.subscribe('ABC234', (event) => events.push(event));
+  const base = {
+    type: 'movement',
+    playerId: '22345678-1234-4678-9234-567812345678',
+    x: 0.2, y: 0.8, moving: false,
+    viewportWidth: 390, viewportHeight: 844,
+  };
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    const socket = FakeWebSocket.instances[0];
+    socket.emit('message', { data: JSON.stringify({
+      ...base, stage: 'arena', stageX: 0.25, stageY: 0.75, sequence: 1,
+    }) });
+    socket.emit('message', { data: JSON.stringify({
+      ...base, stage: 'arena', stageX: 2, stageY: 0.75, sequence: 2,
+    }) });
+    socket.emit('message', { data: JSON.stringify({
+      ...base, stage: 'table', stageX: 0.5, stageY: 0.5, sequence: 3,
+    }) });
+
+    assert.deepEqual(events.map((event) => [event.sequence, event.stage, event.stageX, event.stageY]), [
+      [1, 'arena', 0.25, 0.75],
+      [2, undefined, undefined, undefined],
+      [3, undefined, undefined, undefined],
+    ]);
+    assert.equal(events.every((event) => event.x === 0.2 && event.viewportWidth === 390), true);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('U31: 무대만 움직인 이동은 이 소켓에 실을 줄이 지난번과 같으면 보내지 않는다 — heartbeat는 그대로 보낸다', async () => {
+  FakeWebSocket.instances.length = 0;
+  let stageTicket = false;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
+    if (url.endsWith('/ws-ticket')) {
+      return json({
+        ticket: 'refresh-only-ticket',
+        movementViewport: 'sender-css-pixels-v1',
+        movementSeat: 'waiting-room-seat-v1',
+        ...(stageTicket ? { movementStage: 'stage-unit-v1' } : {}),
+      }, 201);
+    }
+    if (url.endsWith('/v1/rooms/ABC234')) return json(room());
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
+  const store = createNetworkRoomStore({
+    baseUrl: 'https://quiz-api.example.test',
+    storage: memoryStorage(),
+    fetchImpl,
+    newIdentity: () => identity,
+    webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols),
+  });
+  const at = (stageY, extra = {}) => ({
+    code: 'ABC234', x: 0.25, y: 0.75, moving: false,
+    viewportWidth: 390, viewportHeight: 844,
+    stage: 'arena', stageX: 0.5, stageY, ...extra,
+  });
+  const unsubscribe = store.subscribe('ABC234', () => undefined);
+  try {
+    // #106: 무대를 싣지 않는 소켓
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'websocket was not created');
+    const legacy = FakeWebSocket.instances[0];
+    legacy.emit('open');
+    assert.equal(store.sendMovement(at(0.5)), true);
+    assert.equal(store.sendMovement(at(0.6, { onlyIfChanged: true })), false, '스크롤만 했다 — 같은 줄이다');
+    assert.equal(store.sendMovement(at(0.7, { onlyIfChanged: true })), false);
+    assert.equal(legacy.sent.length, 1);
+    // heartbeat·방 snapshot의 다시 보내기는 같은 줄이어도 보낸다(새로 들어온 사람이 자리를 안다)
+    assert.equal(store.sendMovement(at(0.7)), true);
+    assert.equal(legacy.sent.length, 2);
+    assert.equal(JSON.parse(legacy.sent[1]).stage, undefined);
+
+    // 무대를 싣는 소켓에서는 무대가 바뀌면 줄이 달라 보낸다
+    stageTicket = true;
+    legacy.emit('close');
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    await waitFor(() => FakeWebSocket.instances.length === 2, 'reconnected websocket was not created');
+    const staged = FakeWebSocket.instances[1];
+    staged.emit('open');
+    assert.equal(JSON.parse(staged.sent[0]).stageY, 0.7);
+    assert.equal(store.sendMovement(at(0.7, { onlyIfChanged: true })), false, '다시 붙으며 보낸 줄과 같다');
+    assert.equal(store.sendMovement(at(0.8, { onlyIfChanged: true })), true);
+    assert.equal(JSON.parse(staged.sent.at(-1)).stageY, 0.8);
+    assert.equal('onlyIfChanged' in JSON.parse(staged.sent.at(-1)), false, '보내는 까닭은 소켓에 싣지 않는다');
+  } finally {
+    unsubscribe();
+  }
+});

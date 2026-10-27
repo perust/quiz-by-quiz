@@ -44,9 +44,11 @@
   `.walker--sad|seated|walking|idle|hop`). 이 목록은 `tests/design-system.test.mjs` 의 `DECOR` 하나뿐이다.
   예외 규칙의 클래스는 마크업이나 `src/` 가 실제로 써야 한다 — 홈이 월드 art로 바뀐 뒤에도 복셀 마을
   (`.voxel-*`·`.iso-cube*`, 약 300줄)이 이 예외 뒤에 남아 있어 지웠다(U49 1단계). 같은 테스트가 다시 막는다.
-- `voxel-theme.css` 는 1–28절이 컴포넌트마다의 기본 모양이고 맨 끝의 **30절(월드 우선 시각 언어)이 같은 선택자를
-  뒤에서 다시 쓴다.** 30절을 각 절로 녹이기(U49 3단계) 전까지는 한 컴포넌트를 고칠 때 제 절과 30절을 함께 보고,
-  상태가 30절에 덮이지 않는지 실제 화면 사슬(`tests/css-cascade.mjs`)로 확인한다.
+- 두 파일 모두 컴포넌트마다 제 절 하나가 기본 모양과 월드 위의 모양(어두운 HUD·유리 표면·짧은 가로 화면)을 함께
+  갖는다. 한때 맨 끝 30절(월드 우선 화면 구성·시각 언어)이 앞 절의 같은 선택자를 뒤에서 다시 써 상태를 덮었는데,
+  U49 에서 제 절로 녹였다(계산값은 새 문법을 모르는 엔진까지 `tools/css-snapshot.mjs` 로 그대로임을 확인했다). 옮기면 값이 달라지는 규칙만
+  각 파일의 «30. 맨 뒤에 남긴 규칙»에 이유와 함께 남았고, 그 절에는 새 규칙을 더하지 않는다. 상태가 덮이지 않는지는
+  실제 화면 사슬(`tests/css-cascade.mjs`)로, 규칙을 옮기거나 지운 정리는 `tools/css-snapshot.mjs` 로 확인한다.
 
 ## 3. 토큰
 
@@ -477,7 +479,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/walk-controls*.test.mjs`, `tests/arena-neutral-start.test.mjs`, `tests/touch-clearance.test.mjs`, `tests/home-interface.test.mjs` | 단일 이동 UI DOM·pointer lifecycle·포인터 소유권·명시적 배치 계약, 짧은 화면의 이동 전 중립, 화면 이름 기반 스타일·짧은 화면 숨김 금지, 공용 크기, 스틱 위 비움, dock·safe-area |
 | `tests/short-landscape-layout.test.mjs` | 짧은 가로 touch 퀴즈의 두 열 배치와 양옆 여백(조작부·설정 버튼 자리 = 공용 크기 + 8px), 44px 보기·정사각 칸·결과 패널 높이 한도, 온라인 공개·상태 줄·채팅의 전체 폭, 짧은 가로 홈의 한 줄 dock·되살린 브랜드·모서리 anchor, 높이 700px 이하 홈의 시작 자리(`shortHomeStartPoint`), 세로·마우스·태블릿에는 걸리지 않음 |
 | `tests/chat-touch-layout.test.mjs` | 두 화면 채팅의 최근 대화 → 안내 → 채팅칸 순서와 한 표면 이음(빈 로그는 틈 없음), 손가락만 쓰는 기기에서 접히는 키보드 안내(터치 노트북·펜 기기는 남음)와 낭독용 문장, 좁은 휴대폰 대기실 방의 높이 한도, 채팅칸을 스틱 위로 올리는 아래 비움, 채팅 표면의 `position`·`z-index` 없음 |
-| `tests/walker-keys.test.mjs`, `tests/walker-character-settle.test.mjs` | 워커가 받는 키와 브라우저에 남기는 키(빈자리 Space·Ctrl/Meta/Alt 단축키·길게 눌러 되풀이), 입력 중 조작부 숨김·대상 없음 흐림, 내 캐릭터 화면의 머물기·멈춤 적용 |
+| `tests/walker-keys.test.mjs`, `tests/walker-character-settle.test.mjs`, `tests/walker-pick-point.test.mjs` | 워커가 받는 키와 브라우저에 남기는 키(빈자리 Space·Ctrl/Meta/Alt 단축키·길게 눌러 되풀이), 입력 중 조작부 숨김·대상 없음 흐림, 내 캐릭터 화면의 머물기·멈춤 적용(걷기 전의 멈춤은 입히지 않음), 화면마다 같은 선택점(몸통 가운데, 퀴즈 무대만 발끝 — U10)과 그 차이를 말하는 「게임 방법」의 움직이기 줄 |
 | `tests/settings-dialog.test.mjs`, `tests/settings-time-limit.test.mjs`, `tests/quiz-time-limit.test.mjs` | 앱 바 설정 버튼의 자리·DOM 순서, 설정 대화상자 계약(패널 포커스·Esc·Tab 가두기·캡처 단계 키 차단·포커스 되돌리기), 고정된 토글 이름, 문항 시간 세 칸·저장·검증·기록 필드, 제한 없음 판의 시간 초과 없음, 앱의 움직임 줄이기 = `prefers-reduced-motion` 블록, 설정 글자 대비·비색 단서 |
 | `tests/online-question-time.test.mjs` | 온라인 문항 시간(20초·40초, 제한 없음 없음): 대기실의 세 번째 도는 설정 칸(`select` 없음, 방장만·판이 돌면 잠금), 480px 미만의 두 칸 + 한 줄 전체 문항 시간과 480px부터 세 칸, 방 만들기 폼의 고르기, 설정·온라인 조작법 안내 문구 |
 | `tests/online-reveal-standings.test.mjs`, `tests/online-final-review.test.mjs`, `tests/online-rematch-sounds.test.mjs` | 공개 단계 점수판(공개 중에만·공동 순위·지어내지 않는 정답자 수·낭독 범위·금은동·비색 단서), 원격 이름표 ✓ ✗, 최종 순위의 캐릭터·금은동·한 번뿐인 축하와 움직임 줄이기, 「한 판 더」, 끝난 판에만 오는 «문제 다시 보기», 온라인 효과음과 소리 설정 |
@@ -495,6 +497,14 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 움직임 줄이기와 `orientation`(높이가 폭보다 작을 때만 가로)을 이해한다. 블록 괄호가 짝을 이루지 않으면 파일과
 줄을 말하며 멈춘다 — 병합이 `.home-subtitle {` 의 닫는 줄을 잘랐을 때 그 뒤 규칙이 조용히 사라져 설정 버튼·규칙 줄·부제
 단언이 따로따로 틀렸다.
+
+`tools/css-snapshot.mjs` 는 같은 판정으로 두 판의 CSS 를 통째로 견준다 — index.html 의 모든 요소와 그 상태 판,
+선택자마다의 증인, 같은 클래스를 겨누는 두 선택자의 증인 × 폭·높이(`@media` 중단점과 그 ±1px)·입력·움직임·강제 색상
+환경 × 단축 속성을 푼 모든 낱 속성. 이어서 새 문법을 모르는 엔진마다(`:has()`·`:focus-visible` 이 든 선택자 목록은
+규칙째, `padding-block`·`svh`·접두사 없는 `mask` 같은 선언은 하나씩 버린다) 다시 견준다 — 지금 엔진에서 늘 지는 선언이
+그 엔진의 대체값일 수 있고(`tests/css-legacy-engines.test.mjs`), 같은 명시도 규칙의 순서가 그 엔진에서만 드러날 수 있다.
+규칙을 옮기거나 지우는 정리는 기본 판과 엔진 판이 모두 0칸을 말할 때만 들인다. `+`·`~` 결합자와 도구의 `FEATURES` 에
+없는 문법은 보이지 않으니 그런 규칙을 옮겼으면 브라우저의 `getComputedStyle` 로 따로 본다.
 
 화면을 옮기거나 키를 다루는 코드를 고쳤으면 `tools/check-screens.js` 를 콘솔에서 돌린다.
 

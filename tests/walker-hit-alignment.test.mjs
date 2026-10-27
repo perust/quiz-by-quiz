@@ -19,12 +19,18 @@ test('screen walker targets the visible character center instead of the point be
   assert.equal(center.y >= leaveButton.top && center.y <= leaveButton.bottom, true);
 });
 
-test('screen walkers opt into centered targeting while specialized walkers retain foot targeting', async () => {
-  const [screenWalker, walker] = await Promise.all([
+// U10: 선택점은 화면마다 고르지 않는다. 워커의 기본값(몸통 가운데)을 모든 화면이 쓰고, 넘기는 곳은
+// 퀴즈 무대의 발끝 하나다. 화면마다의 실측은 tests/walker-pick-point.test.mjs 가 잠근다
+test('every walker shares the centred default and only the quiz arena opts into foot targeting', async () => {
+  const [screenWalker, walker, arena] = await Promise.all([
     source('src/ui/screen-walker.ts'),
     source('src/ui/walker.ts'),
+    source('src/ui/arena.ts'),
   ]);
+  const { DEFAULT_WALKER_HIT_ANCHOR } = await import('../js/ui/walker-geometry.js');
 
-  assert.match(screenWalker, /hitAnchor:\s*'center'/);
-  assert.match(walker, /hitAnchor\s*=\s*'foot'/);
+  assert.equal(DEFAULT_WALKER_HIT_ANCHOR, 'center');
+  assert.match(walker, /hitAnchor\s*=\s*DEFAULT_WALKER_HIT_ANCHOR/);
+  assert.doesNotMatch(screenWalker, /hitAnchor:/, 'screen walker 는 홈·내 캐릭터와 같은 기본값을 쓴다');
+  assert.match(arena, /hitAnchor:\s*'foot'/);
 });

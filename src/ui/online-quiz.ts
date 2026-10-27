@@ -28,8 +28,12 @@ import {
 import {
   createMovementPublisher,
   createPlayerMovementController,
-  normalizeViewportMovement,
   type MovementSample,
+  type MovementSendOptions,
+  type MovementStageFrame,
+  normalizeViewportMovement,
+  walkerFootPoint,
+  withMovementStage,
 } from './player-movement.js';
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { announce } from './screens.js';
@@ -490,7 +494,8 @@ export function handleOnlineMovementKey(
 
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
-  onMovement: (sample: MovementSample) => void;
+  /** `onlyIfChanged`면 무대가 움직였을 뿐이다 — 소켓에 실을 줄이 지난번과 같으면 저장소가 보내지 않는다 */
+  onMovement: (sample: MovementSample & MovementSendOptions) => void;
   /**
    * 발밑 칸 초안 (U13). 시간이 끝나면 선 칸이 답인 판에서, 실제로 움직인 뒤 선 칸이 바뀔 때만 부른다
    * (칸에서 내려서면 `choiceIndex: null`). 보낼 소켓이 그 초안을 받는지는 저장소가 다시 본다
@@ -573,6 +578,9 @@ export function createOnlineQuizScreen(
     exitCancel: need<HTMLButtonElement>('online-exit-cancel'),
     exitConfirm: need<HTMLButtonElement>('online-exit-confirm'),
     remoteCharacters: need('online-remote-characters'),
+    // 원격 캐릭터를 맞추는 공유 무대(U31)인 2×2 바닥. 칸은 arena가 그리고 여기서는 자리만 잰다
+    arenaTiles: need('online-arena-tiles'),
+    arenaCharacter: need('online-arena-character'),
     bubble: need('online-bubble'),
     chatForm: need<HTMLFormElement>('online-chat-form'),
     chatInput: need<HTMLInputElement>('online-chat-input'),
@@ -620,7 +628,21 @@ export function createOnlineQuizScreen(
   let revealSoundKey: string | null = null;
   /** 나가기 확인을 연 버튼. 취소하면 포커스를 되돌려 준다 */
   let exitDialogOpener: HTMLElement | null = null;
-  const remoteMovements = createPlayerMovementController();
+  /**
+   * 온라인 퀴즈의 공유 무대 (U31): 2×2 바닥. 화면마다 바닥이 질문 아래·오른쪽 열 등 다른 자리에 있어도
+   * 같은 칸의 같은 자리는 같은 좌표다. 숨은 화면·꺼진 무대는 잴 수 없어 null — 예전처럼 화면 중심의 px다.
+   */
+  function arenaStageFrame(): MovementStageFrame | null {
+    if (el.screen.hidden) return null;
+    const box = el.arenaTiles.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return null;
+    return { left: box.left, top: box.top, width: box.width, height: box.height };
+  }
+
+  const remoteMovements = createPlayerMovementController({
+    // 바닥에서 보낸 자리는 이 화면 바닥의 같은 자리에 세운다. 대기실 라운지에서 온 자리는 예전 길이다
+    stageFrame: (stage) => (stage === 'arena' ? arenaStageFrame() : null),
+  });
   const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
   const chatBubbleNodes = new Map<string, HTMLElement>();
   /**
@@ -629,10 +651,29 @@ export function createOnlineQuizScreen(
    */
   const chatLines = createChatLineQueue<OnlineChatLine>({ append: writeChatLine, limit: CHAT_LINES });
   const movementPublisher = createMovementPublisher({
-    send: (sample) => {
-      if (presenceActive) onMovement(sample);
+    send: (sample, options) => {
+      if (presenceActive) onMovement(options ? { ...sample, ...options } : sample);
     },
+    // 바닥은 문서와 함께 스크롤된다. 보낼 때마다 지금 배치와 지금 그려진 캐릭터로 무대 좌표를 다시 잰다 (U31) —
+    // 공개 카드로 스크롤한 뒤 arena가 캐릭터를 바닥의 같은 자리로 옮겨 놓아도(이동을 알리지 않는다) 맞다
+    restage: (sample) => withMovementStage(sample, {
+      id: 'arena',
+      frame: arenaStageFrame(),
+      foot: walkerFootPoint(el.arenaCharacter),
+    }),
   });
+
+  /**
+   * 캐릭터는 화면에 붙어 있고 바닥이 움직였다(스크롤·크기·문항마다 바뀌는 보기 배치). 원격 캐릭터를 이 화면
+   * 바닥의 자리에 다시 세우고, 바닥 위 내 자리가 바뀌었으면 알린다 (U31, 걷는 frame과 같은 간격으로 묶는다)
+   */
+  function refreshStage(): void {
+    if (!presenceActive) return;
+    remoteMovements.refresh();
+    movementPublisher.refresh();
+  }
+  window.addEventListener('scroll', refreshStage, { passive: true });
+  window.addEventListener('resize', refreshStage);
   // 시간이 끝나면 답이 될 칸을 서버에 알린다 (U13). 스쳐 지나간 칸은 보내지 않고, 멈춰 서면 곧바로 보낸다
   const standingPublisher = createStandingAnswerPublisher({
     send: (draft) => {
@@ -1356,6 +1397,8 @@ export function createOnlineQuizScreen(
       }
     }
     revealIntoView(nextSnapshot);
+    // 보기 배치(grid·list)와 공개 카드가 바닥을 옮겼을 수 있다
+    refreshStage();
   }
 
   // ── 매치 나가기 확인 ───────────────────────────────────────────
