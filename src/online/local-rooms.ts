@@ -232,6 +232,8 @@ function toPublic(room: Room): PublicRoom {
     // 열 뿐이라 방은 언제나 사람을 기다린다. 그래서 나가기·준비도 판 때문에 막지 않는다
     status: 'waiting',
     inMatch: false,
+    // 로컬 `startGame`은 처음부터 방장의 시작 요청을 방장의 준비로 본다 (U28)
+    hostReadyImplicit: true,
   };
 }
 

@@ -271,11 +271,13 @@ test('네트워크 저장소는 현재 참가자의 준비 상태만 서버에 �
 
   // connected를 모르는 이전 서버의 snapshot은 끊김을 단정하지 않고 접속 중으로 읽는다.
   // inMatch를 모르는 이전 서버의 snapshot은 판에 내 자리가 없는 것으로 읽는다.
+  // connected가 없는 이전 서버는 방장의 준비도 요구하므로 hostReadyImplicit은 false다 (U28 호환).
   assert.deepEqual(result, {
     ok: true,
     room: {
       ...readyRoom,
       inMatch: false,
+      hostReadyImplicit: false,
       players: readyRoom.players.map((player) => ({ ...player, connected: true })),
     },
   });

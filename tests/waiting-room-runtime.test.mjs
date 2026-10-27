@@ -132,6 +132,7 @@ function snapshot(players, changes = {}) {
     joined: true,
     createdAt: '2026-10-27T00:00:00.000Z',
     status: 'waiting',
+    hostReadyImplicit: true,
     ...changes,
   };
 }
@@ -230,6 +231,46 @@ test('시작이 not-ready 로 거절된 뒤 다시 읽지 못하면 상태 줄�
   // 다음 snapshot 이 오면 그 방으로 다시 그린다
   roomEvents({ type: 'room', room: snapshot([player(ME, '퀴즈왕'), player('guest', '민수', false)]) });
   assert.equal(status.textContent, '준비 1/2명 · 민수 님 기다리는 중');
+  waiting.hide();
+});
+
+test('방장 자동 준비를 모르는 이전 API에서는 방장의 시작 앞에 준비를 먼저 보낸다 (U28 호환)', async () => {
+  // 화면(Pages)이 API보다 먼저 배포되면 방장 화면에 「준비 완료」가 없는데 서버는 방장 준비를 요구한다
+  const legacy = snapshot([player(ME, '퀴즈왕'), player('guest', '민수', true)], { hostReadyImplicit: false });
+  await enter(legacy);
+  const calls = [];
+  behaviour.setReady = async (spec) => {
+    calls.push(['ready', spec.isReady]);
+    return { ok: true, room: snapshot([player(ME, '퀴즈왕', true), player('guest', '민수', true)], { hostReadyImplicit: false }) };
+  };
+  behaviour.startGame = async () => {
+    calls.push(['start']);
+    return { ok: true, setup: { categoryId: null, gameMode: true } };
+  };
+  byId('waiting-start').click();
+  await settle();
+  assert.deepEqual(calls, [['ready', true], ['start']], '준비를 먼저 보내고 그다음 시작한다');
+  waiting.hide();
+
+  // 새 API에서는 시작만 보낸다
+  await enter(READY_ROOM);
+  calls.length = 0;
+  byId('waiting-start').click();
+  await settle();
+  assert.deepEqual(calls, [['start']]);
+  waiting.hide();
+});
+
+test('이전 API에서 방장 준비가 거절되면 시작을 보내지 않고 이유를 알린다', async () => {
+  const legacy = snapshot([player(ME, '퀴즈왕'), player('guest', '민수', true)], { hostReadyImplicit: false });
+  await enter(legacy);
+  let started = false;
+  behaviour.setReady = async () => ({ ok: false, reason: 'game-in-progress' });
+  behaviour.startGame = async () => { started = true; return { ok: true, setup: { categoryId: null, gameMode: true } }; };
+  byId('waiting-start').click();
+  await settle();
+  assert.equal(started, false);
+  assert.equal(chatLines().at(-1), '이미 게임이 진행 중이에요.');
   waiting.hide();
 });
 
