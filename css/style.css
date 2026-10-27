@@ -3624,8 +3624,15 @@ body:has([data-screen='home']:not([hidden])) .app-bar {
   left: max(var(--space-3), env(safe-area-inset-left));
 }
 
+/* 랭킹 입구는 키 큰 화면에서 높이 42% 에 서되, dock 위 조작부(선택 원)보다 8px 위로 비켜 선다.
+   방 복귀 줄로 dock 이 커지면 조작부의 바닥(dock + 20px)이 따라 올라오는데, 입구가 42% 에 머물러
+   375×812에서 선택 원과 겹쳤다(dock 271 → 327px, 450px²). 60px 는 입구 카드의 높이다 */
 #open-ranking {
-  top: 42%;
+  top: min(
+    42%,
+    calc(100% - var(--home-dock-h, 160px) - 20px - env(safe-area-inset-bottom, 0px)
+      - var(--walk-confirm-size) - var(--space-2) - 60px)
+  );
   right: max(var(--space-3), env(safe-area-inset-right));
 }
 
