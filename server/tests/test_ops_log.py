@@ -27,8 +27,13 @@ from app.main import RELEASE_SCHEMA_VERSION, EventHub, create_app
 from app.repository import (
     AccessInfo,
     CleanupCounts,
+    MatchAnswerView,
+    MatchQuestionView,
     MatchRead,
+    MatchReviewView,
+    MatchScoreView,
     MatchSetup,
+    MatchSubmission,
     MatchView,
     PlayerView,
     RoomCounts,
@@ -50,7 +55,11 @@ OTHER_NICKNAME = "숨은참가자"
 ROOM_NAME = "비밀방이름"
 ROOM_PASSWORD = "pw-sec-7391"  # noqa: S105 - inert test value
 CHAT_TEXT = "비밀 채팅 내용"
+# 판이 도는 동안 응답을 실제로 지나가는 문항(번호·질문·보기·해설) — 운영 기록에는 없어야 한다
+QUESTION_ID = "sci-secret-9041"
 QUESTION_TEXT = "비밀 문항 내용?"
+CHOICES = ("비밀 보기 하나", "비밀 보기 둘", "비밀 보기 셋", "비밀 보기 넷")
+EXPLANATION = "비밀 해설 문장"
 # 어느 운영 기록 줄에도 나오면 안 되는 값
 SECRETS = (
     NICKNAME,
@@ -58,7 +67,10 @@ SECRETS = (
     ROOM_NAME,
     ROOM_PASSWORD,
     CHAT_TEXT,
+    QUESTION_ID,
     QUESTION_TEXT,
+    *CHOICES,
+    EXPLANATION,
     PLAYER_TOKEN,
     hashlib.sha256(PLAYER_TOKEN.encode()).hexdigest(),
     str(PLAYER_ID),
@@ -241,13 +253,99 @@ def _room(**changes: Any) -> RoomView:
     return replace(base, **changes)
 
 
+QUESTION = MatchQuestionView(
+    id=QUESTION_ID,
+    category_id="science",
+    question=QUESTION_TEXT,
+    choices=CHOICES,
+    position=1,
+    total=10,
+)
+ANSWER = MatchAnswerView(
+    position=1,
+    choice_index=2,
+    correct=False,
+    timed_out=False,
+    answer_index=1,
+    explanation=EXPLANATION,
+)
+SCORES = (
+    MatchScoreView(
+        player_id=PLAYER_ID,
+        nickname=NICKNAME,
+        character_id="slime-blue",
+        score=0,
+        correct_count=0,
+        answered_count=1,
+        last_answer_correct=False,
+    ),
+    MatchScoreView(
+        player_id=OTHER_ID,
+        nickname=OTHER_NICKNAME,
+        character_id="slime-red",
+        score=10,
+        correct_count=1,
+        answered_count=1,
+        last_answer_correct=True,
+    ),
+)
+REVIEW = (
+    MatchReviewView(
+        position=1,
+        question_id=QUESTION_ID,
+        category_id="science",
+        question=QUESTION_TEXT,
+        choices=CHOICES,
+        answer_index=1,
+        explanation=EXPLANATION,
+        choice_index=2,
+        correct=False,
+        timed_out=False,
+    ),
+)
+
+
+def _match(state: str, **changes: Any) -> MatchView:
+    base = MatchView(
+        id=MATCH_ID,
+        state=state,
+        category_id="science",
+        game_mode=True,
+        current_position=1,
+        total_questions=10,
+        deadline_at=None,
+        question=QUESTION,
+        own_answer=None,
+        scores=SCORES,
+        question_time_ms=40_000,
+    )
+    return replace(base, **changes)
+
+
 class OpsRepository:
-    """방 하나의 일생을 흉내 낸다. 모든 값에 개인 정보를 담아 운영 기록으로 새는지 본다."""
+    """방 하나의 일생을 흉내 낸다. 모든 값에 개인 정보를 담아 운영 기록으로 새는지 본다.
+
+    판도 문항 하나를 실제로 내보낸다 — 도는 판의 질문·보기, 공개의 해설·점수(닉네임),
+    끝난 판의 «문제 다시 보기»가 응답을 지나가므로 문항 내용의 부재 검사가 헛돌지 않는다.
+    """
 
     def __init__(self) -> None:
         self.room = _room()
         self.member = False
         self.leave_results: list[RoomView | None] = []
+        self.match_reads: list[MatchRead] = [
+            MatchRead(match=_match("running"), advanced=False),
+            MatchRead(
+                match=_match(
+                    "finished",
+                    current_position=10,
+                    question=None,
+                    own_answer=None,
+                    review=REVIEW,
+                ),
+                advanced=True,
+            ),
+        ]
         self.counts: RoomCounts | Exception = RoomCounts(
             waiting_rooms=2, playing_rooms=1, running_matches=1
         )
@@ -326,19 +424,13 @@ class OpsRepository:
         )
 
     async def get_match(self, actor_id: UUID, code: str, **kwargs: Any) -> MatchRead:
-        match = MatchView(
-            id=MATCH_ID,
-            state="finished",
-            category_id="science",
-            game_mode=True,
-            current_position=10,
-            total_questions=10,
-            deadline_at=None,
-            question=None,
-            own_answer=None,
-            scores=(),
+        return self.match_reads.pop(0)
+
+    async def submit_answer(self, actor_id: UUID, code: str, **kwargs: Any) -> MatchSubmission:
+        # 모두 답해 공개로 넘어갔다 — 응답에 해설과 점수판(닉네임)이 실린다
+        return MatchSubmission(
+            match=_match("revealing", own_answer=ANSWER), answer=ANSWER, advanced=True
         )
-        return MatchRead(match=match, advanced=True)
 
     async def remove_member(
         self, actor_id: UUID, code: str, player_id: UUID, **kwargs: Any
@@ -411,7 +503,33 @@ def test_a_rooms_life_is_logged_without_any_personal_data(ops_lines: list[str]) 
         chat = client.post("/v1/rooms/ABC234/chat", headers=HEADERS, json={"text": CHAT_TEXT})
         assert chat.status_code == 202
         assert client.post("/v1/rooms/ABC234/start", headers=HEADERS).status_code == 201
-        assert client.get("/v1/rooms/ABC234/match", headers=HEADERS).status_code == 200
+        # 문항 내용이 실제로 응답을 지나간다 — 운영 기록에만 없어야 한다
+        running = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+        assert running.status_code == 200, running.text
+        assert running.json()["question"] == {
+            "id": QUESTION_ID,
+            "categoryId": "science",
+            "question": QUESTION_TEXT,
+            "choices": list(CHOICES),
+            "position": 1,
+            "total": 10,
+        }
+        answered = client.post(
+            "/v1/rooms/ABC234/match/answers",
+            headers=HEADERS,
+            json={"position": 1, "choiceIndex": 2},
+        )
+        assert answered.status_code == 200, answered.text
+        revealed = answered.json()["match"]
+        assert revealed["reveal"]["explanation"] == EXPLANATION
+        assert [score["nickname"] for score in revealed["scores"]] == [NICKNAME, OTHER_NICKNAME]
+        finished = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+        assert finished.status_code == 200, finished.text
+        review = finished.json()["review"]
+        assert [(item["id"], item["question"], item["explanation"]) for item in review] == [
+            (QUESTION_ID, QUESTION_TEXT, EXPLANATION)
+        ]
+        assert review[0]["choices"] == list(CHOICES)
         removed = client.delete(
             f"/v1/rooms/ABC234/members/{OTHER_ID}?connected=true", headers=HEADERS
         )
@@ -419,6 +537,10 @@ def test_a_rooms_life_is_logged_without_any_personal_data(ops_lines: list[str]) 
         assert client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS).status_code == 204
         assert client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS).status_code == 204
 
+    # 먼저 본다 — 새는 줄이 있으면 어느 값이 샜는지로 실패한다
+    for line in ops_lines:
+        for secret in SECRETS:
+            assert secret not in line, (secret, line)
     seen = [event for event in events(ops_lines) if event["event"] != "summary"]
     assert [event["event"] for event in seen] == [
         "api_started",
@@ -457,9 +579,6 @@ def test_a_rooms_life_is_logged_without_any_personal_data(ops_lines: list[str]) 
     assert strip[7] == {"event": "host_transferred", "room": "ABC234", "reason": "host-left"}
     assert strip[8] == {"event": "member_left", "room": "ABC234", "players": 0}
     assert strip[9] == {"event": "room_deleted", "room": "ABC234", "reason": "empty"}
-    for line in ops_lines:
-        for secret in SECRETS:
-            assert secret not in line, (secret, line)
 
 
 def test_an_unhandled_error_logs_only_the_route_template_and_exception_class(

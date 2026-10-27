@@ -9,6 +9,8 @@
 #   schedule을 멈춘다(Actions 탭에서 다시 켠다).
 # - 계획된 배포(API가 503 migration-required를 내는 동안)에는 경보가 열린다. 그동안은
 #   `gh workflow disable uptime.yml`로 끄고 끝나면 `gh workflow enable uptime.yml`로 켠다.
+# - 취소된 실행(손으로 끊었거나 job 한도 10분에 걸린 것)은 경보를 열지도 닫지도 않는다 — 점검이
+#   실패한 것이 아니다. 점검 step이 제 한도(8분)를 넘겨 멈추면 그 step만 실패하고 실패로 알린다.
 # 읽는 법은 deploy/oracle/README.md «Uptime monitor».
 
 name: Uptime monitor
@@ -31,7 +33,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,13 +44,19 @@ jobs:
 
       - name: 공개 API·Pages 점검
         id: probe
+        # 점검이 설계상 가장 오래 걸리는 경우(두 점검 × 세 시도, 요청마다 연결·응답 15초씩, 사이에
+        # 최대 60초)보다 길고 job 한도보다 짧다. 여기서 끊기면 step이 실패할 뿐 job은 취소되지 않아
+        # 아래 두 step이 «보고서 없는 실패»로 알린다. job 한도에 걸리면 취소라 알리지 않는다.
+        timeout-minutes: 8
         run: |
           status=0
           python3 deploy/oracle/uptime.py check --report "$RUNNER_TEMP/uptime-report.txt" || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
+      # always()가 아니다 — always()는 취소된 실행에서도 돌아, 끊긴 점검이 상태를 남기지 못한 것을
+      # 실패로 읽고 공개 경보를 열었다. 점검이 실패했거나(step 한도 포함) 통과했을 때만 돈다.
       - name: 운영 경보 이슈 열기·덧붙이기·닫기
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -61,7 +69,7 @@ jobs:
             --run-url "$RUN_URL"
 
       - name: 점검이 실패했으면 job을 실패로 끝낸다
-        if: always() && steps.probe.outputs.status != '0'
+        if: ${{ !cancelled() && steps.probe.outputs.status != '0' }}
         env:
           PROBE_STATUS: ${{ steps.probe.outputs.status }}
         run: |

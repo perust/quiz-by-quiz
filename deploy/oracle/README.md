@@ -239,9 +239,13 @@ in depth; normal REST access logging remains enabled. The API itself runs with
 Uvicorn access logging disabled and warning-level server logs so routine accepted
 or rejected handshakes cannot persist ticket-bearing request metadata. The
 operational log ("Operational log and uptime monitor" below) adds its own INFO
-lines, which carry room codes and counts but no request metadata. Caddy
-returns public `/healthz` and `/readyz` requests as 404; Docker and Caddy active
-health checks reach `/readyz` only on the private container network. The public
+lines. Those carry room codes and counts (the 5-minute summary adds REST
+request counts by status class and the p50/p95/max latency) and, for an
+unhandled error, the HTTP method, the route template and the exception class,
+but no request values: no paths with their values, query strings, headers,
+bodies, tickets, tokens or addresses. Caddy returns public `/healthz` and
+`/readyz` requests as 404; Docker and Caddy active health checks reach
+`/readyz` only on the private container network. The public
 `/v1/release-readiness` gate exposes only the fixed compatibility contract and
 schema version, and bounds database probes to 12 requests per client and 120
 per process per minute.
@@ -481,7 +485,9 @@ values). Each event is a function whose parameters are its fields
 written as `<invalid>`. Room codes and counts are logged; a room code is the
 six characters the lobby already shows and is reused after the room is gone.
 `server/tests/test_ops_log.py` drives a room's whole life through the API with
-personal data in every value and asserts that none of it reaches a line.
+personal data in every value, including a match whose question id, text,
+choices, explanation and review pass through the responses, and asserts that
+none of it reaches a line.
 
 Resource envelope: the request counters are fixed-size (14 latency buckets, 5
 status classes and three numbers) whatever the traffic, nothing is retained per
@@ -533,9 +539,18 @@ e-mail. For scheduled runs GitHub mails the user who created the workflow, then
 whoever last changed its `cron` line or re-enabled it, if their notification
 settings include failed Actions workflows. The next passing run comments that
 the service recovered and closes the alert. Runs share one concurrency group:
-at most one runs and one waits, and a running check is not cancelled. The
-repository is public, so the runs cost no Actions minutes and the alert issues
-are public too; the report holds nothing that is not already public.
+at most one runs and one waits, and a running check is not cancelled. A run
+that is cancelled — by hand, or by reaching the job's 10-minute limit — opens,
+comments on and closes nothing (the alert steps run only when `!cancelled()`),
+because a check that never finished is not a failed check. A check that hangs
+is still reported: the probe step has its own 8-minute limit, above the
+longest designed check (two checks of three attempts, each request waiting up
+to 15 seconds to connect and 15 more for the response, with waits of at most
+60 seconds, 7 minutes in all), and a step that reaches it fails without
+cancelling the run, so the alert says the report is missing and the job
+fails. The repository is public, so the runs cost no Actions minutes and the
+alert issues are public too; the report holds nothing that is not already
+public.
 
 - Scheduled workflows run only from the default branch, so the monitor starts
   once this file is on `main`. GitHub may delay scheduled runs at busy times,

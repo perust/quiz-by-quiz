@@ -464,6 +464,33 @@ class ContractTest(unittest.TestCase):
         for path in ("/v1/session", "/v1/rooms", "/events", "ws-ticket"):
             self.assertNotIn(path, source)
 
+    def test_the_longest_designed_check_ends_inside_the_probe_step_limit(self):
+        # 취소된 실행(job 한도 포함)은 경보를 건드리지 않으므로(uptime.yml의 !cancelled()), 멈춘 점검은
+        # 점검 step의 제 한도에 먼저 걸려 실패로 알려야 한다. 그러려면 끝까지 다시 해 보는 점검이
+        # 그 한도 안에 끝나야 한다 — 모든 요청이 429(Retry-After 상한)이고 요청마다 연결과 응답을
+        # 저마다 TIMEOUT_SECONDS까지 기다렸다고 치고 센다.
+        transport = FakeTransport(
+            {
+                READINESS_URL: [error_reply(429, "rate-limited", {"retry-after": "9000"})],
+                PAGES: [page(status=429, headers={"retry-after": "9000"})],
+            }
+        )
+        lines, recorder = run_check(transport)
+        self.assertEqual(lines[-1], "verdict: FAIL")
+        longest = len(transport.calls) * 2 * uptime.TIMEOUT_SECONDS + sum(recorder.sleeps)
+        self.assertEqual(longest, 420.0)
+        self.assertEqual(
+            max(recorder.sleeps), max(uptime.MAX_RETRY_AFTER_SECONDS, *uptime.BACKOFF_SECONDS)
+        )
+
+        workflow = (ROOT / ".github" / "workflows" / "uptime.yml").read_text(encoding="utf-8")
+        probe = workflow.split("- name: 공개 API·Pages 점검", 1)[1].split("\n      - ", 1)[0]
+        step_limit = int(re.search(r"\n {8}timeout-minutes: (\d+)\n", probe).group(1)) * 60
+        job_limit = int(re.search(r"\n {4}timeout-minutes: (\d+)\n", workflow).group(1)) * 60
+        # 넉넉함 1분, 그 뒤 경보 step(gh 호출) 몫 1분
+        self.assertLessEqual(longest + 60, step_limit)
+        self.assertLessEqual(step_limit + 60, job_limit)
+
     def test_the_deploy_guide_names_the_scheduling_caveats(self):
         guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
         section = " ".join(guide.split("### Uptime monitor", 1)[1].split())
@@ -473,6 +500,9 @@ class ContractTest(unittest.TestCase):
         self.assertIn("gh workflow enable uptime.yml", section)
         self.assertIn("503 `migration-required`", section)
         self.assertIn("`운영 경보`", section)
+        # 취소된 실행은 경보를 건드리지 않는다(uptime.yml의 !cancelled())
+        self.assertIn("opens, comments on and closes nothing", section)
+        self.assertIn("only when `!cancelled()`", section)
 
     def check_cli(self, routes, *extra):
         transport = FakeTransport(routes)

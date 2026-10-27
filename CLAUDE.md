@@ -1113,7 +1113,10 @@ player id·비밀번호·문항은 어느 칸에도 자리가 없다. 사건을 
 돌려주는 `RoomView.host_transferred`·`MatchSetup.player_count`는 이 기록만 읽고 payload에 싣지 않는다. 공개 서비스
 점검(`.github/workflows/uptime.yml` → `deploy/oracle/uptime.py`)은 GET 두 개로 읽기만 하고, 기대하는
 `schemaVersion`을 `pages.yml`의 `backend-ready`에서 읽으므로 gate 판을 올릴 때 따로 고칠 곳이 없다. 실패하면
-«운영 경보» 이슈를 하나만 두고 job을 실패시킨다.
+«운영 경보» 이슈를 하나만 두고 job을 실패시킨다. 경보 step은 `always()`가 아니라 `!cancelled()`다 — 손으로
+끊거나 job 한도(10분)에 걸린 실행이 «상태 없음»을 실패로 읽어 공개 경보를 열었다. 멈춘 점검은 점검 step의 제
+한도(8분, 설계상 가장 긴 점검 7분 위)에 걸려 실패로 알린다 — 재시도·대기 상수를 늘리면 `tests/test_uptime.py`의
+한도 셈을 함께 본다.
 
 ## 문제 데이터
 

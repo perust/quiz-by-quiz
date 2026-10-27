@@ -23,6 +23,8 @@ GitHub Actions가 15분마다 돌린다. 표준 라이브러리만 쓰고 Python
 ``notify``는 GitHub CLI(``gh``, ``GH_TOKEN``)로 «운영 경보» 이슈를 다룬다 — 실패하면 열린 경보 이슈에
 덧붙이고 없을 때만 하나를 연다(열린 경보는 늘 하나다). 통과하면 열린 경보에 회복을 남기고 닫는다.
 job을 실패로 끝내는 것(그래서 GitHub이 소유자에게 메일을 보내는 것)은 workflow의 마지막 step이다.
+취소된 실행에서는 workflow가 ``notify``를 부르지 않는다(``!cancelled()``) — 끊긴 점검은 실패한 점검이
+아니다. 그래서 ``--status``가 비었거나 «missing»이면 점검 step이 제 한도에 끊긴 것이고 실패로 다룬다.
 """
 
 from __future__ import annotations

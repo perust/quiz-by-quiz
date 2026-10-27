@@ -1,6 +1,7 @@
 // .github/workflows/uptime.yml — 15분마다 공개 서비스를 읽기만 해서 보는 점검의 계약.
 // 경보 이슈를 하나로 지키는 판단은 deploy/oracle/uptime.py(tests/test_uptime.py)에 있고, 여기서는
-// workflow가 그것을 부르는 모양 — 주기·권한·겹치지 않기·job 실패로 메일 보내기 — 을 잠근다.
+// workflow가 그것을 부르는 모양 — 주기·권한·겹치지 않기·취소된 실행은 알리지 않기·job 실패로 메일
+// 보내기 — 을 잠근다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -50,6 +51,33 @@ test('runs never pile up and a running check is not cancelled', () => {
   assert.ok(Number(timeout[1]) <= 10, 'the timeout stays small');
 });
 
+test('a stuck probe fails its own step before the job limit cancels the run', () => {
+  // job 한도에 걸리면 실행이 취소되고 취소는 알리지 않는다. 그래서 점검 step이 먼저 제 한도에 걸려
+  // 실패해야 멈춘 점검도 경보가 된다(설계상 가장 긴 점검이 그 한도 안인지는 tests/test_uptime.py가 본다).
+  const job = Number(jobs.match(/\n {4}timeout-minutes: (\d+)\n/)[1]);
+  const probe = step('공개 API·Pages 점검').match(/\n {8}timeout-minutes: (\d+)\n/);
+  assert.ok(probe, 'the probe step needs its own timeout');
+  assert.ok(
+    Number(probe[1]) < job,
+    'the probe limit leaves the alert steps time inside the job limit',
+  );
+});
+
+test('a cancelled run neither opens, comments on nor closes an alert, nor fails the alert path', () => {
+  // always()는 취소된 실행에서도 돈다. 그때 점검은 상태를 남기지 못해 «missing»이 실패로 읽히고
+  // 공개 경보가 열렸다. 취소가 아니면(통과·실패·점검 step 한도) 돈다.
+  const condition = (name) => step(name).match(/\n {8}if: (.*)\n/)?.[1];
+  assert.equal(condition('운영 경보 이슈 열기·덧붙이기·닫기'), '${{ !cancelled() }}');
+  assert.equal(
+    condition('점검이 실패했으면 job을 실패로 끝낸다'),
+    "${{ !cancelled() && steps.probe.outputs.status != '0' }}",
+  );
+  // 조건이 있는 step은 이 둘뿐이다 — 어느 step에도 always()를 되살리지 않는다
+  const conditions = [...jobs.matchAll(/\n {8}if: (.*)\n/g)].map((match) => match[1]);
+  assert.equal(conditions.length, 2);
+  assert.ok(conditions.every((value) => !value.includes('always()')));
+});
+
 test('the probe records its status without failing the job early', () => {
   const probe = step('공개 API·Pages 점검');
   assert.match(probe, /\n {8}id: probe\n/);
@@ -62,9 +90,8 @@ test('the probe records its status without failing the job early', () => {
   assert.doesNotMatch(workflow, /smoke\.py/);
 });
 
-test('the alert step always runs with the token and keeps one issue through uptime.py', () => {
+test('the alert step runs with the token and keeps one issue through uptime.py', () => {
   const notify = step('운영 경보 이슈 열기·덧붙이기·닫기');
-  assert.match(notify, /\n {8}if: always\(\)\n/);
   assert.match(notify, /GH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(notify, /GH_REPO: \$\{\{ github\.repository \}\}/);
   assert.match(notify, /PROBE_STATUS: \$\{\{ steps\.probe\.outputs\.status \}\}/);
@@ -73,7 +100,7 @@ test('the alert step always runs with the token and keeps one issue through upti
     /RUN_URL: \$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/,
   );
   assert.match(notify, /python3 deploy\/oracle\/uptime\.py notify/);
-  // 비었으면 실패로 다룬다(uptime.py는 0만 통과로 본다)
+  // 비었으면(점검 step이 제 한도에 끊겼다) 실패로 다룬다(uptime.py는 0만 통과로 본다)
   assert.match(notify, /--status "\$\{PROBE_STATUS:-missing\}"/);
   assert.match(notify, /--run-url "\$RUN_URL"/);
   // step 출력이나 이슈 글을 run 스크립트에 직접 끼워 넣지 않는다
@@ -83,7 +110,8 @@ test('the alert step always runs with the token and keeps one issue through upti
 
 test('a failed check fails the job so GitHub e-mails the owner', () => {
   const fail = step('점검이 실패했으면 job을 실패로 끝낸다');
-  assert.match(fail, /\n {8}if: always\(\) && steps\.probe\.outputs\.status != '0'\n/);
+  // 조건은 위 «취소된 실행» 테스트가 잠근다 — 점검이 0이 아닐 때만이다
+  assert.match(fail, /steps\.probe\.outputs\.status != '0'/);
   assert.match(fail, /\n {10}exit 1\n?/);
   const order = [
     jobs.indexOf('- name: 공개 API·Pages 점검'),
