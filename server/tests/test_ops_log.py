@@ -452,7 +452,7 @@ class OpsRepository:
     async def cleanup_expired_resources(self) -> CleanupCounts | None:
         return self.cleanup_result
 
-    async def advance_expired_matches(self) -> list[Any]:
+    async def advance_expired_matches(self, **_kwargs: Any) -> list[Any]:
         return []
 
 
@@ -837,7 +837,7 @@ class Repo:
     async def close(self):
         return None
 
-    async def advance_expired_matches(self):
+    async def advance_expired_matches(self, **_kwargs):
         return []
 
 

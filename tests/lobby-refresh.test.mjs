@@ -237,6 +237,8 @@ const lobby = createOnlineScreen({
     isNetworked: true,
     isPersistent: true,
     me: () => 'me',
+    // 세션이 알려 준 규칙(시작 인원·발밑 칸). 이 테스트는 새로고침만 보므로 새 API 의 값을 준다
+    onlineRules: () => ({ minPlayers: 1, standingAnswers: true }),
     listRooms: () => {
       store.calls += 1;
       store.active += 1;
