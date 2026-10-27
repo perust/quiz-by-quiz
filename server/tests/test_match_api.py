@@ -47,6 +47,24 @@ def ws_protocols(ticket: str) -> list[str]:
     return [WS_PROTOCOL, f"qbb.ticket.{ticket}"]
 
 
+def plain_room_event(event: dict[str, object]) -> dict[str, object]:
+    """room-invalidated의 판 번호(fan-out 줄이기)를 확인하고 뗀다.
+
+    이 테스트가 보는 것은 그 밖이다.
+    """
+    if event.get("type") != "room-invalidated":
+        return event
+    epoch = event.get("roomEpoch")
+    version = event.get("roomVersion")
+    assert isinstance(epoch, str) and epoch
+    assert type(version) is int and version > 0
+    return {
+        key: value
+        for key, value in event.items()
+        if key not in {"roomEpoch", "roomVersion", "readyChange"}
+    }
+
+
 def _room(*, ready: bool = False) -> RoomView:
     return RoomView(
         code="ABC234",
@@ -360,7 +378,7 @@ def test_an_answer_that_does_not_advance_the_match_is_not_broadcast() -> None:
         "timedOut": False,
     }
     assert repeated.status_code == 200
-    assert event == {"type": "room-invalidated"}
+    assert plain_room_event(event) == {"type": "room-invalidated"}
 
 
 class RevealOpeningRepository(MatchApiRepository):
@@ -439,7 +457,10 @@ def test_match_fetch_that_finishes_the_match_also_invalidates_the_room() -> None
             subprotocols=ws_protocols(ticket),
         ) as websocket:
             response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
-            events = [websocket.receive_json(), websocket.receive_json()]
+            events = [
+                plain_room_event(websocket.receive_json()),
+                plain_room_event(websocket.receive_json()),
+            ]
 
     assert response.status_code == 200
     assert events == [
@@ -473,7 +494,7 @@ def test_expiry_sweep_invalidates_the_room_only_when_the_match_finishes() -> Non
             "/v1/rooms/ABC234/events",
             subprotocols=ws_protocols(ticket),
         ) as websocket:
-            events = [websocket.receive_json() for _ in range(3)]
+            events = [plain_room_event(websocket.receive_json()) for _ in range(3)]
 
     # 문항이 넘어갈 때는 판만, 판이 닫힐 때는 방도 다시 읽게 한다.
     assert events == [
@@ -571,7 +592,10 @@ def test_presence_sweep_advances_a_question_that_waited_only_for_a_newly_absent_
 
             clock.now += 61
             assert repository.advance_requested.wait(timeout=2)
-            events = [websocket.receive_json(), websocket.receive_json()]
+            events = [
+                plain_room_event(websocket.receive_json()),
+                plain_room_event(websocket.receive_json()),
+            ]
 
     assert repository.advance_calls[0] == ("ABC234", frozenset({OTHER_ID}))
     assert events == [{"type": "room-invalidated"}, {"type": "match-invalidated"}]

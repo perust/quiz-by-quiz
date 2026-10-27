@@ -22,7 +22,10 @@ import {
 import {
   createMovementPublisher,
   createPlayerMovementController,
+  type MovementStageFrame,
   normalizeViewportMovement,
+  walkerFootPoint,
+  withMovementStage,
 } from './player-movement.js';
 import {
   isCurrentWaitingRoomAction,
@@ -225,6 +228,37 @@ export function createWaitingRoom(
   /** 착석은 대기실 화면 수명에만 속한다. 방 snapshot이나 저장소에는 넣지 않는다. */
   let seatedSeatId: WaitingRoomSeatId | null = null;
 
+  /**
+   * 라운지 바닥의 높이(px). 디자인 토큰 `--lounge-floor`가 정하고 어느 화면이든 같다. 잴 수 없으면 null —
+   * 그때는 무대 좌표를 보내지도 쓰지도 않는다(받는 쪽과 다른 잣대로 그리지 않는다).
+   */
+  function loungeFloorHeight(): number | null {
+    if (typeof window.getComputedStyle !== 'function') return null;
+    const value = Number.parseFloat(
+      window.getComputedStyle(el.lounge).getPropertyValue('--lounge-floor'),
+    );
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  /**
+   * 대기실의 공유 무대 (U31): 라운지 전체이고 단위 y의 앞 절반이 벽, 뒤 절반이 바닥이다. 숨은 화면이나
+   * 크기 0인 라운지는 잴 수 없어 null — 그동안은 예전처럼 화면 중심의 px로 보내고 그린다.
+   */
+  function loungeStageFrame(): MovementStageFrame | null {
+    if (el.screen.hidden) return null;
+    const box = el.lounge.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return null;
+    const floor = loungeFloorHeight();
+    if (floor === null || floor >= box.height) return null;
+    return {
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      floorTop: box.height - floor,
+    };
+  }
+
   function waitingRoomStartPoint(): { x: number; y: number } | null {
     const box = el.lounge.getBoundingClientRect();
     // show()는 방을 먼저 읽고 앱이 그 뒤에 화면을 연다. 숨은 동안 좌표를 확정하면
@@ -276,13 +310,21 @@ export function createWaitingRoom(
   /** room snapshot rerender와 socket reconnect를 건너서 상대 좌표·좌석을 보존한다. */
   const remoteMovements = createPlayerMovementController({
     seatPoint: pointForRemoteSeat,
+    // 라운지에서 보낸 자리는 이 화면 라운지의 같은 자리에 세운다 (U31). 퀴즈 바닥에서 온 자리는 예전 길이다
+    stageFrame: (stage) => (stage === 'lounge' ? loungeStageFrame() : null),
   });
   /** 걷는 frame은 125ms(초당 8회)로 합치고, stop은 즉시 보낸다. */
   const movementPublisher = createMovementPublisher({
-    send: (sample) => {
+    send: (sample, options) => {
       if (!visibleEntry) return;
-      roomStore.sendMovement({ code: visibleEntry.code, ...sample });
+      roomStore.sendMovement({ code: visibleEntry.code, ...sample, ...options });
     },
+    // 라운지는 문서와 함께 스크롤된다. 보낼 때마다 지금 배치와 지금 그려진 캐릭터로 무대 좌표를 다시 잰다 (U31)
+    restage: (sample) => withMovementStage(sample, {
+      id: 'lounge',
+      frame: loungeStageFrame(),
+      foot: walkerFootPoint(el.character),
+    }),
   });
   /** reconnect한 상대도 정지 위치를 복구할 수 있게 마지막 좌표를 다시 보내는 timer. */
   let movementHeartbeat: number | undefined;
@@ -416,6 +458,8 @@ export function createWaitingRoom(
       if (point) walker.placeAt(point, false);
     }
     remoteMovements.refresh();
+    // 캐릭터는 화면에 붙어 있고 라운지가 움직였다 — 라운지 안의 내 자리가 바뀌었으면 알린다 (U31, 묶어 보낸다)
+    movementPublisher.refresh();
   }
 
   for (const [seatId, button] of seatButtons) {
