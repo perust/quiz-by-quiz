@@ -688,11 +688,13 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
 온라인 최종 순위도 같다 — 점수가 같으면 «공동 N위»로 같은 순위를 보이고(1, 1, 3), 서버 정렬이 동점을 닉네임 순으로
 늘어놓는 것을 순위로 읽지 않는다. 공개 단계의 미니 점수판도 같은 규칙(`ui/online-standings.ts`)을 쓴다.
 
-## 온라인 로비 (PRD 밖의 확장)
+## 온라인 로비 (PRD FR-7)
 
-**이 앱에는 서버가 없다.** 정적 파일로만 배포되므로 다른 사람과 방을 나눠 가질 길이 없다.
-그래서 **화면과 흐름을 먼저 온전히 만들고, 네트워크 자리는 어댑터로 비워 두었다.**
-지금 끼워져 있는 `local-rooms.ts`는 방을 이 브라우저의 localStorage에 담는다.
+**처음에는 서버가 없었다.** 그래서 **화면과 흐름을 먼저 온전히 만들고, 네트워크 자리는 어댑터로 비워 두었다.**
+지금 배포본은 `index.html`의 `quiz-api-base` 메타로 서버 저장소(`network-rooms.ts`, 서버는 `server/`)를 쓰고,
+메타가 없는 단위 테스트·독립 개발 문서만 방을 이 브라우저의 localStorage에 담는 `local-rooms.ts`를 쓴다.
+**저장소 루트를 로컬 서버로 띄워도 메타는 운영 API를 가리킨다** — 화면 점검(`tools/check-screens.js`)을 그대로
+돌리면 운영 API에 요청이 간다. 로컬 API로 점검하려면 메타를 바꾼 사본을 띄운다. 온라인 요구사항은 PRD FR-7이다.
 
 - 교체 지점은 `src/online/adapter.ts`의 `roomStore` **한 줄**이다 (랭킹 저장소와 같은 방식)
 - 인터페이스: `isNetworked` / `me` / `listRooms` / `myRooms` / `createRoom` / `joinRoom` / `leaveRoom` / `removeMember`(방장의 내보내기, U24) 외
