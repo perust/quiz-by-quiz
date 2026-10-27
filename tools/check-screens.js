@@ -386,8 +386,10 @@
       무엇: `${innerWidth}×${innerHeight} · ${겹친홈조각.join(', ') || '겹침 없음'}`,
     });
     // ⑯ 방 복귀 줄(U35)이 뜨면 dock 이 한 줄만큼 커지고 입구·조작부 anchor 가 따라 올라간다. 740×360 에서
-    // 선택 원이 「게임 방법」을, 높이 421–480px 에서는 설정·닉네임까지 덮었다 (layout-01). 이 점검은 로컬이라
-    // 줄이 뜨지 않으므로 잠깐 펼쳐 dock 이 다시 재어진 뒤(그려질때까지)의 자리를 보고 되돌린다
+    // 선택 원이 「게임 방법」을, 높이 421–480px 에서는 설정·닉네임까지 덮었다 (layout-01). 568×320 에서는 dock 이
+    // 206px 이 되어 두 입구가 닉네임·설정을, 스틱·선택 원이 복귀 줄을 덮었다 — 그 크기에서는 줄이 분야 줄 왼쪽
+    // 칸에 들어 dock 이 커지지 않는다. 이 점검은 로컬이라 줄이 뜨지 않으므로 잠깐 펼쳐 dock 이 다시 재어진
+    // 뒤(그려질때까지)의 자리를 보고 되돌린다
     const 복귀줄 = document.getElementById('home-room-note');
     const 복귀줄글 = document.getElementById('home-room-note-text');
     const 원래복귀줄 = { 숨김: 복귀줄.hidden, 글: 복귀줄글.textContent };
@@ -397,9 +399,15 @@
     await 그려질때까지();
     const 줄뒤dock = Math.round(홈조각.dock.getBoundingClientRect().height);
     const 줄뒤겹침 = 홈겹침({ ...홈조각, 게임방법: document.getElementById('open-rules') });
+    const 줄이분야옆 = matchMedia('(max-height: 360px) and (min-width: 480px) and (max-width: 639px)').matches;
+    const 줄상자 = 복귀줄.getBoundingClientRect();
+    const 분야상자 = document.getElementById('category-grid').getBoundingClientRect();
     결과.push({
       자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
-      통과: 줄뒤dock > 줄전dock && 줄뒤겹침.length === 0,
+      통과: (줄이분야옆
+        ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
+        : 줄뒤dock > 줄전dock)
+        && 줄뒤겹침.length === 0,
       무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
     });
     복귀줄.hidden = 원래복귀줄.숨김;

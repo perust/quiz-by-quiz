@@ -4355,6 +4355,65 @@ body:has(.home-note:not([hidden])) #home-character {
   }
 }
 
+/* 높이 340px 이하의 짧은 가로 퀴즈(568×320)는 두 열 배치가 그대로 들어가는데 아래 여백 12px 때문에 문서가
+   화면보다 4px 길어 스크롤이 생겼다. 아래 여백만 한 단계 줄인다 — 위 여백은 설정 버튼과 줄을 맞춘 채 둔다 */
+@media (pointer: coarse) and (max-height: 340px) and (orientation: landscape) {
+  .quiz--character,
+  body:has(.walk-controls--on) [data-screen='quiz']:not([hidden]) {
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 폭 640px 미만의 아주 짧은 가로 홈(568×320)은 dock 이 두 줄(분야 | 온라인·전체 도전)인데, 방 복귀 줄(U35)이
+   그 위에 한 줄을 더 얹으면 dock 이 206px 이 되어 월드가 44px 만 남았다. 그러면 두 보조 입구가 닉네임·설정을,
+   스틱·선택 원이 복귀 줄을 덮었다. 그래서 그동안만 복귀 줄을 분야 줄의 왼쪽 칸으로 옮겨 dock 높이를 복귀
+   줄이 없을 때와 같게 둔다. DOM 순서(복귀 줄 → 분야 → 주요 행동)와 읽는 순서는 그대로다.
+   방 이름은 두 줄까지 보이고 넘치면 말줄임한다. 버튼의 낭독 이름(글 전체)은 잘리지 않는다 */
+@media (max-height: 360px) and (min-width: 480px) and (max-width: 639px) {
+  .home-quests:has(.home-room-note:not([hidden])) {
+    grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+    column-gap: var(--space-1);
+  }
+
+  .home-quests:has(.home-room-note:not([hidden])) .home-primary-actions {
+    grid-column: 1 / -1;
+  }
+
+  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--full {
+    display: none;
+  }
+
+  .home-quests:has(.home-room-note:not([hidden])) .category-card__name--compact {
+    display: block;
+  }
+
+  .home-room-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-content: center;
+    column-gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .home-room-note::before {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .home-room-note__text {
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: normal;
+    word-break: keep-all;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .home-room-note__action {
+    grid-column: 2;
+  }
+}
+
 /* 처음 세 판은 규칙 한 줄을 짧은 touch·좁은 화면에서도 남긴다 (U01, quiz.ts 가 data-pinned 를 단다).
    위 두 접기(420px 이하·짧은 touch)보다 구체적이라 이긴다. 스틱이 이미 말하는 조작 줄은 그대로 접고,
    세 판이 지나면 data-pinned 가 false 라 예전처럼 줄째 접힌다 */

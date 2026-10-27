@@ -91,8 +91,8 @@ test('짧은 가로 touch 퀴즈(U15): 양옆 여백이 공용 조작부 자리�
     assert.ok(right >= settingsLeft, `${at}: 위 끝의 설정 버튼(${settingsLeft}px)도 오른쪽 여백 안이다`);
     // 그래서 HUD는 설정 버튼 슬롯(64px)을 비우지 않는다
     assert.equal(valueOf(rules, tree.hud, 'padding', env), 'var(--space-2) var(--space-3)', at);
-    // 조작부가 아래가 아니라 옆에 있으므로 아래를 스틱 높이만큼 비우지 않는다
-    assert.equal(px(valueOf(rules, tree.section, 'padding-bottom', env), env), 12, `${at}: 아래 여백`);
+    // 조작부가 아래가 아니라 옆에 있으므로 아래를 스틱 높이만큼 비우지 않는다. 높이 340px 이하는 한 단계 더 줄인다
+    assert.equal(px(valueOf(rules, tree.section, 'padding-bottom', env), env), env.height <= 340 ? 8 : 12, `${at}: 아래 여백`);
   }
 });
 
@@ -314,6 +314,60 @@ test('짧은 가로 홈(U07) 규칙은 폭 640px 이상·높이 420px 이하에�
   }
   // 높이 700px 이하의 다른 화면은 여전히 브랜드를 1px로 접는다
   assert.equal(valueOf(rules, homeTree().header, 'width', touch(375, 667)), '1px');
+});
+
+/** 방 복귀 줄이 펼쳐진 홈. 568×320 규칙은 dock 의 :has() 로 걸린다 */
+function homeTreeWithNote() {
+  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  const section = node("section.screen[data-screen='home']", node('main.app', body));
+  const quests = node('div.home-quests#home-quests', node('div.home-stage#home-stage', section), {
+    has: ['.home-room-note:not([hidden])'],
+  });
+  const grid = node('div.category-grid#category-grid', quests);
+  return {
+    quests,
+    note: node('button.home-room-note#home-room-note', quests),
+    noteText: node('span.home-room-note__text#home-room-note-text', node('button.home-room-note#home-room-note', quests)),
+    actions: node('div.home-primary-actions', quests),
+    full: node('span.category-card__name.category-card__name--full', node('button.category-card', grid)),
+    compact: node('span.category-card__name.category-card__name--compact', node('button.category-card', grid)),
+  };
+}
+
+test('568×320 홈: 방 복귀 줄은 분야 줄의 왼쪽 칸에 들어 dock 이 한 줄 더 커지지 않는다', () => {
+  // 줄이 dock 맨 위에 한 줄을 더 얹으면 dock 이 206px 이 되어 두 입구가 닉네임·설정을, 스틱·선택 원이
+  // 복귀 줄을 덮었다. 실측은 tools/check-screens.js ⑯이 한다
+  const home = homeTreeWithNote();
+  const at = '568×320';
+  assert.equal(valueOf(rules, home.quests, 'grid-template-columns', OLD_LANDSCAPE), 'minmax(0, 9rem) minmax(0, 1fr)', at);
+  assert.equal(valueOf(rules, home.actions, 'grid-column', OLD_LANDSCAPE), '1 / -1', `${at}: 온라인·전체 도전은 아래 줄에 폭을 다 쓴다`);
+  assert.equal(valueOf(rules, home.full, 'display', OLD_LANDSCAPE), 'none', `${at}: 좁아진 분야 칸은 짧은 이름`);
+  assert.equal(valueOf(rules, home.compact, 'display', OLD_LANDSCAPE), 'block', at);
+  assert.equal(valueOf(rules, home.note, 'display', OLD_LANDSCAPE), 'grid', at);
+  assert.equal(valueOf(rules, home.noteText, '-webkit-line-clamp', OLD_LANDSCAPE), '2', `${at}: 방 이름은 두 줄까지`);
+  assert.equal(px(valueOf(rules, home.note, 'font-size', OLD_LANDSCAPE), OLD_LANDSCAPE), 12, at);
+
+  // 줄이 없으면 568×320 dock 은 예전 두 줄 그대로다
+  const plain = homeTree();
+  assert.notEqual(valueOf(rules, plain.quests, 'grid-template-columns', OLD_LANDSCAPE), 'minmax(0, 9rem) minmax(0, 1fr)', at);
+  // 다른 크기는 줄이 있어도 이 규칙을 받지 않는다 — 넓은 짧은 가로는 한 줄 dock 위에 줄을 얹는다
+  for (const env of [touch(740, 360), touch(667, 375), MOBILE, touch(375, 667)]) {
+    const other = homeTreeWithNote();
+    assert.notEqual(valueOf(rules, other.quests, 'grid-template-columns', env), 'minmax(0, 9rem) minmax(0, 1fr)', `${env.width}×${env.height}`);
+    assert.notEqual(valueOf(rules, other.note, 'display', env), 'grid', `${env.width}×${env.height}`);
+  }
+});
+
+test('568×320 퀴즈: 아래 여백을 한 단계 줄여 두 열 배치가 화면 높이 안에 든다', () => {
+  // 아래 여백 12px 때문에 문서가 324px 이 되어 4px 스크롤이 생겼다. 위 여백은 설정 버튼과 줄을 맞춘 채 둔다
+  for (const screen of ['quiz', 'online-quiz']) {
+    const tree = quizTree(screen);
+    assert.equal(px(valueOf(rules, tree.section, 'padding-bottom', OLD_LANDSCAPE), OLD_LANDSCAPE), 8, screen);
+    assert.equal(px(valueOf(rules, tree.section, 'padding-top', OLD_LANDSCAPE), OLD_LANDSCAPE), 12, screen);
+  }
+  for (const env of LANDSCAPE_PHONES) {
+    assert.equal(px(valueOf(rules, quizTree('quiz').section, 'padding-bottom', env), env), 12, `${env.width}×${env.height}`);
+  }
 });
 
 test('높이 700px 이하 홈의 시작 자리: 두 입구 사이 가운데, 보이는 브랜드 아래, 입구 줄 위', async () => {

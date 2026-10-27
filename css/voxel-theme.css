@@ -4085,6 +4085,15 @@ body:has([data-screen='home']:not([hidden])) {
   }
 }
 
+/* 폭 640px 미만의 아주 짧은 가로 홈은 방 복귀 줄이 분야 줄의 왼쪽 칸에 든다(css/style.css section 30 끝).
+   좁은 칸에서 방 이름 두 줄과 「돌아가기」가 분야 칸 높이 안에 들도록 한 단계 작게 쓴다 */
+@media (max-height: 360px) and (min-width: 480px) and (max-width: 639px) {
+  .home-room-note {
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+  }
+}
+
 /* 짧은 가로 touch 화면의 퀴즈(U15)는 질문이 왼쪽 열(300–460px)에 든다. 좁은 화면과 같이 한 단계 작게 쓴다 */
 @media (pointer: coarse) and (max-height: 480px) and (orientation: landscape) {
   .quiz--character .question {
