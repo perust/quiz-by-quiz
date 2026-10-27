@@ -354,8 +354,8 @@
            로그는 붙인 줄만 낭독한다(additions) — 매치 중에도 읽되 새 문항·남은 5초 경고 뒤에 선다 (U42, chat-queue.ts) -->
       <section class="online-quiz-chat" aria-labelledby="online-chat-title">
         <h2 class="sr-only" id="online-chat-title">문제 풀이 중 대화</h2>
-        <ul class="chat-log online-quiz-chat__log" id="online-chat-log"
-            role="log" aria-live="polite" aria-relevant="additions"></ul>
+        <div class="chat-log online-quiz-chat__log" id="online-chat-log"
+            role="log" aria-live="polite" aria-relevant="additions"></div>
         <!-- 키보드 안내는 손가락만 쓰는 기기에서 접는다(style.css). 낭독기는 짧은 표식 대신 문장을 읽는다 -->
         <p class="chat__hint"><span aria-hidden="true"><kbd>/</kbd> 채팅 · <kbd>Esc</kbd> 다시 걷기</span><span class="sr-only">걷는 중에 / 키를 누르면 채팅칸으로, 채팅칸에서 Esc 키를 누르면 다시 걷기로 가요.</span></p>
         <form class="chat online-quiz-chat__form" id="online-chat-form" novalidate>
@@ -689,7 +689,7 @@
       <!-- 말풍선은 몇 초 뒤 사라진다. 놓친 말을 다시 볼 수 있게 최근 몇 줄을 남긴다.
            최근 대화 → (키보드 안내) → 채팅칸 순서다. 가장 새 줄이 채팅칸 바로 위에 와서, 휴대폰에서 칸을 누르면
            OS 키보드가 덮는 아래쪽이 아니라 칸 위에 마지막 말이 남는다 (U39). 붙인 줄만 낭독한다(additions) -->
-      <ul class="chat-log" id="chat-log" role="log" aria-live="polite" aria-relevant="additions"></ul>
+      <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
       <!-- 키보드 안내는 손가락만 쓰는 기기에서 접는다(style.css) -->
       <p class="chat__hint">걷는 중에 <kbd>/</kbd> 를 누르면 채팅칸으로, 채팅칸에서 <kbd>Esc</kbd> 를 누르면 다시 걷기로 가요.</p>
       <form class="chat" id="chat-form" novalidate>

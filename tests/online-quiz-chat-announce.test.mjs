@@ -353,7 +353,9 @@ test('차례 대기열: 기다리는 동안 온 줄은 차례를 지키고 한�
 test('마크업: 두 대화 로그는 붙인 줄만 읽는 polite log 이고, 최근 대화가 채팅칸 위에 온다 (U42·U39)', async () => {
   const [html, quizSource] = await Promise.all([source('index.html'), source('src/ui/online-quiz.ts')]);
   for (const id of ['chat-log', 'online-chat-log']) {
-    const tag = html.match(new RegExp(`<ul[^>]*id="${id}"[^>]*>`))?.[0] ?? '';
+    // role="log" 는 <ul> 이 받을 수 없는 역할이다(axe aria-allowed-role). 그래서 로그는 div, 줄도 div 다
+    assert.doesNotMatch(html, new RegExp(`<ul[^>]*id="${id}"`), `#${id}: ul 에 log 역할을 주지 않는다`);
+    const tag = html.match(new RegExp(`<div[^>]*id="${id}"[^>]*>`))?.[0] ?? '';
     assert.match(tag, /role="log"/, `#${id}`);
     assert.match(tag, /aria-live="polite"/, `#${id}`);
     assert.match(tag, /aria-relevant="additions"/, `#${id}: 떼어 내는 오래된 줄은 읽지 않는다`);

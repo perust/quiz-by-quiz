@@ -838,7 +838,7 @@ export function createOnlineQuizScreen(
    * 차례를 기다리는 사이에 숨긴 사람의 말은 여기서 다시 거른다 (N06).
    */
   function writeChatLine(line: OnlineChatLine): void {
-    const item = document.createElement('li');
+    const item = document.createElement('div');
     if (line.kind === 'chat') {
       if (line.playerId !== getPlayerId() && isChatHidden(line.playerId)) return;
       item.className = 'chat-log__line';

@@ -882,7 +882,7 @@ export function createWaitingRoom(
    * 여기가 대화 그 자체다 — 눈으로도 보이게 두는 이유다.
    */
   function logChat({ playerId, nickname, text }: { playerId: string; nickname: string; text: string }): void {
-    const line = document.createElement('li');
+    const line = document.createElement('div');
     line.className = 'chat-log__line';
     // 말 숨기기를 켜면 이미 남은 그 사람의 줄도 거둔다 (N06)
     line.dataset.playerId = playerId;
@@ -990,7 +990,7 @@ ${me.nickname}`;
 
   /** 대화가 아닌 안내. 대화 줄과 결을 달리해 섞이지 않게 한다 */
   function notice(text: string): void {
-    const line = document.createElement('li');
+    const line = document.createElement('div');
     line.className = 'chat-log__line chat-log__line--notice';
     line.textContent = text;
     el.chatLog.append(line);
