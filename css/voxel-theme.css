@@ -241,6 +241,8 @@
   --hud-bg: rgb(29 31 58 / 0.88);
   --hud-bg-soft: rgb(29 31 58 / 0.76);
   --hud-line: rgb(255 255 255 / 0.34);
+  /* 어두운 HUD 안 투명 버튼(퀴즈 HUD 의 ?·나가기)의 hover 바탕. 흰 글자 대비를 지키는 옅은 빛이다 */
+  --hud-hover: rgb(255 255 255 / 0.14);
   --hud-text: var(--mist-0);
   --hud-text-muted: #e6e8f8;
   /* 어두운 HUD 위의 남은 5초 경고 (FR-3.9). coral-9 와 같은 색상(349°)의 밝은 단계라
@@ -741,6 +743,14 @@ textarea {
   color: var(--hud-text);
   box-shadow: var(--elevation-2);
   backdrop-filter: blur(8px);
+}
+
+/* edge HUD 조각은 그림 위에 홀로 떠 있어 바탕은 HUD 그대로 두고 선만 밝힌다. 위 .icon-button:hover 와 명시도가
+   같은 이 절의 규칙이 그 hover 를 덮어, 설정 버튼은 마우스를 올려도 아무 표시가 없었다 */
+@media (hover: hover) {
+  .app-bar .icon-button:hover {
+    border-color: var(--hud-text);
+  }
 }
 
 /* 그림 위에 홀로 뜬 edge HUD 조각은 바깥이 하늘·구름·나무라 어떤 고리 색도 대비를 보장하지 못한다.
@@ -1439,6 +1449,16 @@ textarea {
   .arena__help:hover {
     border-color: var(--accent-line);
     background: var(--accent-subtle);
+  }
+}
+
+/* 퀴즈 HUD 안의 ?·나가기는 어두운 HUD 위의 투명 버튼이다(30절). 옅은 보라 대신 밝은 선과 옅은 빛으로 hover 를
+   보인다 — 30절 규칙이 위 hover 와 보조 버튼 hover 를 같은 명시도로 덮어 아무 표시가 없었다 */
+@media (hover: hover) {
+  .quiz--character .arena__help:hover,
+  .quiz--character .button--ghost:hover:not(:disabled) {
+    border-color: var(--hud-text);
+    background: var(--hud-hover);
   }
 }
 
@@ -4050,7 +4070,8 @@ html[data-motion='reduce'] *::after {
 }
 
 /* 퀴즈 HUD 안의 ?·나가기는 투명 바탕에 밝은 선·글자다. 10절의 .arena__help:hover(옅은 보라 바탕·선)와
-   명시도가 같아 hover 를 덮는다 — 앞으로 옮기면 마우스를 올린 ? 버튼에 옅은 바탕이 돌아온다 */
+   명시도가 같아 그 hover 를 덮는다 — 앞으로 옮기면 쉬는 모양이 바뀐다. 어두운 HUD 에 맞는 hover 는 10절의
+   .quiz--character … :hover 가 한 단계 높은 명시도로 따로 준다 */
 .quiz--character .arena__help,
 .quiz--character .button--ghost {
   border-color: var(--hud-line);
