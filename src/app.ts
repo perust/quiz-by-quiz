@@ -45,6 +45,7 @@ import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
+import { withTopic } from './ui/korean.js';
 import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
 import { createRulesDialog } from './ui/rules-dialog.js';
 import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
@@ -76,7 +77,8 @@ interface PendingResult {
  */
 function markBooted(): void {
   clearTimeout(window.__bootTimer);
-  document.body.classList.remove('is-boot-slow');
+  // 모듈이 15초 넘게 걸려 실패 카드가 먼저 떴어도 늦게 뜬 앱이 그 흔적을 거둔다 (local-ux-3)
+  document.body.classList.remove('is-boot-slow', 'is-boot-failed');
   document.body.classList.add('is-booted');
 }
 
@@ -121,6 +123,9 @@ async function main(): Promise<void> {
   const inviteCode = takeInviteCode();
 
   // 이 동안은 부팅 화면이 보인다. 앱은 홈을 그리기 직전에 연다(markBooted, U05)
+  // 모듈이 다 왔다 — 실패 안내의 15초를 여기서 다시 센다. 문제 JSON 은 10초에 끊기므로 아직 받는 중인데
+  // «불러오지 못했어요»가 뜨지 않고, 끝은 markBooted·showFatalError 가 낸다 (local-ux-3)
+  window.__bootProgress?.();
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
 
@@ -944,7 +949,8 @@ async function main(): Promise<void> {
   });
   if (short.length > 0) {
     const names = short.map((category) => category.name).join(', ');
-    notes.push(`${names}는 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제돼요.`);
+    // 조사는 마지막 이름의 받침으로 고른다 — «과학는»이 아니라 «과학은»
+    notes.push(`${withTopic(names)} 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제돼요.`);
   }
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));

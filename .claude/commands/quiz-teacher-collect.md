@@ -214,7 +214,7 @@ PY
   "schemaVersion": 1,
   "exportedAt": "2026-08-04T10:00:00.000Z",
   "nickname": "김민준",
-  "scope": "이 브라우저에 남은 기록입니다. 랭킹 탭마다 상위 10개까지만 …",
+  "scope": "이 브라우저에 남은 기록이에요. 랭킹 탭마다 상위 10개까지만 남아 있어 그보다 아래로 밀린 판은 없어요.",
   "records": [ { "id": "…", "nickname": "김민준", "mode": "category", "category": "history",
                  "score": 80, "correctCount": 8, "totalCount": 10,
                  "durationMs": 96400, "playedAt": "2026-08-04T09:30:00.000Z",

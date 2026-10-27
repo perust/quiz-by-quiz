@@ -187,6 +187,22 @@ class GuidanceConsistencyTests(unittest.TestCase):
             self.assertIn("김민준", proc.stdout)
             self.assertNotIn("형식이 맞지 않는 기록", proc.stdout)
 
+    def test_teacher_collect_example_matches_the_in_app_export(self):
+        # contracts-teacher-doc-stale-scope: 안내의 «감싼 형태» 예시는 앱이 실제로 쓰는 파일을 옮긴 것이다.
+        # 한때 앱의 scope 는 해요체(N10)로 바뀌었는데 예시만 «…기록입니다»로 남아, 받은 파일과 견주면 달랐다.
+        collect = (COMMANDS / "quiz-teacher-collect.md").read_text(encoding="utf-8")
+        block = re.search(r"\*\*감싼 형태\*\*.*?```json\n(?P<body>.*?)\n```", collect, re.DOTALL)
+        self.assertIsNotNone(block, "감싼 형태의 JSON 예시가 있다")
+        assert block is not None
+        example = json.loads(block.group("body"))
+        fixture = json.loads(
+            (ROOT / "tests" / "fixtures" / "records-export.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(list(fixture), list(example), "예시의 칸이 앱 파일의 칸과 같다")
+        self.assertEqual(fixture["scope"], example["scope"], "scope 는 앱이 쓰는 글 그대로다")
+        self.assertEqual(fixture["schemaVersion"], example["schemaVersion"])
+        self.assertNotIn("student", example)
+
     def test_teacher_guidance_points_students_to_the_in_app_export(self):
         # N02: 휴대폰·태블릿·관리형 크롬북에서는 F12 콘솔을 열 수 없다. 안내는 앱의 버튼을 가리킨다.
         collect = (COMMANDS / "quiz-teacher-collect.md").read_text(encoding="utf-8")
