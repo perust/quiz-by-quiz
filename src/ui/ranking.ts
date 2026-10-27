@@ -51,7 +51,11 @@ export type OnlineRankingLoad =
   | { status: 'ok'; board: OnlineRankingBoard }
   /** 이 API에는 서버 랭킹이 없다(세션이 `rankings: true`를 알리지 않는다). 온라인 랭킹을 숨긴다 */
   | { status: 'unsupported' }
-  | { status: 'error'; message: string };
+  /**
+   * 읽지 못했다. action은 빈 칸 버튼이 하는 일이다 — 'retry'(기본)는 «다시 시도», 'home'은 다시 해도 같은
+   * 실패라(저장된 닉네임이 금칙 규칙에 걸렸다) 닉네임을 고칠 홈으로 보낸다
+   */
+  | { status: 'error'; message: string; action?: 'retry' | 'home' };
 
 /** 온라인 랭킹 (FR-7.13 2단계). 없으면 이 화면은 예전처럼 이 브라우저의 기록만 보인다 */
 export interface OnlineRankingDeps {
@@ -176,8 +180,17 @@ export function createRankingScreen(
   let activeKey = TABS[0].key;
   /** 방금 등록한 기록 ID. 다른 탭으로 옮기면 지운다 (FR-6.5) */
   let highlightId: string | null = null;
-  /** 지금 보는 범위. 이 페이지가 열려 있는 동안 마지막 것을 기억한다 */
+  /**
+   * 부른 곳이 정했거나 사람이 고른 범위. 이 페이지가 열려 있는 동안 마지막 것을 기억한다. null이면 아무도
+   * 고르지 않았다 — 그때는 `defaultScope()`를 따른다
+   */
   let scope: RankingScope | null = null;
+  /**
+   * 아무도 범위를 고르지 않아 온라인으로 열었는데, 이 API가 랭킹을 아는지 모르는 채(세션을 열지 못했다) 읽지
+   * 못했다. 이 페이지에서는 기본 범위를 이 브라우저의 기록으로 둔다 — 랭킹을 연 사람의 기록을 오류 뒤에 숨기지
+   * 않고, 잠깐 끊길 때마다 처음 화면이 오류가 되지 않게
+   */
+  let defaultFellBack = false;
   let period: OnlineRankingPeriod = 'week';
   /** 늦게 온 온라인 응답이 그 뒤에 고른 탭·기간을 덮지 않게 한다 */
   let onlineRequest = 0;
@@ -193,8 +206,18 @@ export function createRankingScreen(
     return online !== undefined && !onlineMissing && online.available() !== false;
   }
 
+  /**
+   * 아무도 범위를 고르지 않았을 때의 범위. 온라인 랭킹이 있다고 알면 온라인이고, 아직 모르면(세션 전) 온라인을
+   * 보여 주며 묻는다. 그렇게 물었다가 읽지 못했으면 이 브라우저의 기록이다(`defaultFellBack`)
+   */
+  function defaultScope(): RankingScope {
+    if (!onlineOffered()) return 'local';
+    if (online?.available() === true) return 'online';
+    return defaultFellBack ? 'local' : 'online';
+  }
+
   function activeScope(): RankingScope {
-    return scope === 'online' && onlineOffered() ? 'online' : 'local';
+    return (scope ?? defaultScope()) === 'online' && onlineOffered() ? 'online' : 'local';
   }
 
   // ── 탭 ─────────────────────────────────────────────────────────
@@ -440,10 +463,20 @@ export function createRankingScreen(
     }
 
     if (result.status === 'error') {
+      // 아무도 온라인을 고르지 않았고 이 API가 랭킹을 아는지도 모른 채 읽지 못했다(서버에 닿지 않는다, 저장된
+      // 닉네임이 금칙 규칙에 걸려 세션을 열지 않았다). 오류 대신 이 브라우저의 기록을 보인다 — 범위 탭은 그대로라
+      // «온라인 랭킹»을 눌러 다시 물을 수 있고, 그때는 아래의 오류와 다음 행동을 말한다
+      if (scope === null && online.available() !== true) {
+        defaultFellBack = true;
+        await render();
+        return;
+      }
+      // 다시 해도 같은 실패(닉네임)면 「다시 시도」를 권하지 않고 닉네임을 고칠 홈으로 보낸다
+      const toHome = result.action === 'home';
       setOnlineStatus('온라인 랭킹을 불러오지 못했어요.');
-      emptyAction = 'retry';
+      emptyAction = toHome ? 'home' : 'retry';
       el.emptyMessage.textContent = result.message;
-      el.emptyStartButton.textContent = '다시 시도';
+      el.emptyStartButton.textContent = toHome ? '홈으로' : '다시 시도';
       el.empty.hidden = false;
       return;
     }
@@ -649,8 +682,9 @@ export function createRankingScreen(
         if (matched) activeKey = matched.key;
       }
       // 부른 곳이 범위를 말하면 그것이고(결과 화면의 «랭킹 보기»는 이 브라우저의 기록, 온라인 결과의 «온라인
-      // 랭킹 보기»는 온라인), 아니면 이 페이지에서 마지막으로 본 범위, 처음이면 온라인 랭킹(있으면)이다
-      scope = nextScope ?? scope ?? (onlineOffered() ? 'online' : 'local');
+      // 랭킹 보기»는 온라인), 아니면 이 페이지에서 마지막으로 고른 범위, 아무도 고르지 않았으면 `defaultScope()`
+      // (온라인 랭킹이 있으면 온라인, 모르면 물어보고 못 읽으면 이 브라우저의 기록)다
+      if (nextScope) scope = nextScope;
       if (nextPeriod) period = nextPeriod;
 
       highlightId = nextHighlight;

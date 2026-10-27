@@ -6,6 +6,9 @@
 - 조회는 점수 내림차순, 같은 점수는 먼저 남긴 기록이 위, 순위는 그 순서(1, 2, 3)이고 상위 10이다.
   «이번 주»는 서울 시각 월요일 0시부터 다음 월요일 0시 전까지다.
 - 정리는 최근 8주와 판마다 전체 상위 100을 남긴다. 런타임 역할은 기록을 고치거나 지우지 못한다.
+- «내 기록»은 player id와 그 브라우저 토큰에서 나온 주인 열쇠가 함께 가린다 — 지워진 id를
+  다른 토큰으로 다시 등록한 사람은 남의 기록을 «나»로 읽지 못한다.
+- 마감 sweep은 판마다 savepoint라, 한 판이 닫히지 못해도 같은 묶음의 다른 판은 넘어간다.
 
 런타임 역할은 기록을 지울 수 없어(그것이 계약이다) 이 test가 남긴 줄은 DB에 남는다. CI는 빈 DB에서
 돌고, 조회를 견주는 test는 다른 test가 쓰지 않는 판(분야)과 먼 미래의 주를 골라 서로 섞이지 않는다.
@@ -32,12 +35,14 @@ from app.main import _match_payload
 from app.nickname_filter import ANONYMOUS_NICKNAME
 from app.postgres import PostgresRoomsRepository
 from app.question_catalog import QuestionCatalog
-from app.repository import MatchView
+from app.repository import MatchView, RankingEntryView, ranking_owner_key
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not set")
 
 SEOUL = timedelta(hours=9)
+# 이번 주·전체의 진짜 판은 다른 test의 기록과 같은 판에 서므로 상위 10이 아니라 모든 줄에서 찾는다
+_EVERY_ROW = 100_000
 
 
 @pytest.mark.integration
@@ -68,6 +73,16 @@ def test_postgres_retention_keeps_eight_weeks_and_each_boards_top_hundred() -> N
 @pytest.mark.integration
 def test_postgres_runtime_role_cannot_rewrite_or_delete_rankings() -> None:
     asyncio.run(_exercise_runtime_grants())
+
+
+@pytest.mark.integration
+def test_postgres_a_reused_player_id_with_another_token_never_reads_records_as_mine() -> None:
+    asyncio.run(_exercise_reused_player_id())
+
+
+@pytest.mark.integration
+def test_postgres_one_match_that_cannot_close_does_not_stall_the_deadline_sweep() -> None:
+    asyncio.run(_exercise_isolated_sweep())
 
 
 # 저장 한도(250,000줄)는 그만큼의 줄이 있어야 보인다. 런타임 역할은 그 줄을 거둘 수 없으므로
@@ -261,7 +276,11 @@ async def _exercise_multi_record() -> None:
         ]
 
         week = await repository.list_rankings(
-            board="all", period="week", actor_id=tied_id, at=await _finished_at(setup.id)
+            board="all",
+            period="week",
+            actor_id=tied_id,
+            owner_key=_owner_key(tied_id),
+            at=await _finished_at(setup.id),
         )
         mine = [entry for entry in week.entries if entry.is_mine]
         assert [(entry.nickname, entry.score) for entry in mine] == [("같은이름1", 30)]
@@ -282,36 +301,39 @@ async def _exercise_multi_record() -> None:
 async def _exercise_ordering() -> None:
     repository = await _repository()
     me, other = uuid4(), uuid4()
+    mine = _owner_key(me)
     monday = _far_week_monday()
     try:
         base = monday + timedelta(days=2)
-        # (점수, 몇 분 뒤, 누구) — 같은 점수 70은 먼저 남긴 기록이 위,
-        # 같은 시각이면 먼저 넣은 줄이 위
-        rows = [
-            (70, 30, other),
-            (90, 50, other),
-            (70, 10, me),
-            (70, 30, me),
-            (100, 90, other),
-            (40, 1, other),
-            (60, 2, other),
-            (60, 3, me),
-            (50, 4, other),
-            (30, 5, other),
-            (20, 6, other),
-            (10, 7, me),
+        # (점수, 몇 분 뒤, 누구, 주인 열쇠) — 같은 점수 70은 먼저 남긴 기록이 위,
+        # 같은 시각이면 먼저 넣은 줄이 위. 60점 하나는 같은 id를 다른 토큰으로 다시 등록한
+        # 사람의 것이고, 30점은 기록할 때 players 줄이 없어 열쇠가 없다
+        rows: list[tuple[int, int, UUID, bytes | None]] = [
+            (70, 30, other, _owner_key(other)),
+            (90, 50, other, _owner_key(other)),
+            (70, 10, me, mine),
+            (70, 30, me, mine),
+            (100, 90, other, _owner_key(other)),
+            (40, 1, other, _owner_key(other)),
+            (60, 2, me, _owner_key(me, browser="someone-else")),
+            (60, 3, me, mine),
+            (50, 4, other, _owner_key(other)),
+            (30, 5, me, None),
+            (20, 6, other, _owner_key(other)),
+            (10, 7, me, mine),
         ]
-        for score, minutes, player_id in rows:
+        for score, minutes, player_id, owner_key in rows:
             await _insert_record(
                 board="geography",
                 player_id=player_id,
                 score=score,
                 recorded_at=base + timedelta(minutes=minutes),
                 nickname=f"점수{score}",
+                owner_key=owner_key,
             )
 
         view = await repository.list_rankings(
-            board="geography", period="week", actor_id=me, at=base
+            board="geography", period="week", actor_id=me, owner_key=mine, at=base
         )
         assert [entry.rank for entry in view.entries] == list(range(1, 11))
         assert [(entry.score, entry.is_mine) for entry in view.entries] == [
@@ -326,6 +348,11 @@ async def _exercise_ordering() -> None:
             (40, False),
             (30, False),
         ]
+        # id만 같고 열쇠가 없으면 아무것도 내 기록이 아니다
+        id_only = await repository.list_rankings(
+            board="geography", period="week", actor_id=me, at=base
+        )
+        assert not any(entry.is_mine for entry in id_only.entries)
         recorded = [entry.recorded_at for entry in view.entries]
         assert recorded[2] < recorded[3] == recorded[4]
         assert view.entries[0].total_count == 10 and view.entries[0].correct_count == 10
@@ -336,7 +363,9 @@ async def _exercise_ordering() -> None:
         assert not any(entry.is_mine for entry in anonymous.entries)
 
         # 전체 기간도 같은 순서·같은 한도다
-        overall = await repository.list_rankings(board="geography", period="all", actor_id=me)
+        overall = await repository.list_rankings(
+            board="geography", period="all", actor_id=me, owner_key=mine
+        )
         assert overall.window_start is None and overall.window_end is None
         assert len(overall.entries) <= 10
         order = [(-entry.score, entry.recorded_at) for entry in overall.entries]
@@ -513,6 +542,138 @@ async def _exercise_runtime_grants() -> None:
             )
 
 
+# ── 내 기록의 주인 ─────────────────────────────────────────────────────────────
+
+
+async def _exercise_reused_player_id() -> None:
+    """로비에서 본 id를 그 사람의 players 줄이 지워진 뒤 제 토큰으로 다시 등록해도 «나»가 아니다."""
+    repository = await _repository()
+    victim = uuid4()
+    # 진짜 판을 닫아 남기므로 다른 test의 기록과 같은 판에 선다. 이 이름의 줄만 본다
+    owner_name = f"주인{secrets.token_hex(2)}"
+    room_code: str | None = None
+    try:
+        await _register(repository, {victim: owner_name})
+        room = await repository.create_room(victim, _room_spec("주인 열쇠", "science"), None)
+        room_code = room.code
+        setup = await repository.start_game(victim, room.code)
+        plan: dict[UUID, list[bool | None]] = {victim: [True] * setup.total_questions}
+        await _play(repository, room.code, setup.id, victim, plan)
+
+        stored = await _owner_keys(setup.id)
+        # 기록에는 토큰 해시가 아니라 그 해시에서 나온 32바이트 열쇠가 남는다
+        assert stored == [_owner_key(victim)]
+        assert stored[0] != _token_hash(victim)
+
+        original = await repository.list_rankings(
+            board="science",
+            period="all",
+            actor_id=victim,
+            owner_key=_owner_key(victim),
+            limit=_EVERY_ROW,
+        )
+        assert _mine_by_name(original.entries, owner_name) == [True]
+
+        # 방을 떠나고 2시간이 지나 players 줄이 지워졌다(정리가 지우는 것과 같다)
+        await _cleanup([victim], room_code)
+        room_code = None
+        # 다른 사람이 그 id를 제 토큰으로 등록한다 — 줄이 없으니 받아 준다
+        thief_hash = _token_hash(victim, browser="thief-browser")
+        await repository.upsert_player(victim, thief_hash, validate_player("가로챈사람", None))
+        assert await repository.authenticate(victim, thief_hash)
+
+        taken = await repository.list_rankings(
+            board="science",
+            period="all",
+            actor_id=victim,
+            owner_key=ranking_owner_key(thief_hash),
+            limit=_EVERY_ROW,
+        )
+        assert _mine_by_name(taken.entries, owner_name) == [False]
+        assert not any(entry.is_mine for entry in taken.entries)
+        # 원래 브라우저의 열쇠는 그대로 제 기록을 가린다
+        again = await repository.list_rankings(
+            board="science",
+            period="all",
+            actor_id=victim,
+            owner_key=_owner_key(victim),
+            limit=_EVERY_ROW,
+        )
+        assert _mine_by_name(again.entries, owner_name) == [True]
+    finally:
+        await repository.close()
+        await _cleanup([victim], room_code)
+
+
+# ── 마감 sweep ─────────────────────────────────────────────────────────────────
+
+
+async def _exercise_isolated_sweep() -> None:
+    """닫히지 못하는 판 하나(랭킹 기록이 실패한다)가 같은 묶음의 다른 판을 막지 않는다."""
+    repository = await _repository()
+    stuck_host, moving_host = uuid4(), uuid4()
+    codes: list[str] = []
+    try:
+        await _register(repository, {stuck_host: "막힌판", moving_host: "도는판"})
+        stuck_room = await repository.create_room(
+            stuck_host, _room_spec("막힌 판", "history"), None
+        )
+        moving_room = await repository.create_room(
+            moving_host, _room_spec("도는 판", "history"), None
+        )
+        codes = [stuck_room.code, moving_room.code]
+        stuck = await repository.start_game(stuck_host, stuck_room.code)
+        moving = await repository.start_game(moving_host, moving_room.code)
+        # 막힌 판은 마지막 공개가 끝나 닫을 차례, 도는 판은 첫 문항 마감이 지났다. 막힌 판의
+        # 마감이 더 일러 묶음의 맨 앞에 뽑힌다
+        await _set_match_state(
+            stuck.id,
+            state="revealing",
+            position=stuck.total_questions,
+            deadline_ago="10 seconds",
+        )
+        await _set_match_state(moving.id, state="running", position=1, deadline_ago="5 seconds")
+
+        real_record = repository._record_rankings
+
+        async def failing_record(
+            connection: AsyncConnection[dict[str, object]],
+            match: dict[str, object],
+            finished_at: datetime,
+        ) -> None:
+            if match["id"] == stuck.id:
+                # 표가 없을 때(012 없는 DB)와 같은 실패 — transaction을 실패 상태로 만든다
+                await connection.execute("SELECT 1 FROM quiz_online.no_such_rankings_table")
+            await real_record(connection, match, finished_at)
+
+        repository._record_rankings = failing_record  # type: ignore[method-assign]
+        advanced = await repository.advance_expired_matches()
+        ours = {
+            advance.match_id: advance
+            for advance in advanced
+            if advance.match_id in {stuck.id, moving.id}
+        }
+        assert set(ours) == {moving.id}
+        assert ours[moving.id].finished is False
+        assert await _match_state(moving.id) == ("revealing", 1)
+        # 막힌 판은 그대로 닫을 차례에 남고 기록도 없다 — 다음 sweep이 다시 본다
+        assert await _match_state(stuck.id) == ("revealing", stuck.total_questions)
+        assert await _records(stuck.id) == []
+
+        # 기록이 다시 되면 다음 sweep이 닫고 남긴다
+        repository._record_rankings = real_record  # type: ignore[method-assign]
+        advanced = await repository.advance_expired_matches()
+        closed = [advance for advance in advanced if advance.match_id == stuck.id]
+        assert [advance.finished for advance in closed] == [True]
+        assert await _match_state(stuck.id) == ("finished", stuck.total_questions)
+        assert [row["player_id"] for row in await _records(stuck.id)] == [stuck_host]
+    finally:
+        await repository.close()
+        for code in codes:
+            await _cleanup([], code)
+        await _cleanup([stuck_host, moving_host], None)
+
+
 # ── 도우미 ─────────────────────────────────────────────────────────────────────
 
 
@@ -628,6 +789,7 @@ async def _insert_record(
     score: int,
     recorded_at: datetime,
     nickname: str,
+    owner_key: bytes | None = None,
 ) -> int:
     """런타임 역할이 할 수 있는 INSERT로 정해진 기록을 넣는다(분야 판, 10문제)."""
     assert DATABASE_URL is not None
@@ -636,12 +798,12 @@ async def _insert_record(
             """
             INSERT INTO quiz_online.online_rankings (
                 match_id, player_id, mode, category_id, score, correct_count, total_questions,
-                question_time_ms, nickname, character_id, recorded_at
+                question_time_ms, nickname, character_id, owner_key, recorded_at
             )
-            VALUES (%s, %s, 'category', %s, %s, %s, 10, 20000, %s, 'slime-blue', %s)
+            VALUES (%s, %s, 'category', %s, %s, %s, 10, 20000, %s, 'slime-blue', %s, %s)
             RETURNING id
             """,
-            (uuid4(), player_id, board, score, score // 10, nickname, recorded_at),
+            (uuid4(), player_id, board, score, score // 10, nickname, owner_key, recorded_at),
         )
         row = await cursor.fetchone()
     assert row is not None
@@ -716,8 +878,59 @@ async def _expire_reveal(match_id: UUID) -> None:
         )
 
 
-def _token_hash(player_id: UUID) -> bytes:
-    return hashlib.sha256(f"ranking-test-token:{player_id}".encode()).digest()
+def _token_hash(player_id: UUID, *, browser: str = "ranking-test") -> bytes:
+    """그 브라우저(browser)가 가진 토큰의 해시. 같은 id라도 브라우저가 다르면 다르다."""
+    return hashlib.sha256(f"{browser}:{player_id}".encode()).digest()
+
+
+def _owner_key(player_id: UUID, *, browser: str = "ranking-test") -> bytes:
+    """그 브라우저의 «내 기록» 열쇠. 기록과 조회가 같은 함수를 쓴다."""
+    return ranking_owner_key(_token_hash(player_id, browser=browser))
+
+
+async def _owner_keys(match_id: UUID) -> list[bytes | None]:
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            "SELECT owner_key FROM quiz_online.online_rankings WHERE match_id = %s ORDER BY id",
+            (match_id,),
+        )
+        return [None if row[0] is None else bytes(row[0]) for row in await cursor.fetchall()]
+
+
+def _mine_by_name(entries: tuple[RankingEntryView, ...], nickname: str) -> list[bool]:
+    return [entry.is_mine for entry in entries if entry.nickname == nickname]
+
+
+async def _set_match_state(
+    match_id: UUID, *, state: str, position: int, deadline_ago: str
+) -> None:
+    """판을 그 상태로 옮기고 마감을 지난 시각으로 둔다(마감은 문항 시작보다 이를 수 없다)."""
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        await connection.execute(
+            """
+            UPDATE quiz_online.matches
+            SET state = %s,
+                current_position = %s,
+                question_started_at = now() - %s::interval,
+                deadline_at = now() - %s::interval
+            WHERE id = %s
+            """,
+            (state, position, deadline_ago, deadline_ago, match_id),
+        )
+
+
+async def _match_state(match_id: UUID) -> tuple[str, int]:
+    assert DATABASE_URL is not None
+    async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            "SELECT state, current_position FROM quiz_online.matches WHERE id = %s",
+            (match_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None
+    return str(row[0]), int(row[1])
 
 
 def _test_catalog() -> QuestionCatalog:

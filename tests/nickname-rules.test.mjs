@@ -15,8 +15,32 @@ test('화면의 규칙 값은 서버의 데이터 파일과 같다', () => {
   assert.equal(rules.NICKNAME_MAX_DIGIT_RUN, serverRules.maxDigitRun);
   assert.deepEqual([...rules.NICKNAME_URL_SUFFIXES], serverRules.urlSuffixes);
   assert.deepEqual([...rules.NICKNAME_BLOCKED_WORDS], serverRules.blockedWords);
+  assert.deepEqual([...rules.NICKNAME_BLOCKED_TOKENS], serverRules.blockedTokens);
   // 목록은 글자만 남긴 꼴로 적는다 — 그래야 «시1발»·«시 발»도 같은 말로 걸린다
-  for (const word of rules.NICKNAME_BLOCKED_WORDS) assert.equal(rules.compactNickname(word), word, word);
+  for (const word of [...rules.NICKNAME_BLOCKED_WORDS, ...rules.NICKNAME_BLOCKED_TOKENS]) {
+    assert.equal(rules.compactNickname(word), word, word);
+  }
+});
+
+test('흔한 이름 안에도 있는 말은 따로 섰을 때만 걸리고, 숫자는 어떤 기호로 갈라도 이어진 것이다', () => {
+  for (const name of ['Shitae', 'Ashita', 'Yoshitaka', 'Pornchai', '생존나라', '보존나무']) {
+    assert.equal(rules.nicknameProblem(name), null, name);
+  }
+  for (const name of ['shit', 'Shit맨', 's.h.i.t', 'shit123', 's h i t', 'my-shit', '존나 짱']) {
+    assert.equal(rules.nicknameProblem(name), 'profanity', name);
+  }
+  assert.deepEqual(rules.nicknameTokenViews('My-S.h.i.t 1'), ['myshit ', 'my s h i t  ']);
+  for (const name of ['1234/5678', '1234ㅡ5678', '1234—5678', '1234–5678', '1234~5678', '010ㅡ1234ㅡ5']) {
+    assert.equal(rules.nicknameProblem(name), 'digits', name);
+  }
+  for (const name of ['1등2등3등4등', 'a1b2c3d4e5f6', '퀴즈왕12345']) {
+    assert.equal(rules.nicknameProblem(name), null, name);
+  }
+});
+
+test('뒤돌아보기 정규식을 쓰지 않는다 — 오래된 Safari는 모듈째 읽지 못한다', async () => {
+  const text = await source('src/online/nickname-rules.ts');
+  assert.doesNotMatch(text, /\(\?<[=!]/);
 });
 
 test('서버의 사례 표와 같은 판정을 낸다', () => {

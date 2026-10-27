@@ -100,6 +100,8 @@ _RANKINGS_COLUMNS: dict[str, tuple[str, bool, bool, bool]] = {
     "question_time_ms": ("integer", True, False, False),
     "nickname": ("character varying(20)", True, False, False),
     "character_id": ("character varying(32)", True, False, False),
+    # «내 기록»의 주인 열쇠(브라우저 토큰에서, 32바이트). players 줄이 없을 때만 NULL이다
+    "owner_key": ("bytea", False, False, False),
     "recorded_at": ("timestamp with time zone", True, False, False),
     "week_start": ("date", False, True, False),
 }
@@ -109,6 +111,7 @@ _RANKINGS_CHECKS = (
     "online_rankings_question_time_check",
     "online_rankings_nickname_check",
     "online_rankings_character_id_valid",
+    "online_rankings_owner_key_length",
 )
 _RANKINGS_UNIQUE = "online_rankings_match_player_key"
 _RANKINGS_INDEXES = (
@@ -845,6 +848,9 @@ def _check_rankings_constraints(connection: Connection) -> Iterable[Check]:
         problems.append(
             "online_rankings_question_time_check does not allow exactly 20000 and 40000"
         )
+    owner_key = constraints.get((_RANKINGS_TABLE, "online_rankings_owner_key_length"))
+    if owner_key is not None and "octet_length(owner_key) = 32" not in owner_key[1]:
+        problems.append("online_rankings_owner_key_length does not require 32-byte owner keys")
     unique = {
         str(constraint): bool(validated)
         for constraint, validated in connection.execute(

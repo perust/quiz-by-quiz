@@ -183,11 +183,13 @@ test('끝난 판의 rankingRecorded는 참·거짓만 믿고, 없으면(이전 A
 });
 
 test('금칙 규칙에 걸리는 닉네임은 보내지 않고 고칠 곳을 말한다 — 서버의 거절도 같은 말로 옮긴다', async () => {
-  const { OnlinePlayerError } = await import('../js/online/rules.js');
+  const { OnlinePlayerError, isNicknameRejection } = await import('../js/online/rules.js');
   const blocked = await storeWith(() => { throw new Error('nothing may be sent'); });
   blocked.store.setPlayer({ nickname: 'kim@mail', characterId: 'slime-blue' });
   await assert.rejects(blocked.store.listRooms(), (error) => {
     assert.ok(error instanceof OnlinePlayerError);
+    // 다시 시도해도 같은 실패라 화면이 알아본다(랭킹의 빈 칸이 「다시 시도」 대신 「홈으로」)
+    assert.equal(isNicknameRejection(error), true);
     assert.equal(
       error.message,
       '전화번호·이메일·인터넷 주소처럼 보이는 닉네임은 쓸 수 없어요. 홈에서 닉네임을 바꿔 주세요.',
@@ -201,9 +203,22 @@ test('금칙 규칙에 걸리는 닉네임은 보내지 않고 고칠 곳을 말
     ? json({ detail: { code: 'nickname-profanity', message: '서버의 말' } }, 400)
     : json([])));
   refused.store.setPlayer({ nickname: '퀴즈왕', characterId: 'slime-blue' });
-  await assert.rejects(refused.store.listRooms(), {
-    message: '닉네임에 쓸 수 없는 말이 들어 있어요. 홈에서 닉네임을 바꿔 주세요.',
+  await assert.rejects(refused.store.listRooms(), (error) => {
+    assert.equal(error.message, '닉네임에 쓸 수 없는 말이 들어 있어요. 홈에서 닉네임을 바꿔 주세요.');
+    assert.equal(isNicknameRejection(error), true);
+    return true;
   });
+  // 랭킹 읽기도 같은 길이다 — 세션을 열지 않고 고칠 곳을 말한다
+  const ranking = await storeWith(() => { throw new Error('nothing may be sent'); });
+  ranking.store.setPlayer({ nickname: '010ㅡ1234ㅡ5', characterId: 'slime-blue' });
+  await assert.rejects(
+    ranking.store.getOnlineRankings({ target: TARGET, period: 'week' }),
+    (error) => isNicknameRejection(error),
+  );
+  assert.equal(ranking.requests.length, 0);
+  // 연결 실패나 다른 거절은 닉네임 탓이 아니다
+  assert.equal(isNicknameRejection(new Error('Failed to fetch')), false);
+  assert.equal(isNicknameRejection(new OnlinePlayerError('응답이 늦어요.')), false);
 });
 
 test('로컬 방에는 서버 랭킹이 없다', async () => {

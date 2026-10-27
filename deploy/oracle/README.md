@@ -256,8 +256,14 @@ owner decision). In the same transaction that turns the last reveal into
 final standings' own aggregate over `match_answers`; no browser-reported score
 is accepted anywhere), total questions, mode (`category` or `all`) and category,
 the match's question time, the nickname as shown in that room, the character id,
-the browser player id (`players.id`, kept in the browser's localStorage) and the
-close time (`matches.finished_at`). A player who dropped out during the match is
+the browser player id (`players.id`, kept in the browser's localStorage), the
+owner key and the close time (`matches.finished_at`). The owner key is
+`sha256("qbb-ranking-owner:" || players.token_hash)` (32 bytes, `NULL` only if
+the player row were already gone; the token hash itself is not stored): the
+player id alone cannot prove ownership, because every lobby reader sees member
+ids and anyone may register an id again with their own token once its player row
+expired (2 hours), so a record is "mine" only for the same id **and** the same
+browser token. A player who dropped out during the match is
 recorded with the timeouts that filled their answers; a member who was absent at
 the start is not a match player and is not recorded. `UNIQUE (match_id,
 player_id)` (`online_rankings_match_player_key`) keeps a re-read of a finished
@@ -268,11 +274,15 @@ The finished match snapshot carries `rankingRecorded` for the reader.
 
 Nicknames: duplicates are allowed. `PUT /v1/session` refuses profanity with 400
 `nickname-profanity` and personal-data shapes (six or more digits in a run,
-`x@y`, `://`, `www.` or `name.<common suffix>`) with 400
-`nickname-personal-info`; the short word list and suffixes live in
-`server/app/nickname_filter.py`'s data file `nickname_rules.json`, mirrored in
-the Pages client (`src/online/nickname-rules.ts`) so the home dialog explains it
-before sending. At record time the room nickname is checked again and an old
+whatever non-letter separates them — space, dot, slash, tilde, comma, dashes or
+the vowel `ㅡ` typed as a dash; `x@y`, `://`, `www.` or `name.<common suffix>`)
+with 400 `nickname-personal-info`. The short word lists and suffixes live in
+`server/app/nickname_filter.py`'s data file `nickname_rules.json`
+(`blockedWords` match anywhere in the letters-only form; `blockedTokens` such as
+`shit`, `porn`, `존나` also occur inside ordinary names like Ashita, Pornchai or
+생존나라 and only match as a standalone word), mirrored in the Pages client
+(`src/online/nickname-rules.ts`) so the home dialog explains it before
+sending. At record time the room nickname is checked again and an old
 nickname that fails is stored as `익명`.
 
 Reads: `GET /v1/rankings?mode=category&category=<id>&period=week|all` (or
@@ -284,7 +294,8 @@ final standings order), and ranks follow that order (1, 2, 3), as the local
 ranking does. `week` is Monday 00:00 to the next Monday 00:00 in Asia/Seoul
 (`window: {start, end, timeZone}`; `null` for `all`). The browser player id is
 never returned; `isMine` is true only when the request carries the same
-authenticated browser identity (a wrong identity is 401, not an anonymous read).
+authenticated browser identity — the same player id and an owner key derived from
+the same bearer token (a wrong identity is 401, not an anonymous read).
 Each read is one index scan of at most 10 rows (`online_rankings_board_order_idx`
 for all time, `online_rankings_board_week_order_idx` on the stored generated
 `board`/`week_start` columns for the week; about 0.05 ms measured on 100,000
@@ -301,11 +312,11 @@ top 100; above 250,000 rows it trims the oldest rows even inside the 8 weeks
 (each board's top 100 always stay). It deletes at most 10,000 rows per call, and
 the `cleanup` log line counts them (`rankingsPruned`).
 
-Resource envelope: a row with its three indexes takes about 410 bytes (100,000
-synthetic rows: 14 MB heap, 25 MB indexes). A class of 30 playing ten matches a
-day writes 300 rows a day, about 16,800 (7 MB) in 8 weeks. The 250,000-row
-ceiling bounds the table at roughly 100 MB plus 600 retained top rows, whatever
-the traffic. Rows are written only when a match closes; a match takes at least
+Resource envelope: a row with its three indexes takes about 445 bytes (100,000
+synthetic rows with owner keys: 17 MB heap, 25 MB indexes). A class of 30
+playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
+weeks. The 250,000-row ceiling bounds the table at roughly 110 MB plus 600
+retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
 ten 8-second reveals (80 s, 200 s for the all-categories round), a room holds one
 match at a time with at most 12 players, and match starts share the
 600/process/minute room-mutation bucket, so ingest cannot exceed 7,200 rows a
@@ -368,10 +379,16 @@ readiness then answers 503 `migration-required`, because it requires exactly
 schema version 11 — the expected fail-closed state, not an outage. The
 candidate API records every match it closes inside the closing transaction, so
 it must not replace the 011 API before ledger version 012 exists: on a
-migration-011 database it could not close a match, and its readiness answers
-503 `migration-required` there too. The candidate Pages client shows the online
-ranking only when the session response carries `rankings: true` and keeps
-working without it (the online ranking UI stays hidden), but the Pages workflow
+migration-011 database no match could close (each closing transaction fails;
+the deadline sweep isolates every match in its own savepoint, so it keeps
+advancing the other matches and retries the closing ones every second), every
+read of a finished match fails, and its readiness answers 503
+`migration-required` there too. The candidate Pages client asks for a session
+before it offers the online ranking: it shows the online ranking only when the
+session response carries `rankings: true`, hides the online ranking UI when the
+API lacks that field, and opens on the browser's own records when the session
+cannot be opened at all (API unreachable, or a saved nickname the new filter
+refuses); the "online ranking" tab stays there to retry. The Pages workflow
 still waits for `schemaVersion: 12`, so the published client's "recorded to the
 online ranking" line is always backed by a recording API.
 
@@ -387,7 +404,7 @@ online ranking" line is always backed by a recording API.
    `up`, restart, reload, migrate, or expose anything at this step.
 3. With the migration-011 API still serving, build and run only the explicit
    `quiz-by-quiz-migrate` service from the candidate source. Require ledger
-   versions 001–012, the `online_rankings` table with its five checks and
+   versions 001–012, the `online_rankings` table with its six checks and
    `online_rankings_match_player_key`, its three indexes,
    `quiz_online.prune_online_rankings()` as `SECURITY DEFINER`, the runtime
    role's `SELECT`/`INSERT`-only access to the table and `EXECUTE` on the
@@ -422,9 +439,17 @@ waited for that API. Its steps were the ones above with ledger versions
 20000` on every pre-existing room and match after step 3, a room created
 without `questionTimeMs` reporting `questionTimeMs: 20000` after step 4, and the
 exact readiness `{status: ready, contract: character-only-v1, schemaVersion:
-11}`. A database still at migration 010 must complete that order with a
-migration-011 API before step 3 above; the current candidate API does not run on
-a migration-010 or migration-011 database.
+11}`. A database still at migration 010 (production today) must complete that
+order with a migration-011 API before step 3 above — and run that whole boundary
+from the #107 source checkout (`QUIZ_BY_QUIZ_SOURCE_DIR` at the approved #107
+commit, its `app.release_check` and its `smoke.py` with `baseline` = the
+migration-010 API and `candidate` = the migration-011 API). This candidate's
+`quiz-by-quiz-migrate` cannot stop at 011: on a migration-010 database it
+applies 011 and 012 together (`pending-migrations` names `11, 12`), which would
+leave the 010 API serving on a migration-012 database, a state no step here
+covers; and this candidate's `smoke.py` has no migration-010 baseline. The
+current candidate API does not run on a migration-010 or migration-011
+database.
 
 The boundary before that was **API → migration 010 → Pages**: never run the 010
 constraint migration while a legacy API process can still write `false` or
@@ -473,9 +498,10 @@ overlay.
   lock, and `active-matches`/`recent-members` report activity as `INFO`; add
   `--require-idle` to fail while a match is running or revealing.
 - **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 12 --require-empty-rankings`.
-  It requires ledger 1–12, the ranking table's 14 columns (`board` and
-  `week_start` stored generated, `id` an identity), its five validated checks
-  and `online_rankings_match_player_key`, its three indexes valid,
+  It requires ledger 1–12, the ranking table's 15 columns (`board` and
+  `week_start` stored generated, `id` an identity, `owner_key` a nullable
+  `bytea`), its six validated checks (`online_rankings_owner_key_length` must
+  require 32-byte keys) and `online_rankings_match_player_key`, its three indexes valid,
   `prune_online_rankings()` `SECURITY DEFINER` with a fixed `search_path`, and
   the runtime role's effective `SELECT`/`INSERT` on the table without `UPDATE`,
   `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` (table or column grants),
@@ -488,8 +514,10 @@ overlay.
 - At the preceding 011 boundary the same commands ran with `--expect 10` before
   the migration and `--expect 11 --require-default-question-time` after it
   (every room and match still at `20000`, because only the migration-010 API
-  served until its step 4); the tool still accepts both for a database at
-  migration 010.
+  served until its step 4). Run them from the #107 image for a database still at
+  migration 010: this image's migrate service cannot stop at 011 (it applies 11
+  and 12 together), so its `--expect 11` check after migrating would fail with
+  "latest version is 12".
 - **Step 3, first — the private bank** (before the `db` checks, while the
   migration-011 API still serves):
   `docker compose … --profile migration run --build --rm --no-deps -e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank --volume "<QUIZ_ONLINE_BANK_DIR>:/run/quiz-by-quiz/online-bank:ro" quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check bank`.

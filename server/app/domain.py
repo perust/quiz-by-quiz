@@ -114,7 +114,7 @@ def validate_question_time(question_time_ms: object) -> int:
 
 
 # 닉네임 금칙 규칙(PRD 12.1)에 걸렸을 때의 오류. 화면은 코드를 보고 제 말로 옮긴다
-# (src/online/rules.ts의 NICKNAME_ERROR_MESSAGES). 같은 이름은 막지 않는다.
+# (src/online/rules.ts의 NICKNAME_REJECTION_MESSAGES). 같은 이름은 막지 않는다.
 NICKNAME_PROFANITY_CODE = "nickname-profanity"
 NICKNAME_PERSONAL_INFO_CODE = "nickname-personal-info"
 

@@ -7,6 +7,12 @@
 -- 싣지 않고 «내 기록»(isMine)을 가리는 데만 쓴다. players·matches는 몇 시간 만에 지워지므로
 -- 외래 키를 걸지 않는다 — 걸면 기록이 판과 함께 사라진다.
 --
+-- 그래서 player_id만으로는 «내 기록»을 가릴 수 없다. player id는 로비의 방 snapshot에 실려 남에게도
+-- 보이고, players 줄이 지워진 뒤에는 누구든 그 id를 제 토큰으로 다시 등록할 수 있다. 기록에는 그
+-- 브라우저의 비밀(토큰)에서 나온 owner_key(sha256("qbb-ranking-owner:" || players.token_hash), 32바이트)를
+-- 함께 남기고, isMine은 id와 owner_key가 모두 같을 때만 선다. 토큰 해시 자체는 남기지 않는다.
+-- 기록할 때 players 줄이 없으면(평소에는 판이 도는 동안 지워지지 않는다) NULL이라 누구의 것도 아니다.
+--
 -- 판(board)은 분야 다섯과 전체 도전 하나다. «이번 주»는 서울 시각 월요일 0시부터 다음 월요일까지라
 -- 기록마다 그 주의 월요일(week_start)을 저장 열로 둔다. 두 조회(전체·이번 주 상위 10)는 아래 두
 -- 색인을 그대로 탄다 — 점수 내림차순, 같은 점수는 먼저 남긴 기록(기록 시각, 같은 판이면 id)이 위다.
@@ -34,6 +40,7 @@ CREATE TABLE quiz_online.online_rankings (
     question_time_ms integer NOT NULL,
     nickname varchar(20) NOT NULL,
     character_id varchar(32) NOT NULL,
+    owner_key bytea,
     recorded_at timestamptz NOT NULL,
     week_start date GENERATED ALWAYS AS (
         (date_trunc('week', recorded_at AT TIME ZONE 'Asia/Seoul'))::date
@@ -55,6 +62,9 @@ CREATE TABLE quiz_online.online_rankings (
     CONSTRAINT online_rankings_nickname_check CHECK (length(btrim(nickname)) BETWEEN 1 AND 20),
     CONSTRAINT online_rankings_character_id_valid CHECK (
         character_id ~ '^[a-z0-9][a-z0-9-]{0,31}$'
+    ),
+    CONSTRAINT online_rankings_owner_key_length CHECK (
+        owner_key IS NULL OR octet_length(owner_key) = 32
     )
 );
 

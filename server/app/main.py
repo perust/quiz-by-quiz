@@ -77,6 +77,7 @@ from .repository import (
     RoomView,
     StandingAnswer,
     TokenConflict,
+    ranking_owner_key,
 )
 from .tickets import WebSocketTickets
 
@@ -1597,7 +1598,9 @@ def create_app(
         """온라인 랭킹 상위 10 (FR-7.13 2단계, PRD 12.1). 세션 없이도 읽는 공개 읽기다.
 
         신분(Authorization·X-Player-Id)을 실은 요청은 다른 인증 요청처럼 확인하고, 그 브라우저의
-        기록에만 isMine을 단다. 신분이 틀렸으면 401이다 — 화면은 세션을 다시 열고 한 번 더 묻는다.
+        기록에만 isMine을 단다 — player id와 토큰에서 나온 주인 열쇠(`ranking_owner_key`)가
+        모두 같아야 한다. id는 로비에 보이고 지워진 players 줄의 id는 누구든 다시 등록할 수
+        있어서다. 신분이 틀렸으면 401이다 — 화면은 세션을 다시 열고 한 번 더 묻는다.
         """
         client_key = _client_key(request)
         wait = ranking_limiter.try_acquire(
@@ -1624,11 +1627,11 @@ def create_app(
         ):
             raise _error(400, "invalid-ranking", "랭킹 종류가 올바르지 않아요.")
         actor_id: UUID | None = None
+        owner_key: bytes | None = None
         if authorization is not None or player_id_header is not None:
-            actor_id = await authenticate_actor(
-                request,
-                _identity(authorization=authorization, player_id_header=player_id_header),
-            )
+            identity = _identity(authorization=authorization, player_id_header=player_id_header)
+            actor_id = await authenticate_actor(request, identity)
+            owner_key = ranking_owner_key(identity.token_hash)
         board = category if mode == "category" and category is not None else "all"
         if board not in RANKING_BOARDS:  # pragma: no cover - guarded above
             raise _error(400, "invalid-ranking", "랭킹 종류가 올바르지 않아요.")
@@ -1636,6 +1639,7 @@ def create_app(
             board=board,
             period="week" if period == "week" else "all",
             actor_id=actor_id,
+            owner_key=owner_key,
         )
         return _ranking_payload(
             view,

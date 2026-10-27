@@ -54,6 +54,7 @@ import {
   LEGACY_MIN_PLAYERS,
   LeaveRoomRejected,
   NICKNAME_REJECTION_MESSAGES,
+  NicknameRejected,
   nicknameRejection,
   normalizeCode,
   OnlinePlayerError,
@@ -855,12 +856,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   async function ensureSession(player?: PlayerInfo): Promise<void> {
     const profile = profileBody(player);
     // 금칙 규칙에 걸리는 닉네임(규칙이 생기기 전에 저장한 이름)은 보내지 않는다. 서버도 같은 규칙으로
-    // 거절한다 — 보내기 전에 같은 말로 고칠 곳을 알린다 (PRD 12.1)
+    // 거절한다 — 보내기 전에 같은 말로 고칠 곳을 알린다 (PRD 12.1). 다시 시도해도 같으므로 화면이
+    // 알아보게 따로 던진다(`isNicknameRejection` → 「홈으로」)
     const problem = nicknameProblem(profile.nickname);
     if (problem !== null) {
-      throw new OnlinePlayerError(
-        NICKNAME_REJECTION_MESSAGES[problem === 'profanity' ? 'nickname-profanity' : 'nickname-personal-info'],
-      );
+      throw new NicknameRejected(problem === 'profanity' ? 'nickname-profanity' : 'nickname-personal-info');
     }
     const fingerprint = JSON.stringify(profile);
     if (sessionFingerprint === fingerprint) return;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -19,8 +20,11 @@ from app.repository import (
     RankingBoardView,
     RankingEntryView,
     RankingPeriod,
+    ranking_owner_key,
 )
 
+# «내 기록»의 열쇠는 player id가 아니라 그 브라우저의 토큰에서 나온다 (owner_key)
+OWNER_KEY = ranking_owner_key(hashlib.sha256(PLAYER_TOKEN.encode("utf-8")).digest())
 WINDOW_START = "2026-10-26T00:00:00+09:00"
 WINDOW_END = "2026-11-02T00:00:00+09:00"
 
@@ -53,17 +57,27 @@ class RankingRepository(FakeRepository):
         board: str,
         period: RankingPeriod,
         actor_id: UUID | None = None,
+        owner_key: bytes | None = None,
         at: datetime | None = None,
         limit: int = 10,
     ) -> RankingBoardView:
         self.ranking_calls.append(
-            {"board": board, "period": period, "actor_id": actor_id, "limit": limit}
+            {
+                "board": board,
+                "period": period,
+                "actor_id": actor_id,
+                "owner_key": owner_key,
+                "limit": limit,
+            }
         )
         return RankingBoardView(
             board=board,
             period=period,
             entries=tuple(
-                replace(item, is_mine=item.is_mine and actor_id is not None)
+                replace(
+                    item,
+                    is_mine=item.is_mine and actor_id is not None and owner_key is not None,
+                )
                 for item in self.ranking_entries
             ),
             window_start=WINDOW_START if period == "week" else None,
@@ -111,11 +125,48 @@ def test_week_board_shape_carries_the_window_and_no_browser_identity() -> None:
         ],
     }
     assert repository.ranking_calls == [
-        {"board": "history", "period": "week", "actor_id": PLAYER_ID, "limit": 10}
+        {
+            "board": "history",
+            "period": "week",
+            "actor_id": PLAYER_ID,
+            "owner_key": OWNER_KEY,
+            "limit": 10,
+        }
     ]
     # 브라우저 신분(player id)은 어디에도 싣지 않는다
     assert str(PLAYER_ID) not in response.text
     assert PLAYER_TOKEN not in response.text
+
+
+class ReusedIdRepository(RankingRepository):
+    """지워진 players 줄의 id를 다른 토큰으로 다시 등록했다 — 두 토큰이 모두 그 id로 인증된다."""
+
+    async def authenticate(self, player_id: UUID, token_hash: bytes) -> bool:
+        self.authenticate_calls += 1
+        return player_id == PLAYER_ID
+
+
+def test_owner_key_comes_from_the_token_so_the_same_id_with_another_token_is_not_mine() -> None:
+    repository = ReusedIdRepository()
+    other_token = "another-token-for-the-same-player-id-123456"  # noqa: S105
+    with make_client(repository) as client:
+        client.get("/v1/rankings", params={"mode": "all", "period": "all"}, headers=HEADERS)
+        client.get(
+            "/v1/rankings",
+            params={"mode": "all", "period": "all"},
+            headers={**HEADERS, "Authorization": f"Bearer {other_token}"},
+        )
+
+    first, second = repository.ranking_calls
+    assert first["actor_id"] == second["actor_id"] == PLAYER_ID
+    assert first["owner_key"] == OWNER_KEY and len(OWNER_KEY) == 32
+    # 같은 id라도 토큰이 다르면 열쇠가 다르다 — 지워진 id를 다시 등록한 사람은 남의 «나»를 못 읽는다
+    assert second["owner_key"] == ranking_owner_key(
+        hashlib.sha256(other_token.encode("utf-8")).digest()
+    )
+    assert second["owner_key"] != first["owner_key"]
+    # 열쇠는 토큰 해시 그 자체가 아니다(로그인에 쓸 수 없다)
+    assert OWNER_KEY != hashlib.sha256(PLAYER_TOKEN.encode("utf-8")).digest()
 
 
 def test_all_mode_and_all_time_have_no_category_and_no_window() -> None:
@@ -142,6 +193,7 @@ def test_anonymous_read_marks_nothing_mine_and_skips_authentication() -> None:
     assert response.status_code == 200
     assert [item["isMine"] for item in response.json()["entries"]] == [False, False]
     assert repository.ranking_calls[0]["actor_id"] is None
+    assert repository.ranking_calls[0]["owner_key"] is None
     assert repository.authenticate_calls == 0
 
 

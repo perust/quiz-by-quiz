@@ -791,8 +791,8 @@ def test_latest_database_passes_expect_12_with_only_read_statements(
     assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..40000" in output
     assert "OK runtime-question-time-access" in output
     assert "OK runtime-ledger-access" in output
-    assert "OK rankings-table quiz_online.online_rankings has 14 columns" in output
-    assert "OK rankings-constraints 5 checks validated" in output
+    assert "OK rankings-table quiz_online.online_rankings has 15 columns" in output
+    assert "OK rankings-constraints 6 checks validated" in output
     assert "OK rankings-indexes" in output
     assert "OK rankings-retention quiz_online.prune_online_rankings() SECURITY DEFINER" in output
     assert "INFO rankings-records" in output
@@ -1138,6 +1138,44 @@ def test_runtime_rankings_access_allows_only_insert_and_select(grant: str, held:
         f"FAIL runtime-rankings-access {_RUNTIME_ROLE_NAME} on quiz_online.online_rankings: "
         "lacks INSERT"
     ]
+
+
+@pytest.mark.integration
+@needs_database
+def test_rankings_owner_key_must_stay_a_32_byte_secret_derived_key() -> None:
+    """«내 기록»은 player id와 토큰에서 나온 owner_key가 함께 가린다 — 열과 길이 제약."""
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.online_rankings "
+                "DROP CONSTRAINT online_rankings_owner_key_length"
+            )
+            dropped = check_database(connection, expect=12)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.online_rankings "
+                "DROP CONSTRAINT online_rankings_owner_key_length, "
+                "ADD CONSTRAINT online_rankings_owner_key_length "
+                "CHECK (owner_key IS NULL OR octet_length(owner_key) > 0)"
+            )
+            loosened = check_database(connection, expect=12)
+        with connection.transaction(force_rollback=True):
+            connection.execute("ALTER TABLE quiz_online.online_rankings DROP COLUMN owner_key")
+            missing = check_database(connection, expect=12)
+
+    assert [check.render() for check in dropped if check.status == "FAIL"] == [
+        "FAIL rankings-constraints online_rankings_owner_key_length on online_rankings is missing"
+    ]
+    assert [check.render() for check in loosened if check.status == "FAIL"] == [
+        "FAIL rankings-constraints online_rankings_owner_key_length does not require "
+        "32-byte owner keys"
+    ]
+    failed = [check.render() for check in missing if check.status == "FAIL"]
+    assert any(
+        line.startswith("FAIL rankings-table") and "owner_key" in line for line in failed
+    ), failed
 
 
 def _install(connection: psycopg.Connection[Any], migrations: Iterable[Any]) -> None:

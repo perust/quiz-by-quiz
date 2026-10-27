@@ -5,6 +5,7 @@
 
 import { CATEGORIES, DEFAULT_NICKNAME, NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need, needOne } from '../dom.js';
+import { nicknameProblem } from '../online/nickname-rules.js';
 import { createScreenWalker } from './screen-walker.js';
 import { formatDuration, formatPercent } from './format.js';
 import { announce } from './screens.js';
@@ -227,6 +228,14 @@ export function describeOutcome(
   if (kept) return { text: `이 브라우저 기록 중 ${rank}위로 저장했어요.`, tone: 'done' };
   // 상위 10개만 보관하므로 밀려난 기록은 남지 않는다 (FR-6.4)
   return { text: '상위 10위 밖이라 랭킹 목록에는 남지 않았어요.', tone: null };
+}
+
+/**
+ * 등록한 이름이 닉네임 금칙 규칙(PRD 12.1)에 걸리면 덧붙이는 말. 이 브라우저의 기록에는 적은 그대로 남지만
+ * 홈의 닉네임(온라인 프로필·다음 판 기본값)으로는 올리지 않는다(`app.ts`의 `registerRecord`). 걸리지 않으면 빈 글이다
+ */
+export function registeredNameNote(nickname: string): string {
+  return nicknameProblem(nickname) === null ? '' : '이 이름은 온라인에서 쓸 수 없어 홈의 닉네임은 그대로예요.';
 }
 
 /** 자동 저장이 끝난 모양. round는 어느 판의 결과였는지다 */
@@ -482,7 +491,8 @@ export function createResultScreen(
       const outcome = await save(nickname);
       lockForm();
       const { text, tone } = describeOutcome(outcome);
-      setMessage(text, tone);
+      const note = registeredNameNote(nickname);
+      setMessage(note ? `${text} ${note}` : text, tone);
     } catch (error) {
       el.registerButton.disabled = false;
       // catch로 잡히는 값은 TS에서 unknown이다. 던지는 쪽(저장소 어댑터)이

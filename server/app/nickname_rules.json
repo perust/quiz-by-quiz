@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "about": "닉네임 금칙 규칙 (PRD 12.1). server/app/nickname_filter.py 가 읽고, 화면은 src/online/nickname-rules.ts 에 같은 값을 둔다. 고치면 두 곳을 함께 고친다 — tests/nickname-rules.test.mjs 가 견준다.",
+  "version": 2,
+  "about": "닉네임 금칙 규칙 (PRD 12.1). server/app/nickname_filter.py 가 읽고, 화면은 src/online/nickname-rules.ts 에 같은 값을 둔다. 고치면 두 곳을 함께 고친다 — tests/nickname-rules.test.mjs 가 견준다. blockedWords 는 글자만 남긴 꼴의 어디에 있어도 걸리고, blockedTokens 는 흔한 이름·낱말 안에도 들어 있는 말이라 따로 선 말일 때만 걸린다(Shitae·Ashita·Pornchai·생존나라는 통과).",
   "maxDigitRun": 5,
   "urlSuffixes": [
     "com", "net", "org", "kr", "io", "co", "me", "gg", "xyz", "app",
@@ -10,9 +10,13 @@
     "시발", "씨발", "씨빨", "씨팔", "ㅅㅂ", "ㅆㅂ",
     "병신", "븅신", "ㅂㅅ", "ㅄ",
     "개새끼", "개새기", "개색기", "개색히",
-    "좆", "존나", "지랄", "ㅈㄹ",
+    "좆", "지랄", "ㅈㄹ",
     "미친놈", "미친년", "니애미", "느금마", "엿먹", "썅", "쌍년",
     "섹스",
-    "fuck", "shit", "bitch", "tlqkf", "qudtls", "sibal", "ssibal", "porn"
+    "fuck", "bitch", "tlqkf", "qudtls", "sibal", "ssibal"
+  ],
+  "blockedTokens": [
+    "존나",
+    "shit", "porn"
   ]
 }

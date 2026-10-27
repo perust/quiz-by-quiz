@@ -52,6 +52,7 @@ from .repository import (
     RoomView,
     StandingAnswerSource,
     TokenConflict,
+    ranking_owner_key,
 )
 
 _logger = logging.getLogger(__name__)
@@ -301,6 +302,8 @@ FROM (
 
 # 상위 기록. 점수 내림차순, 같은 점수는 먼저 남긴 기록(기록 시각 → 같은 판이면 그 판의 순위대로
 # 남긴 id)이 위다 — 혼자 하기 랭킹(FR-6.3)과 같은 «먼저 달성한 순»이다. 두 색인을 그대로 탄다.
+# 내 기록은 player id와 주인 열쇠(브라우저 토큰에서 나온 owner_key)가 모두 같을 때만이다 — id만 보면
+# players 줄이 지워진 뒤 그 id를 제 토큰으로 다시 등록한 사람이 남의 기록을 «나»로 읽는다.
 _RANKING_COLUMNS = """
 SELECT
     ranking.nickname,
@@ -309,7 +312,10 @@ SELECT
     ranking.correct_count,
     ranking.total_questions,
     ranking.recorded_at,
-    COALESCE(ranking.player_id = %(actor_id)s::uuid, false) AS is_mine
+    COALESCE(
+        ranking.player_id = %(actor_id)s::uuid AND ranking.owner_key = %(owner_key)s::bytea,
+        false
+    ) AS is_mine
 FROM quiz_online.online_rankings ranking
 """
 _RANKING_ORDER = """
@@ -326,10 +332,15 @@ _RANKING_WEEK_ENTRIES_SQL = (
 _INSERT_RANKING_SQL = """
 INSERT INTO quiz_online.online_rankings (
     match_id, player_id, mode, category_id, score, correct_count, total_questions,
-    question_time_ms, nickname, character_id, recorded_at
+    question_time_ms, nickname, character_id, owner_key, recorded_at
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (match_id, player_id) DO NOTHING
+"""
+# 기록할 판 참가자들의 토큰 해시. 판이 도는 동안 players 줄은 지워지지 않는다
+# (`_DELETE_EXPIRED_PLAYERS_SQL`이 살아 있는 판의 참가자를 건너뛴다)
+_RANKING_OWNER_TOKENS_SQL = """
+SELECT id, token_hash FROM quiz_online.players WHERE id = ANY(%s)
 """
 
 # 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
@@ -1355,11 +1366,24 @@ class PostgresRoomsRepository:
                         match["state"] == "revealing"
                         and int(match["current_position"]) >= int(match["total_questions"])
                     )
-                    if await self._advance_locked_match(
-                        connection,
-                        match,
-                        standing_answers=standing_answers,
-                    ):
+                    # 판마다 savepoint다. 한 판이 넘어가지 못하면(랭킹 기록 실패·권한 어긋남)
+                    # 그 판만 되돌려 다음 sweep에 다시 보고, 같은 묶음의 나머지 판은 넘기고
+                    # 방송한다. 묶음을 통째로 되돌리면 마감이 가장 이른 그 판이 매번 맨 앞에
+                    # 뽑혀 모든 판의 마감이 멈춘다.
+                    try:
+                        async with connection.transaction():
+                            moved = await self._advance_locked_match(
+                                connection,
+                                match,
+                                standing_answers=standing_answers,
+                            )
+                    except (errors.Error, RepositoryFailure):
+                        # 연결이 끊겼으면 다음 판도 못 넘긴다 — 묶음째 실패로 알린다
+                        if connection.broken:
+                            raise
+                        _logger.warning("match advance skipped", exc_info=True)
+                        continue
+                    if moved:
                         advanced.append(
                             ExpiredMatchAdvance(
                                 code=str(match["code"]),
@@ -1620,7 +1644,17 @@ class PostgresRoomsRepository:
         """
         category_id = match["category_id"]
         mode = "all" if category_id is None else "category"
-        for score in await self._score_views(connection, match["id"]):
+        scores = await self._score_views(connection, match["id"])
+        # «내 기록»의 주인 열쇠는 그 브라우저의 토큰에서 나온다(`ranking_owner_key`). 줄이
+        # 없으면 NULL — 그 기록은 누구의 «나»도 아니다
+        tokens_cursor = await connection.execute(
+            _RANKING_OWNER_TOKENS_SQL, ([score.player_id for score in scores],)
+        )
+        owner_keys = {
+            row["id"]: ranking_owner_key(bytes(row["token_hash"]))
+            for row in await tokens_cursor.fetchall()
+        }
+        for score in scores:
             await connection.execute(
                 _INSERT_RANKING_SQL,
                 (
@@ -1634,6 +1668,7 @@ class PostgresRoomsRepository:
                     int(match["question_time_ms"]),
                     ranking_nickname(score.nickname),
                     score.character_id or DEFAULT_CHARACTER_ID,
+                    owner_keys.get(score.player_id),
                     finished_at,
                 ),
             )
@@ -1644,6 +1679,7 @@ class PostgresRoomsRepository:
         board: str,
         period: RankingPeriod,
         actor_id: UUID | None = None,
+        owner_key: bytes | None = None,
         at: datetime | None = None,
         limit: int = 10,
     ) -> RankingBoardView:
@@ -1653,6 +1689,7 @@ class PostgresRoomsRepository:
             params: dict[str, object] = {
                 "board": board,
                 "actor_id": actor_id,
+                "owner_key": owner_key,
                 "limit": limit,
             }
             if period == "week":

@@ -403,6 +403,23 @@ export function onlineErrorText(error: unknown, fallback: string): string {
 }
 
 /**
+ * 저장된 닉네임이 금칙 규칙에 걸려 세션을 열지 않았다 (PRD 12.1). 보내기 전에 저장소가 같은 규칙으로 보고
+ * 던진다. 다시 시도해도 같으니 화면은 «다시 시도» 대신 닉네임을 고칠 곳(홈)으로 보낸다
+ */
+export class NicknameRejected extends OnlinePlayerError {
+  constructor(readonly rejection: NicknameRejection) {
+    super(NICKNAME_REJECTION_MESSAGES[rejection]);
+    this.name = 'NicknameRejected';
+  }
+}
+
+/** 닉네임 때문에 막힌 오류인가 — 보내기 전에 막았든(NicknameRejected) 서버가 400으로 거절했든 */
+export function isNicknameRejection(error: unknown): boolean {
+  return error instanceof NicknameRejected
+    || (error instanceof ApiFailure && error.status === 400 && nicknameRejection(error.code) !== null);
+}
+
+/**
  * 저장소가 나가기를 **거절했다**는 표시 (U32).
  *
  * `leaveRoom`의 계약은 `{ok: true}`만 돌려준다. 거절을 그 값에 섞으면 결과를 보지 않던

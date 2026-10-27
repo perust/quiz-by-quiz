@@ -78,6 +78,19 @@ def test_record_shape_is_the_server_graded_result_of_one_match_player() -> None:
     ) in sql
 
 
+def test_mine_is_bound_to_the_browser_secret_not_only_to_the_public_player_id() -> None:
+    sql = _sql()
+
+    # player id는 로비에 보이고 지워진 players 줄의 id는 누구든 다시 등록할 수 있다. «내 기록»은
+    # 토큰에서 나온 32바이트 열쇠가 함께 가린다 — 토큰 해시 자체는 남기지 않는다
+    assert "owner_key bytea," in sql
+    assert (
+        "constraint online_rankings_owner_key_length check ( owner_key is null or "
+        "octet_length(owner_key) = 32 )"
+    ) in sql
+    assert "token_hash bytea" not in sql
+
+
 def test_board_and_seoul_week_are_stored_generated_columns_behind_both_queries() -> None:
     sql = _sql()
 

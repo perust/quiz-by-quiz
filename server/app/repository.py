@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -233,6 +234,20 @@ RankingPeriod = Literal["week", "all"]
 # 한 번에 내보내는 순위 수 (FR-6.4의 상위 10과 같다)
 RANKING_LIMIT = 10
 
+# «내 기록»(isMine)을 가리는 열쇠의 앞말. 열쇠는 브라우저 비밀(토큰)의 해시에서 나온다.
+_RANKING_OWNER_PREFIX = b"qbb-ranking-owner:"
+
+
+def ranking_owner_key(token_hash: bytes) -> bytes:
+    """랭킹 기록의 주인 열쇠(32바이트). 기록할 때와 읽을 때 같은 함수를 쓴다 (FR-7.13 2단계).
+
+    player id만으로 «내 기록»을 가리면, players 줄이 지워진 뒤(2시간) 그 id를 제 토큰으로
+    다시 등록한 사람이 남의 기록을 «나»로 읽는다 — player id는 로비의 방 snapshot에 실려
+    누구에게나 보인다. 그래서 브라우저만 아는 토큰의 해시에서 열쇠를 만든다. 앞말을 붙여 다시
+    해시하므로 토큰 해시 자체가 기록에 남지 않고, 열쇠로는 로그인할 수 없다.
+    """
+    return hashlib.sha256(_RANKING_OWNER_PREFIX + token_hash).digest()
+
 
 @dataclass(frozen=True)
 class RankingEntryView:
@@ -437,14 +452,17 @@ class RoomsRepository(Protocol):
     # 운영 요약(5분마다)의 기다리는 방·게임 중인 방·도는 판 수
     async def ops_counts(self) -> RoomCounts: ...
 
-    # 온라인 랭킹 상위 기록 (FR-7.13 2단계). actor_id가 있으면 그 브라우저 신분의 기록에 is_mine을
-    # 단다. at은 «이번 주»를 고를 시각이다(None이면 DB의 지금) — 테스트가 주의 경계를 고른다.
+    # 온라인 랭킹 상위 기록 (FR-7.13 2단계). actor_id와 owner_key(`ranking_owner_key`, 인증된
+    # 그 브라우저의 토큰에서)가 모두 같은 기록에만 is_mine을 단다 — 둘 중 하나라도 없으면
+    # 아무것도 내 기록이 아니다. at은 «이번 주»를 고를 시각이다(None이면 DB의 지금) — 테스트가
+    # 주의 경계를 고른다.
     async def list_rankings(
         self,
         *,
         board: str,
         period: RankingPeriod,
         actor_id: UUID | None = None,
+        owner_key: bytes | None = None,
         at: datetime | None = None,
         limit: int = RANKING_LIMIT,
     ) -> RankingBoardView: ...

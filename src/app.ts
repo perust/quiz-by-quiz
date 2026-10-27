@@ -37,7 +37,8 @@ import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
 import { playAgainInRoom } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
-import { normalizeCode, onlineErrorText, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
+import { nicknameProblem } from './online/nickname-rules.js';
+import { isNicknameRejection, normalizeCode, onlineErrorText, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
@@ -377,7 +378,12 @@ async function main(): Promise<void> {
           const result = await roomStore.getOnlineRankings({ target, period });
           return result.supported ? { status: 'ok', board: result.board } : { status: 'unsupported' };
         } catch (error) {
-          return { status: 'error', message: onlineErrorText(error, '연결을 확인하고 다시 시도해 주세요.') };
+          return {
+            status: 'error',
+            message: onlineErrorText(error, '연결을 확인하고 다시 시도해 주세요.'),
+            // 저장된 닉네임이 금칙 규칙에 걸려 세션을 열지 못했다. 다시 시도해도 같으니 닉네임을 고칠 홈으로 보낸다
+            action: isNicknameRejection(error) ? 'home' : 'retry',
+          };
         }
       },
       onOpenOnline: () => { void openOnline(); },
@@ -907,9 +913,14 @@ async function main(): Promise<void> {
       ...(roundLimit === TIME_LIMIT_MS ? {} : { timeLimitMs: roundLimit }),
     });
 
-    savedNickname = nickname;
-    syncRoomPlayer();
-    await preferences.setNickname(nickname); // 다음 판 기본값 (FR-6.11)
+    // 이 브라우저의 기록은 적은 이름 그대로 남긴다. 다만 홈의 닉네임(온라인 프로필·다음 판 기본값, FR-6.11)으로
+    // 올리는 것은 금칙 규칙(PRD 12.1)을 지나는 이름뿐이다 — 홈의 대화상자가 막는 이름이 이 길로 온라인 닉네임이
+    // 되면 온라인의 모든 길이 «홈에서 닉네임을 바꿔 주세요»로 막혔다. 결과 화면이 그렇다고 말한다
+    if (nicknameProblem(nickname) === null) {
+      savedNickname = nickname;
+      syncRoomPlayer();
+      await preferences.setNickname(nickname);
+    }
     registeredId = outcome.kept ? outcome.record.id : null;
     pending = { summary, target, playedAt, timeLimitMs: roundLimit };
 
