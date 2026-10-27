@@ -72,7 +72,9 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
   assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
   assert.match(css, /\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--home-dock-h/);
-  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 420px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
+  // 두 줄 dock의 짧은 가로 홈은 가운데 anchor다 — 높이 421–480px도 두 줄이다 (layout-01)
+  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 480px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
+  assert.match(homeSource, /new MutationObserver\(syncDockHeight\)/);
   assert.match(css, /@media \(max-height: 700px\)[\s\S]*?\.home-header \{[\s\S]*?position: absolute;[\s\S]*?width: 1px/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
   assert.match(css, /\.home-note \{[\s\S]*?bottom: calc\(var\(--home-dock-h/);

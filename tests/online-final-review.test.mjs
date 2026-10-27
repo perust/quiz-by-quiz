@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DESKTOP, MOBILE, loadStyles, node, valueOf } from './css-cascade.mjs';
+import { DESKTOP, MOBILE, NARROW, lengthOf, loadStyles, node, shorthandParts, valueOf } from './css-cascade.mjs';
 
 // 온라인 최종 순위의 캐릭터·금은동·축하·「한 판 더」·«문제 다시 보기» (U38)와
 // 공개 단계 참가자별 정오·끝난 판 풀이의 어댑터 경계 (U30·U38).
@@ -238,7 +238,11 @@ test('결과 순위: 1~3위는 로컬 랭킹과 같은 금·은·동 칸, 캐릭
       );
     }
     assert.equal(valueOf(rules, node("span.online-final-ranking__place[data-place='4']", item()), 'background', env), 'var(--surface-subtle)');
-    assert.equal(valueOf(rules, item(), 'grid-template-columns', env), 'auto auto minmax(0, 1fr) auto');
+    // 넓은 화면은 한 줄(순위 · 캐릭터 · 이름 · 점수), 폭 420px 이하는 점수가 이름 아래 줄이다 (아래 테스트)
+    assert.equal(
+      valueOf(rules, item(), 'grid-template-columns', env),
+      env.width > 420 ? 'auto auto minmax(0, 1fr) auto' : 'auto auto minmax(0, 1fr)',
+    );
     const figure = node('span.online-final-ranking__figure', item());
     assert.equal(valueOf(rules, figure, 'width', env), '40px');
     assert.equal(valueOf(rules, figure, 'height', env), '48px');
@@ -260,6 +264,38 @@ test('결과 순위: 1~3위는 로컬 랭킹과 같은 금·은·동 칸, 캐릭
   app.attrs['data-motion'] = 'reduce';
   const appStar = node('span.online-final-ranking__star', node('li.online-final-ranking__item.online-final-ranking__item--celebrate', node('body', app)));
   assert.match(valueOf(rules, appStar, 'animation-duration', MOBILE) ?? '', /^0\.0+1ms$/);
+});
+
+test('결과 순위(layout-04): 폭 420px 이하는 점수를 이름 아래로 내려 공동 순위·축하 줄에도 이름 자리가 남는다', () => {
+  // 한 줄에 순위·캐릭터·이름·점수를 다 두면 320px 의 «공동 1위» + 축하 별 줄에서 이름 칸이 11px(«…»만)이었다
+  const screen = node("section.screen.online-final[data-screen='online-result']", node('main.app', node('body')));
+  const list = node('ol.online-final-ranking#online-final-ranking', screen);
+  const item = node('li.online-final-ranking__item.online-final-ranking__item--mine.online-final-ranking__item--celebrate', list);
+  const part = (name) => node(`span.online-final-ranking__${name}`, item);
+  const px = (value, env) => lengthOf(rules, value, env);
+  for (const env of [NARROW, { ...NARROW, width: 360 }, MOBILE, { ...MOBILE, width: 420 }]) {
+    const at = `${env.width}px`;
+    assert.equal(valueOf(rules, item, 'grid-template-columns', env), 'auto auto minmax(0, 1fr)', at);
+    // 순위 칸(금·은·동)과 캐릭터는 두 줄에 걸쳐 서고, 점수는 셋째 칸의 둘째 줄이다
+    assert.equal(valueOf(rules, part('place'), 'grid-row', env), 'span 2', at);
+    assert.equal(valueOf(rules, part('figure'), 'grid-row', env), 'span 2', at);
+    assert.equal(valueOf(rules, part('score'), 'grid-column', env), '3', at);
+    assert.equal(valueOf(rules, part('name'), 'grid-column', env), null, `${at}: 이름은 자동 배치로 셋째 칸 첫 줄`);
+    assert.equal(valueOf(rules, part('figure'), 'width', env), '40px', `${at}: 캐릭터 칸은 줄이지 않는다`);
+    assert.equal(valueOf(rules, part('place'), 'height', env), '32px', at);
+
+    // 이름 칸 = 줄 폭 − 안쪽 여백 − 공동 순위 칸 − 캐릭터 − 칸 사이 둘. 줄 폭은 화면 − 바깥 여백 − 목록 테두리다
+    const row = env.width - 2 * px('var(--page-pad)', env) - 2 * px('var(--border-1)', env);
+    const padding = shorthandParts(valueOf(rules, item, 'padding', env)).map((value) => px(value, env));
+    const inner = row - 2 * (padding[1] ?? padding[0]);
+    // «공동 1위»: 픽셀 글꼴 한글 셋(1em) + 공백·숫자(0.5em 둘) + 양옆 안쪽 여백
+    const fontSize = px(valueOf(rules, part('place'), 'font-size', env), env);
+    const tiedPlace = fontSize * 4 + 2 * px(shorthandParts(valueOf(rules, part('place'), 'padding', env))[1], env);
+    const gap = px(valueOf(rules, item, 'column-gap', env), env);
+    const name = inner - tiedPlace - 40 - 2 * gap;
+    assert.ok(Number.isFinite(name), `${at}: 이름 칸을 계산하지 못했다`);
+    assert.ok(name >= 120, `${at}: 공동 순위·축하 줄의 이름 칸이 ${name}px (16px 한글 일곱 자 이상이어야 한다)`);
+  }
 });
 
 test('맞힌 문제의 «내 답 · 정답» 줄은 ✓ 정답 알약이고, 틀린 줄은 로컬 오답 복습 그대로다', () => {
