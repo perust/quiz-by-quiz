@@ -30,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from . import ops_log
 from .config import Settings, is_public_pages_question_bank
 from .domain import (
     ALLOWED_CAPACITIES,
@@ -51,6 +52,7 @@ from .rate_limit import (
     RateLimitClaim,
 )
 from .repository import (
+    CleanupCounts,
     MatchAnswerView,
     MatchInProgress,
     MatchNotFound,
@@ -639,6 +641,11 @@ class EventHub:
     def connection_count(self) -> int:
         return len(self._connections)
 
+    @property
+    def live_member_count(self) -> int:
+        """소켓이 하나라도 열린 (방, 참가자) 수. 운영 요약의 «접속 중인 참가자»다."""
+        return len(self._live_actor_counts)
+
     def is_connected(self, websocket: WebSocket) -> bool:
         return websocket in self._connections
 
@@ -1094,12 +1101,18 @@ def create_app(
     event_hub: EventHub | None = None,
     removed_members: RemovedMembers | None = None,
     standing_answers: StandingAnswers | None = None,
+    ops_summary_interval_seconds: float = ops_log.SUMMARY_INTERVAL_SECONDS,
 ) -> FastAPI:
     if (
         isinstance(cleanup_interval_seconds, bool)
         or cleanup_interval_seconds <= 0
     ):
         raise ValueError("cleanup_interval_seconds must be positive")
+    if (
+        isinstance(ops_summary_interval_seconds, bool)
+        or ops_summary_interval_seconds <= 0
+    ):
+        raise ValueError("ops_summary_interval_seconds must be positive")
     if (
         isinstance(presence_interval_seconds, bool)
         or presence_interval_seconds <= 0
@@ -1140,6 +1153,11 @@ def create_app(
     websocket_inbound_limiter = AtomicMultiWindowLimiter()
     release_readiness_limiter = AtomicMultiWindowLimiter()
     movement_sequences = count(1)
+    # 운영 기록 (deploy/oracle/README.md «Operational log»). uvicorn의 --log-level과 무관하게
+    # INFO 한 줄 JSON을 stderr로 낸다. 요청 계수는 고정 크기 칸뿐이라 요청 수와 무관하게
+    # 메모리가 같다.
+    ops_log.install()
+    request_window = ops_log.RequestWindow()
 
     def room_payload(room: RoomView) -> dict[str, object]:
         """DB snapshot에 hub가 아는 접속 상태를 얹어 내보낸다."""
@@ -1226,6 +1244,8 @@ def create_app(
                             advance.match_id,
                             through_position=None if advance.finished else advance.position,
                         )
+                    if advance.finished:
+                        ops_log.match_finished(advance.code, via="sweep")
                     await hub.broadcast(advance.code, {"type": "match-invalidated"})
                     if advance.finished:
                         # 방이 다시 기다리는 방이 됐다. 판에서 빠진 멤버의 대기실이 다시 읽는다.
@@ -1235,7 +1255,9 @@ def create_app(
             while True:
                 await asyncio.sleep(cleanup_interval_seconds)
                 try:
-                    await repo.cleanup_expired_resources()
+                    cleaned = await repo.cleanup_expired_resources()
+                    if isinstance(cleaned, CleanupCounts) and cleaned.changed:
+                        ops_log.cleanup(cleaned)
                     await hub.revalidate(repo.is_member)
                 except asyncio.CancelledError:
                     raise
@@ -1266,6 +1288,8 @@ def create_app(
                             logger.warning("absent host transfer failed", exc_info=True)
                         else:
                             transferred = hosts.transferred
+                            for code in sorted(transferred):
+                                ops_log.host_transferred(code, reason="host-absent")
                             forgotten = {
                                 code
                                 for code in absent_by_room
@@ -1298,12 +1322,42 @@ def create_app(
                 except Exception:
                     logger.warning("presence sweep failed", exc_info=True)
 
+        async def summarize_operations() -> None:
+            # 운영 요약 한 줄(기본 5분). 방·판 수는 집계 쿼리 하나로 읽고, 못 읽으면(DB가 안 될 때)
+            # 그 칸만 null로 내고 다음 창에 다시 읽는다. 요청 수·지연은 그 창의 칸을 읽고 비운다.
+            window_started = time.monotonic()
+            while True:
+                await asyncio.sleep(ops_summary_interval_seconds)
+                try:
+                    rooms = None
+                    try:
+                        rooms = await repo.ops_counts()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.warning("ops summary room counts failed", exc_info=True)
+                    now = time.monotonic()
+                    ops_log.summary(
+                        window_seconds=now - window_started,
+                        stats=request_window.take(),
+                        sockets=hub.connection_count,
+                        players=hub.live_member_count,
+                        rooms=rooms,
+                    )
+                    window_started = now
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("ops summary failed", exc_info=True)
+
         try:
             sweep_tasks = [
                 asyncio.create_task(sweep_expired_matches()),
                 asyncio.create_task(sweep_expired_resources()),
                 asyncio.create_task(sweep_presence()),
+                asyncio.create_task(summarize_operations()),
             ]
+            ops_log.api_started(schema_version=RELEASE_SCHEMA_VERSION)
             yield
         finally:
             for sweep_task in sweep_tasks:
@@ -1315,6 +1369,7 @@ def create_app(
                 await hub.close_all()
             finally:
                 await repo.close()
+                ops_log.api_stopped()
 
     app = FastAPI(
         title="quiz-by-quiz room API",
@@ -1335,6 +1390,9 @@ def create_app(
         # 브라우저가 요청 한도 거절에서 «언제 다시»를 읽으려면 드러내야 한다 (N01)
         expose_headers=["Retry-After"],
     )
+    # 마지막에 달아 가장 바깥 user middleware가 된다 — TrustedHost·CORS가 거절한 요청도 세고,
+    # 처리하지 못한 예외가 500이 되기 전에 경로 틀과 예외 클래스만 기록한다.
+    app.add_middleware(ops_log.RequestMetricsMiddleware, window=request_window)
 
     async def require_actor(
         request: Request,
@@ -1521,6 +1579,13 @@ def create_app(
                     headers={"Retry-After": "1"},
                 ) from error
         room = await repo.create_room(actor_id, spec, password_hash)
+        ops_log.room_created(
+            room.code,
+            capacity=room.capacity,
+            category_id=room.category_id,
+            question_time_ms=room.question_time_ms,
+            locked=room.has_password,
+        )
         return room_payload(room)
 
     @app.get("/v1/rooms/{raw_code}")
@@ -1630,6 +1695,7 @@ def create_app(
             ) from error
 
         if not already_joined:
+            ops_log.member_joined(code, players=len(room.players))
             # 새 멤버십은 새 유예로 센다. 예전 멤버십의 끊김 기록이 남아 있으면 들어오자마자
             # 끊긴 사람이 되어 시작 판정과 판에서 빠진다.
             hub.forget_presence(code, actor_id)
@@ -1674,6 +1740,11 @@ def create_app(
                 "game-in-progress",
                 "진행 중인 게임에서는 방을 나갈 수 없어요.",
             ) from error
+        ops_log.member_left(code, players=0 if room is None else len(room.players))
+        if room is None:
+            ops_log.room_deleted(code, reason="empty")
+        elif room.host_transferred:
+            ops_log.host_transferred(code, reason="host-left")
         await hub.disconnect_actor(code, actor_id)
         hub.forget_presence(code, actor_id)
         standing.forget_member(code, actor_id)
@@ -1755,6 +1826,7 @@ def create_app(
                 "game-in-progress",
                 "진행 중인 판의 참가자는 판이 끝난 뒤에 내보낼 수 있어요.",
             ) from error
+        ops_log.member_removed(code, players=len(room.players), blocked=connected)
         # 소켓을 닫기 전에 기록한다. 닫힌 화면이 다시 붙으려다 같은 이유를 듣는다.
         removed.mark(code, player_id, blocked=connected)
         reason: RemovalReason = "kicked" if connected else "removed"
@@ -1943,6 +2015,13 @@ def create_app(
             ) from error
         except MatchInProgress as error:
             raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+        ops_log.match_started(
+            code,
+            players=match.player_count,
+            category_id=match.category_id,
+            question_time_ms=match.question_time_ms,
+            questions=match.total_questions,
+        )
         payload = _match_start_payload(match)
         await hub.broadcast(code, {"type": "game-started", **payload})
         return payload
@@ -1968,6 +2047,8 @@ def create_app(
         standing.settle_view(code, match)
         payload = _match_payload(match)
         if match_read.advanced:
+            if match.state == "finished":
+                ops_log.match_finished(code, via="request")
             await hub.broadcast(code, {"type": "match-invalidated", "matchId": str(match.id)})
             if match.state == "finished":
                 # 이 읽기가 판을 닫았다. 방의 status가 바뀌었으니 대기실도 다시 읽게 한다.

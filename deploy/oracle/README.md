@@ -259,9 +259,15 @@ the request URI is query-free and the server selects only the public `qbb.v1`
 protocol. The event handshake remains excluded from Caddy access logs as defense
 in depth; normal REST access logging remains enabled. The API itself runs with
 Uvicorn access logging disabled and warning-level server logs so routine accepted
-or rejected handshakes cannot persist ticket-bearing request metadata. Caddy
-returns public `/healthz` and `/readyz` requests as 404; Docker and Caddy active
-health checks reach `/readyz` only on the private container network. The public
+or rejected handshakes cannot persist ticket-bearing request metadata. The
+operational log ("Operational log and uptime monitor" below) adds its own INFO
+lines. Those carry room codes and counts (the 5-minute summary adds REST
+request counts by status class and the p50/p95/max latency) and, for an
+unhandled error, the HTTP method, the route template and the exception class,
+but no request values: no paths with their values, query strings, headers,
+bodies, tickets, tokens or addresses. Caddy returns public `/healthz` and
+`/readyz` requests as 404; Docker and Caddy active health checks reach
+`/readyz` only on the private container network. The public
 `/v1/release-readiness` gate exposes only the fixed compatibility contract and
 schema version, and bounds database probes to 12 requests per client and 120
 per process per minute.
@@ -418,3 +424,166 @@ when every step is `ok`.
 
 If the host cannot reach its own public address, add `--resolve-to 127.0.0.1`;
 the URL host still names the Host header and the TLS certificate.
+
+## Operational log and uptime monitor
+
+### Operational log (`quiz.ops`)
+
+The API writes its own operational log: one JSON object per line on the
+container's stderr, at INFO, through a dedicated handler of the `quiz.ops`
+logger (`server/app/ops_log.py`). It does not depend on the Uvicorn
+`--log-level warning` of the runtime `CMD` and is not propagated to other
+loggers, so each line appears once. Docker keeps it in the existing json-file
+log of `quiz-by-quiz-api` (10 MB × 3); there is no new volume, port or service.
+In the commands below `docker compose …` is the platform base rendered with this
+overlay, as above; `docker logs <container>` works too but prints the
+container's stderr on the CLI's stderr (add `2>&1` before a pipe).
+
+```sh
+# the latest summaries
+docker compose … logs --no-log-prefix --since 1h quiz-by-quiz-api | grep -F '{"event":"summary"'
+# unhandled server errors of the last day
+docker compose … logs --no-log-prefix --since 24h quiz-by-quiz-api | grep -F '{"event":"server_error"'
+# follow every operational event (warnings and tracebacks are not JSON lines)
+docker compose … logs --no-log-prefix -f quiz-by-quiz-api | grep --line-buffered -F '{"event":'
+# summaries as a table, with the host's python3 (no jq needed)
+docker compose … logs --no-log-prefix --since 24h quiz-by-quiz-api | python3 -c '
+import json, sys
+for line in sys.stdin:
+    if line.startswith("{\"event\":\"summary\""):
+        e = json.loads(line)
+        print(e["ts"], e["rooms"], e["matches"], e["requests"], e["rateLimited"], e["latencyMs"])
+'
+```
+
+Sample lines:
+
+```json
+{"event":"api_started","ts":"2026-10-27T03:00:01.214Z","schemaVersion":11}
+{"event":"room_created","ts":"2026-10-27T03:02:12.342Z","room":"K7PQ2M","capacity":6,"category":"all","questionTimeMs":20000,"locked":false}
+{"event":"member_joined","ts":"2026-10-27T03:02:40.118Z","room":"K7PQ2M","players":2}
+{"event":"match_started","ts":"2026-10-27T03:04:03.977Z","room":"K7PQ2M","players":4,"category":"science","questionTimeMs":40000,"questions":10}
+{"event":"match_finished","ts":"2026-10-27T03:10:52.006Z","room":"K7PQ2M","via":"sweep"}
+{"event":"host_transferred","ts":"2026-10-27T03:12:30.401Z","room":"K7PQ2M","reason":"host-absent"}
+{"event":"server_error","ts":"2026-10-27T03:13:07.552Z","method":"POST","route":"/v1/rooms/{raw_code}/match/answers","error":"ConnectionError"}
+{"event":"summary","ts":"2026-10-27T03:15:00.012Z","windowSeconds":300,"sockets":14,"players":12,"rooms":{"waiting":3,"playing":1},"matches":1,"requests":{"total":1185,"2xx":1161,"3xx":0,"4xx":24,"5xx":0},"rateLimited":2,"unhandled":0,"latencyMs":{"p50":20.0,"p95":50.0,"max":212.4}}
+```
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `api_started` / `api_stopped` | `schemaVersion` (start only) | Lifespan start and shutdown. A restart also ends kick blocks and presence records (single-worker memory). |
+| `room_created` | `room`, `capacity`, `category` (`all` for the all-categories round), `questionTimeMs`, `locked` | A room is created. |
+| `room_deleted` | `room`, `reason` (`empty`) | The last member left. Rooms removed by the cleanup sweep are counted in `cleanup`. |
+| `member_joined` / `member_left` | `room`, `players` (members after the change) | A new membership (re-entering an existing one is not) / leaving through the API. |
+| `member_removed` | `room`, `players`, `blocked` | The host removed someone; `blocked` is the 10-minute kick of a connected member. |
+| `host_transferred` | `room`, `reason` (`host-left`, `host-absent`) | The host left, or the presence sweep moved the seat from a disconnected host. Cleanup handovers are counted in `cleanup`. |
+| `match_started` | `room`, `players`, `category`, `questionTimeMs`, `questions` | The host started a match. |
+| `match_finished` | `room`, `via` (`sweep`, `request`) | The last reveal ended, closed by the deadline sweep or by a player's read. |
+| `cleanup` | `roomsDeleted`, `membersRemoved`, `hostsTransferred`, `matchesDeleted`, `playersDeleted` | A 60-second cleanup tick that changed anything (no line otherwise). |
+| `server_error` | `method`, `route` (the route template, e.g. `/v1/rooms/{raw_code}`), `error` (exception class) | An exception no handler turned into a response; the client gets 500 and Uvicorn still logs the traceback as before. |
+| `summary` | see below | Every 5 minutes. |
+
+`summary` covers the window since the previous summary (`windowSeconds`).
+`sockets` is the open event sockets, `players` the (room, player) pairs with at
+least one live socket, `rooms.waiting`/`rooms.playing` the unexpired rooms
+without/with a running or revealing match, and `matches` the running or
+revealing matches; those three come from one aggregate query per summary and
+are `null` when it failed (the warning `ops summary room counts failed` follows).
+`requests` counts REST responses by status class, `rateLimited` the `429`s and
+`unhandled` the exceptions that became `500` (each also has a `server_error`
+line). The private health checks used by Docker and Caddy (`/healthz`,
+`/readyz`) and WebSockets are not counted. `latencyMs` is the time to the end of
+the response: `p50` and `p95` are the upper bound of the fixed bucket holding
+that rank (1, 2, 5, 10, 20, 50, 100, 200, 500, 1,000, 2,000, 5,000 and
+10,000 ms, never above `max`), `max` the slowest request, all `null` in a window
+without requests.
+
+**Never logged:** nicknames, room names, chat text, bearer tokens or their
+hashes, WebSocket tickets, IP addresses or `X-Forwarded-For`, player ids,
+passwords or password hashes, question ids or content, request paths with their
+values, query strings, bodies, and exception messages (they can carry SQL
+values). Each event is a function whose parameters are its fields
+(`EVENT_FIELDS`); there is no free-form field, and unexpected values are
+written as `<invalid>`. Room codes and counts are logged; a room code is the
+six characters the lobby already shows and is reused after the room is gone.
+`server/tests/test_ops_log.py` drives a room's whole life through the API with
+personal data in every value, including a match whose question id, text,
+choices, explanation and review pass through the responses, and asserts that
+none of it reaches a line.
+
+Resource envelope: the request counters are fixed-size (14 latency buckets, 5
+status classes and three numbers) whatever the traffic, nothing is retained per
+request, and the per-request cost is a bisect and a few increments. Events are
+per room, membership and match, not per request, so a busy classroom day is on
+the order of a few thousand lines (well under 1 MB) plus 288 summaries, and the
+30 MB json-file budget still holds weeks of history alongside the warnings. This
+changes none of the limits above.
+
+### Uptime monitor
+
+`.github/workflows/uptime.yml` runs `deploy/oracle/uptime.py check` every 15
+minutes and on `workflow_dispatch` (`gh workflow run uptime.yml`). It only
+reads — no session, room or socket is created; `smoke.py` stays the write check
+for deploys. It checks that:
+
+- `GET /v1/release-readiness` answers 200 with `status: ready`,
+  `contract: character-only-v1` and a `schemaVersion` at least the one the Pages
+  workflow's `backend-ready` job waits for (read from `.github/workflows/pages.yml`
+  of the same checkout, so the two never drift), with
+  `Access-Control-Allow-Origin: https://perust.github.io`, within 5 seconds;
+- `https://perust.github.io/quiz-by-quiz/` answers 200 itself (redirects are not
+  followed) and its `quiz-api-base` meta names that same API.
+
+A failing check is tried three times in all, 5 and 15 seconds apart; a `429`
+waits for its `Retry-After` (at most 60 seconds) instead, a response slower than
+5 seconds counts as a failed attempt, and every request times out after 15
+seconds. Only then does the check fail. The report is a few lines of status
+codes, error codes and the checked values:
+
+```text
+quiz-by-quiz uptime check 2026-10-27T13:04:44Z
+api: https://quiz-by-quiz-api.150.230.222.142.sslip.io
+pages: https://perust.github.io/quiz-by-quiz/
+expected schemaVersion >= 11 (pages.yml backend-ready)
+ok readiness: HTTP 200 ready character-only-v1 schemaVersion 11 (want >= 11), CORS ok, 0.28s
+ok pages: HTTP 200, quiz-api-base "https://quiz-by-quiz-api.150.230.222.142.sslip.io", 0.27s
+verdict: ok
+```
+
+and on failure, for example, `FAIL readiness: HTTP 503 migration-required
+(after 3 attempts)` followed by `verdict: FAIL`.
+
+On failure the workflow (permissions `contents: read` and `issues: write`, the
+`GITHUB_TOKEN` through the `gh` CLI) opens one issue labelled `운영 경보` with
+the report and the run URL, or comments on the open one — there is never more
+than one open alert — and then fails the job, so GitHub sends its failed-run
+e-mail. For scheduled runs GitHub mails the user who created the workflow, then
+whoever last changed its `cron` line or re-enabled it, if their notification
+settings include failed Actions workflows. The next passing run comments that
+the service recovered and closes the alert. Runs share one concurrency group:
+at most one runs and one waits, and a running check is not cancelled. A run
+that is cancelled — by hand, or by reaching the job's 10-minute limit — opens,
+comments on and closes nothing (the alert steps run only when `!cancelled()`),
+because a check that never finished is not a failed check. A check that hangs
+is still reported: the probe step has its own 8-minute limit, above the
+longest designed check (two checks of three attempts, each request waiting up
+to 15 seconds to connect and 15 more for the response, with waits of at most
+60 seconds, 7 minutes in all), and a step that reaches it fails without
+cancelling the run, so the alert says the report is missing and the job
+fails. The repository is public, so the runs cost no Actions minutes and the
+alert issues are public too; the report holds nothing that is not already
+public.
+
+- Scheduled workflows run only from the default branch, so the monitor starts
+  once this file is on `main`. GitHub may delay scheduled runs at busy times,
+  and in a public repository it disables a schedule after 60 days without
+  repository activity; re-enable it in the Actions tab or with
+  `gh workflow enable uptime.yml`.
+- A planned deploy window opens an alert: while a migration runs ahead of its
+  API (step 3 until step 4 of the staging order) the serving API answers 503
+  `migration-required`. Disable the monitor before step 3 with
+  `gh workflow disable uptime.yml` and enable it again with
+  `gh workflow enable uptime.yml` once the public readiness response passes; a
+  run already in progress may still report the window.
+- Run it by hand from any machine with Python 3.8 or newer:
+  `python3 deploy/oracle/uptime.py check` (exit 0 only when the verdict is `ok`).
