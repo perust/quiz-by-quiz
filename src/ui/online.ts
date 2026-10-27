@@ -43,7 +43,7 @@ import {
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
-import { createLobbyRefresh, type LobbyRefreshClock } from './lobby-refresh.js';
+import { browserClock, createLobbyRefresh, type LobbyRefreshClock } from './lobby-refresh.js';
 import { scrollBehavior } from './motion.js';
 import {
   isCurrentOnlineScreenAction,
@@ -53,6 +53,13 @@ import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 
 const ALL_CATEGORY = '전체 도전';
 type OnlinePanel = 'rooms' | 'join' | 'create';
+
+/**
+ * 손가락·마우스가 방 목록을 떠나거나 화면을 민 뒤에도 이만큼은 «고르는 중»으로 본다 (WP-E). 손가락은 닿기 전에는
+ * 목록 위에 있지 않아 — 목록을 밀어 읽은 손가락은 관성 스크롤이 멎고 겨눈 뒤에 누른다 — 위에 있는 동안만 보면
+ * 누르기 직전에 줄이 움직인다. 이 동안 건너뛴 차례는 다음 30초에 다시 온다
+ */
+export const ROOM_LIST_SETTLE_MS = 5_000;
 
 export interface OnlineScreenDeps {
   /** 방 저장소 어댑터 */
@@ -157,6 +164,15 @@ export function createOnlineScreen(
    * 같은 화면이 목록 요청을 겹쳐 보내지 않는다. 그 결과는 사람이 누른 조회가 올린 세대가 버린다
    */
   let quietFetch: Promise<void> | null = null;
+  /** 주기 새로고침의 시계. «방금 목록을 만졌는가»도 같은 시계로 잰다 */
+  const clock = refreshClock ?? browserClock;
+  /**
+   * 지금 방 목록·빈 칸 위에 있는 포인터(마우스·펜·손가락)의 `pointerId`. 마우스 클릭(Safari)·손가락 탭은 누르기 전에
+   * 포커스를 옮기지 않아 포커스로는 «겨누는 중»을 알 수 없다. 손가락은 닿은 동안만 들어 있다
+   */
+  const listPointers = new Set<number>();
+  /** 포인터가 방 목록·빈 칸을 마지막으로 떠난 때, 또는 로비를 마지막으로 민 때 (`ROOM_LIST_SETTLE_MS`) */
+  let listTouchedAt = Number.NEGATIVE_INFINITY;
 
   function ownsScreen(request: number): boolean {
     return visibleRequest === request && screenGuard.isCurrent(request);
@@ -185,6 +201,8 @@ export function createOnlineScreen(
     pendingNotice = null;
     // 로비를 떠난다(closers → hide, 대기실·홈으로 가는 길). 주기 새로고침도 여기서 멈춘다
     refresher.stop();
+    // 숨은 화면의 목록에는 pointerleave가 오지 않을 수 있다. 다음 로비가 남은 포인터에 묶이지 않게 비운다
+    listPointers.clear();
   }
 
   function commitEnterRoom(code: string, owner: OnlineScreenActionOwnership): void {
@@ -644,9 +662,25 @@ export function createOnlineScreen(
   }
 
   /**
-   * 사람이 목록에서 무엇을 고르는 중인가 — 포커스가 방 목록·빈 칸 안에 있거나 캐릭터가 그 안의 버튼을 밟고 있다.
-   * 그때 목록을 다시 그리면 포커스가 `<body>`로 떨어지고(낭독기는 자리를 잃는다), 순서가 바뀌면 같은 자리에서
-   * 누른 Enter가 다른 방에 들어간다. 그래서 주기 새로고침은 그동안 기다린다
+   * 캐릭터가 목록 쪽에 있는가 — 보이는 목록(없으면 빈 칸)과 가로로 겹치고 그 위 끝보다 아래다. 다시 그리면 그 아래의
+   * 줄이 모두 움직일 수 있어(새 방은 제 무리의 맨 앞에 들고, 가득 차거나 판을 연 방은 자리를 옮긴다) 줄 사이나 목록 아래
+   * 빈자리에 서 있어도 발밑에 다른 방이 들어온다
+   */
+  function walkerNearList(): boolean {
+    const zone = (el.list.hidden ? el.empty : el.list).getBoundingClientRect();
+    const body = el.character.getBoundingClientRect();
+    if (zone.width === 0 || body.width === 0) return false;
+    return body.right >= zone.left && body.left <= zone.right && body.bottom >= zone.top;
+  }
+
+  /**
+   * 사람이 목록에서 무엇을 고르는 중인가. 그때 목록을 다시 그리면 포커스가 `<body>`로 떨어지고(낭독기는 자리를 잃는다),
+   * 순서가 바뀌면 같은 자리를 누른 클릭·탭·Enter가 다른 방에 들어간다 — 공개방의 「참가」는 묻지 않고 바로 들어간다.
+   * 그래서 주기 새로고침은 그동안 기다린다
+   * - 포커스가 방 목록·빈 칸 안에 있다(Tab)
+   * - 마우스·펜·손가락이 그 위에 있거나, 떠나거나 로비를 민 지 `ROOM_LIST_SETTLE_MS`가 안 됐다 — 누르기 전에 포커스를
+   *   옮기지 않는 클릭·탭은 포커스로 알 수 없다
+   * - 캐릭터가 그 안의 버튼을 밟고 있거나(`.is-standing`), 걷는 중이거나, 목록 쪽에 서 있다(`walkerNearList`)
    */
   function choosingFromList(): boolean {
     const active = document.activeElement;
@@ -654,8 +688,23 @@ export function createOnlineScreen(
         && (el.list.contains(active) || el.empty.contains(active))) {
       return true;
     }
-    return el.list.querySelector('.is-standing') !== null || el.empty.querySelector('.is-standing') !== null;
+    if (listPointers.size > 0 || clock.now() - listTouchedAt < ROOM_LIST_SETTLE_MS) return true;
+    if (el.list.querySelector('.is-standing') !== null || el.empty.querySelector('.is-standing') !== null) return true;
+    return el.character.classList.contains('walker--walking') || walkerNearList();
   }
+
+  for (const zone of [el.list, el.empty]) {
+    zone.addEventListener('pointerenter', (event) => { listPointers.add(event.pointerId); });
+    // 손가락은 떼거나 스크롤로 넘어갈 때(pointercancel) 여기로 온다
+    zone.addEventListener('pointerleave', (event) => {
+      listPointers.delete(event.pointerId);
+      listTouchedAt = clock.now();
+    });
+  }
+  // 휴대폰은 목록이 접힘 아래라 머리말을 밀어 내려온다. 민 직후에 겨눈 탭도 고르는 중이다
+  window.addEventListener('scroll', () => {
+    if (!el.screen.hidden) listTouchedAt = clock.now();
+  }, { passive: true });
 
   /** 주기 새로고침이 지금 목록을 읽어도 되는가 (`ui/lobby-refresh.ts`의 `canRefresh`) */
   function canRefreshQuietly(): boolean {
@@ -704,7 +753,7 @@ export function createOnlineScreen(
     refresh: refreshQuietly,
     canRefresh: canRefreshQuietly,
     documentHidden: () => document.visibilityState === 'hidden',
-    clock: refreshClock,
+    clock,
   });
   // 다른 탭·앱으로 가면 시계를 끄고, 돌아오면 밀린 차례를 곧바로 한 번 읽는다
   document.addEventListener('visibilitychange', () => refresher.visibilityChanged());

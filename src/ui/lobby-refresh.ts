@@ -52,8 +52,9 @@ export interface LobbyRefresh {
   readonly running: boolean;
 }
 
-// 30초 간격이라 기기 시계(Date)로 충분하다. 시계가 크게 바뀌면 한 차례가 이르거나 늦을 뿐이다
-const browserClock: LobbyRefreshClock = {
+// 30초 간격이라 기기 시계(Date)로 충분하다. 시계가 크게 바뀌면 한 차례가 이르거나 늦을 뿐이다.
+// 화면도 같은 시계로 «방금 목록을 만졌는가»를 잰다(`ui/online.ts`) — 테스트는 둘을 한 가짜 시계로 바꾼다
+export const browserClock: LobbyRefreshClock = {
   now: () => Date.now(),
   setTimeout: (run, ms) => setTimeout(run, ms),
   clearTimeout: (handle) => clearTimeout(handle),

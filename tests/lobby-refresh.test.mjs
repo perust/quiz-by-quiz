@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 // - 로비를 떠나면(closers → hide, 참가로 대기실) 멈춘다. 실패하면 간격을 두 배씩 늘리고 마지막 목록을 그대로 둔다
 // - 요청을 겹치지 않는다 — 사람이 누른 새로고침은 주기 새로고침이 끝난 뒤에 보낸다
 // - 포커스를 빼앗지 않는다: 사람이 목록에서 고르는 중(포커스·캐릭터의 발밑)이면 그 차례를 건너뛴다
+// - 누르려는 줄을 옮기지 않는다: 마우스·손가락이 목록 위에 있거나 막 떠났거나, 캐릭터가 걷거나 목록 쪽에 서 있어도 건너뛴다
 // - 바뀐 것이 없으면 다시 그리지 않고, 바뀌어도 낭독되는 요약 줄은 방 수가 달라질 때만 고친다
 // 로비를 가짜 DOM과 가짜 시계 위에 실제로 띄워 확인한다 (tests/online-lobby-runtime.test.mjs 와 같은 방식).
 
@@ -118,10 +119,15 @@ Object.defineProperty(summary, 'textContent', {
 });
 
 const documentListeners = new Map();
+const windowListeners = new Map();
 globalThis.HTMLElement = FakeElement;
 globalThis.window = {
   innerWidth: 390, innerHeight: 844, scrollY: 0,
-  addEventListener() {}, removeEventListener() {}, scrollBy() {}, scrollTo() {},
+  addEventListener(type, listener) {
+    if (!windowListeners.has(type)) windowListeners.set(type, []);
+    windowListeners.get(type).push(listener);
+  },
+  removeEventListener() {}, scrollBy() {}, scrollTo() {},
   requestAnimationFrame: () => 0,
   cancelAnimationFrame() {},
   matchMedia: () => ({ matches: false }),
@@ -153,7 +159,7 @@ console.warn = () => {};
 const {
   createLobbyRefresh, lobbyRefreshDelayMs, LOBBY_REFRESH_MS, LOBBY_REFRESH_MAX_MS,
 } = await import('../js/ui/lobby-refresh.js');
-const { createOnlineScreen } = await import('../js/ui/online.js');
+const { createOnlineScreen, ROOM_LIST_SETTLE_MS } = await import('../js/ui/online.js');
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 async function settle() {
@@ -266,6 +272,18 @@ async function openLobby(rooms = [A, B]) {
 function fireVisibilityChange() {
   for (const listener of documentListeners.get('visibilitychange') ?? []) listener();
 }
+
+function fireScroll() {
+  for (const listener of windowListeners.get('scroll') ?? []) listener();
+}
+
+/** 포인터 경계 이벤트. 마우스는 올라오면 enter·나가면 leave, 손가락은 닿을 때 enter·떼거나 스크롤로 넘어갈 때 leave */
+function pointer(target, type, pointerId = 1) {
+  target.dispatchEvent(Object.assign(new Event(type), { pointerId }));
+}
+
+const rect = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height });
+const roomLabels = () => roomButtons().map((button) => button.getAttribute('aria-label'));
 
 test('간격: 30초에서 시작해 실패할 때마다 두 배, 4분에서 멈춘다', () => {
   assert.equal(LOBBY_REFRESH_MS, 30_000);
@@ -390,6 +408,115 @@ test('사람이 목록에서 고르는 중이면 그 차례를 건너뛴다 — 
   await clock.advance(LOBBY_REFRESH_MS);
   assert.equal(store.calls, 1, '다 비키면 다음 차례에 읽는다');
   assert.equal(list.children.length, 3);
+  lobby.hide();
+});
+
+test('마우스가 목록 위에 있으면 다시 그리지 않는다 — 새 방이 맨 앞에 드는 목록이 와도 누르려던 「참가」를 옮기지 않는다', async () => {
+  await openLobby([A, B]);
+  const items = [...list.children];
+  assert.deepEqual(roomLabels(), ['점심 퀴즈 참가', '우리 반 참가'], '같은 무리에서는 새 방이 앞이다');
+
+  // 마우스가 방 줄 위에 있다. Safari의 클릭·손가락 탭은 누르기 전에 포커스를 옮기지 않아 포커스로는 모른다
+  respond = async () => [A, B, C];
+  pointer(list, 'pointerenter');
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 0, '그 차례는 읽지도 않는다');
+  pointer(list, 'pointerleave');
+
+  // 비켜 있을 때 나간 요청이, 기다리는 사이 다시 올라온 마우스 밑으로 돌아왔다
+  const slow = deferred();
+  respond = () => slow.promise;
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 1);
+  pointer(list, 'pointerenter');
+  slow.resolve([A, B, C]);
+  await settle();
+  assert.deepEqual(list.children, items, '「점심 퀴즈 참가」 자리에 방과 후가 들어오지 않는다');
+  assert.equal(summaryText, '전체 2개 중 2개 방');
+
+  // 치우면 다음 차례에 그린다
+  respond = async () => [A, B, C];
+  pointer(list, 'pointerleave');
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 2);
+  assert.deepEqual(roomLabels(), ['방과 후 참가', '점심 퀴즈 참가', '우리 반 참가']);
+
+  // 떠난 로비의 목록에는 pointerleave가 오지 않을 수 있다 — 다음 로비는 남은 포인터에 묶이지 않는다
+  pointer(list, 'pointerenter', 2);
+  lobby.hide();
+  await openLobby([A, B]);
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 1);
+  lobby.hide();
+});
+
+test('빈 칸의 버튼 위에 있어도 같다 — 방이 생기면 그 자리에 「참가」가 들어온다', async () => {
+  await openLobby([]);
+  const empty = byId('room-empty');
+  assert.equal(empty.hidden, false);
+  respond = async () => [A];
+  pointer(empty, 'pointerenter');
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 0);
+  assert.equal(empty.hidden, false, '「방 만들고 친구 부르기」가 그대로 있다');
+
+  pointer(empty, 'pointerleave');
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 1);
+  assert.equal(empty.hidden, true);
+  assert.deepEqual(roomLabels(), ['우리 반 참가']);
+  lobby.hide();
+});
+
+test('손가락은 닿기 전에는 목록 위에 있지 않다 — 떼거나 로비를 민 뒤 잠깐도 고르는 중으로 본다', async () => {
+  await openLobby([A, B]);
+  respond = async () => [A, B, C];
+
+  // 목록을 밀어 읽고 손가락을 뗐다(스크롤로 넘어가면 pointercancel 뒤 pointerleave). 곧 겨눈 탭이 온다
+  await clock.advance(LOBBY_REFRESH_MS - ROOM_LIST_SETTLE_MS + 1);
+  pointer(list, 'pointerenter', 7);
+  pointer(list, 'pointerleave', 7);
+  await clock.advance(ROOM_LIST_SETTLE_MS - 1);
+  assert.equal(store.calls, 0, '뗀 지 5초가 안 된 차례는 건너뛴다');
+
+  // 머리말을 밀어 목록으로 내려왔다(휴대폰은 목록이 접힘 아래라 목록 밖에서 민다)
+  await clock.advance(LOBBY_REFRESH_MS - ROOM_LIST_SETTLE_MS + 1);
+  fireScroll();
+  await clock.advance(ROOM_LIST_SETTLE_MS - 1);
+  assert.equal(store.calls, 0, '로비를 민 지 5초가 안 된 차례도 건너뛴다');
+
+  // 가만히 읽는 동안의 차례는 읽는다
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 1);
+  assert.equal(list.children.length, 3);
+  lobby.hide();
+});
+
+test('캐릭터가 걷는 중이거나 목록 쪽에 서 있으면 건너뛴다 — 줄 사이·목록 아래 빈자리의 발밑에도 다른 방이 들어온다', async () => {
+  await openLobby([A, B]);
+  respond = async () => [A, B, C];
+  const character = byId('online-character');
+  list.getBoundingClientRect = () => rect(16, 300, 358, 200);
+
+  // 걷는 중 — 어디로 가는지 모른다
+  character.classList.add('walker--walking');
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 0);
+  character.classList.remove('walker--walking');
+
+  // 목록 아래 빈자리에 멈춰 섰다. 줄이 늘면 그 발밑에 새 방이 든다(밟은 표시가 생기고 Enter가 그 방에 들어간다)
+  character.getBoundingClientRect = () => rect(170, 520, 40, 48);
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 0);
+
+  // 목록 위(머리말 쪽)로 비켰다 — 다시 그려도 그 자리는 움직이지 않는다
+  character.getBoundingClientRect = () => rect(170, 200, 40, 48);
+  await clock.advance(LOBBY_REFRESH_MS);
+  assert.equal(store.calls, 1);
+  assert.equal(list.children.length, 3);
+
+  delete list.getBoundingClientRect;
+  delete character.getBoundingClientRect;
   lobby.hide();
 });
 
