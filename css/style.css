@@ -1835,11 +1835,28 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   padding: var(--space-3);
 }
 
-/* 공용 .chat 의 위 여백이 뒤에 와서 이기면 표면 안 위쪽만 두 배로 빈다 */
+/* 표면 안은 최근 대화 → (키보드 안내) → 채팅칸이다 (U39). 가장 새 줄이 채팅칸 바로 위에 온다.
+   첫 줄은 표면의 안쪽 여백만큼만 띄우고(공용 .chat·.chat-log 의 위 여백이 이기면 위쪽만 두 배로 빈다) 줄 사이는 8px.
+   판이 막 열려 대화가 없으면 로그는 높이가 없으므로 아래 틈도 두지 않는다 — 채팅칸 위가 비지 않는다 */
+.online-quiz-chat .online-quiz-chat__log {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.online-quiz-chat .online-quiz-chat__log:not(:empty) {
+  margin-bottom: var(--space-2);
+}
+
+.online-quiz-chat .chat__hint {
+  margin-top: 0;
+  margin-bottom: var(--space-2);
+}
+
 .online-quiz-chat .online-quiz-chat__form {
   margin-top: 0;
 }
 
+/* 높이를 묶고 새 줄이 오면 online-quiz.ts 가 이 칸만 끝에 맞춘다(가장 새 줄이 잘리지 않는다) */
 .online-quiz-chat__log {
   max-height: 80px;
   overflow-y: auto;
@@ -3421,20 +3438,35 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
   margin: var(--space-2) 0 0;
 }
 
-/* 대기실의 채팅칸·안내·로그는 형제지만 한 표면으로 이어진다(모양은 디자인 층).
-   사이를 바깥 여백 대신 안쪽 여백으로 채워 표면이 끊기지 않게 한다 */
-[data-screen='waiting'] > .chat {
+/* 채팅의 키보드 안내(/ · Esc)는 키보드가 있는 기기에만 보인다 (U39). 손가락만 쓰는 기기(굵은 포인터에 hover 가
+   없다)에서는 누를 수 없는 단축키라 접는다 — display:none 이라 낭독기에도 닿지 않는다(그 기기에서는 쓸 수 없는 말이다).
+   마우스·트랙패드가 주 입력인 터치 노트북과 키보드 앞의 화면 낭독기 사용자에게는 그대로다 */
+@media (hover: none) and (pointer: coarse) {
+  .chat__hint {
+    display: none;
+  }
+}
+
+/* 대기실의 로그·안내·채팅칸은 형제지만 한 표면으로 이어진다(모양은 디자인 층). 최근 대화가 맨 위, 채팅칸이 맨
+   아래라 가장 새 줄이 칸 바로 위에 온다 (U39). 사이를 바깥 여백 대신 안쪽 여백으로 채워 표면이 끊기지 않게 하고,
+   세계 방과의 틈(12px)은 맨 위의 로그가 진다. 대화가 없는 빈 로그는 위 안쪽 여백만 남긴다 */
+[data-screen='waiting'] > .chat-log {
+  margin-top: var(--space-3);
   padding: var(--space-3) var(--space-3) 0;
+}
+
+[data-screen='waiting'] > .chat-log:not(:empty) {
+  padding-bottom: var(--space-2);
 }
 
 [data-screen='waiting'] > .chat__hint {
   margin-top: 0;
-  padding: var(--space-2) var(--space-3) 0;
+  padding: 0 var(--space-3) var(--space-2);
 }
 
-[data-screen='waiting'] > .chat-log {
+[data-screen='waiting'] > .chat {
   margin-top: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 /* 휴대폰에서는 무대 전체가 피드백 시트 위에 남도록 세로를 아낀다.
@@ -3926,6 +3958,14 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
 
 [data-screen='waiting'] .lounge {
   min-height: 58svh;
+}
+
+/* 좁은 휴대폰 세로 화면에서는 방이 화면 높이의 58%(390×844에서 약 490px)를 먹어 채팅이 한참 아래로 밀렸다 (U39).
+   벽의 액자와 바닥 가구가 담기는 기본 높이(360px)까지만 늘린다. 액자가 여러 줄이면 방은 그대로 아래로 자란다 */
+@media (max-width: 480px) {
+  [data-screen='waiting'] .lounge {
+    min-height: min(58svh, 360px);
+  }
 }
 
 /* 긴 내용이 없는 첫 화면에서는 world가 최소 70%가량 드러난다. */

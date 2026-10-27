@@ -21,6 +21,7 @@ import {
   filterAndSortRooms,
   isRoomPlaying,
   roomListAction,
+  roomListChanged,
   type RoomAvailabilityFilter,
   type RoomCategoryFilter,
   type RoomListFilters,
@@ -44,6 +45,7 @@ import {
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
+import { browserClock, createLobbyRefresh, type LobbyRefreshClock } from './lobby-refresh.js';
 import { scrollBehavior } from './motion.js';
 import {
   isCurrentOnlineScreenAction,
@@ -53,6 +55,13 @@ import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 
 const ALL_CATEGORY = '전체 도전';
 type OnlinePanel = 'rooms' | 'join' | 'create';
+
+/**
+ * 손가락·마우스가 방 목록을 떠나거나 화면을 민 뒤에도 이만큼은 «고르는 중»으로 본다 (WP-E). 손가락은 닿기 전에는
+ * 목록 위에 있지 않아 — 목록을 밀어 읽은 손가락은 관성 스크롤이 멎고 겨눈 뒤에 누른다 — 위에 있는 동안만 보면
+ * 누르기 직전에 줄이 움직인다. 이 동안 건너뛴 차례는 다음 30초에 다시 온다
+ */
+export const ROOM_LIST_SETTLE_MS = 5_000;
 
 export interface OnlineScreenDeps {
   /** 방 저장소 어댑터 */
@@ -64,6 +73,8 @@ export interface OnlineScreenDeps {
   onEnterRoom: (code: string) => void;
   /** 방에 들고 들어가는 나. 저장소가 이 값을 그대로 참가자로 삼는다 */
   getPlayer: () => PlayerInfo;
+  /** 목록 주기 새로고침의 시계 (WP-E). 기본은 브라우저 시계이고 테스트가 가짜 시계를 넘긴다 */
+  refreshClock?: LobbyRefreshClock;
 }
 
 export interface OnlineScreen {
@@ -83,7 +94,7 @@ export interface OnlineScreen {
 }
 
 export function createOnlineScreen(
-  { roomStore, onHome, onPractice, onEnterRoom, getPlayer }: OnlineScreenDeps,
+  { roomStore, onHome, onPractice, onEnterRoom, getPlayer, refreshClock }: OnlineScreenDeps,
 ): OnlineScreen {
   const el = {
     screen: needOne<HTMLElement>('[data-screen="online"]'),
@@ -149,6 +160,22 @@ export function createOnlineScreen(
   let navigationActionGeneration = 0;
   /** 겹친 목록 조회는 가장 늦게 시작한 결과만 그린다. */
   let listRequestGeneration = 0;
+  /** 지금 도는 목록 요청 수 (사람이 누른 조회와 주기 새로고침 모두). 주기 새로고침은 하나라도 돌면 건너뛴다 */
+  let listFetches = 0;
+  /**
+   * 주기 새로고침이 보낸 요청이 끝나는 때 (실패해도 이룬다). 사람이 누른 조회는 이것이 끝난 뒤에 보낸다 —
+   * 같은 화면이 목록 요청을 겹쳐 보내지 않는다. 그 결과는 사람이 누른 조회가 올린 세대가 버린다
+   */
+  let quietFetch: Promise<void> | null = null;
+  /** 주기 새로고침의 시계. «방금 목록을 만졌는가»도 같은 시계로 잰다 */
+  const clock = refreshClock ?? browserClock;
+  /**
+   * 지금 방 목록·빈 칸 위에 있는 포인터(마우스·펜·손가락)의 `pointerId`. 마우스 클릭(Safari)·손가락 탭은 누르기 전에
+   * 포커스를 옮기지 않아 포커스로는 «겨누는 중»을 알 수 없다. 손가락은 닿은 동안만 들어 있다
+   */
+  const listPointers = new Set<number>();
+  /** 포인터가 방 목록·빈 칸을 마지막으로 떠난 때, 또는 로비를 마지막으로 민 때 (`ROOM_LIST_SETTLE_MS`) */
+  let listTouchedAt = Number.NEGATIVE_INFINITY;
 
   function ownsScreen(request: number): boolean {
     return visibleRequest === request && screenGuard.isCurrent(request);
@@ -175,6 +202,10 @@ export function createOnlineScreen(
     navigationActionGeneration += 1;
     listRequestGeneration += 1;
     pendingNotice = null;
+    // 로비를 떠난다(closers → hide, 대기실·홈으로 가는 길). 주기 새로고침도 여기서 멈춘다
+    refresher.stop();
+    // 숨은 화면의 목록에는 pointerleave가 오지 않을 수 있다. 다음 로비가 남은 포인터에 묶이지 않게 비운다
+    listPointers.clear();
   }
 
   function commitEnterRoom(code: string, owner: OnlineScreenActionOwnership): void {
@@ -214,8 +245,11 @@ export function createOnlineScreen(
    * 그 버튼으로 되돌린다 — 실패한 뒤 Tab 자리를 잃지 않게 한다.
    */
   const busyButtons = new WeakMap<HTMLButtonElement, { label: string | null; hadFocus: boolean }>();
+  /** 지금 잠근 버튼 수 — 누른 일(조회·참가·만들기·나가기)이 도는 동안에는 주기 새로고침이 목록을 다시 그리지 않는다 */
+  let busyCount = 0;
   function setBusy(button: HTMLButtonElement, busy: boolean, busyLabel?: string): void {
     if (busy) {
+      if (!busyButtons.has(button)) busyCount += 1;
       busyButtons.set(button, {
         label: busyLabel ? button.textContent : null,
         hadFocus: document.activeElement === button,
@@ -226,6 +260,7 @@ export function createOnlineScreen(
       return;
     }
     const before = busyButtons.get(button);
+    if (before) busyCount -= 1;
     busyButtons.delete(button);
     if (before && before.label !== null) button.textContent = before.label;
     button.disabled = false;
@@ -520,7 +555,16 @@ export function createOnlineScreen(
     el.list.hidden = true;
   }
 
-  function renderList(): void {
+  /**
+   * 요약 줄(`role="status"`)에 쓴다. 주기 새로고침(`quiet`)은 글이 같으면 건드리지 않는다 — 같은 말로 다시 써도
+   * 낭독기가 다시 읽을 수 있어, 30초마다 «전체 3개 중 3개 방»을 듣게 된다. 방 수가 바뀔 때만 말한다
+   */
+  function setSummary(text: string, quiet: boolean): void {
+    if (quiet && el.summary.textContent === text) return;
+    el.summary.textContent = text;
+  }
+
+  function renderList({ quiet = false }: { quiet?: boolean } = {}): void {
     const filters = currentFilters();
     syncFilterToggle(filters);
     // 만들기 폼의 시작 인원. 세션을 연 뒤에야 안다(목록을 읽으며 연다). 모르면(목록을 읽지 못했다) 어느
@@ -530,7 +574,7 @@ export function createOnlineScreen(
     if (listError !== null) {
       el.list.replaceChildren();
       // 낭독은 라이브 리전인 요약 줄이 맡는다. 맨 위 알림에 같은 말을 겹쳐 띄우지 않는다
-      el.summary.textContent = '방 목록을 불러오지 못했어요.';
+      setSummary('방 목록을 불러오지 못했어요.', quiet);
       showEmptyState({
         title: '온라인에 연결할 수 없어요',
         copy: listError,
@@ -545,7 +589,7 @@ export function createOnlineScreen(
     el.list.replaceChildren();
     visible.forEach((room) => el.list.append(createItem(room)));
 
-    el.summary.textContent = `전체 ${rooms.length}개 중 ${visible.length}개 방`;
+    setSummary(`전체 ${rooms.length}개 중 ${visible.length}개 방`, quiet);
     if (visible.length === 0) {
       if (rooms.length > 0) {
         showEmptyState({
@@ -568,9 +612,20 @@ export function createOnlineScreen(
     el.list.hidden = false;
   }
 
+  /** 목록 요청 하나. 도는 동안 `listFetches`가 센다 — 주기 새로고침은 그동안 차례를 건너뛴다 */
+  async function fetchRooms(): Promise<PublicRoom[]> {
+    listFetches += 1;
+    try {
+      return await roomStore.listRooms();
+    } finally {
+      listFetches -= 1;
+    }
+  }
+
   /**
    * 목록을 다시 읽는다. 도는 동안 새로고침·다시 시도를 잠가 같은 요청이 쌓이지 않게 한다 —
-   * 같은 와이파이의 여럿이 IP당 한도를 함께 쓴다 (N01). 주기적으로 다시 읽지 않는다.
+   * 같은 와이파이의 여럿이 IP당 한도를 함께 쓴다 (N01). 주기 새로고침(`refreshQuietly`)이 도는 중이면
+   * 그것이 끝난 뒤에 보낸다(겹쳐 보내지 않는다). 끝나면 주기 새로고침이 여기서부터 다시 센다.
    */
   async function loadRooms(request: number): Promise<void> {
     const listRequest = ++listRequestGeneration;
@@ -578,8 +633,12 @@ export function createOnlineScreen(
     const retryHadFocus = retry !== null && document.activeElement === retry;
     setBusy(el.refresh, true);
     if (retry) setBusy(retry, true);
+    let loaded = false;
     try {
-      const loadedRooms = await roomStore.listRooms();
+      // 그 결과는 위에서 올린 세대가 버린다. 나가기 뒤의 조회처럼 그 뒤의 상태를 읽어야 하므로 새로 보낸다
+      if (quietFetch) await quietFetch;
+      const loadedRooms = await fetchRooms();
+      loaded = true;
       if (!ownsScreen(request) || listRequest !== listRequestGeneration) return;
       rooms = loadedRooms;
       listError = null;
@@ -597,9 +656,107 @@ export function createOnlineScreen(
         if (retry) setBusy(retry, false);
         // 다시 시도가 통해 오류 칸이 접혔으면 그 버튼으로는 포커스를 돌려줄 수 없다 (a11y-ux-07)
         if (retryHadFocus) focusRevealedList();
+        refresher.loaded(loaded);
       }
     }
   }
+
+  /**
+   * 캐릭터가 목록 쪽에 있는가 — 보이는 목록(없으면 빈 칸)과 가로로 겹치고 그 위 끝보다 아래다. 다시 그리면 그 아래의
+   * 줄이 모두 움직일 수 있어(새 방은 제 무리의 맨 앞에 들고, 가득 차거나 판을 연 방은 자리를 옮긴다) 줄 사이나 목록 아래
+   * 빈자리에 서 있어도 발밑에 다른 방이 들어온다
+   */
+  function walkerNearList(): boolean {
+    const zone = (el.list.hidden ? el.empty : el.list).getBoundingClientRect();
+    const body = el.character.getBoundingClientRect();
+    if (zone.width === 0 || body.width === 0) return false;
+    return body.right >= zone.left && body.left <= zone.right && body.bottom >= zone.top;
+  }
+
+  /**
+   * 사람이 목록에서 무엇을 고르는 중인가. 그때 목록을 다시 그리면 포커스가 `<body>`로 떨어지고(낭독기는 자리를 잃는다),
+   * 순서가 바뀌면 같은 자리를 누른 클릭·탭·Enter가 다른 방에 들어간다 — 공개방의 「참가」는 묻지 않고 바로 들어간다.
+   * 그래서 주기 새로고침은 그동안 기다린다
+   * - 포커스가 방 목록·빈 칸 안에 있다(Tab)
+   * - 마우스·펜·손가락이 그 위에 있거나, 떠나거나 로비를 민 지 `ROOM_LIST_SETTLE_MS`가 안 됐다 — 누르기 전에 포커스를
+   *   옮기지 않는 클릭·탭은 포커스로 알 수 없다
+   * - 캐릭터가 그 안의 버튼을 밟고 있거나(`.is-standing`), 걷는 중이거나, 목록 쪽에 서 있다(`walkerNearList`)
+   */
+  function choosingFromList(): boolean {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body
+        && (el.list.contains(active) || el.empty.contains(active))) {
+      return true;
+    }
+    if (listPointers.size > 0 || clock.now() - listTouchedAt < ROOM_LIST_SETTLE_MS) return true;
+    if (el.list.querySelector('.is-standing') !== null || el.empty.querySelector('.is-standing') !== null) return true;
+    return el.character.classList.contains('walker--walking') || walkerNearList();
+  }
+
+  for (const zone of [el.list, el.empty]) {
+    zone.addEventListener('pointerenter', (event) => { listPointers.add(event.pointerId); });
+    // 손가락은 떼거나 스크롤로 넘어갈 때(pointercancel) 여기로 온다
+    zone.addEventListener('pointerleave', (event) => {
+      listPointers.delete(event.pointerId);
+      listTouchedAt = clock.now();
+    });
+  }
+  // 휴대폰은 목록이 접힘 아래라 머리말을 밀어 내려온다. 민 직후에 겨눈 탭도 고르는 중이다
+  window.addEventListener('scroll', () => {
+    if (!el.screen.hidden) listTouchedAt = clock.now();
+  }, { passive: true });
+
+  /** 주기 새로고침이 지금 목록을 읽어도 되는가 (`ui/lobby-refresh.ts`의 `canRefresh`) */
+  function canRefreshQuietly(): boolean {
+    if (visibleRequest === null || !ownsScreen(visibleRequest)) return false;
+    // 로비와 방 목록 칸이 보일 때만. 코드 참가·방 만들기를 연 동안에는 목록이 숨어 있다
+    if (el.screen.hidden || el.roomBrowser.hidden) return false;
+    // 목록 요청이나 누른 일(참가·만들기·나가기)이 도는 중이면 겹쳐 보내지도, 그 버튼을 다시 그리지도 않는다
+    if (listFetches > 0 || busyCount > 0) return false;
+    return !choosingFromList();
+  }
+
+  /**
+   * 주기 새로고침 한 번 (WP-E). 사람이 누른 새로고침과 달리 **조용하다** — 새로고침·다시 시도 버튼을 잠그지 않는다
+   * (잠그면 그 버튼의 포커스가 떨어졌다 돌아오며 다시 낭독된다). 실패해도 화면을 «연결할 수 없어요»로 바꾸지 않고
+   * 마지막 목록을 둔 채 간격만 늘린다(오류는 콘솔에만). 바뀐 것이 없으면 다시 그리지 않고, 바뀌어도 요약 줄은 글이
+   * 달라질 때만 고친다 — 낭독되는 것은 방 수가 바뀐 때뿐이다. 포커스는 옮기지 않는다.
+   */
+  async function refreshQuietly(): Promise<boolean> {
+    const request = visibleRequest;
+    if (request === null || !ownsScreen(request)) return true;
+    const listRequest = ++listRequestGeneration;
+    const pending = fetchRooms();
+    const settled = pending.then(() => undefined, () => undefined);
+    quietFetch = settled;
+    try {
+      const loadedRooms = await pending;
+      if (!ownsScreen(request) || listRequest !== listRequestGeneration) return true;
+      // 기다리는 사이 사람이 목록을 고르기 시작했으면 그리지 않는다. 다음 차례에 다시 읽는다
+      if (choosingFromList() || busyCount > 0) return true;
+      if (listError === null && !roomListChanged(rooms, loadedRooms)) return true;
+      rooms = loadedRooms;
+      listError = null;
+      renderList({ quiet: true });
+      // 목록이 바뀌어 캐릭터 발밑에 다른 것이 왔을 수 있다. 밟은 표시를 지금 화면으로 다시 잰다
+      walker.refresh();
+      return true;
+    } catch (error) {
+      console.warn('[로비] 방 목록을 조용히 다시 읽지 못했습니다. 마지막 목록을 그대로 둡니다', error);
+      return false;
+    } finally {
+      if (quietFetch === settled) quietFetch = null;
+    }
+  }
+
+  const refresher = createLobbyRefresh({
+    refresh: refreshQuietly,
+    canRefresh: canRefreshQuietly,
+    documentHidden: () => document.visibilityState === 'hidden',
+    clock,
+  });
+  // 다른 탭·앱으로 가면 시계를 끄고, 돌아오면 밀린 차례를 곧바로 한 번 읽는다
+  document.addEventListener('visibilitychange', () => refresher.visibilityChanged());
 
   /**
    * 빈 상태의 버튼을 눌렀더니 그 칸이 접혔다(다시 시도가 통했거나 필터를 풀었다). 누른 버튼이 숨어
@@ -776,9 +933,9 @@ export function createOnlineScreen(
   // ── 목록 필터와 주요 동작 ───────────────────────────────────────
 
   el.filterToggle.addEventListener('click', () => setFiltersExpanded(Boolean(el.filters.hidden)));
-  el.search.addEventListener('input', renderList);
+  el.search.addEventListener('input', () => renderList());
   for (const select of [el.visibility, el.availability, el.categoryFilter]) {
-    select.addEventListener('change', renderList);
+    select.addEventListener('change', () => renderList());
   }
 
   function resetRoomFilters(): void {
@@ -859,6 +1016,8 @@ export function createOnlineScreen(
       visibleRequest = request;
       navigationActionGeneration += 1;
       listRequestGeneration += 1;
+      // 아직 숨은 화면이다. 주기 새로고침은 화면이 보인 뒤 activate()가 켠다 — 아래 조회부터 센다
+      refresher.stop();
       say(el.joinMessage, '');
       say(el.createMessage, '');
       // 화면이 아직 숨어 있다. 지금 넣으면 낭독되지 않으므로 activate()가 보인 뒤에 넣는다
@@ -877,8 +1036,10 @@ export function createOnlineScreen(
     activate() {
       const notice = pendingNotice;
       pendingNotice = null;
-      if (visibleRequest === null || !ownsScreen(visibleRequest) || !notice) return;
-      say(el.message, notice, 'bad');
+      if (visibleRequest === null || !ownsScreen(visibleRequest)) return;
+      // 로비가 보인다. 이제부터 목록을 30초마다 조용히 다시 읽는다 (WP-E). 떠나면 hide()가 멈춘다
+      refresher.start();
+      if (notice) say(el.message, notice, 'bad');
     },
 
     acceptInvite(rawCode) {

@@ -469,19 +469,23 @@ test('표면: 세계 그림 위에 바로 놓이던 대화·매치 상태·결�
       assert.equal(valueOf(rules, element, 'background', env), 'var(--world-glass)', `${label}: 유리 표면`);
       assert.match(valueOf(rules, element, 'border', env) ?? '', /var\(--world-floor-line\)/, `${label}: 표면 선`);
     }
-    // 대기실의 세 형제는 한 표면으로 이어진다: 위아래 모서리를 나눠 갖고 사이에 바깥 여백이 없다
-    assert.equal(valueOf(rules, waitingForm, 'border-radius', env), 'var(--radius-lg) var(--radius-lg) 0 0');
-    assert.equal(valueOf(rules, waitingLog, 'border-radius', env), '0 0 var(--radius-lg) var(--radius-lg)');
+    // 대기실의 세 형제는 한 표면으로 이어진다: 위아래 모서리를 나눠 갖고 사이에 바깥 여백이 없다.
+    // 최근 대화(로그)가 맨 위, 채팅칸이 맨 아래다 — 가장 새 줄이 칸 바로 위에 온다 (U39)
+    assert.equal(valueOf(rules, waitingLog, 'border-radius', env), 'var(--radius-lg) var(--radius-lg) 0 0');
+    assert.equal(valueOf(rules, waitingForm, 'border-radius', env), '0 0 var(--radius-lg) var(--radius-lg)');
     assert.equal(valueOf(rules, waitingHint, 'border-radius', env), null);
-    for (const element of [waitingHint, waitingLog]) {
+    for (const element of [waitingHint, waitingForm]) {
       assert.equal(lengthOf(rules, valueOf(rules, element, 'margin-top', env), env), 0, '이어진 표면 사이에 틈이 없다');
       assert.equal(valueOf(rules, element, 'border-top', env), '0');
     }
-    assert.equal(valueOf(rules, waitingForm, 'border-bottom', env), '0');
+    assert.equal(valueOf(rules, waitingLog, 'border-bottom', env), '0');
+    // 세계 방과의 틈은 맨 위의 로그가 진다(예전에는 맨 위였던 채팅칸이 졌다)
+    assert.equal(lengthOf(rules, valueOf(rules, waitingLog, 'margin-top', env), env), 12);
     // 온라인 채팅 안의 칸·안내·로그는 제 바탕 없이 표면 하나를 나눠 쓴다
     assert.equal(valueOf(rules, onlineLog, 'background', env), null);
     assert.ok(lengthOf(rules, valueOf(rules, onlineChat, 'padding', env), env) > 0, '온라인 채팅 표면은 안쪽 여백을 가진다');
-    assert.equal(lengthOf(rules, valueOf(rules, nodeFromHtml(html, 'online-chat-form'), 'margin-top', env), env), 0, '표면 안 첫 줄은 안쪽 여백만큼만 띄운다');
+    assert.equal(lengthOf(rules, valueOf(rules, onlineLog, 'margin-top', env), env), 0, '표면 안 첫 줄(로그)은 안쪽 여백만큼만 띄운다');
+    assert.equal(lengthOf(rules, valueOf(rules, nodeFromHtml(html, 'online-chat-form'), 'margin-top', env), env), 0, '채팅칸 위 틈은 로그·안내가 진다');
     assert.ok(valueOf(rules, status, 'padding', env), '매치 상태 줄은 안쪽 여백을 가진다');
 
     // 결과 점수 장면은 카드 대신 글자 뒤 방사형 scrim 위에 뜬다

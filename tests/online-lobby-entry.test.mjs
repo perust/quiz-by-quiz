@@ -299,7 +299,7 @@ test('홈의 온라인 입구는 몇 명부터인지 보조 줄로 말하고, �
 
 test('로비 목록이 실패하면 «다시 시도»만 보이고 방 만들기를 권하지 않는다 (U34)', async () => {
   const online = await source('../src/ui/online.ts');
-  const render = between(online, '  function renderList(): void {', '  /**\n   * 목록을 다시 읽는다.');
+  const render = between(online, '  function renderList({ quiet = false }', '  /**\n   * 목록을 다시 읽는다.');
   const load = between(online, '  async function loadRooms(request: number)', '  // ── 참가');
   const errorBranch = between(render, 'if (listError !== null) {', 'const visible =');
 
@@ -316,8 +316,10 @@ test('로비 목록이 실패하면 «다시 시도»만 보이고 방 만들기
   assert.doesNotMatch(load, /error\.message/);
   assert.doesNotMatch(load, /say\(el\.message/, '목록 실패를 맨 위 알림과 빈 상태에 두 번 띄우지 않는다');
   assert.match(online, /if \(action === 'retry'\) \{\s*if \(visibleRequest !== null\) void loadRooms\(visibleRequest\);/);
-  // 주기적으로 다시 읽지 않는다 (N01)
+  // 주기 새로고침(WP-E)은 따로 세운 시계(ui/lobby-refresh.ts)가 조용한 길로만 읽는다. 버튼을 잠그고 오류 칸을
+  // 띄우는 loadRooms 를 타이머로 부르지 않는다 — 실패 한 번에 목록이 «연결할 수 없어요»로 바뀌면 안 된다
   assert.doesNotMatch(online, /setInterval|setTimeout\(\s*\(\)\s*=>\s*(?:void )?loadRooms/);
+  assert.match(online, /createLobbyRefresh\(\{\s*refresh: refreshQuietly,/);
 });
 
 test('참가·만들기 제출은 요청 동안 잠기고 aria-busy를 단다 (U34)', async () => {

@@ -106,3 +106,14 @@ export function filterAndSortRooms(
     return left.code.localeCompare(right.code);
   });
 }
+/**
+ * 다시 읽은 방 목록이 마지막으로 그린 것과 다른가 (로비 주기 새로고침, WP-E). 같으면 다시 그리지 않는다 — 목록을
+ * 다시 만들면 발밑 표시가 깜빡이고, 요약 줄을 같은 말로 다시 쓸 일도 없다. 어댑터가 검증해 같은 모양으로 만든
+ * 값이라 직렬화로 견준다. 순서까지 같아야 같다 — 잘못 «다르다»고 보면 한 번 더 조용히 그릴 뿐이다.
+ */
+export function roomListChanged(
+  previous: readonly PublicRoom[],
+  next: readonly PublicRoom[],
+): boolean {
+  return JSON.stringify(previous) !== JSON.stringify(next);
+}
