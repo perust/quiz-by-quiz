@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
+import re
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,6 +18,20 @@ CHOICE_COUNT = 4
 # 아니라 여러 판을 기억한다 — 분야 판 12번, 전체 판 4~5번 분량이다. 기억이 은행을 다 덮어도
 # 깨지지 않는다: 안 본 문제가 모자라면 오래전에 본 것부터 채운다.
 RECENT_QUESTION_MEMORY = 120
+# 공개 Pages `data/`의 문항 번호 모양이다 (`tools/check_bank.py`가 `<분야>-NNN`으로
+# 잠근다). 그 문제는 정답·해설까지 Pages와 공개 Git에 있으므로, 온라인 은행에 이 모양의
+# 번호가 하나라도 있으면 싣지 않는다 — 호스트가 `data/`의 사본을 mount 자리에 두면
+# `config.py`의 경로 비교로는 알 수 없다. 분야는 파일과 상관없이 다섯 모두를 보고,
+# 자릿수는 묶지 않아 공개 은행이 세 자리를 넘겨도 그대로 잡는다.
+_PUBLIC_QUESTION_ID = re.compile(rf"(?:{'|'.join(map(re.escape, CATEGORY_IDS))})-[0-9]+")
+# 온라인 문항 번호 (`deploy/oracle/ONLINE_QUESTION_BANK.md`). «이 문제 이상해요»가 이
+# 번호를 공개 GitHub 이슈로 보내므로 번호만 담는다. 이 모양이 아니어도 싣되(번호에 내용이
+# 담겼는지는 서버가 판정할 수 없다) 운영자가 docker logs에서 보도록 개수만 한 번 경고한다.
+_ONLINE_QUESTION_ID = {
+    category: re.compile(rf"online-{re.escape(category)}-[0-9]+") for category in CATEGORY_IDS
+}
+
+logger = logging.getLogger(__name__)
 
 
 class CatalogError(RuntimeError):
@@ -97,6 +113,9 @@ class QuestionCatalog:
     def from_directory(cls, directory: Path) -> QuestionCatalog:
         by_category: dict[str, tuple[_CatalogQuestion, ...]] = {}
         seen_ids: set[str] = set()
+        public_id_count = 0
+        public_id_files: list[str] = []
+        off_format_id_count = 0
 
         for category in CATEGORY_IDS:
             path = directory / f"{category}.json"
@@ -113,6 +132,7 @@ class QuestionCatalog:
                 raise CatalogError(f"{path.name} must contain a non-empty JSON array")
 
             questions: list[_CatalogQuestion] = []
+            file_public_ids = 0
             for index, item in enumerate(raw):
                 question = _parse_question(
                     item, expected_category=category, source=f"{path.name}[{index}]"
@@ -120,9 +140,31 @@ class QuestionCatalog:
                 if question.id in seen_ids:
                     raise CatalogError(f"duplicate question id: {question.id}")
                 seen_ids.add(question.id)
+                if _PUBLIC_QUESTION_ID.fullmatch(question.id):
+                    file_public_ids += 1
+                elif not _ONLINE_QUESTION_ID[category].fullmatch(question.id):
+                    off_format_id_count += 1
                 questions.append(question)
             by_category[category] = tuple(questions)
+            if file_public_ids:
+                public_id_count += file_public_ids
+                public_id_files.append(path.name)
 
+        # Both messages carry counts and file names only. They reach the container log (the
+        # refusal through the startup traceback), so no question text, choice, answer or
+        # explanation may appear — and the off-format warning omits the ids themselves.
+        if public_id_count:
+            raise CatalogError(
+                f"{public_id_count} question ids use the public Pages bank format "
+                f"<category>-NNN ({', '.join(public_id_files)}); the online bank must be "
+                "authored independently of the public data/ directory"
+            )
+        if off_format_id_count:
+            logger.warning(
+                "online question bank: %d question ids are not in the online-<category>-<digits> "
+                "format; the in-game report link sends ids to a public GitHub issue",
+                off_format_id_count,
+            )
         return cls(by_category=by_category)
 
     def select_round(
