@@ -341,7 +341,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 - **온라인 로비** — edge HUD 머리(제목·돌아가기·안내) → 세 동작 분절 묶음(어두운 바. 쉬는 칸은 바탕 없는 흰 아이콘,
   hover 는 보라 선만, 고른 칸은 금빛 선·채움과 보라 아이콘 칸, 올라섬은 흰 고리) → 상황별 방 목록 overlay
   (줄마다 분야 아이콘 칸·공개/🔒 잠김 배지·⧗ 게임 중 배지·행동) / 코드 참가 / 방 만들기 폼(`최대 인원` 아래
-  시작 인원 도움말(`혼자서도 바로 시작할 수 있어요`, 이전 API는 `2명부터 시작할 수 있어요`) — 입력칸과 같은 선에서 시작하고,
+  시작 인원 도움말(`혼자서도 바로 시작할 수 있어요`, 이전 API는 `2명부터 시작할 수 있어요`, 규칙을 모르면 `최대 인원까지 들어올 수
+  있어요`) — 입력칸과 같은 선에서 시작하고,
   라벨이 위로 올라가는 380px 이하에서는 들이지 않는다 — 그 아래 `문항 시간` 20초·40초 고르기). 빈 목록은 방장 혼자서도 여는
   API면 `방 만들기` 하나, 이전 API면 `방 만들고 친구 부르기`와 보조 `혼자 연습하기`, 목록을 못 받으면 `다시 시도`만 둔다. 다시 시도가
   통하거나 필터를 풀어 빈 칸이 접히면 포커스는 나타난 목록의 첫 버튼으로 간다. 420px 이하 또는 480px 이하의 짧은
@@ -457,7 +458,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/settings-dialog.test.mjs`, `tests/settings-time-limit.test.mjs`, `tests/quiz-time-limit.test.mjs` | 앱 바 설정 버튼의 자리·DOM 순서, 설정 대화상자 계약(패널 포커스·Esc·Tab 가두기·캡처 단계 키 차단·포커스 되돌리기), 고정된 토글 이름, 문항 시간 세 칸·저장·검증·기록 필드, 제한 없음 판의 시간 초과 없음, 앱의 움직임 줄이기 = `prefers-reduced-motion` 블록, 설정 글자 대비·비색 단서 |
 | `tests/online-question-time.test.mjs` | 온라인 문항 시간(20초·40초, 제한 없음 없음): 대기실의 세 번째 도는 설정 칸(`select` 없음, 방장만·판이 돌면 잠금), 480px 미만의 두 칸 + 한 줄 전체 문항 시간과 480px부터 세 칸, 방 만들기 폼의 고르기, 설정·온라인 조작법 안내 문구 |
 | `tests/online-reveal-standings.test.mjs`, `tests/online-final-review.test.mjs`, `tests/online-rematch-sounds.test.mjs` | 공개 단계 점수판(공개 중에만·공동 순위·지어내지 않는 정답자 수·낭독 범위·금은동·비색 단서), 원격 이름표 ✓ ✗, 최종 순위의 캐릭터·금은동·한 번뿐인 축하와 움직임 줄이기, 「한 판 더」, 끝난 판에만 오는 «문제 다시 보기», 온라인 효과음과 소리 설정 |
-| `tests/online-solo-rooms.test.mjs`, `tests/online-standing-answers.test.mjs` | 혼자 여는 온라인 방(`minPlayers`, 없으면 이전 API의 2)과 시작 인원을 말하는 홈 입구·빈 로비·만들기 도움말·대기실 상태 줄·「게임 방법」, 시간이 끝나면 선 칸이 답인 판(`standingAnswers`·ws-ticket capability)에서만 보내는 발밑 칸 초안과 판마다 바뀌는 상태 줄·조작법·무대 규칙 줄 |
+| `tests/online-solo-rooms.test.mjs`, `tests/online-standing-answers.test.mjs` | 혼자 여는 온라인 방(`minPlayers`, 없으면 이전 API의 2)과 시작 인원을 말하는 홈 입구·빈 로비·만들기 도움말·대기실 상태 줄·「게임 방법」, 시간이 끝나면 선 칸이 답인 판(`standingAnswers`·ws-ticket capability)에서만 보내는 발밑 칸 초안과 판마다 바뀌는 상태 줄·조작법·무대 규칙 줄, 소켓이 끊겨 초안이 닿지 않는 동안의 상태 줄(`standing-delivery`) |
 | `tests/question-report.test.mjs` | «이 문제 이상해요» 신고 주소(새 이슈·템플릿·번호 제목, URLSearchParams 인코딩, 6000자 한도와 자르기), 개인 정보 없음, 온라인은 번호·분야만, 새 창 링크(`_blank`·`noopener noreferrer`·이름), 44px·밑줄·`external` 아이콘, 템플릿과 본문 칸의 일치 |
 | `tests/safety-teacher-ui.test.mjs`, `tests/waiting-room-safety.test.mjs`, `tests/room-member-removal.test.mjs`, `tests/records-export.test.mjs` | 대기실 액자의 말 숨기기·내보내기(44px, 비색 단서, 인페이지 확인, 접속 중·끊김에 따라 다른 확인 문구, 포커스 되돌리기), 내보내진 사람의 로비 안내, 랭킹 기록 내보내기 패널(유리 표면, 파일·복사·펼친 글) |
 | `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음(두 퀴즈 HUD의 고리·남은 5초 색), 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |

@@ -78,7 +78,7 @@ async function waitFor(predicate, message) {
   assert.fail(message);
 }
 
-async function storeWith({ match, ticket }) {
+async function storeWith({ match, ticket, ticketStatus = () => 201 }) {
   const { createNetworkRoomStore } = await import('../js/online/network-rooms.js');
   return createNetworkRoomStore({
     baseUrl: 'https://quiz-api.example.test',
@@ -88,7 +88,7 @@ async function storeWith({ match, ticket }) {
       const url = String(input);
       if (url.endsWith('/v1/session')) return json({ playerId: identity.id });
       if (url.endsWith('/match')) return json(match);
-      if (url.endsWith('/ws-ticket')) return json(ticket, 201);
+      if (url.endsWith('/ws-ticket')) return json(ticket, ticketStatus());
       if (url.endsWith('/v1/rooms/ABC234')) return json({});
       throw new Error(`unexpected request: ${url}`);
     },
@@ -163,6 +163,104 @@ test('초안은 ws-ticket이 capability를 준 소켓에만 보낸다 — 이전
   } finally {
     stop();
   }
+});
+
+test('초안이 닿는지는 바뀔 때만 구독에 알린다 — 처음 붙는 동안은 닿고, 끊기거나 붙지 못하면 닿지 않는다', async () => {
+  const fresh = { ticket: 'fresh-ticket', standingAnswer: 'standing-answer-v1' };
+  const delivery = (events) => (event) => {
+    if (event.type === 'standing-delivery') events.push(event.deliverable);
+  };
+
+  FakeWebSocket.instances.length = 0;
+  const store = await storeWith({ match: running({ standingAnswers: true }), ticket: fresh });
+  const events = [];
+  const stop = store.subscribe('ABC234', delivery(events));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'socket was not created');
+    // 처음 붙는 동안은 닿는다고 본다 — 기억한 초안을 열리자마자 보낸다. 알릴 것이 없다
+    assert.deepEqual(events, []);
+    FakeWebSocket.instances[0].emit('open');
+    assert.deepEqual(events, [], '열렸고 받는다고 알렸다 — 바뀐 것이 없다');
+    // 끊겼다. 다시 붙는 동안 새 초안은 서버에 닿지 않는다
+    FakeWebSocket.instances[0].close();
+    assert.deepEqual(events, [false]);
+    assert.equal(store.sendStandingAnswer({ code: 'ABC234', matchId: MATCH_ID, position: 3, choiceIndex: 1 }), false);
+    await waitFor(() => FakeWebSocket.instances.length === 2, 'socket did not reconnect');
+    assert.deepEqual(events, [false], '다시 붙는 중에도 닿지 않는다 — 같은 말을 되풀이하지 않는다');
+    const reconnected = FakeWebSocket.instances[1];
+    reconnected.emit('open');
+    assert.deepEqual(events, [false, true], '다시 붙어 받는다고 알렸다');
+    const resent = reconnected.sent.map((text) => JSON.parse(text)).filter((value) => value.type === 'standing-answer');
+    assert.deepEqual(
+      resent,
+      [{ type: 'standing-answer', matchId: MATCH_ID, position: 3, choiceIndex: 1 }],
+      '끊긴 사이 옮긴 칸을 다시 붙자마자 보낸다',
+    );
+  } finally {
+    stop();
+  }
+  // 구독을 그만둔 뒤 닫힌 소켓은 알리지 않는다
+  assert.deepEqual(events, [false, true]);
+
+  // 티켓을 받지 못해 붙지 못했다
+  FakeWebSocket.instances.length = 0;
+  let ticketCalls = 0;
+  const failing = await storeWith({
+    match: running({ standingAnswers: true }),
+    ticket: fresh,
+    ticketStatus: () => (ticketCalls++ === 0 ? 503 : 201),
+  });
+  const failed = [];
+  const stopFailing = failing.subscribe('ABC234', delivery(failed));
+  try {
+    await waitFor(() => failed.length === 1, 'ticket failure was not reported');
+    assert.deepEqual(failed, [false]);
+    assert.equal(FakeWebSocket.instances.length, 0);
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'socket did not retry');
+    FakeWebSocket.instances[0].emit('open');
+    assert.deepEqual(failed, [false, true]);
+  } finally {
+    stopFailing();
+  }
+
+  // 열린 소켓의 서버가 받는다고 알리지 않았다(이전 API). 그 판은 이전 규칙이라 화면의 말은 그대로다
+  FakeWebSocket.instances.length = 0;
+  const legacy = await storeWith({ match: running(), ticket: { ticket: 'legacy-ticket' } });
+  const legacyEvents = [];
+  const stopLegacy = legacy.subscribe('ABC234', delivery(legacyEvents));
+  try {
+    await waitFor(() => FakeWebSocket.instances.length === 1, 'legacy socket was not created');
+    FakeWebSocket.instances[0].emit('open');
+    assert.deepEqual(legacyEvents, [false]);
+  } finally {
+    stopLegacy();
+  }
+});
+
+test('매치 controller는 초안이 닿는지를 화면 쪽 presence 이벤트로 넘긴다 — 지난 매치의 것은 버린다', async () => {
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const handlers = [];
+  const presence = [];
+  const controller = createOnlineMatchController({
+    gateway: {
+      subscribe(_code, handler) { handlers.push(handler); return () => undefined; },
+      async getMatch() { return null; },
+      async submitMatchAnswer() { throw new Error('not used'); },
+    },
+    onSnapshot: () => undefined,
+    onMissing: () => undefined,
+    onError: () => undefined,
+    onPresenceEvent: (event) => presence.push(event),
+  });
+  await controller.open('ABC234');
+  handlers[0]({ type: 'standing-delivery', deliverable: false });
+  assert.deepEqual(presence, [{ type: 'standing-delivery', deliverable: false }]);
+  await controller.open('XYZ234');
+  handlers[0]({ type: 'standing-delivery', deliverable: true });
+  assert.equal(presence.length, 1, '지난 매치의 소켓');
+  handlers[1]({ type: 'standing-delivery', deliverable: true });
+  assert.deepEqual(presence.at(-1), { type: 'standing-delivery', deliverable: true });
+  controller.close();
 });
 
 // ── 무엇을 언제 보내나 ───────────────────────────────────────────
@@ -273,6 +371,34 @@ test('상태 줄은 판의 규칙을 말한다 — 새 규칙이면 «시간이 
   assert.equal(
     onlineQuizView(running({ standingAnswers: true, ownSubmission: { position: 3, choiceIndex: 1, timedOut: false } })).status,
     '제출 완료! 다른 친구를 기다리는 중이에요.',
+  );
+});
+
+test('초안이 닿지 않는 동안(소켓이 끊겨 다시 붙는 중) 상태 줄은 «서 있는 칸이 답»을 약속하지 않는다', async () => {
+  const { onlineQuizView, ONLINE_STANDING_OFFLINE_STATUS } = await import('../js/ui/online-quiz.js');
+  const offline = { standingDeliverable: false };
+  assert.equal(onlineQuizView(running({ standingAnswers: true }), offline).status, ONLINE_STANDING_OFFLINE_STATUS);
+  assert.equal(
+    ONLINE_STANDING_OFFLINE_STATUS,
+    '연결이 잠시 끊겨 서 있는 칸이 답이 되지 않을 수 있어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해 주세요.',
+  );
+  assert.doesNotMatch(ONLINE_STANDING_OFFLINE_STATUS, /서버|API|snapshot|소켓/);
+  assert.equal(
+    onlineQuizView(running(), offline).status,
+    '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
+    '이전 API의 판은 원래 직접 낸다',
+  );
+  assert.equal(
+    onlineQuizView(
+      running({ standingAnswers: true, ownSubmission: { position: 3, choiceIndex: 1, timedOut: false } }),
+      offline,
+    ).status,
+    '제출 완료! 다른 친구를 기다리는 중이에요.',
+  );
+  assert.equal(
+    onlineQuizView(running({ standingAnswers: true }), { standingDeliverable: true }).status,
+    onlineQuizView(running({ standingAnswers: true })).status,
+    '모르면 닿는다고 본다',
   );
 });
 
@@ -456,11 +582,88 @@ test('온라인 퀴즈 화면: 새 규칙의 판에서만, 움직인 뒤 선 칸
   assert.equal(drafts.length, count);
 });
 
+test('온라인 퀴즈 화면: 초안이 닿지 않는 동안 판의 규칙 줄만 바꾸고, 다른 말은 덮지 않으며, 새 매치는 닿는다고 시작한다', async () => {
+  // 앞 테스트가 깐 가짜 DOM 위에 새 화면을 하나 더 만든다
+  const elements = new Map();
+  const byId = (id) => {
+    if (!elements.has(id)) elements.set(id, new FakeElement());
+    return elements.get(id);
+  };
+  globalThis.document.getElementById = (id) => byId(id);
+  const { createOnlineQuizScreen, ONLINE_STANDING_STATUS, ONLINE_STANDING_OFFLINE_STATUS } = await import('../js/ui/online-quiz.js');
+  const fakeArena = new Proxy({}, { get: (_, name) => (name === 'standingIndex' ? () => null : () => undefined) });
+  const quiz = createOnlineQuizScreen({
+    onSubmit: async () => {},
+    onMovement: () => {},
+    onStandingAnswer: () => {},
+    onSendChat: async () => ({ ok: true }),
+    onExit: () => {},
+    onFinished: () => {},
+    getPlayerId: () => identity.id,
+    createCharacterArena: () => fakeArena,
+    trapFocus: () => {},
+  });
+  const status = byId('online-match-status');
+  const fresh = running({ standingAnswers: true });
+
+  quiz.startPresence();
+  quiz.render(fresh);
+  assert.equal(status.textContent, ONLINE_STANDING_STATUS);
+  quiz.setStandingDelivery(false);
+  assert.equal(status.textContent, ONLINE_STANDING_OFFLINE_STATUS, '끊기면 곧바로 고친다');
+  quiz.render(fresh);
+  assert.equal(status.textContent, ONLINE_STANDING_OFFLINE_STATUS, '끊긴 사이 다시 읽어도 그 말이다');
+  quiz.setStandingDelivery(true);
+  assert.equal(status.textContent, ONLINE_STANDING_STATUS, '다시 붙으면 되돌린다');
+  // 무대 아래 규칙 줄과 조작법은 판의 규칙이라 그대로다 — 잠깐 끊길 때마다 줄을 접었다 펴지 않는다
+  assert.equal(byId('online-arena-hint-rule').hidden, false);
+  assert.equal(byId('online-help-rule-standing').hidden, false);
+
+  // 다시 읽지 못한 이유 같은 다른 말은 덮지 않는다. 다음 그림이 지금 사정을 말한다
+  quiz.setRefreshError('게임 상태를 다시 불러오지 못했어요.');
+  quiz.setStandingDelivery(false);
+  assert.equal(status.textContent, '게임 상태를 다시 불러오지 못했어요.');
+  quiz.render(fresh);
+  assert.equal(status.textContent, ONLINE_STANDING_OFFLINE_STATUS);
+
+  // 답을 냈으면 초안과 상관없다
+  quiz.render({ ...fresh, ownSubmission: { position: 3, choiceIndex: 1, timedOut: false } });
+  assert.equal(status.textContent, '제출 완료! 다른 친구를 기다리는 중이에요.');
+  quiz.setStandingDelivery(true);
+  assert.equal(status.textContent, '제출 완료! 다른 친구를 기다리는 중이에요.');
+  quiz.setStandingDelivery(false);
+
+  // 새 매치는 새 소켓이다 — 처음 붙는 동안은 닿는다고 시작한다
+  quiz.stopPresence();
+  quiz.startPresence();
+  const next = running({ standingAnswers: true, currentPosition: 1, question: { ...running().question, position: 1 } });
+  quiz.render(next);
+  assert.equal(status.textContent, ONLINE_STANDING_STATUS);
+
+  // 이전 API의 판은 소켓 사정과 무관하게 예전 말이다
+  quiz.setStandingDelivery(false);
+  quiz.render(running({ currentPosition: 2, question: { ...running().question, position: 2 } }));
+  assert.equal(status.textContent, '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.');
+
+  // 화면을 떠난 뒤 온 소식은 버리고, 다음 매치로 들고 가지 않는다
+  quiz.stopPresence();
+  quiz.setStandingDelivery(false);
+  quiz.startPresence();
+  quiz.render(fresh);
+  assert.equal(status.textContent, ONLINE_STANDING_STATUS);
+  quiz.stopPresence();
+});
+
 test('app은 초안을 지금 매치의 방으로만 넘기고, 조작법·「게임 방법」이 같은 규칙을 말한다', async () => {
   const [app, html] = await Promise.all([source('src/app.ts'), source('index.html')]);
   assert.match(
     app,
     /onStandingAnswer: \(draft\) => \{\s*const code = onlineMatchRoomCode;\s*if \(!code \|\| !ownsOnlineMatchNavigation\(\)\) return;\s*roomStore\.sendStandingAnswer\(\{ code, \.\.\.draft \}\);/,
+  );
+  // 초안이 닿는지는 같은 매치 소켓의 presence 이벤트로 온다 — 지금 매치일 때만 화면에 넘긴다
+  assert.match(
+    app,
+    /onPresenceEvent: \(event\) => \{\s*if \(!ownsOnlineMatchNavigation\(\)\) return;[\s\S]*?else if \(event\.type === 'standing-delivery'\) onlineQuizScreen\.setStandingDelivery\(event\.deliverable\);/,
   );
   const help = html.slice(html.indexOf('id="online-help-dialog"'), html.indexOf('id="online-help-close"'));
   const standingText = help.slice(help.indexOf('id="online-help-rule-standing"'), help.indexOf('id="online-help-rule-submit"'))

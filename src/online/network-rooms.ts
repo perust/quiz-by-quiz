@@ -1142,6 +1142,18 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       latest: null,
     };
     movementChannels.set(code, movementChannel);
+    /**
+     * 이 구독의 초안이 서버에 닿을 수 있는가 (U13). 처음 붙는 동안은 닿는다고 본다 — 기억한 마지막 초안을
+     * 소켓이 열리면 보낸다. 붙지 못했거나 끊겼거나, 열린 소켓의 서버가 받는다고 알리지 않았으면 false.
+     * 바뀔 때만 화면에 알린다(`standing-delivery`) — 그동안 마감이 오면 서버는 그 전에 받은 초안만 안다.
+     */
+    let standingDeliverable = true;
+
+    function setStandingDeliverable(next: boolean): void {
+      if (stopped || halted || next === standingDeliverable) return;
+      standingDeliverable = next;
+      handler({ type: 'standing-delivery', deliverable: next });
+    }
 
     function clearTimers(): void {
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
@@ -1367,6 +1379,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         connected.addEventListener('open', () => {
           if (stopped || connected !== socket) return;
           clearTimers();
+          setStandingDeliverable(movementChannel.supportsStandingAnswer);
           const latest = movementPayload(movementChannel);
           if (latest && connected.readyState === 1) {
             connected.send(JSON.stringify(latest));
@@ -1393,6 +1406,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
             movementChannel.supportsViewport = false;
             movementChannel.supportsSeat = false;
             movementChannel.supportsStandingAnswer = false;
+            // 다시 붙을 때까지 새 초안은 서버에 닿지 않는다. 기억했다가 다시 열리면 보낸다
+            setStandingDeliverable(false);
           }
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = null;
@@ -1406,6 +1421,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           removedFromRoom(connectionGeneration, kind);
           return;
         }
+        // 티켓을 받지 못해 붙지 못했다. 다시 붙을 때까지 초안은 서버에 닿지 않는다
+        if (connectionGeneration === generation) setStandingDeliverable(false);
         scheduleReconnect();
       }
     }

@@ -214,10 +214,18 @@ export function lobbyEmptyCopy(minPlayers: number | null): LobbyEmptyCopy {
   };
 }
 
+/**
+ * 시작 인원을 모를 때(null)의 인원 도움말. 세션을 열지 못한 채(목록을 읽지 못했다) 만들기 폼을 열 수 있어서,
+ * 어느 API든 맞는 말만 한다 — 고른 수가 «모여야 하는 수»가 아니라 «들어올 수 있는 수»라는 것. 시작 인원은
+ * 말하지 않는다(이전 API는 둘부터, 지금 API는 혼자서도). 정적 HTML도 이 글로 시작한다.
+ */
+export const CAPACITY_HELP_UNKNOWN = '최대 인원까지 들어올 수 있어요';
+
 /** 방 만들기 폼의 인원 도움말. «최대 인원»이 모여야 시작하는 줄 알지 않게 시작 인원을 따로 말한다 */
 export function capacityHelpText(minPlayers: number | null): string {
-  if (minPlayers !== null && minPlayers <= 1) return '혼자서도 바로 시작할 수 있어요';
-  return `${minPlayers ?? LEGACY_MIN_PLAYERS}명부터 시작할 수 있어요`;
+  if (minPlayers === null) return CAPACITY_HELP_UNKNOWN;
+  if (minPlayers <= 1) return '혼자서도 바로 시작할 수 있어요';
+  return `${minPlayers}명부터 시작할 수 있어요`;
 }
 
 /**

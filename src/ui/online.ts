@@ -523,7 +523,8 @@ export function createOnlineScreen(
   function renderList(): void {
     const filters = currentFilters();
     syncFilterToggle(filters);
-    // 만들기 폼의 시작 인원. 세션을 연 뒤에야 안다(목록을 읽으며 연다). 모르면 이전 API의 말이다
+    // 만들기 폼의 시작 인원. 세션을 연 뒤에야 안다(목록을 읽으며 연다). 모르면(목록을 읽지 못했다) 어느
+    // API든 맞는 말만 한다 — 그래도 만들기 폼은 열린다
     el.createCapacityHelp.textContent = capacityHelpText(roomStore.onlineRules()?.minPlayers ?? null);
 
     if (listError !== null) {

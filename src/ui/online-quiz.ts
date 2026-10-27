@@ -223,6 +223,13 @@ export function reconcileOnlineChoiceNodes<T>(
 /** 시간이 끝나면 선 칸이 답인 판(U13)의 상태 줄. 로컬 무대 아래 규칙 줄과 같은 규칙이다 */
 export const ONLINE_STANDING_STATUS = '보기를 누르면 바로 제출돼요. 시간이 끝나면 서 있는 칸이 답이에요.';
 
+/**
+ * 같은 판인데 방 소켓이 끊겨(다시 붙는 중) 발밑 칸 초안이 닿지 않을 때의 상태 줄 (U13). 그동안 마감이 오면
+ * 끊기기 전에 알린 칸만 답이 되고(그 뒤에 옮긴 칸은 모른다) 알린 칸이 없으면 시간 초과다 — 그래서 «서 있는
+ * 칸이 답»을 그대로 약속하지 않고 확실한 길을 말한다. 직접 낸 답은 소켓이 아니라 요청으로 간다.
+ */
+export const ONLINE_STANDING_OFFLINE_STATUS = '연결이 잠시 끊겨 서 있는 칸이 답이 되지 않을 수 있어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해 주세요.';
+
 /** 서버가 남은 시간을 보내지 않을 때(구버전 서버)의 안내. 카운트다운은 그리지 않는다. */
 export const ONLINE_TIME_NOTICE = '시간이 끝나면 다 같이 결과를 확인해요.';
 
@@ -391,8 +398,16 @@ export function onlineRevealSound(
   return reveal.timedOut ? 'timeout' : 'wrong';
 }
 
-/** Pure projection: hidden match data has no path into a running UI. */
-export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
+/**
+ * Pure projection: hidden match data has no path into a running UI.
+ *
+ * `standingDeliverable`은 지금 발밑 칸 초안이 서버에 닿는가다 (U13, 저장소의 `standing-delivery`). 모르면
+ * 닿는다고 본다 — 처음 붙는 소켓은 기억한 초안을 열리자마자 보낸다.
+ */
+export function onlineQuizView(
+  snapshot: OnlineMatchSnapshot,
+  { standingDeliverable = true }: { standingDeliverable?: boolean } = {},
+): OnlineQuizView {
   if (snapshot.state === 'running') {
     const submission = snapshot.ownSubmission;
     return {
@@ -402,11 +417,12 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
       selectedChoiceIndex: submission?.choiceIndex ?? null,
       reveal: null,
       // 답하는 규칙은 판이 정한다 (U13). 지금 판은 혼자 하기와 같다 — 시간이 끝나면 선 칸이 답이다.
-      // 그 필드가 없는 이전 API의 판은 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
+      // 소켓이 끊겨 그 칸이 닿지 않는 동안은 그렇게 약속하지 않는다. 그 필드가 없는 이전 API의 판은
+      // 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
       status: submission !== null
         ? '제출 완료! 다른 친구를 기다리는 중이에요.'
         : snapshot.standingAnswers === true
-          ? ONLINE_STANDING_STATUS
+          ? standingDeliverable ? ONLINE_STANDING_STATUS : ONLINE_STANDING_OFFLINE_STATUS
           : '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
       showFinalResult: false,
     };
@@ -495,6 +511,11 @@ export interface OnlineQuizScreen {
   setRoom(room: PublicRoom): void;
   /** 인증된 socket actor의 최신 이동만 반영한다. */
   updateMovement(movement: OnlineMovementEvent): void;
+  /**
+   * 발밑 칸 초안이 지금 서버에 닿는지 (U13, 저장소의 `standing-delivery`). 판의 규칙 줄이 보이는 동안만
+   * 상태 줄을 고친다 — 답을 보내지 못한 이유 같은 말은 덮지 않는다. 새 매치(`startPresence`)는 닿는다고 시작한다.
+   */
+  setStandingDelivery(deliverable: boolean): void;
   /** 같은 match socket에서 온 인증된 채팅을 로그와 캐릭터 말풍선에 반영한다. */
   updateChat(event: OnlineChatEvent): void;
   /** socket을 닫기 전에 마지막 정지 좌표를 보내고 presence를 정리한다. */
@@ -566,6 +587,10 @@ export function createOnlineQuizScreen(
   let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
   let presenceActive = false;
+  /** 발밑 칸 초안이 지금 서버에 닿는가 (U13). 매치 소켓이 처음 붙는 동안은 닿는다고 본다 */
+  let standingDeliverable = true;
+  /** render()가 마지막으로 상태 줄에 넣은 판의 말. 그 말이 보일 때만 소켓 사정으로 고친다 */
+  let ruleStatus: string | null = null;
   /** Chat POST completion from an exited/replaced match must not mutate the next screen. */
   let presenceGeneration = 0;
   let chatSendPending = false;
@@ -663,6 +688,9 @@ export function createOnlineQuizScreen(
     // 이 lifecycle을 다시 그릴 수 없어야 한다.
     submissionGate.invalidate();
     snapshot = null;
+    // 다음 매치는 새 소켓이다. 처음 붙는 동안은 초안이 닿는다고 본다
+    standingDeliverable = true;
+    ruleStatus = null;
     lastQuestionKey = null;
     lastArenaQuestionKey = null;
     lastChoiceStructureKey = null;
@@ -1236,7 +1264,7 @@ export function createOnlineQuizScreen(
   function render(nextSnapshot: OnlineMatchSnapshot): void {
     submissionGate.reconcile(nextSnapshot);
     snapshot = nextSnapshot;
-    const view = onlineQuizView(nextSnapshot);
+    const view = onlineQuizView(nextSnapshot, { standingDeliverable });
     if (nextSnapshot.state === 'finished') {
       stopCountdown();
       arena.setEnabled(false);
@@ -1259,6 +1287,7 @@ export function createOnlineQuizScreen(
     el.question.textContent = question.question;
     syncCountdown(nextSnapshot);
     setStatus(view.status);
+    ruleStatus = view.status;
     const isSubmitPending = submissionGate.pendingFor(nextSnapshot);
     const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
     if (choiceStructureKey === null) throw new Error('active match choice key is missing');
@@ -1370,10 +1399,22 @@ export function createOnlineQuizScreen(
     if (handleOnlineMovementKey(snapshot, event, arena)) event.preventDefault();
   });
 
+  function setStandingDelivery(deliverable: boolean): void {
+    if (!presenceActive || deliverable === standingDeliverable) return;
+    standingDeliverable = deliverable;
+    const current = snapshot;
+    // 판의 규칙 줄이 보이는 동안만 고친다. 답을 보내지 못한 이유·다시 읽지 못한 이유는 그대로 둔다
+    if (current === null || current.state !== 'running' || el.status.textContent !== ruleStatus) return;
+    const status = onlineQuizView(current, { standingDeliverable }).status;
+    setStatus(status);
+    ruleStatus = status;
+  }
+
   return {
     startPresence,
     setRoom,
     updateMovement,
+    setStandingDelivery,
     updateChat,
     stopPresence,
     render,

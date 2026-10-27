@@ -439,6 +439,8 @@ async function main(): Promise<void> {
       if (!ownsOnlineMatchNavigation()) return;
       if (event.type === 'room') onlineQuizScreen.setRoom(event.room);
       else if (event.type === 'movement') onlineQuizScreen.updateMovement(event);
+      // 발밑 칸 초안이 지금 닿는지 (U13). 끊긴 동안 상태 줄이 «서 있는 칸이 답»을 그대로 약속하지 않게
+      else if (event.type === 'standing-delivery') onlineQuizScreen.setStandingDelivery(event.deliverable);
       else onlineQuizScreen.updateChat(event);
     },
   });

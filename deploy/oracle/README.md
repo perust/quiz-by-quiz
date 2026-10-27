@@ -109,7 +109,12 @@ deadline (or an absent player's fill) closes a question, a draft received before
 `deadline_at` for that match and position is stored as that player's normal
 graded answer (`timed_out = false`, full question time) instead of a timeout. An
 API restart loses the drafts: browsers resend their latest draft when the socket
-reconnects, otherwise the old timeout applies. This needs no migration. Rooms
+reconnects, otherwise the old timeout applies. Drafts travel only over the room
+socket, so a browser whose socket is down at the deadline (dropped and
+reconnecting, or unable to get a ticket) cannot update its draft: the API grades
+the last draft it received before the deadline — an earlier tile if the player
+moved during the outage — or records the timeout if it has none. The browser
+tells the player to submit explicitly while its socket is down. This needs no migration. Rooms
 and the session response also carry `minPlayers: 1` — the host alone may start a
 match; a frontend that sees no such field treats the API as the previous
 two-player one.

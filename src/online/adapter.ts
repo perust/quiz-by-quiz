@@ -27,6 +27,7 @@
 //   {type: 'chat',  playerId, nickname, text} 누가 한마디 했다
 //   {type: 'match', phase: 'started', setup}  판이 열렸다
 //   {type: 'removed', kind}                   방장이 나를 내보냈다 (U24, kind는 rules.ts의 RemovalKind)
+//   {type: 'standing-delivery', deliverable}  발밑 칸 초안이 서버에 닿을 수 있는지가 바뀌었다 (U13)
 //
 // **여는 사람이 판을 직접 시작하지 않는다.** `startGame`은 «시작됐다»는 이벤트를
 // 보낼 뿐이고 화면은 그 이벤트를 보고 움직인다. 서버 구현에서는 같은 이벤트가 방에
@@ -381,7 +382,15 @@ export type RoomEvent =
    * 대기실은 로비로 돌아가며 그 말을 띄운다. `removed`(끊긴 사이 자리를 비웠다)는 같은 코드로 다시
    * 참가할 수 있고, `kicked`(접속 중에 내보냈다)는 잠시 다시 들어갈 수 없다.
    */
-  | { type: 'removed'; kind: RemovalKind };
+  | { type: 'removed'; kind: RemovalKind }
+  /**
+   * 이 구독의 소켓으로 발밑 칸 초안(U13)이 서버에 닿을 수 있는지가 바뀌었다. 바뀔 때만 온다.
+   * 처음 붙는 동안은 닿는다고 본다 — 저장소가 마지막 초안을 기억했다가 소켓이 열리면 보낸다. 붙지 못했거나
+   * 끊겼거나(다시 붙는 중), 열린 소켓의 서버가 받는다고 알리지 않았으면 false이고, 다시 붙어 받는다고 알리면
+   * true다. false인 동안 마감이 오면 서버는 그 전에 받은 초안만 안다(없으면 시간 초과) — 온라인 퀴즈의 상태
+   * 줄이 그렇게 말한다. 로컬 방은 초안을 보내지 않아 이 이벤트도 없다.
+   */
+  | { type: 'standing-delivery'; deliverable: boolean };
 
 export type RoomEventHandler = (event: RoomEvent) => void;
 
@@ -438,8 +447,9 @@ export interface RoomStore {
   } & MovementViewport): boolean;
   /**
    * 발밑 칸 초안 (U13). `sendMovement`처럼 방 소켓으로 보내는 best-effort이고, 그 소켓의 서버가 받는다고
-   * 알렸을 때만(ws-ticket의 capability) 보낸다 — 모르는 서버에는 한 글자도 보내지 않는다. 로컬 방은 서버
-   * 권위 판이 없어 보내지 않는다(false).
+   * 알렸을 때만(ws-ticket의 capability) 보낸다 — 모르는 서버에는 한 글자도 보내지 않는다. 소켓이 닫혀 있으면
+   * 기억했다가 다시 열릴 때 보낸다. 지금 닿을 수 있는지는 구독의 `standing-delivery` 이벤트가 알린다. 로컬 방은
+   * 서버 권위 판이 없어 보내지 않는다(false).
    */
   sendStandingAnswer(spec: { code: string } & StandingAnswerDraft): boolean;
   /** 처음 세션을 열 때 서버가 알려 준 온라인 규칙. 아직 묻지 않았으면 null. 로컬 방은 늘 같은 값이다 */

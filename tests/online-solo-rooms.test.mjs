@@ -214,14 +214,17 @@ test('홈 입구·빈 로비·만들기 도움말은 시작 인원을 모를 때
   }
   assert.equal(rules.capacityHelpText(1), '혼자서도 바로 시작할 수 있어요');
   assert.equal(rules.capacityHelpText(2), '2명부터 시작할 수 있어요');
-  assert.equal(rules.capacityHelpText(null), '2명부터 시작할 수 있어요');
+  // 모르면(목록을 읽지 못해 세션을 열지 못했다 — 그래도 만들기 폼은 열린다) 시작 인원을 말하지 않는다
+  assert.equal(rules.capacityHelpText(null), '최대 인원까지 들어올 수 있어요');
+  assert.equal(rules.capacityHelpText(null), rules.CAPACITY_HELP_UNKNOWN);
   assert.equal(rules.roomMinPlayers({}), 2);
   assert.equal(rules.roomMinPlayers({ minPlayers: 1 }), 1);
 
-  // 정적 HTML 은 묻기 전의 말이다 (home.ts 가 같은 함수로 되돌린다)
+  // 정적 HTML 은 묻기 전의 말이다 (home.ts·online.ts 가 같은 함수로 되돌린다)
   const html = await source('index.html');
   assert.match(html, /id="open-online"\s+aria-label="온라인, 방을 만들거나 참가해요"/);
   assert.match(html, /id="open-online-desc">방을 만들거나 참가해요</);
+  assert.match(html, new RegExp(`id="create-capacity-help">${rules.capacityHelpText(null)}<`));
 });
 
 test('「게임 방법」의 온라인 한 줄: 새 규칙·이전 규칙·아직 모름', async () => {
