@@ -287,6 +287,9 @@ function parseRoom(value: unknown): PublicRoom {
   if (!isOnlineQuestionTime(questionTimeMs)) {
     throw new Error('서버 방 문항 시간이 올바르지 않습니다.');
   }
+  // 방장 자동 준비(U28)와 접속 상태(U24)는 같은 API에서 함께 생겼다. 참가자마다 `connected`를
+  // 보내지 않는 이전 API는 방장의 준비도 요구하므로, 화면이 시작 앞에 준비를 먼저 보낸다.
+  const hostReadyImplicit = players.every((player) => isObject(player) && Object.hasOwn(player, 'connected'));
 
   return {
     code: value.code,
@@ -303,6 +306,7 @@ function parseRoom(value: unknown): PublicRoom {
     createdAt: value.createdAt,
     status,
     inMatch,
+    hostReadyImplicit,
   };
 }
 

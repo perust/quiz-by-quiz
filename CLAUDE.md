@@ -1003,7 +1003,9 @@ dock에 돌려보낸다 — 혼자 온 사람에게 막다른 길이 되지 않�
 «세는 사람(방장 + 연결된 참가자)이 둘 이상이고 방장 말고 모두 준비»다. 서버 `start_game`,
 `local-rooms.ts`의 `startGame`, `waiting-room-action.ts`의 `waitingRoomControls`가 **같은 규칙**을 쓴다 —
 한쪽만 바꾸면 서버가 다른 기준으로 거절해 말이 어긋난다(로컬 방은 이 브라우저의 나뿐이라 최소 인원만
-화면이 미리 잠근다).
+화면이 미리 잠근다). 화면(Pages)이 API보다 먼저 배포될 수 있으므로 **이 규칙을 모르는 이전 API도 받는다** —
+참가자마다 `connected`를 보내지 않는 snapshot은 `PublicRoom.hostReadyImplicit`이 false이고, 그러면 방장의
+「게임 시작」이 시작 앞에 준비를 먼저 보낸다. 새 API에서는 요청이 하나 줄어들 뿐이다.
 
 **꺼진 「게임 시작」의 이유는 버튼 아래 상태 줄이 말한다** (`#waiting-start-status`, `role="status"`,
 `aria-describedby`로 버튼과 묶음). 꺼진 버튼은 눌러도 click이 나지 않아 예전의 «두 명 이상이고 모두

@@ -1098,8 +1098,24 @@ ${me.nickname}`;
     const action = captureAction();
     if (!action) return;
     try {
+      // 방장 자동 준비(U28)를 모르는 이전 API는 방장도 준비해야 시작을 받는다. 화면에는 방장의
+      // 「준비 완료」가 없으므로 시작 앞에 방장 준비를 먼저 보낸다 — 화면이 API보다 먼저 배포돼도
+      // 시작이 막히지 않게 하는 호환 장치다. 새 API(`hostReadyImplicit`)에서는 요청이 하나 줄어든다.
+      const host = action.snapshot.players[0];
+      if (!action.snapshot.hostReadyImplicit && host?.id === roomStore.me() && !host.isReady) {
+        const readied = await roomStore.setReady({ code: action.code, isReady: true });
+        // 준비가 방 snapshot을 바꾸므로 같은 화면·같은 방인지만 본다
+        if (!ownsAction(action, false)) return;
+        if (!readied.ok) {
+          notice(readied.reason === 'game-in-progress'
+            ? '이미 게임이 진행 중이에요.'
+            : '판을 시작하지 못했어요. 방 상태를 다시 확인해 주세요.');
+          return;
+        }
+        applyRoom(readied.room);
+      }
       const result = await roomStore.startGame({ code: action.code });
-      if (!ownsAction(action)) return;
+      if (!ownsAction(action, action.snapshot.hostReadyImplicit)) return;
       if (!result.ok && result.reason === 'not-ready') {
         // 버튼이 켜진 사이 누가 준비를 풀었다. 이유는 시작 상태 줄이 말하고, 방을 다시
         // 읽어 그 줄과 버튼을 서버가 본 상태로 맞춘다.
