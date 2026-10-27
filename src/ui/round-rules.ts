@@ -14,6 +14,7 @@ import {
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
 } from '../constants.js';
+import { soloQuestionTime } from '../online/solo-play.js';
 import { timeLimitLabel } from './time-limit.js';
 
 /** 전체 도전 한 판의 문항 수. 분야마다 같은 수를 뽑아 합친다 (FR-2.2) */
@@ -60,6 +61,23 @@ export function answerRule(limitMs: number | null): string {
 
 /** 「게임 방법」의 «기록» 줄. 랭킹 화면·결과 등록 칸과 같은 범위다 (FR-6.10) */
 export const RECORD_RULE = '이 브라우저에만 저장돼요';
+
+/** 혼자 하기가 온라인으로 옮긴 뒤(FR-7.13 3단계)의 «기록» 줄. 서버가 채점한 점수만 남는다 */
+export const ONLINE_RECORD_RULE = '끝까지 푼 판은 온라인 랭킹에 남아요';
+
+/** 서버에 닿지 않아 연습(PRD 10.2 #1의 기본값)으로 여는 동안의 «기록» 줄 */
+export const PRACTICE_RECORD_RULE = '연습 판은 기록이 남지 않아요';
+
+/**
+ * 혼자 푸는 온라인 판의 «문항 시간» 줄 (FR-7.13 3단계). 온라인 판은 20초·40초만이라 «제한 없음»을 골랐으면 20초로
+ * 풀고 그렇다고 말한다(PRD 10.2 #2의 기본값, `soloQuestionTime`)
+ */
+export function soloTimeRule(limitMs: number | null): string {
+  const used = timeLimitLabel(soloQuestionTime(limitMs));
+  return limitMs === null
+    ? `${used} · 설정의 «제한 없음»은 연습에만 적용돼요`
+    : `${used} · 설정에서 바꿀 수 있어요`;
+}
 
 /** 「게임 방법」 온라인 줄이 말할 규칙. `online/adapter.ts`의 `OnlineRules`와 같은 모양이다 */
 export interface OnlineRuleFacts {

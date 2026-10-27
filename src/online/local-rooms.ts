@@ -253,7 +253,7 @@ function toPublic(room: Room): PublicRoom {
  * 로컬 방의 규칙. 방장 혼자서도 열고(서버와 같다), 그 판은 로컬 퀴즈라 시간이 끝나면 선 칸이 답이다.
  */
 // 이 브라우저 안의 방에는 서버 랭킹이 없다(rankings: false) — 판이 로컬 퀴즈라 기록은 혼자 하기 랭킹에 남는다
-const LOCAL_ONLINE_RULES = { minPlayers: 1, standingAnswers: true, rankings: false } as const;
+const LOCAL_ONLINE_RULES = { minPlayers: 1, standingAnswers: true, rankings: false, soloPlay: false } as const;
 
 export const localRooms = {
   /** 이 저장소가 진짜 네트워크인지. 화면이 안내 문구를 정할 때 쓴다 */
@@ -579,6 +579,23 @@ export const localRooms = {
 
   /** 서버 랭킹이 없다. 이 브라우저의 기록은 혼자 하기 랭킹(storage)이 맡는다 */
   async getOnlineRankings() {
+    return { supported: false as const };
+  },
+
+  /**
+   * 서버 권위 판이 없어 혼자 푸는 온라인 판도 없다 (FR-7.13 3단계). 서버 없이 연 화면(`quiz-api-base` 없음)의 홈은
+   * 연습(기록 안 남음)을 연다 — 이 브라우저 안에서 채점한 점수를 «온라인 기록»으로 꾸미지 않는다
+   */
+  async startSolo() {
+    return { ok: false as const, reason: 'unsupported' as const };
+  },
+
+  /** 서버 기록이 없다 */
+  async getMyBestScores() {
+    return { supported: false as const };
+  },
+
+  async getMyOnlineRecords() {
     return { supported: false as const };
   },
 

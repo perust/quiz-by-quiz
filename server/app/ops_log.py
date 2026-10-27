@@ -64,6 +64,9 @@ EVENT_FIELDS: dict[str, frozenset[str]] = {
     "host_transferred": frozenset({"room", "reason"}),
     "match_started": frozenset({"room", "players", "category", "questionTimeMs", "questions"}),
     "match_finished": frozenset({"room", "via"}),
+    # 혼자 푸는 온라인 판을 열었다 (FR-7.13 3단계). 그 방을 이번에 만들었는가와 판의 모양뿐이다 —
+    # 혼자 판은 room_created·match_started 대신 이 한 줄이다(판이 끝나면 match_finished는 같다)
+    "solo_started": frozenset({"room", "created", "category", "questionTimeMs", "questions"}),
     "cleanup": frozenset(
         {
             "roomsDeleted",
@@ -237,6 +240,26 @@ def match_started(
         {
             "room": _room(code),
             "players": _count(players),
+            "category": _category(category_id),
+            "questionTimeMs": _count(question_time_ms),
+            "questions": _count(questions),
+        },
+    )
+
+
+def solo_started(
+    code: str,
+    *,
+    created: bool,
+    category_id: str | None,
+    question_time_ms: int,
+    questions: int,
+) -> None:
+    _emit(
+        "solo_started",
+        {
+            "room": _room(code),
+            "created": bool(created),
             "category": _category(category_id),
             "questionTimeMs": _count(question_time_ms),
             "questions": _count(questions),

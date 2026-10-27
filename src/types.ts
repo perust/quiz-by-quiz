@@ -107,10 +107,33 @@ export interface RecordsExport {
   exportedAt: string;
   /** 내보낸 때의 닉네임. 기록마다의 이름은 각 기록의 `nickname` 이다 */
   nickname: string;
-  /** 무엇이 들어 있는지에 대한 정직한 한 줄 — 탭마다 상위 10개뿐이다 */
+  /** 무엇이 들어 있는지에 대한 정직한 한 줄 — 탭마다 상위 10개뿐이다(온라인 기록이면 서버에 남은 최근 기록이다) */
   scope: string;
-  /** 문항별 정오(`questionResults`)까지 그대로. 오래된 판부터 */
-  records: ScoreRecord[];
+  /**
+   * 문항별 정오(`questionResults`)까지 그대로. 오래된 판부터. 온라인 기록 파일(FR-7.13 3단계)이면 서버가 채점한
+   * 기록이라 `source: 'online'`이 붙고 소요 시간·문항별 정오가 없다 — 로더가 읽는 칸(닉네임·모드·점수·정답 수·
+   * 문항 수·시각)은 같다
+   */
+  records: Array<ScoreRecord | OnlineExportRecord>;
+}
+
+/**
+ * 내보낸 온라인 기록 한 줄 (FR-7.13 3단계 — 기록 내보내기 N02의 서버 기록 이전). 서버가 판을 닫을 때 남긴 기록이라
+ * 브라우저가 잰 소요 시간(`durationMs`)과 문항별 정오가 없다. `playedAt`은 서버가 판을 닫은 시각이다
+ */
+export interface OnlineExportRecord {
+  id: string;
+  /** 서버가 채점한 온라인 판의 기록이다 */
+  source: 'online';
+  nickname: string;
+  mode: RoundMode;
+  category: CategoryId | null;
+  score: number;
+  correctCount: number;
+  totalCount: number;
+  playedAt: string;
+  /** 기본(20초)이 아닌 판에만 남긴다 — 로컬 기록과 같은 규칙이다 */
+  timeLimitMs?: number;
 }
 
 /** 내려받을 파일 하나. 이름은 app.ts 가 정해 화면에 넘긴다 */

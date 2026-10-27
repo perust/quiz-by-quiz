@@ -427,8 +427,10 @@ test('홈으로 와도 들어가 있는 방이 있으면 dock 맨 위에 복귀 
   assert.match(app, /const lastRoomCode = await preferences\.getLastRoomCode\(\);/);
   assert.match(app, /saveLastRoomCode: \(code\) => \{ void preferences\.setLastRoomCode\(code\); \},/);
   assert.doesNotMatch(app, /setInterval/);
-  assert.match(home, /el\.roomNoteText\.textContent = room \? `「\$\{room\.name\}」 방에 아직 있어요` : '';/);
-  assert.match(app, /onReturnToRoom: \(code\) => \{ void openWaitingRoom\(code\); \}/);
+  // 같은 자리가 풀던 혼자 판(«이어 풀기»)과 서버에 닿지 않을 때의 연습 안내도 맡는다 (FR-7.13 3단계)
+  assert.match(home, /\? \(roomNote\.solo \? '풀던 혼자 판이 있어요' : `「\$\{roomNote\.name\}」 방에 아직 있어요`\)/);
+  // 풀던 혼자 판(FR-7.13 3단계)은 대기실이 아니라 그 판으로 돌아간다
+  assert.match(app, /onReturnToRoom: \(code, solo\) => \{[\s\S]*?if \(solo\) void resumeSolo\(code\);\s*else void openWaitingRoom\(code\);\s*\}/);
 });
 
 test('빈 로비의 «혼자 연습하기»는 홈으로 가서 분야 dock에 선다 (U29)', async () => {

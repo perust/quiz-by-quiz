@@ -358,7 +358,8 @@ test('「게임 방법」: Tab 은 대화상자 안에서 맴돈다', () => {
 test('app: 「게임 방법」은 지금 고른 문항 시간을 읽고, 화면을 옮길 때 접는다', async () => {
   const app = await source('src/app.ts');
   // 온라인 한 줄은 세션을 열 때 서버가 알려 준 규칙을 따른다 (U13·혼자 여는 방)
-  assert.match(app, /const rulesDialog = createRulesDialog\(\{\s*getTimeLimit: \(\) => timeLimitMs,\s*getOnlineRules: \(\) => roomStore\.onlineRules\(\),\s*\}\);/);
+  // 「혼자 하기」 줄은 분야 칸이 지금 여는 판의 규칙이다 (FR-7.13 3단계 — 혼자 온라인 판·연습·예전 혼자 하기)
+  assert.match(app, /const rulesDialog = createRulesDialog\(\{\s*getTimeLimit: \(\) => timeLimitMs,\s*getOnlineRules: \(\) => roomStore\.onlineRules\(\),[\s\S]*?getPlayMode: \(\) => \(playMode === 'online' \? 'online' : playMode === 'practice' \? 'practice' : 'local'\),\s*\}\);/);
   assert.match(app, /settingsDialog\.dismiss\(\);\s*rulesDialog\.dismiss\(\);/);
 });
 

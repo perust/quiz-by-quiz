@@ -612,11 +612,15 @@ export function createOnlineScreen(
     el.list.hidden = false;
   }
 
-  /** 목록 요청 하나. 도는 동안 `listFetches`가 센다 — 주기 새로고침은 그동안 차례를 건너뛴다 */
+  /**
+   * 목록 요청 하나. 도는 동안 `listFetches`가 센다 — 주기 새로고침은 그동안 차례를 건너뛴다.
+   * 내 혼자 방(혼자 푸는 온라인 판, FR-7.13 3단계)은 서버가 내 목록에만 싣는다. 로비는 친구와 함께 푸는 곳이라 그리지
+   * 않는다 — 풀던 혼자 판으로 돌아가는 길은 홈의 «이어 풀기» 줄이다
+   */
   async function fetchRooms(): Promise<PublicRoom[]> {
     listFetches += 1;
     try {
-      return await roomStore.listRooms();
+      return (await roomStore.listRooms()).filter((room) => room.solo !== true);
     } finally {
       listFetches -= 1;
     }

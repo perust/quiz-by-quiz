@@ -377,12 +377,14 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
     assert response.status_code == 200
     # 방 snapshot이 없는 화면(홈·빈 로비·「게임 방법」)도 이 API의 규칙을 말하도록 함께 알린다 —
     # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이며(standingAnswers, U13), 끝난
-    # 판은 서버 랭킹에 남는다(rankings, FR-7.13 2단계)
+    # 판은 서버 랭킹에 남고(rankings, FR-7.13 2단계), 홈이 혼자 푸는 온라인 판을 곧바로 연다
+    # (soloPlay, FR-7.13 3단계)
     assert response.json() == {
         "playerId": str(PLAYER_ID),
         "minPlayers": 1,
         "standingAnswers": True,
         "rankings": True,
+        "soloPlay": True,
     }
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text

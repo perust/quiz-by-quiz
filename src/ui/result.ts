@@ -3,6 +3,7 @@
 // 이 파일은 값을 그리고 닉네임 입력을 검사하는 일, 그리고 **화면을 떠날 때 아직 남기지 않은
 // 기록을 남기는 일**(FR-6.1)을 한다.
 
+import { bestComparisonText } from './best-score.js';
 import { CATEGORIES, DEFAULT_NICKNAME, NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { nicknameProblem } from '../online/nickname-rules.js';
@@ -181,6 +182,12 @@ export interface ResultView {
   characterId: string;
   /** 방에 들어가 있는가. 「대기실로」를 그릴지 정한다 */
   inRoom: boolean;
+  /**
+   * 연습 판인가 (FR-7.13 3단계, PRD 10.2 #1의 기본값). 서버에 닿지 않을 때 홈이 여는 로컬 판이라 **기록하지
+   * 않는다** — 등록 칸·최고 기록 비교·「랭킹 보기」가 없고 떠날 때의 자동 저장(FR-6.1)도 타지 않는다.
+   * 점수·풀이·「다시 하기」·「홈으로」는 그대로다
+   */
+  practice?: boolean;
 }
 
 export interface ResultScreen {
@@ -216,6 +223,9 @@ export function autoSaveNickname(typed: string, saved: string): string {
 }
 
 const SAVE_FAILED = '기록을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.';
+
+/** 연습 판 결과의 최고 기록 칩 자리 (FR-7.13 3단계). 남지 않는 기록을 견주지 않는다 */
+export const PRACTICE_RESULT_NOTE = '연습 판이라 점수가 기록되지 않아요.';
 
 /**
  * 저장 결과를 한 줄로. 직접 등록과 자동 저장이 같은 말을 쓴다.
@@ -281,6 +291,7 @@ export function createResultScreen(
     review: need('result-review'),
     reviewJump: need('result-review-jump'),
     reviewLink: need<HTMLAnchorElement>('result-review-link'),
+    registerBlock: need('result-register-block'),
     form: need<HTMLFormElement>('register-form'),
     input: need<HTMLInputElement>('nickname-input'),
     registerButton: need<HTMLButtonElement>('register-button'),
@@ -348,18 +359,9 @@ export function createResultScreen(
 
   /** 기존 최고 점수와 비교 (FR-5.7). 이번 기록을 저장하기 전 값을 받는다 */
   function renderBest(summary: RoundSummary, bestScore: number | null): void {
-    const isRecord = bestScore !== null && summary.score > bestScore;
-    el.best.classList.toggle('result-best--new', isRecord || bestScore === null);
-
-    if (bestScore === null) {
-      el.best.textContent = '첫 기록이에요.';
-    } else if (isRecord) {
-      el.best.textContent = `신기록 · 이전 최고 ${bestScore}점`;
-    } else if (summary.score === bestScore) {
-      el.best.textContent = `최고 기록과 같은 ${bestScore}점`;
-    } else {
-      el.best.textContent = `최고 기록 ${bestScore}점`;
-    }
+    const { text, isNew } = bestComparisonText(summary.score, bestScore);
+    el.best.classList.toggle('result-best--new', isNew);
+    el.best.textContent = text;
   }
 
   /** 카테고리별 정답 개수. 전체 모드에서만 보여준다 (FR-5.6) */
@@ -612,13 +614,17 @@ export function createResultScreen(
       });
     },
 
-    show({ summary, modeLabel, bestScore, nickname, characterId, inRoom }) {
+    show({ summary, modeLabel, bestScore, nickname, characterId, inRoom, practice = false }) {
       walker.show(characterId);
       // 방에서 시작한 판이면 돌아갈 길을 준다. 홈으로 가는 길도 그대로 둔다 —
       // 방을 떠나고 싶을 수도 있고, 방은 로비에서 코드로 다시 찾을 수 있다
       el.roomButton.hidden = !inRoom;
+      // 연습 판은 기록하지 않는다 — 등록 칸과 랭킹으로 가는 길을 거둔다
+      el.registerBlock.hidden = practice;
+      el.rankingButton.hidden = practice;
       round += 1;
-      registered = false;
+      // 연습 판은 «이미 남긴 판»으로 둔다. 떠나는 길·`flush`가 저장을 부르지 않는다
+      registered = practice;
       saving = null;
       leaving = false;
       // 앞 판에서 아직 끝나지 않은 이동은 이 판의 바쁨 표시·등록 칸·알림을 건드리지 않는다
@@ -634,7 +640,12 @@ export function createResultScreen(
       setMessage(null, null);
 
       renderScore(summary, modeLabel);
-      renderBest(summary, bestScore);
+      if (practice) {
+        el.best.classList.remove('result-best--new');
+        el.best.textContent = PRACTICE_RESULT_NOTE;
+      } else {
+        renderBest(summary, bestScore);
+      }
       renderByCategory(summary);
       renderReview(summary);
     },

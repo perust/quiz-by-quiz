@@ -118,12 +118,29 @@ _RANKINGS_INDEXES = (
     "online_rankings_board_order_idx",
     "online_rankings_board_week_order_idx",
     "online_rankings_recorded_at_idx",
+    # 한 사람의 판마다 최고 기록·기록 내보내기 (FR-7.13 3단계)
+    "online_rankings_player_board_order_idx",
 )
 _RANKINGS_PRUNE_FUNCTION = "quiz_online.prune_online_rankings()"
 # 런타임 역할은 기록을 남기고 읽기만 한다. 나머지는 표 단위로도 열 단위로도 없어야 한다.
 _RANKINGS_GRANTED = ("SELECT", "INSERT")
 _RANKINGS_COLUMN_DENIED = ("UPDATE", "REFERENCES")
 _RANKINGS_TABLE_DENIED = ("DELETE", "TRUNCATE", "TRIGGER")
+
+# 012가 더하는 혼자 방 표시 (FR-7.13 3단계). 방 하나에 하나, 사람 하나에 하나이고 방과 함께
+# 지워진다.
+_SOLO_TABLE = "solo_rooms"
+_SOLO_RELATION = f"quiz_online.{_SOLO_TABLE}"
+_SOLO_COLUMNS: dict[str, tuple[str, bool, bool, bool]] = {
+    "room_id": ("uuid", True, False, False),
+    "player_id": ("uuid", True, False, False),
+    "created_at": ("timestamp with time zone", True, False, False),
+}
+_SOLO_UNIQUE = "solo_rooms_one_per_player"
+# 런타임 역할은 표시를 남기고 읽기만 한다. 지우는 것은 방을 지울 때의 CASCADE뿐이다.
+_SOLO_GRANTED = ("SELECT", "INSERT")
+_SOLO_COLUMN_DENIED = ("UPDATE", "REFERENCES")
+_SOLO_TABLE_DENIED = ("DELETE", "TRUNCATE", "TRIGGER")
 
 # 런타임 역할은 migration 기록을 읽지도 쓰지도 못한다(004). has_table_privilege는 표 단위
 # 권한만 세므로 GRANT SELECT (version) 같은 열 권한을 놓친다 — 열에 줄 수 있는 넷은
@@ -327,6 +344,17 @@ JOIN pg_catalog.pg_class index_class ON index_class.oid = index_row.indexrelid
 WHERE index_row.indrelid = to_regclass(%s::text)
 """
 
+# 혼자 방 표시의 방 외래 키. ON DELETE CASCADE(confdeltype 'c')여야 방과 함께 사라진다
+_SOLO_FOREIGN_KEY_SQL = """
+SELECT constraint_row.conname::text,
+       constraint_row.confdeltype::text,
+       constraint_row.confrelid = to_regclass('quiz_online.rooms'),
+       constraint_row.convalidated
+FROM pg_catalog.pg_constraint constraint_row
+WHERE constraint_row.conrelid = to_regclass(%s::text)
+  AND constraint_row.contype = 'f'
+"""
+
 _SECURITY_DEFINER_SQL = """
 SELECT procedure.prosecdef, procedure.proconfig
 FROM pg_catalog.pg_proc procedure
@@ -470,6 +498,7 @@ def check_database(
             )
         )
     checks.append(("rankings-table", lambda conn: _check_rankings_table(conn, expect)))
+    checks.append(("solo-rooms-table", lambda conn: _check_solo_rooms_table(conn, expect)))
     if expect >= 12:
         checks += [
             ("rankings-constraints", _check_rankings_constraints),
@@ -479,6 +508,7 @@ def check_database(
                 "rankings-records",
                 lambda conn: _check_rankings_records(conn, require_empty_rankings),
             ),
+            ("solo-rooms-constraints", _check_solo_rooms_constraints),
         ]
     checks += [
         ("runtime-role", _check_runtime_role),
@@ -489,6 +519,7 @@ def check_database(
         checks.append(("runtime-question-time-access", _check_runtime_question_time_access))
     if expect >= 12:
         checks.append(("runtime-rankings-access", _check_runtime_rankings_access))
+        checks.append(("runtime-solo-rooms-access", _check_runtime_solo_rooms_access))
     checks += [
         ("logging", _check_logging),
         ("logging-overrides", _check_logging_overrides),
@@ -929,6 +960,121 @@ def _check_rankings_records(connection: Connection, require_empty: bool) -> Iter
         yield Check("OK", name, f"{detail}; empty")
     else:
         yield Check("INFO", name, detail)
+
+
+def _solo_rooms_table_exists(connection: Connection) -> bool:
+    return bool(_fetchone(connection, _RANKINGS_EXISTS_SQL, (_SOLO_RELATION,))[0])
+
+
+def _check_solo_rooms_table(connection: Connection, expect: int) -> Iterable[Check]:
+    """혼자 방 표시 표 (FR-7.13 3단계, migration 012). 012 전에는 없어야 한다."""
+    name = "solo-rooms-table"
+    exists = _solo_rooms_table_exists(connection)
+    if expect < 12:
+        if exists:
+            yield Check("FAIL", name, f"migration 012 table already exists: {_SOLO_RELATION}")
+        else:
+            yield Check("OK", name, f"{_SOLO_RELATION} absent, as at migration {expect}")
+        return
+    if not exists:
+        yield Check("FAIL", name, f"{_SOLO_RELATION} is missing")
+        return
+    found = {
+        str(column): (str(data_type), bool(not_null), generated == "s", identity in {"a", "d"})
+        for column, data_type, not_null, generated, identity in connection.execute(
+            _RANKINGS_COLUMNS_SQL, (_SOLO_RELATION,)
+        ).fetchall()
+    }
+    problems: list[str] = []
+    for column, (data_type, not_null, _, _) in _SOLO_COLUMNS.items():
+        actual = found.get(column)
+        if actual is None:
+            problems.append(f"{column} is missing")
+            continue
+        if actual[0] != data_type:
+            problems.append(f"{column} is {actual[0]}, expected {data_type}")
+        if actual[1] != not_null:
+            problems.append(f"{column} is {'NOT NULL' if actual[1] else 'nullable'}")
+    extra = sorted(set(found) - set(_SOLO_COLUMNS))
+    if extra:
+        problems.append(f"unexpected columns {', '.join(extra)}")
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check("OK", name, f"{_SOLO_RELATION} has {len(_SOLO_COLUMNS)} columns")
+
+
+def _check_solo_rooms_constraints(connection: Connection) -> Iterable[Check]:
+    """방과 함께 지워지고(ON DELETE CASCADE) 사람마다 하나다(UNIQUE)."""
+    name = "solo-rooms-constraints"
+    if not _solo_rooms_table_exists(connection):
+        yield Check("FAIL", name, f"{_SOLO_RELATION} is missing")
+        return
+    problems: list[str] = []
+    foreign = connection.execute(_SOLO_FOREIGN_KEY_SQL, (_SOLO_RELATION,)).fetchall()
+    cascading = [
+        row for row in foreign if str(row[1]) == "c" and bool(row[2]) and bool(row[3])
+    ]
+    if not cascading:
+        problems.append("room_id does not reference quiz_online.rooms ON DELETE CASCADE")
+    unique = {
+        str(constraint): bool(validated)
+        for constraint, validated in connection.execute(
+            _UNIQUE_CONSTRAINTS_SQL, (_SOLO_RELATION,)
+        ).fetchall()
+    }
+    if not unique.get(_SOLO_UNIQUE, False):
+        problems.append(f"{_SOLO_UNIQUE} (one solo room per player) is missing")
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check(
+            "OK", name, f"room_id cascades from quiz_online.rooms, {_SOLO_UNIQUE} present"
+        )
+
+
+def _check_runtime_solo_rooms_access(connection: Connection) -> Iterable[Check]:
+    name = "runtime-solo-rooms-access"
+    if not _runtime_role_exists(connection):
+        yield Check("FAIL", name, f"{_RUNTIME_ROLE_NAME} does not exist")
+        return
+    if not _solo_rooms_table_exists(connection):
+        yield Check("FAIL", name, f"{_SOLO_RELATION} is missing")
+        return
+    granted = dict(
+        connection.execute(
+            _TABLE_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _SOLO_RELATION, list(_SOLO_GRANTED)),
+        ).fetchall()
+    )
+    denied_table = dict(
+        connection.execute(
+            _TABLE_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _SOLO_RELATION, list(_SOLO_TABLE_DENIED)),
+        ).fetchall()
+    )
+    denied_column = dict(
+        connection.execute(
+            _ANY_COLUMN_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _SOLO_RELATION, list(_SOLO_COLUMN_DENIED)),
+        ).fetchall()
+    )
+    problems = [f"lacks {privilege}" for privilege in _SOLO_GRANTED if not granted.get(privilege)]
+    held = [
+        str(privilege)
+        for privilege, has in (*denied_table.items(), *denied_column.items())
+        if has
+    ]
+    if held:
+        problems.append(f"holds {', '.join(sorted(held))} (table or column grant)")
+    if problems:
+        yield Check(
+            "FAIL", name, f"{_RUNTIME_ROLE_NAME} on {_SOLO_RELATION}: " + "; ".join(problems)
+        )
+    else:
+        yield Check(
+            "OK", name, f"{_RUNTIME_ROLE_NAME} can only SELECT/INSERT {_SOLO_RELATION}"
+        )
 
 
 def _check_runtime_role(connection: Connection) -> Iterable[Check]:

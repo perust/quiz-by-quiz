@@ -19,13 +19,29 @@
 import { need, needOne } from '../dom.js';
 import type { OnlineRules } from '../online/adapter.js';
 import { trapFocus } from './quiz.js';
-import { RECORD_RULE, answerRule, onlineRule, roundLengthRule, scoreRule, timeRule } from './round-rules.js';
+import { soloQuestionTime } from '../online/solo-play.js';
+import {
+  ONLINE_RECORD_RULE,
+  PRACTICE_RECORD_RULE,
+  RECORD_RULE,
+  answerRule,
+  onlineRule,
+  roundLengthRule,
+  scoreRule,
+  soloTimeRule,
+  timeRule,
+} from './round-rules.js';
 
 export interface RulesDialogDeps {
   /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). null 이면 제한 없음 */
   getTimeLimit: () => number | null;
   /** 세션을 열 때 서버가 알려 준 온라인 규칙. 묻기 전이면 null. 넘기지 않으면 이전 API의 규칙이다 */
   getOnlineRules?: () => OnlineRules | null;
+  /**
+   * 홈의 분야 칸이 지금 여는 것 (FR-7.13 3단계). `online`이면 «혼자 하기» 줄들이 혼자 푸는 온라인 판의 규칙(서버의
+   * 20초·40초, 온라인 랭킹)이고, `practice`면 기록이 남지 않는다고 말한다. 넘기지 않거나 `local`이면 예전 말이다
+   */
+  getPlayMode?: () => 'online' | 'local' | 'practice';
 }
 
 export interface RulesDialog {
@@ -33,7 +49,7 @@ export interface RulesDialog {
   dismiss(): void;
 }
 
-export function createRulesDialog({ getTimeLimit, getOnlineRules }: RulesDialogDeps): RulesDialog {
+export function createRulesDialog({ getTimeLimit, getOnlineRules, getPlayMode }: RulesDialogDeps): RulesDialog {
   const el = {
     opener: need<HTMLButtonElement>('open-rules'),
     dialog: need('rules-dialog'),
@@ -52,11 +68,15 @@ export function createRulesDialog({ getTimeLimit, getOnlineRules }: RulesDialogD
 
   function render(): void {
     const limitMs = getTimeLimit();
+    const mode = getPlayMode?.() ?? 'local';
     el.length.textContent = roundLengthRule();
-    el.time.textContent = timeRule(limitMs);
+    // 혼자 온라인 판은 서버의 20초·40초다 — «제한 없음»이면 20초로 풀고 그렇다고 말한다 (PRD 10.2 #2)
+    el.time.textContent = mode === 'online' ? soloTimeRule(limitMs) : timeRule(limitMs);
     el.score.textContent = scoreRule();
-    el.answer.textContent = answerRule(limitMs);
-    el.record.textContent = RECORD_RULE;
+    el.answer.textContent = answerRule(mode === 'online' ? soloQuestionTime(limitMs) : limitMs);
+    el.record.textContent = mode === 'online'
+      ? ONLINE_RECORD_RULE
+      : mode === 'practice' ? PRACTICE_RECORD_RULE : RECORD_RULE;
     el.online.textContent = getOnlineRules ? onlineRule(getOnlineRules()) : onlineRule();
   }
 

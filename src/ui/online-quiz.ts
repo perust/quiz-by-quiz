@@ -492,6 +492,13 @@ export function handleOnlineMovementKey(
   return arena.handleKey(event);
 }
 
+/**
+ * 혼자 판의 나가기 확인 (FR-7.13 3단계). 친구와 푸는 방과 같은 규칙이다 — 판은 서버에서 계속되고 방에서 나간 것도
+ * 아니다. 돌아오는 길은 로비 목록이 아니라 홈의 «이어 풀기» 줄이고, 끝까지 가면 그 점수가 기록된다
+ */
+export const SOLO_EXIT_BODY =
+  '나가도 판은 계속 진행돼요. 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인 랭킹에 남아요.';
+
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
   /** `onlyIfChanged`면 무대가 움직였을 뿐이다 — 소켓에 실을 줄이 지난번과 같으면 저장소가 보내지 않는다 */
@@ -533,6 +540,11 @@ export interface OnlineQuizScreen {
   render(snapshot: OnlineMatchSnapshot): void;
   /** 홈에서 고른 캐릭터를 온라인 문제 무대에도 적용한다. */
   setCharacter(id: string): void;
+  /**
+   * 혼자 푸는 온라인 판인가 (FR-7.13 3단계). 혼자 방에는 말을 받을 사람이 없어 채팅을 거두고, 혼자인 점수판(«정답
+   * 1/1명»)도 그리지 않는다. 나가기 확인은 홈의 «이어 풀기»로 돌아온다고 말한다. 판의 규칙·채점·마감은 같다
+   */
+  setSolo(solo: boolean): void;
   /** 오류가 아닌 안내용 transport/state 문구. */
   setNotice(message: string): void;
   /** Background refresh failures are visible but never release an in-flight submit. */
@@ -586,6 +598,9 @@ export function createOnlineQuizScreen(
     chatInput: need<HTMLInputElement>('online-chat-input'),
     chatSubmit: need<HTMLButtonElement>('online-chat-submit'),
     chatLog: need('online-chat-log'),
+    chatSection: need('online-quiz-chat'),
+    exitTitle: need('online-exit-dialog-title'),
+    exitBody: need('online-exit-dialog-body'),
     exit: need<HTMLButtonElement>('online-quiz-exit'),
     // 답하는 규칙(U13)이 판마다 다르다 — 시간이 끝나면 선 칸이 답인 판과 직접 낸 답만 세는 이전 API의 판
     hintRule: need('online-arena-hint-rule'),
@@ -628,6 +643,10 @@ export function createOnlineQuizScreen(
   let revealSoundKey: string | null = null;
   /** 나가기 확인을 연 버튼. 취소하면 포커스를 되돌려 준다 */
   let exitDialogOpener: HTMLElement | null = null;
+  /** 혼자 푸는 온라인 판인가 (FR-7.13 3단계). 채팅과 혼자인 점수판을 거둔다 */
+  let solo = false;
+  // 친구와 푸는 방의 나가기 확인 말(정적 HTML). 혼자 판에서 바꿨다가 되돌린다
+  const exitCopy = { title: el.exitTitle.textContent ?? '', body: el.exitBody.textContent ?? '' };
   /**
    * 온라인 퀴즈의 공유 무대 (U31): 2×2 바닥. 화면마다 바닥이 질문 아래·오른쪽 열 등 다른 자리에 있어도
    * 같은 칸의 같은 자리는 같은 좌표다. 숨은 화면·꺼진 무대는 잴 수 없어 null — 예전처럼 화면 중심의 px다.
@@ -1193,6 +1212,13 @@ export function createOnlineQuizScreen(
     const standings = view.reveal === null ? null : onlineRevealStandings(active, getPlayerId());
     revealResults = standings?.results ?? null;
     paintRemoteResults();
+    // 혼자 판의 점수판은 «정답 1/1명»과 내 줄 하나뿐이다 — 공개 카드의 판정이 이미 말한다 (FR-7.13 3단계)
+    if (solo) {
+      standingsKey = null;
+      el.standings.hidden = true;
+      el.standings.replaceChildren();
+      return;
+    }
     const key = standings === null
       ? null
       : JSON.stringify([
@@ -1449,6 +1475,8 @@ export function createOnlineQuizScreen(
     if (arena.handleDialogKey(event)) return;
     if (el.screen.hidden || arena.isDialogOpen()) return;
     if (event.key === '/' && document.activeElement !== el.chatInput && presenceActive) {
+      // 혼자 판은 채팅을 거둔다 (FR-7.13 3단계) — `/`는 브라우저 몫으로 둔다
+      if (el.chatSection.hidden) return;
       event.preventDefault();
       el.chatInput.focus();
       return;
@@ -1489,6 +1517,16 @@ export function createOnlineQuizScreen(
     render,
     setCharacter(id) {
       arena.setCharacter(id);
+    },
+    setSolo(next) {
+      solo = next;
+      // 혼자 방에는 말을 받을 사람이 없다. 채팅 표면째 거두고, 그 자리의 손가락 조작부 비움은 상태 줄이
+      // 이어 받는다(style.css 의 `[data-solo='true'] .online-match-status`)
+      el.chatSection.hidden = next;
+      el.screen.dataset.solo = String(next);
+      el.exitTitle.textContent = next ? '혼자 판을 떠날까요?' : exitCopy.title;
+      el.exitBody.textContent = next ? SOLO_EXIT_BODY : exitCopy.body;
+      standingsKey = null;
     },
     setNotice(message) {
       setStatus(message);

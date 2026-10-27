@@ -26,7 +26,13 @@ def test_reveal_window_leaves_time_to_read_the_answer_and_explanation() -> None:
 def test_every_question_deadline_uses_the_matchs_own_question_time() -> None:
     # 방장이 방마다 20초·40초를 고른다. 고정 20초가 남은 자리가 있으면 40초 방의 어느 문항은
     # 20초에 닫히거나, 시간 초과·쓴 시간이 20초로 잘못 남는다.
-    start = " ".join(inspect.getsource(PostgresRoomsRepository.start_game).split())
+    # 판을 여는 SQL은 «게임 시작»과 혼자 판(FR-7.13 3단계)이 함께 쓰는 `_start_locked_match`에 있다
+    start = " ".join(
+        (
+            inspect.getsource(PostgresRoomsRepository.start_game)
+            + inspect.getsource(PostgresRoomsRepository._start_locked_match)
+        ).split()
+    )
     assert "SELECT id, host_player_id, category_id, game_mode, question_time_ms" in start
     assert "question_time_ms, deadline_at, expires_at" in start
     assert "now() + %s::integer * interval '1 millisecond'" in start
@@ -41,7 +47,7 @@ def test_every_question_deadline_uses_the_matchs_own_question_time() -> None:
     submit = " ".join(inspect.getsource(PostgresRoomsRepository.submit_answer).split())
     assert "SELECT LEAST( question_time_ms, GREATEST(" in submit
 
-    for name in ("start_game", "_advance_locked_match", "submit_answer"):
+    for name in ("start_game", "_start_locked_match", "_advance_locked_match", "submit_answer"):
         source = inspect.getsource(getattr(PostgresRoomsRepository, name))
         assert "20000" not in source, name
         assert "20 seconds" not in source, name
@@ -125,7 +131,10 @@ def test_room_members_put_the_current_host_first_for_the_waiting_room() -> None:
 
 
 def test_start_counts_the_host_request_as_ready_and_skips_absent_members() -> None:
-    source = inspect.getsource(PostgresRoomsRepository.start_game)
+    # 준비 판정은 «게임 시작»과 혼자 판이 함께 쓰는 `_start_locked_match`에 있다 (FR-7.13 3단계)
+    source = inspect.getsource(PostgresRoomsRepository.start_game) + inspect.getsource(
+        PostgresRoomsRepository._start_locked_match
+    )
 
     assert "absent_player_ids" in source
     assert 'member["player_id"] != actor_id' in source

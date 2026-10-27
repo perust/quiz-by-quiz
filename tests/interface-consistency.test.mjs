@@ -64,7 +64,10 @@ test('결과의 다음 행동은 긴 오답 풀이보다 먼저 온다', async (
 test('첫 결과 상태는 아직 저장하지 않은 기록을 저장됐다고 말하지 않는다', async () => {
   const result = await source('../src/ui/result.ts');
 
-  assert.match(result, /el\.best\.textContent = '첫 기록이에요\.'/);
+  // 비교 글은 로컬 결과와 혼자 푼 온라인 판의 결과가 함께 쓰는 순수 함수다 (FR-7.13 3단계)
+  const bestScore = await readFile(new URL('../src/ui/best-score.ts', import.meta.url), 'utf8');
+  assert.match(bestScore, /if \(previous === null\) return \{ text: '첫 기록이에요\.', isNew: true \};/);
+  assert.match(result, /const \{ text, isNew \} = bestComparisonText\(summary\.score, bestScore\);\s*el\.best\.classList\.toggle\('result-best--new', isNew\);\s*el\.best\.textContent = text;/);
   assert.doesNotMatch(result, /첫 기록을 남겼어요/);
 });
 
@@ -85,7 +88,8 @@ test('빈 랭킹은 설명으로 막지 않고 그 탭의 판을 곧바로 여�
   assert.match(ranking, /el\.emptyStartButton\.addEventListener\('click', \(\) => \{\s*const \{ target \} = currentTab\(\);/);
   assert.match(ranking, /\} else if \(emptyAction === 'start' && canStart\(target\)\) \{\s*onStart\(target\);\s*\} else \{\s*onHome\(\);/);
   assert.doesNotMatch(ranking, /emptyHomeButton|ranking-empty-home/);
-  assert.match(app, /onStart: \(target\) => startRound\(/);
+  // 홈의 분야 칸과 같은 판이다 (FR-7.13 3단계 — 혼자 온라인 판·예전 혼자 하기·연습 가운데 지금의 것)
+  assert.match(app, /onStart: \(target\) => playRound\(/);
   // 열 수 없는 판(문제를 불러오지 못한 분야)은 권하지 않는다. 홈의 분야 칸·전체 도전과 같은 규칙이다
   assert.match(app, /canStart: \(target\) => \(target\.mode === 'all'\s*\? allModeCount\(\) > 0\s*: \(target\.category \? banks\[target\.category\]\?\.length \?\? 0 : 0\) > 0\),/);
   assert.match(ranking, /startPoint: \(\) => pointBelowRightEdge\(el\.header, el\.character\)/);

@@ -214,12 +214,15 @@ test('결과 화면 코드: 캐릭터 그림·표시 순위 칸·축하·소리�
   assert.match(result, /el\.room\.textContent = options\.inRoom \? '대기실로' : '온라인 로비로';/);
   // 겹쳐 보내지 않는다 — 기다리는 동안 «연결 중…»
   assert.match(result, /if \(againPending\) return;/);
-  assert.match(result, /el\.again\.textContent = busy \? '연결 중…' : '한 판 더';/);
+  // 혼자 푼 판(FR-7.13 3단계)이면 같은 버튼이 «다시 하기»다
+  assert.match(result, /el\.again\.textContent = busy \? '연결 중…' : againLabel;/);
+  assert.match(result, /againLabel = solo \? SOLO_AGAIN_LABEL : '한 판 더';/);
 });
 
 test('「한 판 더」: 방장이 아니면 대기실을 열기 전에 준비를 켜고, 기다리는 사이 옮긴 화면을 덮지 않는다', async () => {
   const app = await source('src/app.ts');
-  assert.match(app, /onAgain: \(\) => playAgain\(\),/);
+  // 혼자 푼 판의 «다시 하기»는 같은 혼자 방에서 곧바로 새 판을 연다(대기실이 없다, FR-7.13 3단계)
+  assert.match(app, /onAgain: \(\) => \(soloResult \? startSoloOnline\(soloResult\.round\) : playAgain\(\)\),/);
   assert.match(
     app,
     /async function playAgain\(\): Promise<void> \{[\s\S]*?const navigation = waitingRoomEntryGeneration;\s*await playAgainInRoom\(\{[\s\S]*?isStillCurrent: \(\) => isCurrentNavigation\(navigation\) && activeRoomCode === code,[\s\S]*?openWaitingRoom: \(\) => openWaitingRoom\(code\),\s*\}\);/,

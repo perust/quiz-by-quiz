@@ -800,6 +800,17 @@ def test_latest_database_passes_expect_12_with_only_read_statements(
         "OK runtime-rankings-access quiz_by_quiz_app can only SELECT/INSERT "
         "quiz_online.online_rankings"
     ) in output
+    # 혼자 푸는 온라인 판의 방 표시 (FR-7.13 3단계, 012에 접어 넣었다)
+    assert "OK solo-rooms-table quiz_online.solo_rooms has 3 columns" in output
+    assert (
+        "OK solo-rooms-constraints room_id cascades from quiz_online.rooms, "
+        "solo_rooms_one_per_player present"
+    ) in output
+    assert (
+        "OK runtime-solo-rooms-access quiz_by_quiz_app can only SELECT/INSERT "
+        "quiz_online.solo_rooms"
+    ) in output
+    assert "online_rankings_player_board_order_idx" in output
     assert "OK log_statement none" in output
     assert "INFO active-matches" in output and "INFO recent-members" in output
     # 접속 문자열도, 그 안의 비밀번호도 출력하지 않는다
@@ -838,6 +849,7 @@ def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> 
     assert "FAIL question-time-constraints migration 011 constraints already exist" in output
     assert "allows 0..40000, expected 0..20000" in output
     assert "FAIL rankings-table migration 012 table already exists" in output
+    assert "FAIL solo-rooms-table migration 012 table already exists" in output
     assert output.splitlines()[-1].startswith("FAIL result ")
 
 
@@ -856,10 +868,12 @@ def test_latest_database_fails_expect_11(capsys: pytest.CaptureFixture[str]) -> 
     assert status == 1
     assert "FAIL ledger latest version is 12, expected 11" in output
     assert "FAIL rankings-table migration 012 table already exists" in output
+    assert "FAIL solo-rooms-table migration 012 table already exists" in output
     # 011이 더한 것은 그대로 맞다
     assert lines["question-time-columns"] == ["OK"]
     assert lines["elapsed-ms-check"] == ["OK"]
     assert "rankings-constraints" not in lines and "runtime-rankings-access" not in lines
+    assert "solo-rooms-constraints" not in lines and "runtime-solo-rooms-access" not in lines
 
 
 @pytest.mark.integration
@@ -1057,6 +1071,7 @@ def test_migration_11_database_passes_expect_11_and_fails_expect_12() -> None:
     assert (
         "OK rankings-table quiz_online.online_rankings absent, as at migration 11" in rendered_11
     )
+    assert "OK solo-rooms-table quiz_online.solo_rooms absent, as at migration 11" in rendered_11
     assert _statuses(at_11)["question-time-values"] == "INFO"
 
     failed_12 = {check.name for check in at_12 if check.status == "FAIL"}
@@ -1069,6 +1084,9 @@ def test_migration_11_database_passes_expect_11_and_fails_expect_12() -> None:
         "rankings-retention",
         "rankings-records",
         "runtime-rankings-access",
+        "solo-rooms-table",
+        "solo-rooms-constraints",
+        "runtime-solo-rooms-access",
     }
     assert {check.name for check in empty_12 if check.status == "FAIL"} == failed_12
 
@@ -1257,4 +1275,79 @@ def _seed_active_match(connection: psycopg.Connection[Any]) -> None:
         VALUES (%s, 10, now() + interval '20 seconds', now() + interval '2 hours')
         """,
         (room_id,),
+    )
+
+
+@pytest.mark.integration
+@needs_database
+@pytest.mark.parametrize(
+    ("grant", "held"),
+    [
+        ("GRANT DELETE ON quiz_online.solo_rooms TO {}", "DELETE"),
+        ("GRANT UPDATE (player_id) ON quiz_online.solo_rooms TO {}", "UPDATE"),
+    ],
+)
+def test_runtime_solo_rooms_access_allows_only_insert_and_select(grant: str, held: str) -> None:
+    """혼자 방 표시(FR-7.13 3단계)는 남기고 읽기만 한다. 지우는 것은 방과 함께인 CASCADE뿐이다."""
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(sql.SQL(grant).format(sql.Identifier(_RUNTIME_ROLE_NAME)))
+            held_checks = check_database(connection, expect=12)
+            connection.execute(
+                sql.SQL("REVOKE {} ON quiz_online.solo_rooms FROM {}").format(
+                    sql.SQL(held), sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            connection.execute(
+                sql.SQL("REVOKE INSERT ON quiz_online.solo_rooms FROM {}").format(
+                    sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            lacking = check_database(connection, expect=12)
+
+    access = next(check for check in held_checks if check.name == "runtime-solo-rooms-access")
+    assert access.render() == (
+        f"FAIL runtime-solo-rooms-access {_RUNTIME_ROLE_NAME} on quiz_online.solo_rooms: "
+        f"holds {held} (table or column grant)"
+    )
+    lacking_access = next(check for check in lacking if check.name == "runtime-solo-rooms-access")
+    assert lacking_access.render() == (
+        f"FAIL runtime-solo-rooms-access {_RUNTIME_ROLE_NAME} on quiz_online.solo_rooms: "
+        "lacks INSERT"
+    )
+
+
+@pytest.mark.integration
+@needs_database
+def test_solo_rooms_must_cascade_from_rooms_and_stay_one_per_player() -> None:
+    """방이 지워져도 표시가 남거나 한 사람이 혼자 방을 둘 가질 수 있으면 실패한다."""
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms DROP CONSTRAINT solo_rooms_room_id_fkey"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms ADD CONSTRAINT solo_rooms_room_id_fkey "
+                "FOREIGN KEY (room_id) REFERENCES quiz_online.rooms(id)"
+            )
+            no_cascade = check_database(connection, expect=12)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms DROP CONSTRAINT solo_rooms_one_per_player"
+            )
+            not_unique = check_database(connection, expect=12)
+
+    cascade = next(check for check in no_cascade if check.name == "solo-rooms-constraints")
+    assert cascade.render() == (
+        "FAIL solo-rooms-constraints room_id does not reference quiz_online.rooms "
+        "ON DELETE CASCADE"
+    )
+    unique = next(check for check in not_unique if check.name == "solo-rooms-constraints")
+    assert unique.render() == (
+        "FAIL solo-rooms-constraints solo_rooms_one_per_player (one solo room per player) "
+        "is missing"
     )

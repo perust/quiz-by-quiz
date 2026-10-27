@@ -21,7 +21,13 @@
 -- 저장 한도 250,000줄)는 정해진 규칙만 도는 SECURITY DEFINER 함수로만 한다 — 런타임 역할에 DELETE를
 -- 주지 않는다.
 --
--- 더하기만 하는 변경이다. 011의 API는 이 표를 모른 채 그대로 돌고(이 판이 도는 동안 끝난 판은
+-- 혼자 푸는 온라인 판(FR-7.13 3단계)도 여기에 더한다 — 아직 어디에도 올리지 않은 012에 접어 넣었다.
+-- 홈의 분야 칸이 곧바로 여는 혼자 방은 solo_rooms에 표시가 남는다. 그 방은 로비 목록에 남에게
+-- 보이지 않고 남이 들어오지 못한다(API가 막는다). 표시는 방과 함께 사라지고(ON DELETE CASCADE),
+-- 한 사람에게 하나뿐이다(같은 사람의 다음 판은 그 방을 다시 쓴다). 그 사람의 «분야마다 최고 점수»와
+-- 기록 내보내기를 읽는 색인도 함께 둔다. 기존 표는 하나도 바꾸지 않는다.
+--
+-- 더하기만 하는 변경이다. 011의 API는 이 표들을 모른 채 그대로 돌고(이 판이 도는 동안 끝난 판은
 -- 기록되지 않는다), 이 표를 쓰는 API는 012 없이는 판을 닫지 못한다. 그래서 순서는
 -- migration 012 → API → Pages다 (deploy/oracle/README.md «Fail-closed staging order»).
 
@@ -77,6 +83,20 @@ CREATE INDEX online_rankings_board_week_order_idx
 -- 오래된 기록 정리
 CREATE INDEX online_rankings_recorded_at_idx
     ON quiz_online.online_rankings (recorded_at);
+-- 한 사람의 판마다 최고 점수(홈의 별 점수·결과의 최고 기록 비교)와 기록 내보내기 (FR-7.13 3단계).
+-- 주인 열쇠까지 견주는 것은 읽는 쪽이다 — 색인은 player_id로 그 사람의 줄만 고른다.
+CREATE INDEX online_rankings_player_board_order_idx
+    ON quiz_online.online_rankings (player_id, board, score DESC, recorded_at ASC, id ASC);
+
+-- 혼자 푸는 온라인 판의 방 (FR-7.13 3단계). 방 하나에 표시 하나, 사람 하나에 방 하나다. 방이 지워지면
+-- 표시도 함께 지워진다(이 표의 줄을 지우는 권한은 런타임 역할에 없다). player_id는 그 방을 만든
+-- 사람이다 — 혼자 방에는 그 사람 말고 아무도 들어오지 못하므로 방장이 바뀌지 않는다.
+CREATE TABLE quiz_online.solo_rooms (
+    room_id uuid PRIMARY KEY REFERENCES quiz_online.rooms(id) ON DELETE CASCADE,
+    player_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT solo_rooms_one_per_player UNIQUE (player_id)
+);
 
 -- 정리 규칙. 최근 8주(56일)는 모두 남기고, 그보다 오래된 기록은 판마다 전체 기간 상위 100에 들 때만
 -- 남긴다(전체 랭킹 상위 10이 정리로 바뀌지 않는다). 기록이 250,000줄을 넘으면 8주 안이라도 가장
@@ -141,6 +161,8 @@ GRANT EXECUTE ON FUNCTION quiz_online.prune_online_rankings() TO quiz_by_quiz_ap
 
 -- 런타임 역할: 기록을 남기고 읽기만 한다. 고치거나 지우는 권한은 없다.
 GRANT SELECT, INSERT ON TABLE quiz_online.online_rankings TO quiz_by_quiz_app;
+-- 혼자 방의 표시도 남기고 읽기만 한다. 지우는 것은 방을 지울 때의 CASCADE뿐이다.
+GRANT SELECT, INSERT ON TABLE quiz_online.solo_rooms TO quiz_by_quiz_app;
 
 INSERT INTO quiz_online.schema_migrations (version)
 VALUES (12)

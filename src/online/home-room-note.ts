@@ -18,6 +18,8 @@
 export interface HomeRoomNoteRoom {
   code: string;
   name: string;
+  /** 혼자 푸는 온라인 판의 방이다 (FR-7.13 3단계). 홈은 «풀던 혼자 판»으로 말하고 그 판으로 돌아간다 */
+  solo?: boolean;
 }
 
 export interface HomeRoomNoteDeps {
@@ -72,7 +74,7 @@ export function createHomeRoomNote(deps: HomeRoomNoteDeps): HomeRoomNote {
 
   function display(room: HomeRoomNoteRoom | null): void {
     shownCode = room?.code ?? null;
-    show(room ? { code: room.code, name: room.name } : null);
+    show(room ? { code: room.code, name: room.name, ...(room.solo === true ? { solo: true } : {}) } : null);
   }
 
   return {

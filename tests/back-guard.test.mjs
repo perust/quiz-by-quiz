@@ -77,9 +77,12 @@ test('뒤로: 대화상자가 열려 있으면 그것만 닫고, 화면마다 �
   // 대기실의 «뒤로»는 방을 떠나는 것이 아니다 — 「나가기」를 누르지 않는다
   assert.deepEqual(at('waiting'), { kind: 'lobby' });
   assert.notDeepEqual(at('waiting'), { kind: 'control', id: 'waiting-leave' });
-  for (const screen of ['ranking', 'characters', 'online-result']) {
+  for (const screen of ['ranking', 'characters']) {
     assert.deepEqual(at(screen), { kind: 'home' }, screen);
   }
+  // 온라인 결과는 「홈으로」를 누른다 (FR-7.13 3단계) — 친구와 푼 판은 예전처럼 홈으로 가고(방에는 남는다),
+  // 혼자 푼 판은 그 버튼이 혼자 방을 나가 지운다. «뒤로»가 혼자 방을 남겨 두지 않는다
+  assert.deepEqual(at('online-result'), { kind: 'control', id: 'online-final-home' });
   // 홈에서 base 에 닿았으면 앱을 나가려던 것이고, 앞으로 가기로 guard 에 닿았으면 그대로 둔다
   assert.deepEqual(at('home'), { kind: 'leave' });
   assert.deepEqual(at('home', { landedOnGuard: true }), { kind: 'stay' });

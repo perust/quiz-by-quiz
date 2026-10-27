@@ -21,6 +21,7 @@ from fastapi import (
     FastAPI,
     Header,
     HTTPException,
+    Query,
     Request,
     Response,
     WebSocket,
@@ -43,6 +44,7 @@ from .domain import (
     validate_player,
     validate_question_time,
     validate_room,
+    validate_solo_room,
 )
 from .password_work import BoundedPasswordWork, PasswordWorkBusy
 from .question_catalog import CatalogError, QuestionCatalog
@@ -52,6 +54,7 @@ from .rate_limit import (
     RateLimitClaim,
 )
 from .repository import (
+    OWN_RECORDS_LIMIT,
     RANKING_BOARDS,
     RANKING_LIMIT,
     CleanupCounts,
@@ -67,6 +70,8 @@ from .repository import (
     MemberConnected,
     NotHost,
     NotMember,
+    OwnBestView,
+    OwnRecordView,
     PlayerView,
     RankingBoardView,
     RankingEntryView,
@@ -157,6 +162,20 @@ RANKING_MODES = frozenset({"category", "all"})
 RANKING_PERIODS: frozenset[RankingPeriod] = frozenset({"week", "all"})
 # 랭킹의 «이번 주»가 쓰는 시간대. 응답이 함께 알린다.
 RANKING_TIME_ZONE = "Asia/Seoul"
+# 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo)의 몫. 판 하나는 빨라도 1분 남짓(공개 8초 ×
+# 문항 수)이라 한 사람이 1분에 여는 판은 많아야 하나다 — 판이 도는 동안의 요청은 새 판을 열지 않고
+# 그 판을 돌려준다(resumed). 사람 칸은 두 번 누르기·다른 탭·이어 풀기를 넉넉히 품는다. 한
+# 교실(한 주소 뒤 36명)이 함께 판을 열어도 IP 칸 300에 들고, 프로세스 600은 방 변경 몫과 같다.
+SOLO_ACTOR_LIMIT = 12
+SOLO_CLIENT_LIMIT = 300
+SOLO_PROCESS_LIMIT = 600
+SOLO_WINDOW_SECONDS = 60
+# 내 최고 기록(홈을 열 때마다 한 번)과 기록 내보내기의 몫. 인증 몫도 함께 먹는다
+OWN_BEST_ACTOR_LIMIT = 30
+OWN_RECORDS_ACTOR_LIMIT = 6
+OWN_CLIENT_LIMIT = 600
+OWN_PROCESS_LIMIT = 1_200
+OWN_WINDOW_SECONDS = 60
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -381,6 +400,12 @@ class UpdateRoomBody(StrictBody):
 
 class ChatBody(StrictBody):
     text: str
+
+
+class SoloBody(StrictBody):
+    # 「전체 도전」이면 None. 문항 시간은 친구와 푸는 방과 같은 20초·40초다
+    category_id: str | None = Field(default=None, alias="categoryId")
+    question_time_ms: StrictInt = Field(default=DEFAULT_QUESTION_TIME_MS, alias="questionTimeMs")
 
 
 class ReadyBody(StrictBody):
@@ -1075,7 +1100,7 @@ def _player_payload(player: PlayerView) -> dict[str, object]:
 
 
 def _room_payload(room: RoomView) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "code": room.code,
         "name": room.name,
         "categoryId": room.category_id,
@@ -1093,6 +1118,11 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         # 판을 여는 데 필요한 세는 사람 수. 방장 혼자서도 연다 — 이 필드가 없는 이전 API는 둘이었다
         "minPlayers": MIN_MATCH_PLAYERS,
     }
+    # 혼자 푸는 온라인 판의 방 (FR-7.13 3단계). 그 사람에게만 보이는 방이라 true일 때만 싣는다 —
+    # 화면은 로비 목록에서 빼고 홈의 «풀던 혼자 판»으로만 잇는다. 이전 화면은 이 키를 모른다
+    if room.solo:
+        payload["solo"] = True
+    return payload
 
 
 def _match_answer_payload(answer: MatchAnswerView) -> dict[str, object]:
@@ -1247,6 +1277,32 @@ def _ranking_payload(
         "window": window,
         "limit": RANKING_LIMIT,
         "entries": [_ranking_entry_payload(entry) for entry in view.entries[:RANKING_LIMIT]],
+    }
+
+
+def _own_best_payload(best: OwnBestView | None) -> dict[str, object] | None:
+    if best is None:
+        return None
+    return {
+        "score": best.score,
+        "correctCount": best.correct_count,
+        "totalCount": best.total_count,
+        "recordedAt": best.recorded_at,
+    }
+
+
+def _own_record_payload(record: OwnRecordView) -> dict[str, object]:
+    # 브라우저 신분(player id)·주인 열쇠는 싣지 않는다. 판(board)은 랭킹과 같은
+    # mode·categoryId로 옮긴다
+    return {
+        "mode": "all" if record.board == "all" else "category",
+        "categoryId": None if record.board == "all" else record.board,
+        "score": record.score,
+        "correctCount": record.correct_count,
+        "totalCount": record.total_count,
+        "questionTimeMs": record.question_time_ms,
+        "nickname": record.nickname,
+        "recordedAt": record.recorded_at,
     }
 
 
@@ -1740,6 +1796,10 @@ def create_app(
             # 끝난 온라인 판을 서버 랭킹에 남기고 GET /v1/rankings로 보인다 (FR-7.13 2단계).
             # 이 필드가 없는 이전 API면 화면은 온라인 랭킹을 숨긴다.
             "rankings": True,
+            # 혼자 푸는 온라인 판 (FR-7.13 3단계): POST /v1/solo, 내 최고 기록
+            # (GET /v1/rankings/mine)과 내 기록 내보내기(GET /v1/rankings/mine/records). 이
+            # 필드가 없는 이전 API면 화면은 홈의 분야 칸으로 예전처럼 혼자 하기(로컬)를 연다.
+            "soloPlay": True,
         }
 
     @app.get("/v1/rankings")
@@ -1802,6 +1862,150 @@ def create_app(
             mode=mode,
             category_id=category if mode == "category" else None,
         )
+
+    def own_wait(
+        request: Request,
+        actor_id: UUID,
+        *,
+        prefix: str,
+        actor_limit: int,
+    ) -> None:
+        """내 최고 기록·기록 내보내기의 몫 (FR-7.13 3단계). 인증 몫은 먼저 먹었다."""
+        wait = ranking_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"{prefix}:actor:{actor_id}",
+                    limit=actor_limit,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:client:{_client_key(request)}",
+                    limit=OWN_CLIENT_LIMIT,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:process",
+                    limit=OWN_PROCESS_LIMIT,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("기록은 잠시 뒤 다시 볼 수 있어요.", wait)
+
+    @app.get("/v1/rankings/mine")
+    async def own_best_scores(
+        request: Request,
+        identity: Identity = Depends(_identity),
+        exclude_match: str | None = Query(default=None, alias="excludeMatch"),
+    ) -> dict[str, object]:
+        """내 판마다 최고 기록 (FR-7.13 3단계 — 홈의 별 점수 FR-2.3, 결과의 최고 기록 비교 FR-5.7).
+
+        인증된 신분의 기록만 센다 — player id와 그 토큰에서 나온 주인 열쇠가 모두 같아야 한다
+        (`ranking_owner_key`, GET /v1/rankings의 isMine과 같다). 응답에는 신분이 없다. 결과 화면은
+        방금 닫힌 판을 빼고(`excludeMatch`) «이 판 전의 최고 기록»과 견준다.
+        """
+        actor_id = await authenticate_actor(request, identity)
+        own_wait(request, actor_id, prefix="rankings-mine", actor_limit=OWN_BEST_ACTOR_LIMIT)
+        excluded: UUID | None = None
+        if exclude_match is not None:
+            try:
+                excluded = UUID(exclude_match)
+            except ValueError as error:
+                raise _error(400, "invalid-match", "판 식별자가 올바르지 않아요.") from error
+        best = await repo.own_best_scores(
+            actor_id=actor_id,
+            owner_key=ranking_owner_key(identity.token_hash),
+            exclude_match_id=excluded,
+        )
+        return {"boards": {board: _own_best_payload(best.get(board)) for board in RANKING_BOARDS}}
+
+    @app.get("/v1/rankings/mine/records")
+    async def own_records(
+        request: Request,
+        identity: Identity = Depends(_identity),
+    ) -> dict[str, object]:
+        """내 온라인 기록 (서버 기록의 기록 내보내기 N02, FR-7.13 2단계). 최근 것부터 한도까지."""
+        actor_id = await authenticate_actor(request, identity)
+        own_wait(request, actor_id, prefix="rankings-records", actor_limit=OWN_RECORDS_ACTOR_LIMIT)
+        view = await repo.own_records(
+            actor_id=actor_id,
+            owner_key=ranking_owner_key(identity.token_hash),
+        )
+        return {
+            "records": [_own_record_payload(record) for record in view.records],
+            "limit": OWN_RECORDS_LIMIT,
+            "truncated": view.truncated,
+        }
+
+    @app.post("/v1/solo", status_code=201)
+    async def start_solo(
+        request: Request,
+        body: SoloBody,
+        actor_id: UUID = Depends(require_actor),
+    ) -> dict[str, object]:
+        """혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계). 대기실을 거치지 않는다.
+
+        그 사람의 혼자 방(남의 목록에 없고 남이 들어오지 못한다)을 다시 쓰거나 만들고 판을 연다.
+        혼자 방에 판이 이미 돌고 있으면 새 판을 열지 않고 그 방을 `resumed`로 돌려준다 — 화면은 그
+        판을 이어 그린다. 판의 출제·채점·마감·기록(FR-7.13 2단계)은 친구와 푸는 방과 같다.
+        """
+        wait = ingress_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"solo:actor:{actor_id}",
+                    limit=SOLO_ACTOR_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"solo:client:{_client_key(request)}",
+                    limit=SOLO_CLIENT_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key="solo:process",
+                    limit=SOLO_PROCESS_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("판은 잠시 뒤 다시 열 수 있어요.", wait)
+        try:
+            spec = validate_solo_room(
+                category_id=body.category_id,
+                question_time_ms=body.question_time_ms,
+            )
+        except DomainError as error:
+            raise _error(400, error.code, str(error)) from error
+        # 번호는 DB를 읽기 전에 읽는다 — 이 번호까지 알린 변화는 이미 commit됐다
+        label = versions.label()
+        try:
+            started = await repo.start_solo(actor_id, spec)
+        except NotMember as error:
+            raise _error(401, "unauthorized", "온라인 세션이 만료됐어요.") from error
+        except MatchInProgress as error:
+            raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+        room = started.room
+        if started.match is not None:
+            # 판 시작은 준비를 되돌린다 — 번호를 올려 둔다(«게임 시작»과 같다). 혼자 방에는 그
+            # 사람뿐이라 방송할 상대가 없지만 다른 탭의 소켓이 있으면 판을 연다
+            versions.bump(room.code)
+            ops_log.solo_started(
+                room.code,
+                created=started.created,
+                category_id=started.match.category_id,
+                question_time_ms=started.match.question_time_ms,
+                questions=started.match.total_questions,
+            )
+            await hub.broadcast(
+                room.code, {"type": "game-started", **_match_start_payload(started.match)}
+            )
+        return {
+            "room": room_payload(room, label),
+            "match": None if started.match is None else _match_start_payload(started.match),
+            "resumed": started.resumed,
+        }
 
     @app.get("/v1/rooms")
     async def list_rooms(
@@ -1923,7 +2127,9 @@ def create_app(
         already_joined = await repo.is_member(actor_id, code)
         if not already_joined:
             access = await repo.get_access(code)
-            if access is None:
+            # 혼자 푸는 온라인 판의 방(FR-7.13 3단계)은 그 사람 말고는 들어오지 못한다.
+            # «가득 찼다»가 아니라 «없는 방»으로 답한다 — 남의 혼자 방이 있다는 것도 알리지 않는다
+            if access is None or access.solo:
                 raise _error(404, "not-found", "그런 코드의 방이 없어요.")
             if not access.is_public:
                 client_key = _client_key(request)

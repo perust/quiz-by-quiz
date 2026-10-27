@@ -43,12 +43,17 @@ class RoomView:
     # 이 요청(나가기)이 방장 자리를 넘겼는가. 운영 기록(`ops_log.host_transferred`)만 읽는다 —
     # 방 payload에는 싣지 않는다.
     host_transferred: bool = False
+    # 혼자 푸는 온라인 판의 방인가 (FR-7.13 3단계, migration 012의 solo_rooms). 그 사람에게만
+    # 보이고 남이 들어오지 못한다. payload는 true일 때만 `solo`를 싣는다.
+    solo: bool = False
 
 
 @dataclass(frozen=True)
 class AccessInfo:
     is_public: bool
     password_hash: str | None
+    # 혼자 방이면 멤버가 아닌 사람에게는 «없는 방»이다 (FR-7.13 3단계)
+    solo: bool = False
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,53 @@ class MatchSetup:
     # 판에 든 사람 수. 운영 기록(`ops_log.match_started`)만 읽는다 — 시작 payload에는 싣지 않는다.
     # 모르는 저장소(테스트의 가짜)는 None이다.
     player_count: int | None = None
+
+
+@dataclass(frozen=True)
+class SoloStart:
+    """혼자 푸는 온라인 판을 열거나 이은 결과 (FR-7.13 3단계, POST /v1/solo).
+
+    `match`가 None이면 그 사람의 혼자 방에 이미 판이 돌고 있어 새 판을 열지 않았다(`resumed`) —
+    화면은 그 판을 이어 그린다. `created`는 이번에 혼자 방을 새로 만들었는가다(운영 기록만 읽는다).
+    """
+
+    room: RoomView
+    match: MatchSetup | None
+    created: bool = False
+
+    @property
+    def resumed(self) -> bool:
+        return self.match is None
+
+
+@dataclass(frozen=True)
+class OwnBestView:
+    """한 판(board)의 내 최고 기록. 같은 점수면 먼저 남긴 기록이다 (랭킹 순서와 같다)."""
+
+    score: int
+    correct_count: int
+    total_count: int
+    recorded_at: str
+
+
+@dataclass(frozen=True)
+class OwnRecordView:
+    """내 온라인 기록 한 줄 (기록 내보내기, FR-7.13 2단계 N02). 브라우저 신분은 싣지 않는다."""
+
+    board: str
+    score: int
+    correct_count: int
+    total_count: int
+    question_time_ms: int
+    nickname: str
+    recorded_at: str
+
+
+@dataclass(frozen=True)
+class OwnRecordsView:
+    records: tuple[OwnRecordView, ...]
+    # 한도보다 많아 오래된 기록을 덜어 냈는가
+    truncated: bool
 
 
 @dataclass(frozen=True)
@@ -233,6 +285,9 @@ RANKING_BOARDS = ("all", "history", "science", "geography", "general", "art")
 RankingPeriod = Literal["week", "all"]
 # 한 번에 내보내는 순위 수 (FR-6.4의 상위 10과 같다)
 RANKING_LIMIT = 10
+# 기록 내보내기가 한 번에 싣는 내 기록 수. 최근 것부터 고른다 — 보존(최근 8주 + 판마다 전체 상위
+# 100)이 남긴 것 가운데서다
+OWN_RECORDS_LIMIT = 500
 
 # «내 기록»(isMine)을 가리는 열쇠의 앞말. 열쇠는 브라우저 비밀(토큰)의 해시에서 나온다.
 _RANKING_OWNER_PREFIX = b"qbb-ranking-owner:"
@@ -466,6 +521,30 @@ class RoomsRepository(Protocol):
         at: datetime | None = None,
         limit: int = RANKING_LIMIT,
     ) -> RankingBoardView: ...
+
+    # 내 판마다 최고 기록 (FR-7.13 3단계, GET /v1/rankings/mine). actor_id와 owner_key가 모두 같은
+    # 기록만 센다. exclude_match_id를 주면 그 판의 기록은 빼고 센다 — 결과 화면이 «이 판 전의 최고
+    # 기록»과 견준다(FR-5.7). 기록이 없는 판은 None이다.
+    async def own_best_scores(
+        self,
+        *,
+        actor_id: UUID,
+        owner_key: bytes,
+        exclude_match_id: UUID | None = None,
+    ) -> Mapping[str, OwnBestView | None]: ...
+
+    # 내 온라인 기록 (기록 내보내기, GET /v1/rankings/mine/records). 최근 것부터 limit개.
+    async def own_records(
+        self,
+        *,
+        actor_id: UUID,
+        owner_key: bytes,
+        limit: int = OWN_RECORDS_LIMIT,
+    ) -> OwnRecordsView: ...
+
+    # 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo). 그 사람의 혼자 방을 다시 쓰고(없으면
+    # 만든다) 곧바로 판을 연다. 혼자 방에 판이 돌고 있으면 새 판을 열지 않고 그 방을 돌려준다.
+    async def start_solo(self, actor_id: UUID, spec: ValidatedRoom) -> SoloStart: ...
 
     async def advance_expired_matches(
         self,

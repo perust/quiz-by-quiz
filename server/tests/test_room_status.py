@@ -125,6 +125,8 @@ def test_room_views_map_active_match_to_playing_status() -> None:
             "joined": False,
             "is_playing": is_playing,
             "in_match": is_playing,
+            # 혼자 푸는 온라인 판의 방인지 (FR-7.13 3단계, migration 012의 solo_rooms)
+            "solo": False,
             "created_at": created_at,
             "player_id": PLAYER_ID,
             "nickname": "퀴즈왕",
@@ -140,3 +142,4 @@ def test_room_views_map_active_match_to_playing_status() -> None:
         ("WAIT23", "waiting", False, 20_000),
         ("PLAY23", "playing", True, 40_000),
     ]
+    assert [view.solo for view in views] == [False, False]

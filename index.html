@@ -156,10 +156,11 @@
         <div class="home-quests" id="home-quests" role="group" aria-label="게임 선택">
           <!-- 홈으로 와도 방에서 나간 것은 아니다. 서버가 «아직 방에 있다»고 답할 때만
                뜨는 복귀 줄이다 (online/home-room-note.js 가 언제 묻는지 정한다 — 온라인을 다녀온
-               뒤의 홈, 그리고 방에 들어갔던 흔적이 있을 때의 부팅 직후) -->
+               뒤의 홈, 그리고 방에 들어갔던 흔적이 있을 때의 부팅 직후). 풀던 혼자 판이면 «이어 풀기»다.
+               서버에 닿지 않는 동안에는 같은 자리가 연습(기록 안 남음) 안내와 «다시 연결»이다 (FR-7.13 3단계) -->
           <button type="button" class="home-room-note" id="home-room-note" hidden>
             <span class="home-room-note__text" id="home-room-note-text"></span>
-            <span class="home-room-note__action">돌아가기</span>
+            <span class="home-room-note__action" id="home-room-note-action">돌아가기</span>
           </button>
           <!-- 한 판의 길이 (U04). 글은 home.js 가 QUESTIONS_PER_ROUND 로 쓴다 — 은행 크기는 쓰지 않는다.
                분야 칸 묶음의 이름이기도 하다 -->
@@ -352,7 +353,8 @@
       <!-- 최근 대화 → (키보드 안내) → 채팅칸 순서다. 가장 새 줄이 채팅칸 바로 위에 와서, 휴대폰에서 칸을 누르면
            OS 키보드가 덮는 아래쪽이 아니라 칸 위에 마지막 말이 남는다 (U39).
            로그는 붙인 줄만 낭독한다(additions) — 매치 중에도 읽되 새 문항·남은 5초 경고 뒤에 선다 (U42, chat-queue.ts) -->
-      <section class="online-quiz-chat" aria-labelledby="online-chat-title">
+      <!-- 혼자 푸는 온라인 판(FR-7.13 3단계)은 말을 받을 사람이 없어 online-quiz.js 가 거둔다 -->
+      <section class="online-quiz-chat" id="online-quiz-chat" aria-labelledby="online-chat-title">
         <h2 class="sr-only" id="online-chat-title">문제 풀이 중 대화</h2>
         <div class="chat-log online-quiz-chat__log" id="online-chat-log"
             role="log" aria-live="polite" aria-relevant="additions"></div>
@@ -374,6 +376,8 @@
         <h1 class="screen-title" id="online-final-title">온라인 매치 결과</h1>
       </header>
       <p class="online-final__summary" id="online-final-summary" role="status"></p>
+      <!-- 혼자 푼 판(FR-7.13 3단계)의 최고 기록 비교 (FR-5.7). 서버가 이 판을 빼고 센 내 최고 점수와 견준다 -->
+      <p class="result-best online-final__best" id="online-final-best" hidden></p>
       <!-- 이 판의 결과가 서버 랭킹에 남았으면 (FR-7.13 2단계). 남기지 않는 이전 API면 online-result.js 가 숨긴다 -->
       <p class="online-final__recorded" id="online-final-recorded" hidden>이 판의 점수가 온라인 랭킹에 기록됐어요.</p>
       <ol class="online-final-ranking" id="online-final-ranking" aria-label="최종 순위"></ol>
@@ -753,8 +757,9 @@
         <ul class="category-score" id="result-category-list"></ul>
       </div>
 
-      <!-- 랭킹 등록 (FR-6.1). 「등록」을 누르지 않고 화면을 떠나도 이 칸의 이름으로 저장한다 -->
-      <div class="result-block">
+      <!-- 랭킹 등록 (FR-6.1). 「등록」을 누르지 않고 화면을 떠나도 이 칸의 이름으로 저장한다.
+           연습 판(서버에 닿지 않을 때, FR-7.13 3단계)은 기록하지 않아 result.js 가 숨긴다 -->
+      <div class="result-block" id="result-register-block">
         <h2 class="result-block__title">랭킹에 기록 남기기</h2>
         <!-- 저장 범위 명시 (FR-6.10). 랭킹 화면의 안내 줄과 같은 모양이다 -->
         <p class="ranking-scope" id="register-scope">화면을 나가면 이 이름으로 저장돼요 · 이 브라우저에만 저장돼요</p>

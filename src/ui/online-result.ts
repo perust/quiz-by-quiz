@@ -6,6 +6,7 @@ import { need } from '../dom.js';
 import type { OnlineFinishedMatch, OnlineReviewItem, OnlineScore } from '../online/adapter.js';
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { createQuestionReportLink, onlineQuestionReportUrl, questionReportLabel } from './report-link.js';
+import { bestComparisonText } from './best-score.js';
 import { createBody } from './sprite.js';
 import type { RankingTarget } from '../types.js';
 
@@ -112,7 +113,10 @@ export function onlineReviewToggleLabel(rows: readonly OnlineReviewRow[]): strin
 }
 
 export interface OnlineResultScreenDeps {
-  /** 「한 판 더」 (U38). 대기실로 돌아가며, 방장이 아니면 준비를 켜 둔다. 옮기기를 마칠 때까지 기다린다 */
+  /**
+   * 「한 판 더」 (U38). 대기실로 돌아가며, 방장이 아니면 준비를 켜 둔다. 옮기기를 마칠 때까지 기다린다.
+   * 혼자 푼 판(FR-7.13 3단계)이면 «다시 하기»이고 같은 혼자 방에서 곧바로 새 판을 연다
+   */
   onAgain: () => Promise<void>;
   onRoom: () => void;
   onHome: () => void;
@@ -131,17 +135,36 @@ export function onlineMatchRankingTarget(snapshot: Pick<OnlineFinishedMatch, 'ca
     : { mode: 'category', category: snapshot.categoryId };
 }
 
+/** 결과 화면의 갈래. `solo`는 홈의 분야 칸이 연 혼자 푸는 온라인 판이다 (FR-7.13 3단계) */
+export interface OnlineResultOptions {
+  /** 아직 그 방에 들어가 있는가. 아니면 「한 판 더」를 그리지 않는다 */
+  inRoom: boolean;
+  /**
+   * 혼자 푼 온라인 판인가. 행동 줄이 «다시 하기»(같은 혼자 방의 새 판)·«홈으로»(방을 나가 지운다)이고 대기실로 가는
+   * 길이 없다. 최고 기록 비교(FR-5.7)는 `setBest`가 채운다
+   */
+  solo?: boolean;
+}
+
 export interface OnlineResultScreen {
-  /** @param options.inRoom 아직 그 방에 들어가 있는가. 아니면 「한 판 더」를 그리지 않는다 */
-  show(snapshot: OnlineFinishedMatch, options?: { inRoom: boolean }): void;
+  show(snapshot: OnlineFinishedMatch, options?: OnlineResultOptions): void;
+  /**
+   * 혼자 푼 판의 최고 기록 비교 (FR-5.7). `previous`는 서버가 이 판의 기록을 빼고 센 내 최고 점수이고 기록이 없으면
+   * null이다. 읽지 못했으면(undefined) 줄을 두지 않는다 — 지어내지 않는다
+   */
+  setBest(matchId: string, previous: number | null | undefined): void;
   hide(): void;
 }
+
+/** 혼자 푼 판의 «다시 하기». 새 판을 여는 행동이라 골드 주 행동이다(로컬 결과의 「다시 하기」와 같다) */
+export const SOLO_AGAIN_LABEL = '다시 하기';
 
 export function createOnlineResultScreen(
   { onAgain, onRoom, onHome, getPlayerId, onOpenRanking }: OnlineResultScreenDeps,
 ): OnlineResultScreen {
   const el = {
     summary: need('online-final-summary'),
+    best: need('online-final-best'),
     recorded: need('online-final-recorded'),
     openRanking: need<HTMLButtonElement>('online-final-open-ranking'),
     list: need<HTMLOListElement>('online-final-ranking'),
@@ -154,11 +177,17 @@ export function createOnlineResultScreen(
   };
   /** 「한 판 더」가 대기실을 여는 중인가. 다시 눌러도 겹쳐 보내지 않는다 */
   let againPending = false;
+  /** 지금 보이는 판. 늦게 온 최고 기록이 다음 판의 화면을 고치지 않게 한다 */
+  let shownMatchId: string | null = null;
+  /** 지금 보이는 판의 내 점수 (혼자 판의 최고 기록 비교) */
+  let shownScore: number | null = null;
+  /** 혼자 푼 판이면 «다시 하기», 아니면 «한 판 더» */
+  let againLabel = '한 판 더';
 
   function setAgainBusy(busy: boolean): void {
     againPending = busy;
     // 홈의 온라인 입구·결과의 「대기실로」와 같은 말이다. 잠그지 않는다 — 다른 행동이 이긴다
-    el.again.textContent = busy ? '연결 중…' : '한 판 더';
+    el.again.textContent = busy ? '연결 중…' : againLabel;
     if (busy) el.again.setAttribute('aria-busy', 'true');
     else el.again.removeAttribute('aria-busy');
   }
@@ -226,8 +255,15 @@ export function createOnlineResultScreen(
 
   return {
     show(snapshot, options = { inRoom: true }) {
+      const solo = options.solo === true;
       const view = onlineFinalResultView(snapshot, getPlayerId());
       el.summary.textContent = onlineFinalSummary(view, snapshot.totalQuestions);
+      shownMatchId = snapshot.matchId;
+      shownScore = view.entries.find(({ isMe }) => isMe)?.score ?? null;
+      // 최고 기록 비교는 서버의 답이 오면 setBest가 채운다. 그 전에는 줄을 두지 않는다
+      el.best.hidden = true;
+      el.best.textContent = '';
+      againLabel = solo ? SOLO_AGAIN_LABEL : '한 판 더';
       // 서버가 이 판을 닫으며 내 결과를 랭킹에 남겼을 때만 그렇다고 말한다 (FR-7.13 2단계). 이 필드가 없는
       // 이전 API의 판이면 아무 말도 하지 않는다 — 남지 않은 기록을 남았다고 하지 않는다
       const recorded = snapshot.rankingRecorded === true;
@@ -236,8 +272,9 @@ export function createOnlineResultScreen(
       el.openRanking.hidden = !recorded || onOpenRanking === undefined;
       setAgainBusy(false);
       el.again.hidden = !options.inRoom;
-      // 방 밖이면 이 버튼은 로비를 연다 (app.ts) — 그 말을 그대로 쓴다
+      // 방 밖이면 이 버튼은 로비를 연다 (app.ts) — 그 말을 그대로 쓴다. 혼자 판은 돌아갈 대기실이 없다
       el.room.textContent = options.inRoom ? '대기실로' : '온라인 로비로';
+      el.room.hidden = solo;
       const celebrate = onlineFinalCelebrates(view);
       el.list.replaceChildren();
       for (const entry of view.entries) {
@@ -277,9 +314,20 @@ export function createOnlineResultScreen(
       // 끝났다는 것을 짧은 차임으로도 알린다 (N03). 소리 설정을 따른다
       playFinish();
     },
+    setBest(matchId, previous) {
+      if (matchId !== shownMatchId || shownScore === null || previous === undefined) return;
+      const { text, isNew } = bestComparisonText(shownScore, previous);
+      el.best.classList.toggle('result-best--new', isNew);
+      el.best.textContent = text;
+      el.best.hidden = false;
+    },
     hide() {
       el.list.replaceChildren();
       el.summary.textContent = '';
+      shownMatchId = null;
+      shownScore = null;
+      el.best.hidden = true;
+      el.best.textContent = '';
       rankingTarget = null;
       el.recorded.hidden = true;
       el.openRanking.hidden = true;

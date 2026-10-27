@@ -301,6 +301,22 @@ for all time, `online_rankings_board_week_order_idx` on the stored generated
 `board`/`week_start` columns for the week; about 0.05 ms measured on 100,000
 rows).
 
+Own reads (FR-7.13 step 3): `GET /v1/rankings/mine` returns the caller's best
+record per board as `{boards: {all, history, science, geography, general, art}}`,
+each `{score, correctCount, totalCount, recordedAt}` or `null` (score
+descending, then the earlier record — the board order). `?excludeMatch=<match
+uuid>` leaves that match out, so the result screen compares a just-closed solo
+match with the best **before** it (FR-5.7). `GET /v1/rankings/mine/records`
+returns the caller's records for the records export, newest first, at most 500
+(`{records, limit, truncated}`; each `{mode, categoryId, score, correctCount,
+totalCount, questionTimeMs, nickname, recordedAt}`). Both require a session
+(`require_actor`) and match the same id **and** the owner key derived from the
+bearer token, like `isMine`; neither returns a player id. They read through
+`online_rankings_player_board_order_idx` (`player_id, board, score DESC,
+recorded_at, id`) and take their own bucket in front of the authenticated one
+(best: 30 per player, records: 6 per player, 600 per address and 1,200 per
+process per minute; the home asks for the best once per visit).
+
 Grants: the runtime role may only `INSERT` and `SELECT` the table (no `UPDATE`,
 `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER`, table or column grant) and still
 has nothing on the ledger. Retention runs through
@@ -312,11 +328,13 @@ top 100; above 250,000 rows it trims the oldest rows even inside the 8 weeks
 (each board's top 100 always stay). It deletes at most 10,000 rows per call, and
 the `cleanup` log line counts them (`rankingsPruned`).
 
-Resource envelope: a row with its three indexes takes about 445 bytes (100,000
-synthetic rows with owner keys: 17 MB heap, 25 MB indexes). A class of 30
+Resource envelope: a row with its three board indexes takes about 445 bytes (100,000
+synthetic rows with owner keys: 17 MB heap, 25 MB indexes). The per-player index
+of FR-7.13 step 3 is one more btree of the same width (about one third more index
+space, an estimate, not re-measured). A class of 30
 playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
-weeks. The 250,000-row ceiling bounds the table at roughly 110 MB plus 600
-retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
+weeks. The 250,000-row ceiling bounds the table at roughly 110 MB (about 140 MB
+with the per-player index) plus 600 retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
 ten 8-second reveals (80 s, 200 s for the all-categories round), a room holds one
 match at a time with at most 12 players, and match starts share the
 600/process/minute room-mutation bucket, so ingest cannot exceed 7,200 rows a
@@ -326,6 +344,50 @@ minute even in theory, below the 10,000 rows the prune may delete each minute
 keeps nothing about rankings in memory. Changing the retention, the ceiling,
 the batch or the read limits is a resource-envelope review boundary like the
 others above.
+
+### Solo online play (FR-7.13 step 3, migration 012)
+
+The owner direction removes the local solo mode: the home's category cards and
+"all categories" button start a **solo online match** directly, without a
+waiting room, and the 온라인 button keeps opening the lobby for playing with
+others. `POST /v1/solo` with `{categoryId (null for all), questionTimeMs
+(20000|40000)}` reuses the caller's solo room or creates one and starts a match
+in the same transaction (`start_solo`, through the same `_start_locked_match`
+as the host's start: question selection avoiding that room's recent questions,
+deadlines, closing and recording are identical). If a match is already running
+in that room it returns `{room, match: null, resumed: true}` instead of starting
+another. The response is `{room, match, resumed}`; `room.solo` is `true`. The
+session response announces the feature additively with `soloPlay: true`; a
+client that does not see it keeps the old local solo mode.
+
+Storage: migration 012 also creates `quiz_online.solo_rooms (room_id PRIMARY
+KEY REFERENCES rooms ON DELETE CASCADE, player_id, created_at,
+UNIQUE (player_id) solo_rooms_one_per_player)` — one mark per room and one solo
+room per player; existing tables are not altered. The runtime role may only
+`SELECT` and `INSERT` it; a mark disappears with its room through the cascade
+(leaving the last member deletes the room, the 30-minute stale-member cleanup
+and the 24-hour expiry delete it as for any room). A solo room is a normal room
+(capacity 2, public, no password, the creator as its only member and host) that
+`_ROOM_ROWS_SQL` shows **only to its members**: other players' lobby lists and
+code lookups never contain it, `POST /v1/rooms/{code}/join` answers 404
+`not-found` for a non-member (the repository's `join_room` refuses it again),
+and the Pages client also leaves it out of its own lobby list (the home's
+"풀던 혼자 판 · 이어 풀기" line returns to it). Leaving mid-match, browser Back,
+tab close and reconnect follow the existing online rules: the match continues
+on the server and is recorded when it closes.
+
+Limits and envelope: `POST /v1/solo` takes 12 per player, 300 per address and
+600 per process per minute; a starting request needs no running match, and a
+match takes at least ten 8-second reveals, so one player starts at most about
+one match a minute and owns at most one solo room. Rooms, matches and records
+therefore stay inside the existing envelope (each player adds at most one room
+and one running match). The ops log writes one `solo_started` line per started
+solo match instead of `room_created` and `match_started`.
+
+Rollback: an API without solo play (the 011 API, or #108) does not know the
+marks and lists a leftover solo room like any public room until it expires or
+its member leaves; the client of this branch only creates solo rooms against
+an API that announced `soloPlay`.
 
 ## Caddy integration
 
@@ -367,7 +429,11 @@ rate-limit contract.
 
 ## Fail-closed staging order
 
-The current compatibility boundary is **migration 012 → API → Pages**.
+The current compatibility boundary is **migration 012 → API → Pages**. The
+solo online play of FR-7.13 step 3 ("Solo online play" above) is part of the
+same candidate: its table and index are folded into the not yet applied
+migration 012, so its server changes deploy with #108's rankings as one API
+candidate and do not add a boundary.
 Production runs the migration-010 API until #106 (migration 011, below) is
 deployed; #107 follows it without a migration, so this boundary starts from the
 migration-011 API (readiness `schemaVersion: 11`). Migration 012 adds the online
@@ -405,14 +471,17 @@ online ranking" line is always backed by a recording API.
 3. With the migration-011 API still serving, build and run only the explicit
    `quiz-by-quiz-migrate` service from the candidate source. Require ledger
    versions 001–012, the `online_rankings` table with its six checks and
-   `online_rankings_match_player_key`, its three indexes,
+   `online_rankings_match_player_key`, its four indexes,
    `quiz_online.prune_online_rankings()` as `SECURITY DEFINER`, the runtime
    role's `SELECT`/`INSERT`-only access to the table and `EXECUTE` on the
-   function, and no ranking record yet. The 011 API's public
+   function, the `solo_rooms` table cascading from `rooms` with
+   `solo_rooms_one_per_player` and `SELECT`/`INSERT`-only runtime access, and
+   no ranking record yet. The 011 API's public
    `/v1/release-readiness` now answers 503 `migration-required`; that is the
    expected fail-closed state, not an outage.
 4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
    internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`
+   and `soloPlay: true`
    and refuses an e-mail-shaped nickname with 400 `nickname-personal-info`,
    that `GET /v1/rankings?mode=all&period=week` answers 200 with at most 10
    entries and an Asia/Seoul window, and require the exact public
@@ -501,11 +570,17 @@ overlay.
   It requires ledger 1–12, the ranking table's 15 columns (`board` and
   `week_start` stored generated, `id` an identity, `owner_key` a nullable
   `bytea`), its six validated checks (`online_rankings_owner_key_length` must
-  require 32-byte keys) and `online_rankings_match_player_key`, its three indexes valid,
+  require 32-byte keys) and `online_rankings_match_player_key`, its four indexes valid
+  (including `online_rankings_player_board_order_idx`),
   `prune_online_rankings()` `SECURITY DEFINER` with a fixed `search_path`, and
   the runtime role's effective `SELECT`/`INSERT` on the table without `UPDATE`,
   `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` (table or column grants),
-  `EXECUTE` on the prune function, still without ledger access.
+  `EXECUTE` on the prune function, still without ledger access. For solo
+  online play it requires `solo_rooms` with its three columns
+  (`solo-rooms-table`), `room_id` referencing `rooms` `ON DELETE CASCADE` and
+  `solo_rooms_one_per_player` (`solo-rooms-constraints`), and the runtime
+  role's `SELECT`/`INSERT`-only access (`runtime-solo-rooms-access`); before
+  012 `solo-rooms-table` requires the table to be absent.
   `rankings-records` counts the records; `--require-empty-rankings` fails on
   any, because until step 4 only the migration-011 API serves and it never
   writes the table, so a record means the candidate API ran too early. After
@@ -627,6 +702,7 @@ Sample lines:
 | `host_transferred` | `room`, `reason` (`host-left`, `host-absent`) | The host left, or the presence sweep moved the seat from a disconnected host. Cleanup handovers are counted in `cleanup`. |
 | `match_started` | `room`, `players`, `category`, `questionTimeMs`, `questions` | The host started a match. |
 | `match_finished` | `room`, `via` (`sweep`, `request`) | The last reveal ended, closed by the deadline sweep or by a player's read. |
+| `solo_started` | `room`, `created` (the solo room was created by this request), `category`, `questionTimeMs`, `questions` | A solo online match started from the home (FR-7.13 step 3). Solo starts write this line instead of `room_created` and `match_started`; `match_finished` is the same. |
 | `cleanup` | `roomsDeleted`, `membersRemoved`, `hostsTransferred`, `matchesDeleted`, `playersDeleted`, `rankingsPruned` | A 60-second cleanup tick that changed anything (no line otherwise); `rankingsPruned` counts ranking records past their retention ("Online rankings"). |
 | `server_error` | `method`, `route` (the route template, e.g. `/v1/rooms/{raw_code}`), `error` (exception class) | An exception no handler turned into a response; the client gets 500 and Uvicorn still logs the traceback as before. |
 | `summary` | see below | Every 5 minutes. |

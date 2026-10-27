@@ -8,6 +8,11 @@ import type {
   JoinRoomResult,
   JoinRoomSpec,
   MatchSetup,
+  MyBestScoresResult,
+  MyOnlineRecord,
+  MyOnlineRecordsResult,
+  OnlineBestScore,
+  OnlineBestScores,
   OnlineFinishedMatch,
   OnlineMatchAnswerResult,
   OnlineMatchQuestion,
@@ -33,6 +38,8 @@ import type {
   RoomPatch,
   RoomStore,
   ReadyResult,
+  SoloStartResult,
+  SoloStartSpec,
   StandingAnswerDraft,
   StartGameResult,
   Unsubscribe,
@@ -384,6 +391,8 @@ function parseRoom(value: unknown): PublicRoom {
     hostReadyImplicit,
     // 바로 위에서 정수인 것을 확인했다
     minPlayers: minPlayers as number,
+    // 혼자 푸는 온라인 판의 방 (FR-7.13 3단계). true만 믿는다 — 없으면(이전 API·친구와 푸는 방) 보통 방이다
+    ...(value.solo === true ? { solo: true } : {}),
   };
 }
 
@@ -680,7 +689,83 @@ function sessionRules(body: Record<string, unknown>): OnlineRules {
     standingAnswers: body.standingAnswers === true,
     // 서버 랭킹 (FR-7.13 2단계). true만 믿는다 — 없는 이전 API면 화면이 온라인 랭킹을 숨긴다
     rankings: body.rankings === true,
+    // 혼자 푸는 온라인 판 (FR-7.13 3단계). true만 믿는다 — 없는 이전 API면 홈이 예전 혼자 하기(로컬)를 연다
+    soloPlay: body.soloPlay === true,
   };
+}
+
+/** 내 최고 기록 응답의 판 이름. 서버의 `RANKING_BOARDS`와 같다 */
+const OWN_BEST_BOARDS = ['all', ...CATEGORIES.map(({ id }) => id)] as const;
+
+/** 판 하나의 내 최고 기록. 없으면 null, 모양이 틀리면 던진다 — 별 점수를 지어내지 않는다 */
+function parseOwnBest(value: unknown): OnlineBestScore | null {
+  if (value === null) return null;
+  if (!isObject(value)) throw new Error('서버 내 최고 기록이 올바르지 않습니다.');
+  const totalCount = parseInteger(value.totalCount, '내 기록 문제 수', 1);
+  const correctCount = parseInteger(value.correctCount, '내 기록 정답 수');
+  const score = parseInteger(value.score, '내 기록 점수');
+  const recordedAt = value.recordedAt;
+  if (correctCount > totalCount || typeof recordedAt !== 'string' || !Number.isFinite(Date.parse(recordedAt))) {
+    throw new Error('서버 내 최고 기록이 올바르지 않습니다.');
+  }
+  return { score, correctCount, totalCount, recordedAt };
+}
+
+function parseOwnBestScores(value: unknown): OnlineBestScores {
+  if (!isObject(value) || !isObject(value.boards)) throw new Error('서버 내 최고 기록 응답이 올바르지 않습니다.');
+  const boards = value.boards;
+  const best: OnlineBestScores = {};
+  for (const board of OWN_BEST_BOARDS) {
+    if (!Object.hasOwn(boards, board)) throw new Error('서버 내 최고 기록에 판이 빠졌습니다.');
+    best[board] = parseOwnBest(boards[board]);
+  }
+  return best;
+}
+
+const OWN_RECORD_KEYS = new Set([
+  'mode', 'categoryId', 'score', 'correctCount', 'totalCount', 'questionTimeMs', 'nickname', 'recordedAt',
+]);
+
+function parseOwnRecord(value: unknown): MyOnlineRecord {
+  if (!isObject(value)) throw new Error('서버 내 기록 줄이 올바르지 않습니다.');
+  // 공개 필드만 받는다. 브라우저 신분 같은 다른 필드가 실려 오면 믿지 않는다
+  if (Object.keys(value).some((key) => !OWN_RECORD_KEYS.has(key))) {
+    throw new Error('서버 내 기록 줄에 모르는 필드가 있습니다.');
+  }
+  const { mode, nickname, recordedAt, questionTimeMs } = value;
+  const categoryId = parseCategoryId(value.categoryId, '내 기록 분야');
+  if (mode === 'all' ? categoryId !== null : mode !== 'category' || categoryId === null) {
+    throw new Error('서버 내 기록 판이 올바르지 않습니다.');
+  }
+  if (typeof nickname !== 'string' || nickname.trim() === '' || nickname.length > 20) {
+    throw new Error('서버 내 기록 닉네임이 올바르지 않습니다.');
+  }
+  if (typeof recordedAt !== 'string' || !Number.isFinite(Date.parse(recordedAt))) {
+    throw new Error('서버 내 기록 시각이 올바르지 않습니다.');
+  }
+  if (!isOnlineQuestionTime(questionTimeMs)) throw new Error('서버 내 기록 문항 시간이 올바르지 않습니다.');
+  const totalCount = parseInteger(value.totalCount, '내 기록 문제 수', 1);
+  const correctCount = parseInteger(value.correctCount, '내 기록 정답 수');
+  const score = parseInteger(value.score, '내 기록 점수');
+  if (correctCount > totalCount) throw new Error('서버 내 기록 정답 수가 문제 수보다 많습니다.');
+  return {
+    target: mode === 'all' ? { mode: 'all', category: null } : { mode: 'category', category: categoryId },
+    score,
+    correctCount,
+    totalCount,
+    questionTimeMs,
+    nickname,
+    recordedAt,
+  };
+}
+
+function parseOwnRecords(value: unknown): { records: MyOnlineRecord[]; limit: number; truncated: boolean } {
+  if (!isObject(value) || !Array.isArray(value.records) || typeof value.truncated !== 'boolean') {
+    throw new Error('서버 내 기록 응답이 올바르지 않습니다.');
+  }
+  const limit = parseInteger(value.limit, '내 기록 한도', 1);
+  if (value.records.length > limit) throw new Error('서버 내 기록이 한도보다 많습니다.');
+  return { records: value.records.map(parseOwnRecord), limit, truncated: value.truncated };
 }
 
 const RANKING_ENTRY_KEYS = new Set([
@@ -1007,6 +1092,50 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     params.set('period', period);
     const value = await request(`/v1/rankings?${params.toString()}`);
     return { supported: true, board: parseRankingBoard(value, target, period) };
+  }
+
+  /**
+   * 혼자 푸는 온라인 판 (FR-7.13 3단계). 세션을 열어 이 API가 아는지(`soloPlay`) 먼저 본다 — 모르는 이전 API에는
+   * 요청을 보내지 않는다. 4xx 거절(요청 한도 등)은 서버의 말을 가진 `ApiFailure`로, 연결 실패는 그대로 던진다
+   */
+  async function startSolo(spec: SoloStartSpec): Promise<SoloStartResult> {
+    await ensureSession();
+    if (learnedRules?.soloPlay !== true) return { ok: false, reason: 'unsupported' };
+    if (spec.categoryId !== null && !CATEGORIES_SET.has(spec.categoryId)) {
+      throw new Error('혼자 판 분야가 올바르지 않습니다.');
+    }
+    if (!isOnlineQuestionTime(spec.questionTimeMs)) throw new Error('혼자 판 문항 시간이 올바르지 않습니다.');
+    const value = await request('/v1/solo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoryId: spec.categoryId, questionTimeMs: spec.questionTimeMs }),
+    });
+    if (!isObject(value) || typeof value.resumed !== 'boolean') {
+      throw new Error('서버 혼자 판 응답이 올바르지 않습니다.');
+    }
+    const room = parseRoom(value.room);
+    // 혼자 방이 아니거나 내가 들어가 있지 않은 방이면 다른 계약이다 — 남의 방을 혼자 판으로 열지 않는다
+    if (room.solo !== true || !room.joined) throw new Error('서버 혼자 판 방이 올바르지 않습니다.');
+    return { ok: true, room, resumed: value.resumed };
+  }
+
+  /** 내 판마다 최고 기록 (FR-7.13 3단계). 세션을 연 뒤 `soloPlay`를 아는 API에만 묻는다 */
+  async function getMyBestScores(options: { excludeMatchId?: string } = {}): Promise<MyBestScoresResult> {
+    await ensureSession();
+    if (learnedRules?.soloPlay !== true) return { supported: false };
+    const exclude = options.excludeMatchId;
+    if (exclude !== undefined && !UUID_PATTERN.test(exclude)) throw new Error('뺄 판 식별자가 올바르지 않습니다.');
+    const path = exclude === undefined
+      ? '/v1/rankings/mine'
+      : `/v1/rankings/mine?${new URLSearchParams({ excludeMatch: exclude }).toString()}`;
+    return { supported: true, best: parseOwnBestScores(await request(path)) };
+  }
+
+  /** 내 온라인 기록 (서버 기록의 기록 내보내기). 세션을 연 뒤 `soloPlay`를 아는 API에만 묻는다 */
+  async function getMyOnlineRecords(): Promise<MyOnlineRecordsResult> {
+    await ensureSession();
+    if (learnedRules?.soloPlay !== true) return { supported: false };
+    return { supported: true, ...parseOwnRecords(await request('/v1/rankings/mine/records')) };
   }
 
   async function createRoom(spec: CreateRoomSpec): Promise<CreateRoomResult> {
@@ -1809,6 +1938,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     sendStandingAnswer,
     onlineRules: () => learnedRules,
     getOnlineRankings,
+    startSolo,
+    getMyBestScores,
+    getMyOnlineRecords,
     startGame,
     getMatch,
     submitMatchAnswer,
