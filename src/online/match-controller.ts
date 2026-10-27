@@ -10,6 +10,7 @@
 // 같은 IP(교실·집 NAT) 뒤의 여럿이 요청 한도를 나눠 쓰므로 요청을 아낀다 (N01).
 // - 답을 낸 뒤에는 따로 GET을 보내지 않는다. 제출 응답의 snapshot이 곧 서버가 그 답을 받은 뒤의
 //   상태이고, 넘어가지 않은 답은 서버가 방송하지도 않는다(남의 running 화면에는 바뀌는 것이 없다).
+//   다만 그 응답을 못 받았거나(시간 초과·연결 끊김·5xx) 받은 응답을 guard가 버렸으면 한 번 다시 읽는다.
 // - 요청 한도(429)에 걸린 GET은 Retry-After(상한 약 3초)와 jitter를 두고 한 번만 다시 보낸다.
 // - 남은 시간이 지나고 2초가 더 지나도 phase가 그대로면 한 번 다시 읽는다. 놓친 방송 하나가
 //   사람을 공개 화면에 가두지 않게 하는 안전망이다. 답을 대신 내지 않는다 — 판정은 서버가 한다.
@@ -20,7 +21,7 @@ import type {
   RoomEventHandler,
   Unsubscribe,
 } from './adapter.js';
-import { onlineErrorText, rateLimitRetryDelayMs } from './rules.js';
+import { ApiFailure, onlineErrorText, rateLimitRetryDelayMs } from './rules.js';
 
 export interface OnlineMatchGateway {
   getMatch(code: string): Promise<OnlineMatchSnapshot | null>;
@@ -236,8 +237,11 @@ export function createOnlineMatchController(
       await new Promise<void>((resolve) => {
         timers.setTimeout(resolve, delayMs);
       });
-      // 그사이 닫혔거나 다른 방을 열었으면 보내지 않는다. 처음 거절은 아래 guard가 버린다
-      if (expectedGeneration !== generation || activeCode !== code) throw error;
+      // 그사이 닫혔거나 다른 방을 열었으면 보내지 않는다. 그사이 온 무효화가 후속 GET을 예약했어도
+      // 보내지 않는다 — 그 GET도 이 기다림 뒤에 나가 같은 일을 하므로, 둘을 잇달아 보내면 방금 429를 준
+      // 몫에 하나를 더 밀어 넣을 뿐이다(방 재조회와 같다). 처음 거절은 아래 guard가 버린다 — 예약된
+      // 후속 GET이 더 최신이라 이 오류는 화면에 알리지 않는다
+      if (expectedGeneration !== generation || activeCode !== code || queuedRefresh !== null) throw error;
       return gateway.getMatch(activeCode);
     }
   }
@@ -353,6 +357,21 @@ export function createOnlineMatchController(
     }
   }
 
+  /**
+   * 낸 답이 화면에 오지 않았을 때 한 번 다시 읽는다 (N01 리뷰 server-broadcast-2·client-retry-4).
+   * 넘어가지 않은 답은 방송하지 않으므로, 서버가 그 답을 받았는데 응답을 못 받았거나(시간 초과·연결
+   * 끊김·5xx) 받은 응답을 guard가 버렸으면(그사이 재연결 무효화로 identity가 바뀌었다) 화면은 그 답을
+   * 모른 채 보기를 다시 연다 — 다른 보기를 누르면 서버는 첫 답을 지켜 화면이 누르지 않은 보기로 튄다.
+   * 답을 대신 내지 않고 서버 snapshot을 읽기만 한다. 날아가는 GET이 있으면 그 뒤의 후속 GET 하나로
+   * 합쳐지고, 그 GET은 이 응답(또는 실패)을 받은 뒤에 출발하므로 서버가 받은 답을 본다.
+   * 매치가 바뀌었으면(새 판의 started) 그 판의 읽기가 따로 있어 보내지 않는다.
+   */
+  function rereadAfterUnseenAnswer(activeCode: string, matchId: string): void {
+    if (code !== activeCode) return;
+    if (requiredMatchId !== null && requiredMatchId !== matchId) return;
+    void refresh(generation, false);
+  }
+
   function close(): void {
     generation += 1;
     newestRefresh += 1;
@@ -440,23 +459,31 @@ export function createOnlineMatchController(
         if (result.match.matchId !== matchId) {
           throw new Error('서버 답안 응답의 매치가 요청한 매치와 다릅니다.');
         }
-        if (
-          expectedGeneration === generation
-          && activeCode === code
-          && ownsActiveIdentity()
-          && isSnapshotAhead(result.match, progressSnapshot)
-        ) {
+        if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
           // 제출 응답의 snapshot이 곧 서버가 이 답을 받은 뒤의 상태다. 따로 GET을 보내지 않는다 (N01).
-          // 이미 더 앞선 화면(먼저 온 공개·다음 문항)이 있으면 되돌리지 않는다(isSnapshotAhead).
-          // 이 응답 전에 출발한 GET은 같은 진행의 더 낡은 snapshot으로 덮지 못한다(watermark).
+          // 이미 더 앞선 화면(먼저 온 공개·다음 문항)이나 같은 진행의 화면이 있으면 되돌리지 않는다
+          // (isSnapshotAhead). 이 응답 전에 출발한 GET은 같은 진행의 더 낡은 snapshot으로 덮지
+          // 못한다(watermark).
+          if (!isSnapshotAhead(result.match, progressSnapshot)) return;
           if (requiredMatchId === null) requiredMatchId = result.match.matchId;
           awaitingUnknownIdentity = false;
           refreshDeliveryWatermark = Math.max(refreshDeliveryWatermark, newestRefresh);
           deliver(result.match);
+          return;
         }
+        // 응답이 오는 사이 lifecycle이나 identity가 바뀌어(재연결 무효화·다시 연 controller) 이 응답을
+        // 그대로 그릴 수 없다. 그사이 출발한 GET은 이 답이 들어가기 전을 읽었을 수 있다. 응답을 직접
+        // 그리지 않는 것은 새 identity의 watermark를 이 응답으로 올리면 바뀐 판의 첫 snapshot을 막을 수
+        // 있기 때문이다 — 대신 한 번 다시 읽는다
+        rereadAfterUnseenAnswer(activeCode, matchId);
       } catch (error) {
         if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
           onError(onlineErrorText(error, SUBMIT_FAILED_MESSAGE), { source: 'submit', token, matchId, position });
+        }
+        // 서버가 4xx로 거절했으면(요청 한도·이미 넘어간 문제·참가자 아님) 답은 저장되지 않았다. 그 밖의
+        // 실패(시간 초과·연결 끊김·5xx·읽을 수 없는 응답)는 서버가 답을 받았는지 모른다 — 한 번 다시 읽는다
+        if (!(error instanceof ApiFailure && error.status >= 400 && error.status < 500)) {
+          rereadAfterUnseenAnswer(activeCode, matchId);
         }
       }
     },

@@ -19,9 +19,11 @@ from app.repository import (
     AbsentHostSweep,
     AccessInfo,
     MatchInProgress,
+    MatchPositionMismatch,
     MatchSetup,
     MemberConnected,
     NotHost,
+    NotMember,
     PlayerView,
     RoomFull,
     RoomView,
@@ -697,6 +699,162 @@ def test_private_password_process_limit_survives_client_and_identity_rotation() 
     assert [response.status_code for response in responses[:120]] == [200] * 120
     assert responses[120].status_code == 429
     assert repository.join_calls == 120
+
+
+class SharedAddressRoomsRepository(RotatingIdentityRepository):
+    """사람마다 들어가 있는 방이 정해져 있다. 그 밖의 코드는 남의 방이거나 없는 방이다."""
+
+    def __init__(self, memberships: Mapping[UUID, str]) -> None:
+        super().__init__()
+        self.memberships = dict(memberships)
+        self.member_answers = 0
+        self.foreign_answers = 0
+
+    async def is_member(self, actor_id: UUID, code: str) -> bool:
+        return self.memberships.get(actor_id) == code
+
+    async def set_ready(self, actor_id: UUID, code: str, is_ready: bool) -> RoomView:
+        return self.room
+
+    async def advance_expired_matches(self) -> list[Any]:
+        return []
+
+    async def submit_answer(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        position: int,
+        choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> Any:
+        if self.memberships.get(actor_id) != code:
+            self.foreign_answers += 1
+            raise NotMember
+        # 한도를 지나 저장소까지 왔다. 판은 이미 다음 문제로 넘어갔다고 답한다(409)
+        self.member_answers += 1
+        raise MatchPositionMismatch
+
+
+def test_one_address_cannot_fill_a_per_endpoint_process_bucket() -> None:
+    # N01 리뷰 security-1: 인증된 IP 몫이 1,500/60초가 된 뒤에는 한 주소가 값싼 세션 몇 개로
+    # 엔드포인트별 프로세스 몫(소켓 티켓 300·답 600)을 채워 서버의 모든 방을 막을 수 있었다. 그 몫은
+    # 멤버십을 보기 전에 먹고, 무작위 코드마다 새 «사람+방» 열쇠가 생기기 때문이다
+    attacker = "198.51.100.7"
+    member_index = 999
+    member_id = UUID(int=member_index + 1)
+    repository = SharedAddressRoomsRepository({member_id: "ABC234"})
+    with make_client(repository) as client:
+        sessions = [register_rotating_identity(client, index, attacker) for index in range(40)]
+        tickets = [
+            client.post(
+                f"/v1/rooms/T{index:05d}/ws-ticket",
+                headers=sessions[index % len(sessions)],
+            ).status_code
+            for index in range(360)
+        ]
+        answers = [
+            client.post(
+                f"/v1/rooms/A{index:05d}/match/answers",
+                headers=sessions[index % len(sessions)],
+                json={"position": 1, "choiceIndex": 2},
+            ).status_code
+            for index in range(720)
+        ]
+        member = register_rotating_identity(client, member_index, "203.0.113.9")
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=member)
+        answer = client.post(
+            "/v1/rooms/ABC234/match/answers",
+            headers=member,
+            json={"position": 1, "choiceIndex": 2},
+        )
+
+    # 한 주소는 엔드포인트마다 프로세스 몫의 절반에서 멈춘다(티켓 150 · 답 300)
+    assert tickets[:150] == [403] * 150
+    assert set(tickets[150:]) == {429}
+    assert answers[:300] == [403] * 300
+    assert set(answers[300:]) == {429}
+    assert repository.foreign_answers == 300
+    # 다른 주소의 참가자는 소켓 티켓도 답도 한도에 걸리지 않는다
+    assert ticket.status_code == 201
+    assert answer.status_code == 409
+    assert repository.member_answers == 1
+
+
+def test_one_identity_cannot_spray_room_codes_past_a_few_rooms() -> None:
+    # 사람+방 몫은 방 코드마다 새로 생긴다. 한 사람이 코드를 바꿔 가며 보내도 방 셋 몫까지다
+    repository = SharedAddressRoomsRepository({})
+    with make_client(repository) as client:
+        identity = register_rotating_identity(client, 0, "198.51.100.8")
+        tickets = [
+            client.post(f"/v1/rooms/S{index:05d}/ws-ticket", headers=identity).status_code
+            for index in range(19)
+        ]
+
+    assert tickets[:18] == [403] * 18
+    assert tickets[18] == 429
+
+
+def test_a_classroom_behind_one_address_fits_every_per_endpoint_share() -> None:
+    # 교실 하나(NAT 주소 하나)에 12명 방 셋. 한 판의 가장 바쁜 1분을 한꺼번에 보낸다 — 한 사람마다
+    # 입장 1 · 소켓 티켓 3(대기실 → 판 → 결과) · 준비 2 · 채팅 2 · 답 7(공개가 8초라 1분에
+    # 많아야 7.5문항). 모두 한도를 지나 저장소에 닿아야 한다
+    address = "198.51.100.30"
+    rooms = ("ABC234", "DEF567", "GHJ892")
+    players = [(index, UUID(int=index + 1), rooms[index // 12]) for index in range(36)]
+    repository = SharedAddressRoomsRepository({player_id: code for _, player_id, code in players})
+    with make_client(repository) as client:
+        headers = {
+            player_id: register_rotating_identity(client, index, address)
+            for index, player_id, _ in players
+        }
+        statuses: dict[str, list[int]] = {
+            "join": [],
+            "ticket": [],
+            "mutation": [],
+            "chat": [],
+            "answer": [],
+        }
+        for _, player_id, code in players:
+            identity = headers[player_id]
+            statuses["join"].append(
+                client.post(f"/v1/rooms/{code}/join", headers=identity, json={}).status_code
+            )
+            for _ in range(3):
+                statuses["ticket"].append(
+                    client.post(f"/v1/rooms/{code}/ws-ticket", headers=identity).status_code
+                )
+            for ready in (True, False):
+                statuses["mutation"].append(
+                    client.put(
+                        f"/v1/rooms/{code}/ready",
+                        headers=identity,
+                        json={"isReady": ready},
+                    ).status_code
+                )
+            for _ in range(2):
+                statuses["chat"].append(
+                    client.post(
+                        f"/v1/rooms/{code}/chat",
+                        headers=identity,
+                        json={"text": "안녕하세요"},
+                    ).status_code
+                )
+            for _ in range(7):
+                statuses["answer"].append(
+                    client.post(
+                        f"/v1/rooms/{code}/match/answers",
+                        headers=identity,
+                        json={"position": 1, "choiceIndex": 2},
+                    ).status_code
+                )
+
+    assert statuses["join"] == [200] * 36
+    assert statuses["ticket"] == [201] * 108
+    assert statuses["mutation"] == [200] * 72
+    assert statuses["chat"] == [202] * 72
+    assert statuses["answer"] == [409] * 252
+    assert repository.member_answers == 252
 
 
 def test_room_list_includes_private_metadata_without_password_material() -> None:

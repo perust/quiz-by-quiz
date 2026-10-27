@@ -25,6 +25,27 @@ def test_every_actor_room_limiter_has_an_atomic_process_claim() -> None:
     assert "SlidingWindowLimiter" not in source
 
 
+def test_one_address_or_identity_cannot_fill_a_per_endpoint_process_bucket() -> None:
+    # N01 리뷰 security-1: 엔드포인트별 몫은 멤버십 확인 전에 먹고 무작위 코드마다 새 사람+방 열쇠가
+    # 생긴다. 그래서 사람(방 코드와 무관)과 IP 칸이 프로세스 몫을 지킨다
+    source = _source()
+    start = source.index("def actor_room_wait(")
+    end = source.index("@asynccontextmanager", start)
+    helper = source[start:end]
+
+    assert 'key=f"{prefix}:actor:{actor_id}"' in helper
+    assert "limit=actor_limit * ENDPOINT_ACTOR_ROOM_SPAN" in helper
+    assert 'key=f"{prefix}:client:{client_key}"' in helper
+    assert "limit=process_limit // ENDPOINT_CLIENT_SHARE_DIVISOR" in helper
+    # 한 주소는 프로세스 몫의 절반까지다 — 한 주소로는 어느 엔드포인트의 몫도 채울 수 없다
+    assert main.ENDPOINT_CLIENT_SHARE_DIVISOR == 2
+    assert main.ENDPOINT_ACTOR_ROOM_SPAN == 3
+    # 입장·방 변경 다섯·채팅·답·소켓 티켓이 모두 부른 사람의 주소를 넘긴다
+    calls = source.count("wait = actor_room_wait(")
+    assert calls == 9
+    assert source.count("client_key=_client_key(request),") == calls
+
+
 def test_authenticated_ingress_is_bounded_before_database_authentication() -> None:
     source = _source()
     start = source.index("async def require_actor")

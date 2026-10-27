@@ -949,11 +949,54 @@ test('요청 한도에 걸린 무효화 GET은 Retry-After와 jitter를 두고 �
   assert.equal(reads, 2);
 
   clock.runPending();
-  await waitFor(() => snapshots.at(-1)?.state === 'revealing', 'retried GET was not delivered');
-  await waitFor(() => reads === 4, 'coalesced follow-up did not run');
+  await waitFor(() => snapshots.at(-1)?.state === 'revealing', 'coalesced follow-up was not delivered');
   await settle();
-  assert.equal(reads, 4, '첫 GET · 재시도 하나 · 합친 후속 하나');
-  assert.deepEqual(errors, [], '다시 보내 맞췄으면 오류를 띄우지 않는다');
+  // 기다리는 사이 후속 GET이 예약됐으면 재시도를 따로 보내지 않는다 — 후속 GET이 같은 일을 한다.
+  // 둘을 잇달아 보내면 방금 429를 준 몫에 하나를 더 밀어 넣는다(N01 리뷰 client-retry-2)
+  assert.equal(reads, 3, '첫 GET · 기다림 뒤 합친 후속 하나');
+  assert.deepEqual(clock.scheduled, [2_250], '후속 GET은 다시 기다리지 않는다');
+  assert.deepEqual(errors, [], '후속 GET으로 맞췄으면 첫 거절을 알리지 않는다');
+  controller.close();
+});
+
+test('기다리는 사이 무효화가 없으면 429에 걸린 GET은 그대로 한 번 다시 보낸다', async () => {
+  const snapshots = [];
+  const errors = [];
+  const clock = fakeTimers();
+  let eventHandler;
+  let reads = 0;
+  const gateway = {
+    subscribe(_code, handler) {
+      eventHandler = handler;
+      return () => undefined;
+    },
+    async getMatch() {
+      reads += 1;
+      if (reads === 1) return runningMatch();
+      if (reads === 2) throw rateLimited(1_000);
+      return revealingMatch();
+    },
+    async submitMatchAnswer() {
+      throw new Error('not used');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => errors.push(message),
+    timers: clock.timers,
+  });
+
+  await controller.open('ABC234');
+  eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+  await waitFor(() => clock.scheduled.length === 1, 'retry was not scheduled');
+  clock.runPending();
+  await waitFor(() => snapshots.at(-1)?.state === 'revealing', 'retried GET was not delivered');
+  await settle();
+  assert.equal(reads, 3, '첫 GET · 거절 · 재시도 하나');
+  assert.deepEqual(errors, []);
   controller.close();
 });
 
@@ -1160,4 +1203,235 @@ test('마감 뒤 다시 읽기는 phase마다 한 번뿐이고, 새 phase가 오
   controller.close();
   assert.deepEqual(clock.pendingDelays(), []);
   assert.equal(clock.cleared.length, 1);
+});
+
+// ── N01 리뷰: 낸 답이 화면에 오지 않았을 때의 한 번 다시 읽기 ─────────────────
+//
+// 넘어가지 않은 답은 방송하지 않는다. 그래서 서버가 받은 답을 화면이 모르면(응답 유실·guard가 버린
+// 응답) 아무도 바로잡아 주지 않는다 — 다른 보기를 누르면 서버는 첫 답을 지켜 화면이 튀었다.
+
+const SUBMITTED = { position: 1, choiceIndex: 2, timedOut: false };
+
+for (const [label, failure] of [
+  ['응답 시간 초과', () => new OnlinePlayerError('응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.')],
+  ['연결 끊김', () => new TypeError('Failed to fetch')],
+  ['5xx', () => new ApiFailure(503, 'database-unavailable', '온라인 연결이 잠시 원활하지 않아요.')],
+]) {
+  test(`답 응답을 받지 못하면(${label}) 한 번 다시 읽어 서버가 받은 답을 그린다`, async () => {
+    const snapshots = [];
+    const errors = [];
+    let reads = 0;
+    const gateway = {
+      subscribe() {
+        return () => undefined;
+      },
+      async getMatch() {
+        reads += 1;
+        // 서버는 답을 받았다 — 응답만 오지 않았다
+        return reads === 1 ? runningMatch() : runningMatch({ ownSubmission: SUBMITTED });
+      },
+      async submitMatchAnswer() {
+        throw failure();
+      },
+    };
+    const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+    const controller = createOnlineMatchController({
+      gateway,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      onMissing: () => assert.fail('match should exist'),
+      onError: (message, context) => errors.push({ message, source: context.source }),
+    });
+
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      await controller.open('ABC234');
+      await controller.submit(submitSpec());
+      await waitFor(() => snapshots.at(-1)?.ownSubmission !== null, 'own submission was not repaired');
+      await settle();
+    } finally {
+      console.warn = warn;
+      controller.close();
+    }
+
+    assert.equal(reads, 2, '첫 GET · 다시 읽기 하나');
+    assert.deepEqual(snapshots.at(-1).ownSubmission, SUBMITTED);
+    // 실패는 그대로 알린다. 다시 읽기는 답을 대신 내지 않고 서버 snapshot을 그릴 뿐이다
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].source, 'submit');
+  });
+}
+
+test('서버가 4xx로 거절한 답은 다시 읽지 않는다 — 저장되지 않았다', async () => {
+  const errors = [];
+  let reads = 0;
+  const rejections = [
+    new ApiFailure(409, 'stale-question', '이미 다음 문제로 넘어갔어요.'),
+    new ApiFailure(429, 'rate-limited', '답안 제출이 너무 빨라요. 잠시 뒤 다시 시도해 주세요.', 8_000),
+  ];
+  const gateway = {
+    subscribe() {
+      return () => undefined;
+    },
+    async getMatch() {
+      reads += 1;
+      return runningMatch();
+    },
+    async submitMatchAnswer() {
+      throw rejections.shift();
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: () => undefined,
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => errors.push(message),
+  });
+
+  await controller.open('ABC234');
+  await controller.submit(submitSpec());
+  await controller.submit(submitSpec());
+  await settle();
+
+  assert.equal(reads, 1);
+  assert.deepEqual(errors, [
+    '이미 다음 문제로 넘어갔어요.',
+    '답안 제출이 너무 빨라요. 잠시 뒤 다시 시도해 주세요.',
+  ]);
+  controller.close();
+});
+
+test('재연결 무효화가 답 응답을 버리게 하면 한 번 다시 읽어 내 답을 되살린다', async () => {
+  // 답을 내는 사이 소켓이 다시 붙어 matchId 없는 무효화가 왔다. 그 GET이 답보다 먼저 서버에 닿아
+  // «아직 안 냄»을 그렸고, 뒤에 온 답 응답은 identity가 바뀌어 버려진다
+  const snapshots = [];
+  const pending = [];
+  let eventHandler;
+  let reads = 0;
+  let resolveSubmit;
+  const gateway = {
+    subscribe(_code, handler) {
+      eventHandler = handler;
+      return () => undefined;
+    },
+    getMatch() {
+      reads += 1;
+      if (reads === 1) return Promise.resolve(runningMatch());
+      return new Promise((resolve) => pending.push(resolve));
+    },
+    submitMatchAnswer() {
+      return new Promise((resolve) => { resolveSubmit = resolve; });
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => assert.fail(message),
+  });
+
+  await controller.open('ABC234');
+  const submitting = controller.submit(submitSpec());
+  eventHandler({ type: 'match', phase: 'invalidated', matchId: null });
+  await waitFor(() => pending.length === 1, 'reconnect refresh did not start');
+  pending[0](runningMatch());
+  await waitFor(() => snapshots.length === 2, 'reconnect snapshot was not delivered');
+  assert.equal(snapshots.at(-1).ownSubmission, null);
+
+  resolveSubmit({ match: runningMatch({ ownSubmission: SUBMITTED }), accepted: true, advanced: false });
+  await submitting;
+  await waitFor(() => pending.length === 2, 'dropped answer response did not trigger one re-read');
+  pending[1](runningMatch({ ownSubmission: SUBMITTED }));
+  await waitFor(() => snapshots.at(-1).ownSubmission !== null, 'own submission was not repaired');
+  await settle();
+
+  assert.equal(reads, 3, '첫 GET · 재연결 GET · 다시 읽기 하나');
+  assert.deepEqual(snapshots.at(-1).ownSubmission, SUBMITTED);
+  controller.close();
+});
+
+test('다시 읽기는 날아가는 GET 뒤의 후속 GET 하나로 합쳐진다', async () => {
+  const snapshots = [];
+  const pending = [];
+  let eventHandler;
+  let reads = 0;
+  const gateway = {
+    subscribe(_code, handler) {
+      eventHandler = handler;
+      return () => undefined;
+    },
+    getMatch() {
+      reads += 1;
+      if (reads === 1) return Promise.resolve(runningMatch());
+      return new Promise((resolve) => pending.push(resolve));
+    },
+    async submitMatchAnswer() {
+      throw new TypeError('Failed to fetch');
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onMissing: () => assert.fail('match should exist'),
+    onError: () => undefined,
+  });
+
+  const warn = console.warn;
+  console.warn = () => undefined;
+  try {
+    await controller.open('ABC234');
+    // 다른 무효화의 GET이 이미 날아가는 중이다
+    eventHandler({ type: 'match', phase: 'invalidated', matchId: MATCH_ID });
+    await waitFor(() => pending.length === 1, 'broadcast refresh did not start');
+    await controller.submit(submitSpec());
+    await controller.submit(submitSpec());
+    await settle();
+    assert.equal(pending.length, 1, '날아가는 GET이 끝나기 전에는 더 보내지 않는다');
+
+    pending[0](runningMatch());
+    await waitFor(() => pending.length === 2, 'coalesced re-read did not run');
+    pending[1](runningMatch({ ownSubmission: SUBMITTED }));
+    await waitFor(() => snapshots.at(-1).ownSubmission !== null, 'own submission was not repaired');
+    await settle();
+  } finally {
+    console.warn = warn;
+    controller.close();
+  }
+
+  assert.equal(reads, 3, '첫 GET · 방송 GET · 두 실패를 합친 다시 읽기 하나');
+});
+
+test('닫힌 controller는 답 실패 뒤에도 다시 읽지 않는다', async () => {
+  let reads = 0;
+  let rejectSubmit;
+  const gateway = {
+    subscribe() {
+      return () => undefined;
+    },
+    async getMatch() {
+      reads += 1;
+      return runningMatch();
+    },
+    submitMatchAnswer() {
+      return new Promise((_resolve, reject) => { rejectSubmit = reject; });
+    },
+  };
+  const { createOnlineMatchController } = await import('../js/online/match-controller.js');
+  const controller = createOnlineMatchController({
+    gateway,
+    onSnapshot: () => undefined,
+    onMissing: () => assert.fail('match should exist'),
+    onError: (message) => assert.fail(message),
+  });
+
+  await controller.open('ABC234');
+  const submitting = controller.submit(submitSpec());
+  controller.close();
+  rejectSubmit(new OnlinePlayerError('응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.'));
+  await submitting;
+  await settle();
+  assert.equal(reads, 1);
 });

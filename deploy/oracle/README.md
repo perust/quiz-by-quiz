@@ -54,7 +54,13 @@ authentication at 120/player-session/minute, 1,500/client/minute and
 room mutations are 30/actor+room/10 seconds and 600/process/minute; chat is
 12/actor+room/minute and 600/process/minute; answer submission is
 8/actor+room/30 seconds and 600/process/minute; WebSocket ticket issue is
-6/actor+room/minute and 300/process/minute. These process-global limits require
+6/actor+room/minute and 300/process/minute. Each of these per-endpoint limiters
+also charges, atomically with the two above, an actor claim across room codes
+(3 × the actor+room limit in the same window: join 36/minute, mutations 90/10
+seconds, chat 36/minute, answers 24/30 seconds, tickets 18/minute) and a client
+claim of half the process limit per minute (join 150, mutations 300, chat 300,
+answers 300, tickets 150), so neither one identity nor one address can fill a
+per-endpoint process bucket. These process-global limits require
 exactly one Uvicorn worker.
 Do not increase the worker count or horizontally scale this service without a
 shared distributed limiter and a fresh memory/rate-envelope review.
@@ -152,18 +158,68 @@ bucket therefore keeps more than 3× headroom, and one address can carry about
 four full 12-player rooms at that peak.
 
 Resource review for the raised ceiling: the process bucket now admits up to 50
-authenticated requests per second, five times the former 10/s, each costing
-one indexed authentication read plus the route's own statement. That rate has
-not been load-tested inside the `0.50` CPU container; measured rooms stay far
-below it, and the expected effect at the ceiling is slower responses rather than
-memory growth. Limiter state stays bounded because rejected attempts never
-create keys: at most 3,000 admitted requests per minute, each held in three
-claims (≤ 9,000 timestamps), and per-player keys bounded by the same 3,000.
+authenticated requests per second, five times the former 10/s. Authentication
+is not a read: `authenticate` is a primary-key `UPDATE` of the player row that
+refreshes `last_seen_at` and the indexed `expires_at` (a non-HOT write with WAL,
+index maintenance and a dead tuple for autovacuum), so the ceiling means up to
+50 player-row `UPDATE`s per second through the 5-connection pool, plus the
+route's own statements; forged tokens match no row and cost a statement and a
+pool checkout without a write. That rate has not been load-tested inside the
+`0.50` CPU container, neither for CPU nor for write/WAL and autovacuum load;
+measured rooms stay far below it (a 12-player match phase is about 2 requests
+per second), and the expected effect at the ceiling is slower responses rather
+than memory growth. Limiter state stays bounded because rejected attempts never
+create keys: at most 3,000 admitted authenticated requests per minute, each held
+in three claims (≤ 9,000 timestamps), per-player keys bounded by the same 3,000,
+and every per-endpoint limiter bounded by its own process claim (four claims per
+admitted request). Untouched keys are swept within one second after their
+window ends.
 The change needs no migration and is compatible in either deployment order: an
 older browser still re-reads after its own answer (one extra read, within its
 new per-player bucket), and against an older API the new browser falls back to
 its read coalescing (every answer is still broadcast) and to the 1-second
 default when `Retry-After` is not exposed.
+
+Review follow-up (same envelope, tighter per-endpoint scopes):
+
+- The 1,500/client authenticated bucket let one address with a few cheap sessions
+  fill a per-endpoint process bucket (tickets 300, answers 600, …): those
+  limiters are charged before the membership check, and every random room code
+  is a fresh actor+room key. The per-endpoint client and cross-code actor claims
+  listed under the ingress limits close that; filling any of those process
+  buckets again needs at least two addresses, as for the authenticated bucket.
+  One classroom behind one address — three 12-player rooms, 36 players — still
+  fits: answers peak at 36 × 7.5 questions/minute (the 8-second reveal bounds
+  the pace) = 270 of 300, realistically 70–110 at 20-second questions; tickets
+  at most 108 of 150 (three socket opens per player in a fast rematch minute:
+  result → waiting room → next match), 144 even if a Wi-Fi blip reconnects
+  everyone in that same minute (a refused ticket is retried by the 1-second
+  reconnect loop, not lost); joins 36 of 150; ready toggles and settings well
+  under 300; chat 300 is 8 lines per player per minute against the 12/minute
+  personal cap. `test_a_classroom_behind_one_address_fits_every_per_endpoint_share`
+  sends that busiest minute and expects no `429`. Four 12-player rooms (the
+  authenticated bucket's measured capacity above) fit the answer share at a
+  brisk pace (everyone answering within 5 seconds: 60 s / 13 s ≈ 4.6
+  questions/minute → about 220) but not at the theoretical 7.5/minute (360);
+  revisit these shares before promising more than three rooms per address or
+  raising room capacity.
+- The limiter prunes only the claims a call touches and sweeps every retained
+  key at most once per second. Per-player keys are attacker-inflatable (a fresh
+  forged id/token per admitted request), and the former full sweep on every call,
+  rejections included, cost about 150× more per call at 3,000 keys.
+- The browser re-reads `GET /match` once (coalesced behind any read in flight)
+  when an answer POST fails without a definite 4xx rejection (timeout, network
+  error, 5xx, unreadable body) or when its successful response is discarded
+  because a reconnect invalidation changed the match identity meanwhile. Without
+  the per-answer broadcast nothing else would show the player that the server
+  kept their answer. A `429`'d `GET /match` is not retried separately when a
+  follow-up read is already queued (the room refresh already skipped it), and
+  the waiting-room/result-screen match recovery read now gets the same single
+  `429` retry.
+
+These review fixes need no migration and work in either deployment order: an
+older browser simply lacks the extra re-reads, and the new browser against an
+older API only sends one more read in the rare cases above.
 
 ## Caddy integration
 

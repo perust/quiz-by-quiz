@@ -106,6 +106,15 @@ AUTHENTICATED_PLAYER_LIMIT = 120
 AUTHENTICATED_CLIENT_LIMIT = 1_500
 AUTHENTICATED_PROCESS_LIMIT = 3_000
 AUTHENTICATED_WINDOW_SECONDS = 60
+# 엔드포인트별 몫(입장·방 변경·채팅·답·소켓 티켓)의 IP 칸은 그 프로세스 몫을 이 수로 나눈 값이다
+# (N01 리뷰 security-1). 이 몫은 멤버십을 보기 전에 먹어 무작위 방 코드마다 새 «사람+방» 열쇠가
+# 생긴다. IP 칸이 없던 때는 IP 몫이 1,500이 된 뒤로 한 주소가 값싼 세션 몇 개로 프로세스 몫을 채워
+# 서버의 모든 방을 막을 수 있었다. 절반이라 한 주소로는 채울 수 없다(인증 몫 1,500/3,000과 같은
+# 비율). 12명 방 셋(교실 하나)의 가장 바쁜 1분도 든다 — deploy/oracle/README.md의 셈.
+ENDPOINT_CLIENT_SHARE_DIVISOR = 2
+# 한 사람이 방 코드를 바꿔 가며 보내도 «사람+방» 몫의 이 배수까지다 — 방 셋을 오가는 사람(같은
+# 브라우저의 탭 셋)도 방마다 제 몫을 다 쓴다.
+ENDPOINT_ACTOR_ROOM_SPAN = 3
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -963,17 +972,32 @@ def create_app(
         prefix: str,
         actor_id: UUID,
         code: str,
+        client_key: str,
         actor_limit: int,
         actor_window_seconds: float,
         process_limit: int,
     ) -> float | None:
-        """None이면 들였다. 아니면 다시 해도 되는 때까지의 초(`Retry-After`)."""
+        """None이면 들였다. 아니면 다시 해도 되는 때까지의 초(`Retry-After`).
+
+        네 claim은 한꺼번에 먹거나 하나도 먹지 않는다. 멤버십·방 확인보다 먼저 먹으므로 무작위
+        코드도 몫을 먹는다 — 그래서 사람(방 코드와 무관)과 IP 칸이 프로세스 몫을 지킨다 (N01 리뷰).
+        """
         return limiter.try_acquire(
             (
                 RateLimitClaim(
                     key=f"{prefix}:actor-room:{actor_id}:{code}",
                     limit=actor_limit,
                     window_seconds=actor_window_seconds,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:actor:{actor_id}",
+                    limit=actor_limit * ENDPOINT_ACTOR_ROOM_SPAN,
+                    window_seconds=actor_window_seconds,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:client:{client_key}",
+                    limit=process_limit // ENDPOINT_CLIENT_SHARE_DIVISOR,
+                    window_seconds=60,
                 ),
                 RateLimitClaim(
                     key=f"{prefix}:process",
@@ -1324,6 +1348,7 @@ def create_app(
             prefix="join",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=12,
             actor_window_seconds=60,
             process_limit=300,
@@ -1407,6 +1432,7 @@ def create_app(
     @app.delete("/v1/rooms/{raw_code}/members/me", status_code=204)
     async def leave_room(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> Response:
         try:
@@ -1418,6 +1444,7 @@ def create_app(
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
@@ -1452,6 +1479,7 @@ def create_app(
     async def remove_member(
         raw_code: str,
         raw_player_id: str,
+        request: Request,
         connected: bool = False,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
@@ -1479,6 +1507,7 @@ def create_app(
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
@@ -1529,6 +1558,7 @@ def create_app(
     @app.patch("/v1/rooms/{raw_code}")
     async def update_room(
         raw_code: str,
+        request: Request,
         body: UpdateRoomBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
@@ -1541,6 +1571,7 @@ def create_app(
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
@@ -1586,6 +1617,7 @@ def create_app(
     @app.put("/v1/rooms/{raw_code}/ready")
     async def set_ready(
         raw_code: str,
+        request: Request,
         body: ReadyBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
@@ -1598,6 +1630,7 @@ def create_app(
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
@@ -1620,6 +1653,7 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/chat", status_code=202)
     async def send_chat(
         raw_code: str,
+        request: Request,
         body: ChatBody,
         actor_id: UUID = Depends(require_actor),
     ) -> Response:
@@ -1632,6 +1666,7 @@ def create_app(
             prefix="chat",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=12,
             actor_window_seconds=60,
             process_limit=600,
@@ -1659,6 +1694,7 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/start", status_code=201)
     async def start_game(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         try:
@@ -1670,6 +1706,7 @@ def create_app(
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
@@ -1726,6 +1763,7 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/match/answers")
     async def submit_answer(
         raw_code: str,
+        request: Request,
         body: AnswerBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
@@ -1738,6 +1776,7 @@ def create_app(
             prefix="answer",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=8,
             actor_window_seconds=30,
             process_limit=600,
@@ -1770,7 +1809,8 @@ def create_app(
         # 하나도 바뀌지 않는다 — 점수는 공개 전까지 비어 있고(`scores: []`), 제출 표시
         # (`ownSubmission`)는 묻는 사람 자신의 것뿐이다. 그래서 답 하나마다 방 전원이 같은
         # snapshot을 다시 읽어 같은 IP의 몫을 N²로 먹던 방송이었다. 낸 사람은 아래 응답의
-        # snapshot을 그대로 그린다. 같은 사람의 다른 탭은 다음 phase나 마감 뒤 다시 읽기에서 맞춘다.
+        # snapshot을 그대로 그리고, 응답을 받지 못했으면 한 번 다시 읽는다(화면 쪽, N01 리뷰).
+        # 같은 사람의 다른 탭은 공개에서 «내 답»으로 안다.
         return {
             "match": _match_payload(submission.match),
             "accepted": True,
@@ -1780,6 +1820,7 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/ws-ticket", status_code=201)
     async def websocket_ticket(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, str]:
         try:
@@ -1791,6 +1832,7 @@ def create_app(
             prefix="ticket",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=6,
             actor_window_seconds=60,
             process_limit=300,
