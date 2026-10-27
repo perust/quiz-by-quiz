@@ -12,6 +12,10 @@
 -- 더하기만 하는 변경이다. 012의 API(#108)는 이 표와 색인을 모른 채 그대로 돌고(색인은 기록을 남길 때
 -- 함께 갱신될 뿐이다), 이 표를 쓰는 API는 013 없이는 로비·방·참가를 읽지 못한다(방 SQL이 solo_rooms를
 -- 본다). 그래서 순서는 migration 013 → API → Pages다 (deploy/oracle/README.md «Fail-closed staging order»).
+--
+-- 다만 이 transaction은 COMMIT까지 색인을 짓는 SHARE(online_rankings)와 외래 키의 SHARE ROW EXCLUSIVE
+-- (rooms)를 쥔다 — 그동안 012의 API의 방 쓰기·판 기록·보존 정리는 기다린다(읽기는 돈다). 판이 돌지 않는
+-- 때에 올린다 (같은 README 단계 3, `release_check db --expect 12 --require-idle`).
 
 BEGIN;
 

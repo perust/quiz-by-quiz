@@ -1605,8 +1605,12 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   서버 변화(혼자 방 표시 `solo_rooms`와 그 권한, 내 기록 색인 `online_rankings_player_board_order_idx`)는 모두 `013_solo_play.sql`에 있고 012는
   #108의 글 그대로다. 한때 아직 올리지 않은 012에 접어 넣었는데, 같은 번호(12)가 두 스키마를 뜻하면 번호만 보는 migrator가 #108의 012가 먼저
   올라간 DB에서 고친 012를 영영 돌리지 않는다. 그래서 #108은 제 경계(012)로 따로 나가고 이 PR은 그 위의 013으로 나간다 — 012를 다시 고치지
-  않는다(`server/tests/test_online_rankings_schema_contract.py`가 012에 혼자 판의 것이 없음을 잠근다). 012의 API(#108)는 표·색인을 모른 채
-  013이 도는 동안에도 돌고 그 gate는 503 `migration-required`로 닫힌다. 013의 API는 012 DB 위에서 돌지 않는다 — readiness가 번호(13)로
+  않는다. **나간 migration(001–012)은 글의 sha256을 잠근다** (`server/tests/test_released_migrations_contract.py`, 012는
+  `test_online_rankings_schema_contract.py`도) — 혼자 판의 것이 없는지만 보면 권한·열·제약을 고친 012가 지나갔다. 고칠 것은 다음 번호에 더하고,
+  그 번호를 낸 PR이 배포 전에 제 글을 고쳤으면 그 PR에서 값을 고친다. 013은 나가면 잠근다. 012의 API(#108)는 표·색인을 모른 채
+  013이 도는 동안에도 돌고 그 gate는 503 `migration-required`로 닫힌다. 다만 013의 transaction이 COMMIT할 때까지(잠금을 얻는 데 migrator의
+  `lock_timeout` 15초까지 + 색인 짓기, 개발 PC에서 250,000줄에 0.5초) 그 API의 방 쓰기·판 기록·보존 정리는 기다린다(읽기는 돈다) — 그래서 단계 3은
+  `release_check db --expect 12 --require-idle`이 통하는 조용한 때에 migrate한다(README 단계 3). 013의 API는 012 DB 위에서 돌지 않는다 — readiness가 번호(13)로
   닫히고, 방 SQL이 `solo_rooms`를 봐 로비·방·만들기·참가·소켓 티켓·`POST /v1/solo`가 실패한다. 이 화면은 `soloPlay`를 모르는 API와 함께
   돌아도 오늘의 혼자 하기라 깨지지 않지만 Pages workflow는 13을 기다린다. 012 API로 되돌릴 때는 그 API가 다시 돌기 전에 남은 혼자 방을
   지운다(README «Solo online play»의 Rollback — 그 API에는 남의 목록에 보이는 보통 방이다). `release_check db --expect 13
@@ -1615,8 +1619,9 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   않는 것을 보고, 로컬 API를 가리키는 사본이면 혼자 판의 흐름만 본다. **운영 API를 가리키는 페이지에서는 아무것도 누르지 않고 멈춘다**
 - `tests/online-solo-play.test.mjs`(저장소·두 결정·호환·화면의 말·흐름), `tests/home-first-visit.test.mjs`(dock 줄의 «연결 중…»·포커스),
   `tests/ranking-empty-state.test.mjs`(연습의 빈 탭), `server/tests/test_solo_play_api.py`·`test_solo_play_integration.py`(서버 — 동시 한도·만드는
-  몫 포함), `server/tests/test_solo_play_schema_contract.py`(013의 계약), `test_character_only_migration_integration.py`(012 → 013 업그레이드와
-  012 DB 위의 후보 API), `test_release_check.py`(`--expect 12`가 013의 것이 없는 #108의 DB를, `--expect 13`이 혼자 방 표·색인·권한을 본다)
+  몫 포함), `server/tests/test_solo_play_schema_contract.py`(013의 계약), `test_character_only_migration_integration.py`(012 → 013 업그레이드,
+  012 DB 위의 후보 API, 013 DB 위에서 런타임 역할로 돈 012 API의 문장, 끝까지 푼 혼자 판의 내 최고 기록), `test_released_migrations_contract.py`
+  (001–012의 글), `test_release_check.py`(`--expect 12`가 013의 것이 없는 #108의 DB를, `--expect 13`이 혼자 방 표·색인·권한을 본다)
 
 ## 문제 데이터
 

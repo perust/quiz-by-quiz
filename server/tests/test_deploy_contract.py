@@ -82,6 +82,15 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "migration-required" in normalized_guide
     assert "must not replace the 012 API before ledger version 013 exists" in normalized_guide
     assert "must not replace the 011 API before ledger version 012 exists" in normalized_guide
+    # «013이 도는 동안에도 돈다»는 쓰기가 잠깐 기다리는 것까지다 — 013의 한 transaction은 색인을
+    # 짓는 SHARE(online_rankings)와 외래 키의 SHARE ROW EXCLUSIVE(rooms)를 COMMIT까지 쥔다. 그래서
+    # 단계 3은 판이 돌지 않는 때(--require-idle)에 migrate한다
+    window = staging[staging.index("Migration 013 is one transaction") :]
+    window = window[: window.index("4. Build and replace only `quiz-by-quiz-api`")]
+    assert "`SHARE` lock on `online_rankings`" in window
+    assert "`SHARE ROW EXCLUSIVE` on `rooms`" in window
+    assert "`lock_timeout = '15s'`" in window
+    assert "`--require-idle`" in window
     assert "rooms_question_time_check" in normalized_guide
     assert "match_answers_elapsed_ms_range_check" in normalized_guide
     # 013은 012를 제자리에서 고치지 않고 따로 선다. #108을 따로 내보내지 말라는 규칙도, 같은 번호의

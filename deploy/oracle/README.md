@@ -333,8 +333,11 @@ the `cleanup` log line counts them (`rankingsPruned`).
 
 Resource envelope: a row with its three board indexes takes about 445 bytes (100,000
 synthetic rows with owner keys: 17 MB heap, 25 MB indexes). The per-player index
-of FR-7.13 step 3 (migration 013) is one more btree of the same width (about one
-third more index space, an estimate, not re-measured). A class of 30
+of FR-7.13 step 3 (migration 013) is one more btree of the same width; the
+planning figure is about one third more index space once it grows row by row
+like the others. Measured once on a development PC at 250,000 synthetic rows,
+migration 013 builds it in 0.5 s at 16 MB, next to 79 MB for the three 012
+indexes maintained row by row; the target VM was not measured. A class of 30
 playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
 weeks. The 250,000-row ceiling bounds the table at roughly 110 MB (about 140 MB
 with the per-player index) plus 600 retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
@@ -488,9 +491,10 @@ so this boundary starts from the migration-012 API of #108 (readiness
 grant and `online_rankings_player_board_order_idx` on the ranking table. It only
 adds: the migration-012 API never reads or writes the table and never reads
 through the index (recording a match merely maintains one more index entry), so
-it keeps serving while 013 runs and remains a valid rollback target afterwards
-(after the solo-room cleanup under "Solo online play"). Its public readiness
-then answers 503 `migration-required`, because it requires exactly schema
+it keeps serving while 013 runs — its room, ranking and prune writes only wait
+for the short lock window of step 3 below — and remains a valid rollback
+target afterwards (after the solo-room cleanup under "Solo online play"). Its
+public readiness then answers 503 `migration-required`, because it requires exactly schema
 version 12 — the expected fail-closed state, not an outage. The candidate API
 reads `quiz_online.solo_rooms` in every lobby, room and join query, so it must
 not replace the 012 API before ledger version 013 exists: on a migration-012
@@ -532,6 +536,25 @@ folded 012 (only disposable test databases ever did) fails `release_check db
    indexes, and no solo room yet. The 012 API's public `/v1/release-readiness`
    now answers 503 `migration-required`; that is the expected fail-closed state,
    not an outage.
+
+   Migration 013 is one transaction that briefly blocks the 012 API's writes.
+   Its plain `CREATE INDEX` holds a `SHARE` lock on `online_rankings`, and
+   `CREATE TABLE solo_rooms … REFERENCES rooms` holds `SHARE ROW EXCLUSIVE` on
+   `rooms`, both until `COMMIT`. Until then every room `INSERT`/`UPDATE`/`DELETE`
+   (create, settings, host transfer, leave, the cleanup sweeps), the ranking
+   `INSERT` of a closing match (so the closing transaction and the deadline
+   sweep) and `prune_online_rankings()` wait. Reads and row locks
+   (`SELECT … FOR UPDATE`) proceed. The 012 API sets no lock or statement
+   timeout, so those requests wait rather than fail; only a request that cannot
+   get one of its five pooled connections within 10 seconds fails (500). The
+   window is the time to obtain both locks
+   (writers queue behind a waiting `app.migrate`; it gives up after its
+   `lock_timeout = '15s'` and rolls back, leaving ledger version 12) plus the
+   index build. That build took 0.5 s for 250,000 synthetic rows, the ranking
+   table's ceiling, on a development PC with PostgreSQL 16 (16 MB index). The
+   target VM was not measured. So migrate in a quiet window: rerun the
+   before-migration check with `--require-idle` (below) immediately before
+   `quiz-by-quiz-migrate`, and do not migrate while it fails.
 4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
    internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`
    and `soloPlay: true` and refuses an e-mail-shaped nickname with 400

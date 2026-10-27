@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from test_released_migrations_contract import RELEASED_MIGRATION_SHA256, migration_sha256
+
 from app.migrate import discover_migrations
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations"
@@ -45,13 +47,18 @@ def test_migration_only_adds_and_never_touches_existing_tables() -> None:
 
 
 def test_migration_stays_the_rankings_only_text_of_108() -> None:
-    """012는 #108의 글 그대로다. 혼자 판(FR-7.13 3단계)의 표·색인은 013에 있다.
+    """012는 #108의 글 그대로다 — 한 글자도. 혼자 판(FR-7.13 3단계)의 표·색인은 013에 있다.
 
-    한때 아직 올리지 않은 012에 접어 넣었다. migrator는 번호만 보므로 #108의 012가 먼저 올라간
-    DB에서는 고친 012가 영영 돌지 않는다 — 같은 번호가 두 스키마를 뜻하게 하지 않는다.
+    한때 아직 올리지 않은 012에 접어 넣었다. migrator는 번호만 보고 checksum이 없으므로 #108의
+    012가 먼저 올라간 DB에서는 고친 012가 영영 돌지 않는다 — 같은 번호가 두 스키마를 뜻하게
+    하지 않는다. 혼자 판의 것이 없는지만 보면 권한·열·제약·주석을 고친 012가 지나간다. 그래서
+    #108이 낸 글의 sha256을 잠근다(test_released_migrations_contract.py). 고칠 것이 생기면 012가
+    아니라 다음 번호에 더한다.
     """
-    sql = _sql()
+    assert migration_sha256(MIGRATION) == RELEASED_MIGRATION_SHA256[12]
 
+    # 값이 어긋났을 때 무엇이 섞였는지 바로 보이게 — 혼자 판의 것은 013에만 있다
+    sql = _sql()
     assert "solo_rooms" not in sql
     assert "online_rankings_player_board_order_idx" not in sql
     assert sql.count("create index") == 3
