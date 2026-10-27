@@ -371,7 +371,8 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
   붙는다 — 온라인 문제는 번호와 분야만 싣는다 (FR-5.8).
 - **대화상자** — 가운데 카드(높이 3), 화면보다 길면 배경 안에서 스크롤해 제목이 잘리지 않는다. 확정 줄(보조 · 확정 두 칸)
   아래에 이름이 긴 보조 행동 하나를 줄 전체로 덧붙일 수 있다(`.dialog__extra`) — 로컬 나가기 확인의 `나가고 푼 문제 N개 해설 보기`(N04)뿐이고,
-  한 문제라도 풀었을 때만 보인다. 포커스는 여전히 «계속 풀기»에 먼저 선다.
+  한 문제라도 풀었을 때만 보인다. 마지막 문제까지 답했으면 같은 자리가 `결과 보기`(결과 화면으로, 기록이 남는다)다. 포커스는 여전히
+  «계속 풀기»에 먼저 선다.
 - **게임 방법** — 홈의 `?`가 연다. 제목 → `혼자 하기` 묶음 이름(`dialog__heading`, 16px heavy — 용어보다 한 단계 크다) → 용어 목록
   (한 판 · 문항 시간 · 점수 · 답하기 · 움직이기 · 기록, 조작법과 같은 `help-list`) → `온라인` 묶음 이름 → 한 줄(서 있기만 해서는
   제출되지 않음 · 문항 시간은 방장이 20초·40초) →
@@ -463,7 +464,7 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 | `tests/safety-teacher-ui.test.mjs`, `tests/waiting-room-safety.test.mjs`, `tests/room-member-removal.test.mjs`, `tests/records-export.test.mjs` | 대기실 액자의 말 숨기기·내보내기(44px, 비색 단서, 인페이지 확인, 접속 중·끊김에 따라 다른 확인 문구, 포커스 되돌리기), 내보내진 사람의 로비 안내, 랭킹 기록 내보내기 패널(유리 표면, 파일·복사·펼친 글) |
 | `tests/quiz-hud.test.mjs`, `tests/feedback-sheet.test.mjs`, `tests/desktop-density.test.mjs`, `tests/interface-consistency.test.mjs`, `tests/quiz-interface.test.mjs` | HUD 묶음(두 퀴즈 HUD의 고리·남은 5초 색), 시트 폭·배지·키 표시, 넓은 화면 2×2, 44px, 결과 행동 순서 |
 | `tests/home-first-visit.test.mjs`, `tests/first-visit-rules.test.mjs`, `tests/boot-screen.test.mjs`, `tests/result-auto-save.test.mjs` | 게임 방법 입구의 자리·44px·HUD 색과 대화상자 계약, 판 길이 글(상수에서, 은행 크기 금지), 처음 세 판의 규칙 줄, 문제 은행 알림의 닫기·다시 불러오기, 부팅 장면(느려요·실패·file:// 안내), 전체 도전 오답 묶음 |
-| `tests/quiz-exit-review.test.mjs` | 나가기 확인의 덧붙은 행동(한 문제라도 풀었을 때만·개수·확정 줄 밖·확인창 뒤 시간 초과도 센다), «푼 문제» 화면(맞힌 문제 한 줄·분야 묶음의 `모두 정답` 알약·신고 링크·저장 범위 줄·워커), 기록·자동 저장·최고 점수에 닿지 않음, «뒤로»의 버튼 |
+| `tests/quiz-exit-review.test.mjs` | 나가기 확인의 덧붙은 행동(한 문제라도 풀었을 때만·개수·확정 줄 밖·확인창 뒤 시간 초과도 센다·마지막 문제까지 답했으면 `결과 보기`로 완주), «푼 문제» 화면(맞힌 문제 한 줄·분야 묶음의 `모두 정답` 알약·신고 링크·저장 범위 줄·워커), 기록·자동 저장·최고 점수에 닿지 않음, «뒤로»의 버튼 |
 | `tests/ui-tone.test.mjs` | 화면 문구의 말투(§11): `index.html`의 글·이름 속성, `src/`의 문자열(주석·콘솔 진단 제외), 서버 거절 이유에 합쇼체·한다체 끝이 없는지, 로컬·온라인 판정이 같은 말인지 |
 
 `tests/css-cascade.mjs` 는 브라우저 없이 «실제로 이기는 선언»을 계산하고, 토큰과 `calc()·max()·env()` 를

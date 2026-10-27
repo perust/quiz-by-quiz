@@ -73,7 +73,9 @@
 //   ㉒ 25문제 전체 도전의 24번에서 나가면 남는 것이 없었다 (N04). 나가기 확인의 «나가고 푼 문제 N개 해설 보기»가
 //      한 문제라도 풀었을 때만 보이는지, Tab 이 확인창 안에서 도는지, 그 화면(`quiz-review`)이 걷는 화면의 계약을
 //      지키는지(조작부·방향키·빈자리 시작·안내 글을 덮지 않음), 판이 깨어나지 않는지, 「뒤로」로 떠나도
-//      **랭킹에 아무것도 남지 않는지** 본다 — 결과 화면이 아니라 떠날 때의 자동 저장(⑪)이 없어야 한다
+//      **랭킹에 아무것도 남지 않는지** 본다 — 결과 화면이 아니라 떠날 때의 자동 저장(⑪)이 없어야 한다.
+//      마지막 문제까지 답했으면 같은 자리가 «결과 보기»여서 결과로 가고 기록이 남는지도 본다 — 한때 다 푼 판을
+//      기록 없는 «푼 문제»로 보내 버렸다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -771,14 +773,30 @@
     localStorage.setItem('quiz.rankings', '[]');
     document.querySelector('.category-card').click();
     await 잠깐(800);
+    let 다푼판의덧붙은행동 = null;
     for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
       const 보기 = [...document.querySelectorAll('.choice')].find((b) => !b.disabled);
       if (보기) 보기.click();
       await 잠깐(120);
+      // ㉒ 마지막 문제까지 답한 뒤의 나가기 확인은 «나가고 푼 문제 N개 해설 보기»가 아니라 «결과 보기»다 —
+      // 한때 다 푼 판을 기록 없는 «푼 문제» 화면으로 보내 버렸다. 그 행동으로 결과에 가고, 아래 ⑪이 기록을 센다
+      if (!document.getElementById('feedback').hidden
+        && document.getElementById('next-label').textContent.trim() === '결과 보기') {
+        await 눌러('quiz-exit', 300);
+        다푼판의덧붙은행동 = document.getElementById('exit-review').hidden
+          ? '(숨김)' : document.getElementById('exit-review').textContent.trim();
+        await 눌러('exit-review', 800);
+        break;
+      }
       const 다음 = document.getElementById('next-button');
       if (다음 && !다음.hidden) 다음.click();
       await 잠깐(150);
     }
+    결과.push({
+      자리: '퀴즈', 이름: '마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동은 «결과 보기»이고 결과로 간다',
+      통과: 다푼판의덧붙은행동 === '결과 보기' && 지금화면() === 'result',
+      무엇: `${다푼판의덧붙은행동 ?? '!! 마지막 문제에 닿지 못했다'} → ${지금화면()}`,
+    });
     살펴본다('결과', 'result', true);
     // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
     // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다

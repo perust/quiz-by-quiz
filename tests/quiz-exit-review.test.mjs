@@ -125,7 +125,7 @@ function runFrames(count = 3) {
   }
 }
 
-const { createQuizScreen, exitReviewLabel } = await import('../js/ui/quiz.js');
+const { createQuizScreen, exitReviewLabel, EXIT_FINISHED_LABEL } = await import('../js/ui/quiz.js');
 const { createQuizReviewScreen, answeredReviewSummary, answeredGroupCount } = await import('../js/ui/quiz-review.js');
 const { createSession } = await import('../js/core/session.js');
 const { reviewAnswered } = await import('../js/core/scoring.js');
@@ -225,6 +225,52 @@ test('확인창 뒤에서 시간이 끝나면 그 문제도 센다 — 열린 �
   assert.equal(fakeDocument.activeElement, byId('exit-cancel'), '시간 초과가 갇힌 포커스를 가져가지 않는다');
   byId('exit-review').click();
   assert.equal(reviews[0].getAnswers().length, 2);
+});
+
+test('마지막 문제까지 답했으면 덧붙은 행동은 «결과 보기»다 — 다 푼 판을 기록 없는 «푼 문제»로 버리지 않는다', () => {
+  // 한때 이 자리에서도 «나가고 푼 문제 3개 해설 보기»가 떠, 누르면 「결과 보기」가 남겼을 기록을 버리고
+  // «끝까지 풀지 않은 판이라 …» 바로 아래 «3문제 중 3문제를 풀었어요»를 보였다
+  const session = startRound();
+  completed.length = 0;
+  for (let index = 0; index < 3; index += 1) {
+    choose(1);
+    if (index < 2) byId('next-button').click();
+  }
+  assert.equal(byId('next-label').textContent, '결과 보기', '해설을 보는 중인 마지막 문제다');
+  byId('quiz-exit').click(); // 브라우저 «뒤로»도 이 버튼을 누른다
+  assert.equal(byId('exit-review').hidden, false);
+  assert.equal(byId('exit-review').textContent, EXIT_FINISHED_LABEL);
+  assert.equal(EXIT_FINISHED_LABEL, '결과 보기');
+  assert.equal(fakeDocument.activeElement, byId('exit-cancel'), '포커스는 여전히 «계속 풀기»에 먼저 선다');
+
+  byId('exit-review').click();
+  assert.deepEqual(completed, [session], '피드백의 「결과 보기」와 같은 완주 길 — 결과 화면이 기록을 남긴다');
+  assert.deepEqual(reviews, [], '«푼 문제» 화면(기록 없음)으로 가지 않는다');
+  assert.deepEqual(exits, []);
+  assert.equal(dialogOpen(), false);
+  assert.equal(byId('feedback').hidden, true);
+  assert.equal(session.getAnswers().length, 3);
+});
+
+test('마지막 문제를 확인창 뒤에서 시간 초과로 마쳐도 행동이 «결과 보기»로 바뀐다 (FR-3.12)', () => {
+  const session = startRound();
+  completed.length = 0;
+  choose(1);
+  byId('next-button').click();
+  choose(0);
+  byId('next-button').click();
+  byId('quiz-exit').click();
+  assert.equal(byId('exit-review').textContent, '나가고 푼 문제 2개 해설 보기', '마지막 문제가 아직 도는 중이다');
+
+  clock += 21_000;
+  runFrames();
+  assert.equal(session.getAnswers().length, 3);
+  assert.equal(byId('exit-review').textContent, EXIT_FINISHED_LABEL);
+  assert.equal(fakeDocument.activeElement, byId('exit-cancel'), '시간 초과가 갇힌 포커스를 가져가지 않는다');
+  byId('exit-review').click();
+  assert.deepEqual(completed, [session]);
+  assert.deepEqual(reviews, []);
+  assert.equal(byId('feedback').hidden, true, '닫힌 확인창 뒤의 피드백으로 돌아가지 않고 결과로 간다');
 });
 
 test('reviewAnswered: 푼 문제를 맞힌 것까지 푼 순서대로 담고, 점수·등급·소요 시간은 만들지 않는다', () => {

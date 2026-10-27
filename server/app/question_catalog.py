@@ -8,6 +8,7 @@ import re
 import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -190,7 +191,8 @@ class QuestionCatalog:
         방금 푼 문제가 곧바로 다음 판에 돌아온다.
 
         그 안에서 한 판의 난이도는 분야 은행의 난이도 비율을 따른다 (FR-1.10, 로컬과 같은 규칙).
-        전체 판은 분야마다 다섯 문제 안에서 그 분야의 비율로 나눈다. 고른 순서는 섞는다.
+        전체 판은 분야마다 다섯 문제를 지키면서 **판 전체**가 비율을 따르게 나눈다
+        (`_all_round_quotas`). 고른 순서는 섞는다.
         """
         rng = random_source or secrets.SystemRandom()
         recent = recent_use or {}
@@ -204,11 +206,13 @@ class QuestionCatalog:
                 recent,
             )
         else:
+            banks = [self.by_category[category] for category in CATEGORY_IDS]
+            quotas = _all_round_quotas(banks, QUESTIONS_PER_CATEGORY_IN_ALL, rng)
             selected = [
                 question
-                for category in CATEGORY_IDS
+                for bank, bank_quotas in zip(banks, quotas, strict=True)
                 for question in _sample(
-                    self.by_category[category], QUESTIONS_PER_CATEGORY_IN_ALL, rng, recent
+                    bank, QUESTIONS_PER_CATEGORY_IN_ALL, rng, recent, quotas=bank_quotas
                 )
             ]
             rng.shuffle(selected)
@@ -259,6 +263,155 @@ def _difficulty_quotas(
     return quotas
 
 
+@dataclass(eq=False)
+class _RoundingCell:
+    """전체 판의 몫을 나눌 때 분야 하나·난이도 하나의 칸 가운데 올림할 수 있는 칸.
+
+    나머지가 0인 칸은 몫이 정수라 올림할 것이 없어 담지 않는다.
+    """
+
+    row: int
+    bucket: str
+    # 정확한 몫의 나머지(0보다 크고 1보다 작다)
+    remainder: Fraction
+    tie: float
+
+
+def _all_round_quotas(
+    banks: Sequence[Sequence[_CatalogQuestion]], count: int, random_source: random.Random
+) -> list[dict[str, int]]:
+    """전체 판의 난이도 몫을 분야마다 나눈다 (FR-1.10, 로컬 `allRoundQuotas`와 같은 규칙).
+
+    분야마다 ``count``(은행이 작으면 있는 만큼) 문항 수는 그대로 두고 **판 전체**가
+    은행의 비율을 따르게 한다. 분야마다 따로 최대 나머지로 나누면 지금 은행에서는 다섯 분야
+    모두 어려움의 나머지가 가장 작아 어려움이 늘 하나로 내림됐다 — 25문제 판에 어려움이 늘
+    다섯(20%)인데 은행은 26%다.
+
+    1. 분야 c·난이도 d의 정확한 몫은 ``c의 문항 수 × (c의 d 문제 수) ÷ (c의 문제 수)``다.
+       판의 목표는 난이도마다 그 합이고(분야마다 무작위로 뽑던 예전 출제의 기댓값), 그것을
+       최대 나머지 방식으로 나눈 것이 판의 몫이다. 분수(``Fraction``)로만 셈해 같은 나머지가
+       부동소수 오차로 갈리지 않는다.
+    2. 칸마다 내림을 먼저 주고, 분야마다 남은 자리는 판의 몫이 모자란 난이도의 칸을 나머지가
+       큰 것부터(같으면 무작위) 올림한다. 막히면 증가 경로로 다른 분야의 올림을 옮긴다 —
+       맞출 수 있으면 언제나 맞춘다.
+    3. 맞출 길이 없는 은행 모양이면 남은 자리는 그 분야 안에서 나머지가 큰 칸부터 올림한다.
+
+    어느 칸도 정확한 몫의 내림·올림 밖으로 나가지 않는다 — 분야마다 문항 수는 그대로이고
+    칸의 문제 수를 넘지 않는다.
+    """
+    quotas: list[dict[str, int]] = []
+    need: list[int] = []
+    cells: list[_RoundingCell] = []
+    floor_sums: dict[str, int] = {}
+    remainder_sums: dict[str, Fraction] = {}
+    total = 0
+    for row, questions in enumerate(banks):
+        take = min(count, len(questions))
+        total += take
+        sizes: dict[str, int] = {}
+        for question in questions:
+            bucket = _difficulty_bucket(question)
+            sizes[bucket] = sizes.get(bucket, 0) + 1
+        row_quotas: dict[str, int] = {}
+        given = 0
+        for bucket in (*DIFFICULTIES, _UNKNOWN_DIFFICULTY):
+            if bucket not in sizes:
+                continue
+            share = Fraction(take * sizes[bucket], len(questions))
+            floor = share.numerator // share.denominator
+            remainder = share - floor
+            row_quotas[bucket] = floor
+            given += floor
+            floor_sums[bucket] = floor_sums.get(bucket, 0) + floor
+            remainder_sums[bucket] = remainder_sums.get(bucket, Fraction(0)) + remainder
+            if remainder:
+                cells.append(_RoundingCell(row, bucket, remainder, random_source.random()))
+        quotas.append(row_quotas)
+        need.append(take - given)
+
+    # 1. 판의 몫: 난이도마다 «내림의 합 + 나머지 합의 정수 부분», 남은 자리는 소수 부분이
+    #    큰 난이도부터. ``want``는 «내림 위에 더 올림할 칸 수»다
+    want: dict[str, int] = {}
+    ranked: list[tuple[Fraction, float, str]] = []
+    given = 0
+    for bucket in (*DIFFICULTIES, _UNKNOWN_DIFFICULTY):
+        if bucket not in remainder_sums:
+            continue
+        whole = remainder_sums[bucket].numerator // remainder_sums[bucket].denominator
+        want[bucket] = whole
+        given += floor_sums[bucket] + whole
+        ranked.append((remainder_sums[bucket] - whole, random_source.random(), bucket))
+    ranked.sort(key=lambda entry: (-entry[0], entry[1]))
+    for _, _, bucket in ranked[: max(0, total - given)]:
+        want[bucket] += 1
+
+    # 2. 올림할 칸: 나머지가 큰 칸부터
+    cells.sort(key=lambda cell: (-cell.remainder, cell.tie))
+    raised: list[_RoundingCell] = []
+
+    def raise_cell(cell: _RoundingCell) -> None:
+        raised.append(cell)
+        need[cell.row] -= 1
+        want[cell.bucket] = want.get(cell.bucket, 0) - 1
+
+    for cell in cells:
+        if need[cell.row] > 0 and want.get(cell.bucket, 0) > 0:
+            raise_cell(cell)
+
+    def augment(start: int) -> bool:
+        # «올림하지 않은 칸으로 난이도에 닿고, 그 난이도를 올림한 다른 분야로 건너가 그 올림을
+        # 내리는» 길을 넓이 우선으로 찾는다. 지나간 분야·난이도의 올림 수는 그대로이고 start와
+        # 끝 난이도만 하나씩 채워진다
+        reached_bucket: dict[str, _RoundingCell] = {}
+        reached_row: dict[int, _RoundingCell] = {}
+        queue = [start]
+        seen_rows = {start}
+        while queue:
+            row = queue.pop(0)
+            for cell in cells:
+                if cell.row != row or cell in raised or cell.bucket in reached_bucket:
+                    continue
+                reached_bucket[cell.bucket] = cell
+                if want.get(cell.bucket, 0) > 0:
+                    # 끝에서부터 거꾸로: 닿은 칸은 올림하고, 건너온 분야의 올림은 내린다
+                    step = cell
+                    while True:
+                        raised.append(step)
+                        if step.row == start:
+                            break
+                        lowered = reached_row[step.row]
+                        raised.remove(lowered)
+                        step = reached_bucket[lowered.bucket]
+                    need[start] -= 1
+                    want[cell.bucket] -= 1
+                    return True
+                for other in raised:
+                    if other.bucket != cell.bucket or other.row in seen_rows:
+                        continue
+                    seen_rows.add(other.row)
+                    reached_row[other.row] = other
+                    queue.append(other.row)
+        return False
+
+    # 한 분야에서 막혀도 다른 분야의 경로가 올림을 옮긴 뒤에는 열릴 수 있어, 한 바퀴 내내
+    # 옮긴 것이 없을 때까지 돈다
+    progressed = True
+    while progressed:
+        progressed = False
+        for row in range(len(banks)):
+            while need[row] > 0 and augment(row):
+                progressed = True
+
+    # 3. 맞출 길이 없는 분야는 제 안에서 나머지가 큰 칸부터 올림한다
+    for cell in cells:
+        if need[cell.row] > 0 and cell not in raised:
+            raise_cell(cell)
+
+    for cell in raised:
+        quotas[cell.row][cell.bucket] += 1
+    return quotas
+
+
 def _pick_by_quota(
     tiers: Sequence[Sequence[_CatalogQuestion]], take: int, quotas: Mapping[str, int]
 ) -> list[_CatalogQuestion]:
@@ -289,11 +442,15 @@ def _pick_by_quota(
 
 
 def _sample(
-    questions: tuple[_CatalogQuestion, ...],
+    questions: Sequence[_CatalogQuestion],
     count: int,
     random_source: random.Random,
     recent_use: Mapping[str, float],
+    *,
+    quotas: Mapping[str, int] | None = None,
 ) -> list[_CatalogQuestion]:
+    # ``quotas``가 없으면 이 은행만의 난이도 몫(분야 판)이다. 전체 판은
+    # `_all_round_quotas`가 판 전체로 나눈 몫을 넘긴다.
     # A malformed or temporarily shortened checked-in bank stays usable without
     # duplicating a question in the same match. Production validation guarantees
     # sufficient entries; this also makes fixture catalogs practical.
@@ -311,7 +468,9 @@ def _sample(
         unseen,
         *(list(group) for _, group in itertools.groupby(seen, key=lambda q: recent_use[q.id])),
     ]
-    picked = _pick_by_quota(tiers, take, _difficulty_quotas(questions, take, random_source))
+    if quotas is None:
+        quotas = _difficulty_quotas(questions, take, random_source)
+    picked = _pick_by_quota(tiers, take, quotas)
     # 고른 순서(난이도·본 순서)대로 판에 몰려 나오지 않게 섞는다.
     random_source.shuffle(picked)
     return picked

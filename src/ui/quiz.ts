@@ -34,7 +34,8 @@ export interface QuizScreenDeps {
   onComplete: (session: QuizSession) => void;
   /**
    * 나가기 확인의 «나가고 푼 문제 해설 보기» (N04). 판은 이미 접혔고(세션·타이머·시트·무대) 넘겨받은 세션은
-   * 끝까지 풀지 않은 판이다 — 받는 쪽은 그것을 기록하지 않는다 (FR-3.6)
+   * 끝까지 풀지 않은 판이다 — 받는 쪽은 그것을 기록하지 않는다 (FR-3.6). 마지막 문제까지 답한 판은
+   * 여기로 오지 않고 `onComplete` 로 간다
    */
   onReview: (session: QuizSession) => void;
 }
@@ -43,6 +44,12 @@ export interface QuizScreenDeps {
 export function exitReviewLabel(answered: number): string {
   return `나가고 푼 문제 ${answered}개 해설 보기`;
 }
+
+/**
+ * 마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동 이름 (N04). 그 판은 끝까지 푼 판이라 «기록 없는 푼 문제»가
+ * 아니라 피드백의 「결과 보기」와 같은 길로 결과 화면에 간다 — 기록이 남고 전체 풀이도 거기 있다
+ */
+export const EXIT_FINISHED_LABEL = '결과 보기';
 
 /** 판을 열 때 화면이 받는 것 */
 export interface QuizRoundView {
@@ -463,15 +470,21 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
   // window.confirm 대신 페이지 안 다이얼로그를 쓴다. 확인하는 동안에도
   // 타이머는 계속 흐른다. 일시정지는 제공하지 않는다 (FR-3.12).
 
+  /** 마지막 문제까지 답했는가 — 남은 것은 「결과 보기」뿐인, 끝까지 푼 판이다 */
+  function everyQuestionAnswered(): boolean {
+    return session !== null && session.isAnswered() && !session.hasNext();
+  }
+
   /**
    * «나가고 푼 문제 해설 보기» (N04). 한 문제라도 답했을 때만 보인다 — 답한 문제가 없으면 볼 것이 없다.
    * 지금 문항에 답한 뒤(해설을 보는 중)면 그 문제도 센다. 확인창이 열린 동안에도 시간은 흘러(FR-3.12)
    * 뒤에서 시간 초과가 나면 하나 늘어나므로 그때도 다시 부른다(`showFeedback`).
+   * 마지막 문제까지 답했으면 «결과 보기»다 — 다 푼 판을 «기록 없는 푼 문제»로 버리게 하지 않는다.
    */
   function renderExitReview(): void {
     const answered = session?.getAnswers().length ?? 0;
     el.dialogReview.hidden = answered === 0;
-    el.dialogReview.textContent = exitReviewLabel(answered);
+    el.dialogReview.textContent = everyQuestionAnswered() ? EXIT_FINISHED_LABEL : exitReviewLabel(answered);
   }
 
   function openExitDialog(): void {
@@ -514,9 +527,21 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
 
   /**
    * 나가면서 푼 문제를 본다 (N04). 판을 나가기와 똑같이 접은 뒤 그 판을 넘긴다 — 결과 화면으로 가는
-   * 완주(`goNext` → `onComplete`)가 아니므로 기록도 최고 점수 비교도 없다 (FR-3.6)
+   * 완주(`goNext` → `onComplete`)가 아니므로 기록도 최고 점수 비교도 없다 (FR-3.6).
+   *
+   * 마지막 문제까지 답했으면(이름이 «결과 보기»다) 끝까지 푼 판이다. 그때는 확인창만 닫고 피드백의
+   * 「결과 보기」와 같은 완주 길로 간다 — 결과 화면이 전체 풀이를 보이고 떠날 때 기록을 남긴다(FR-6.1).
+   * 한때 이 버튼이 그 판을 «끝까지 풀지 않은 판이라 기록은 남지 않아요» 화면으로 보내 기록을 버렸다.
    */
   function exitToReview(): void {
+    if (everyQuestionAnswered()) {
+      el.dialog.hidden = true;
+      dialogOpener = null;
+      // 확인창 뒤에서 시간이 끝났어도 피드백으로 돌아가지 않는다 — goNext 가 시트를 접고 화면을 옮긴다
+      feedbackWaitingForDialogClose = false;
+      goNext();
+      return;
+    }
     const abandoned = abandonRound();
     if (abandoned && abandoned.getAnswers().length > 0) onReview(abandoned);
     else onExit();

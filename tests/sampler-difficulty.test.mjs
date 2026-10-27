@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 // 다음은 오래전에 본 것부터»(FR-1.4) 안에서만 맞춘다. 서버(`server/app/question_catalog.py`)도 같은 규칙이고
 // `server/tests/test_question_catalog.py`가 같은 경우를 본다. 난수는 씨앗을 고정해 결과를 되풀이한다.
 
-const { buildAllRound, buildRound, difficultyBucket, difficultyQuotas, sampleQuestions } = await import('../js/core/sampler.js');
+const { allRoundQuotas, buildAllRound, buildRound, difficultyBucket, difficultyQuotas, sampleQuestions } = await import('../js/core/sampler.js');
 const { CATEGORIES, QUESTIONS_PER_CATEGORY_IN_ALL, QUESTIONS_PER_ROUND } = await import('../js/constants.js');
 
 /** 씨앗이 같으면 같은 수열을 주는 작은 난수 생성기 (mulberry32) */
@@ -178,17 +178,39 @@ test('고른 문제는 섞어서 낸다 — 난이도끼리 몰려 나오지 않
   assert.deepEqual([...lastPlaces].sort(), ['easy', 'hard', 'normal'], '마지막 문제도');
 });
 
-test('전체 도전: 분야마다 다섯 문제이고, 난이도 몫은 분야마다 그 은행의 비율로 나눈다', () => {
+// ── 전체 도전: 분야마다 다섯 문제를 지키고 판 전체가 은행의 비율을 따른다 ─────────────
+// 분야마다 따로 최대 나머지로 나누던 때는 지금 은행에서 다섯 분야 모두 어려움이 늘 하나로 내림돼(5 × 29/110 = 1.32,
+// 나머지가 가장 작다) 25문제 판에 어려움이 늘 다섯(20%)이었다 — 은행은 26%이고 예전 무작위 출제는 평균 6.5였다.
+
+/** 분야마다 문항 수를 지키고, 칸마다 제 은행의 정확한 몫(take × 칸 ÷ 은행)의 내림이나 올림인지 본다 */
+function assertEachCategoryWithinItsShare(round, banks, count) {
+  for (const pool of banks) {
+    const category = pool[0].category;
+    const take = Math.min(count, pool.length);
+    const mine = tally(round.filter((item) => item.category === category));
+    const sizes = tally(pool);
+    assert.equal(Object.values(mine).reduce((sum, value) => sum + value, 0), take, `${category}: ${take}문제`);
+    for (const level of ['easy', 'normal', 'hard', 'unknown']) {
+      const share = (take * sizes[level]) / pool.length;
+      assert.ok(mine[level] === Math.floor(share) || mine[level] === Math.ceil(share), `${category} ${level}: ${mine[level]}개 (몫 ${share.toFixed(2)})`);
+    }
+  }
+}
+
+test('전체 도전: 분야마다 다섯 문제이고, 판 전체의 난이도가 은행의 비율을 따른다', () => {
+  // 40/41/29 다섯 은행: 25 × 200/205/145 ÷ 550 = 9.09 · 9.32 · 6.59 → 9·9·6 + 어려움 → 9·9·7
   const banks = CATEGORIES.map(({ id }) => bank({ easy: 40, normal: 41, hard: 29 }, id));
-  for (let seed = 0; seed < 20; seed += 1) {
+  const hardInCategory = new Map(CATEGORIES.map(({ id }) => [id, new Set()]));
+  for (let seed = 0; seed < 40; seed += 1) {
     const round = buildAllRound({ banks, countPerCategory: QUESTIONS_PER_CATEGORY_IN_ALL, random: seeded(seed) });
     assert.equal(round.length, QUESTIONS_PER_CATEGORY_IN_ALL * CATEGORIES.length);
-    for (const { id } of CATEGORIES) {
-      const mine = round.filter((item) => item.category === id);
-      // 5 × 40/41/29 ÷ 110 = 1.82 · 1.86 · 1.32 → 1·1·1 + 보통·쉬움
-      assert.deepEqual(tally(mine), { easy: 2, normal: 2, hard: 1, unknown: 0 }, id);
-    }
+    assert.deepEqual(tally(round), { easy: 9, normal: 9, hard: 7, unknown: 0 }, '어려움 일곱 — 분야마다 나누면 늘 다섯이었다');
+    assertEachCategoryWithinItsShare(round, banks, QUESTIONS_PER_CATEGORY_IN_ALL);
+    for (const { id } of CATEGORIES) hardInCategory.get(id).add(tally(round.filter((item) => item.category === id)).hard);
     assert.equal(new Set(ids(round)).size, round.length, '같은 문제가 두 번 나오지 않는다');
+  }
+  for (const [id, seen] of hardInCategory) {
+    assert.deepEqual([...seen].sort(), [1, 2], `${id}: 어려움 둘을 받는 분야가 판마다 바뀐다`);
   }
 
   // 분야마다 기억을 그대로 따른다 — 본 문제가 섞여 있어도 안 본 것부터
@@ -197,4 +219,148 @@ test('전체 도전: 분야마다 다섯 문제이고, 난이도 몫은 분야�
   const first = round.filter((item) => item.category === CATEGORIES[0].id);
   assert.equal(first.length, QUESTIONS_PER_CATEGORY_IN_ALL);
   assert.deepEqual(ids(first).filter((id) => recent.includes(id)), [], '그 분야의 안 본 열 문제 가운데서 낸다');
+});
+
+test('N05: 실제 은행의 전체 도전 25문제에 어려운 문제가 6~7개다 (은행 26%)', async () => {
+  const banks = await Promise.all(CATEGORIES.map(async ({ id }) => JSON.parse(await readFile(new URL(`../data/${id}.json`, import.meta.url), 'utf8'))));
+  const all = banks.flat();
+  const share = tally(all);
+  const count = QUESTIONS_PER_CATEGORY_IN_ALL * CATEGORIES.length;
+  for (let seed = 0; seed < 200; seed += 1) {
+    const round = buildAllRound({ banks, countPerCategory: QUESTIONS_PER_CATEGORY_IN_ALL, random: seeded(seed) });
+    assert.equal(round.length, count);
+    const counts = tally(round);
+    assert.ok(counts.hard >= 6 && counts.hard <= 7, `어려움 ${counts.hard}개`);
+    for (const level of ['easy', 'normal', 'hard']) {
+      const ideal = (count * share[level]) / all.length;
+      assert.ok(Math.abs(counts[level] - ideal) < 1, `${level}: ${counts[level]}개 (비율로는 ${ideal.toFixed(2)})`);
+    }
+    assertEachCategoryWithinItsShare(round, banks, QUESTIONS_PER_CATEGORY_IN_ALL);
+  }
+});
+
+test('전체 도전의 판 몫은 분야마다의 몫을 더한 것이다 — 은행 크기가 달라도 분야마다 다섯 문제가 먼저다', () => {
+  // 합친 은행의 비율(어려움 10/110)로 나누면 어려움은 하나뿐이어야 하지만, 한국사 다섯은 모두 어려움이다.
+  // 분야마다의 정확한 몫(한국사 어려움 5, 과학 쉬움 5)의 합이 판의 목표다
+  const banks = [bank({ hard: 10 }, 'history'), bank({ easy: 100 }, 'science')];
+  for (let seed = 0; seed < 10; seed += 1) {
+    const round = buildAllRound({ banks, countPerCategory: 5, random: seeded(seed) });
+    assert.deepEqual(tally(round), { easy: 5, normal: 0, hard: 5, unknown: 0 });
+    assertEachCategoryWithinItsShare(round, banks, 5);
+  }
+
+  // 분야 은행이 다섯 문제보다 작으면 지금처럼 있는 만큼이다
+  const small = [bank({ easy: 2, hard: 1 }, 'history'), bank({ easy: 4, normal: 4, hard: 2 }, 'science')];
+  for (let seed = 0; seed < 10; seed += 1) {
+    const round = buildAllRound({ banks: small, countPerCategory: 5, random: seeded(seed) });
+    assert.equal(round.length, 8);
+    assertEachCategoryWithinItsShare(round, small, 5);
+  }
+});
+
+test('판 몫이 앞서 고른 올림에 막히면 올림을 다른 분야로 옮겨 맞춘다 (증가 경로)', () => {
+  // 분야마다 한 문제. 한국사는 쉬움 3·보통 2, 과학은 쉬움 3·어려움 2 → 판의 목표는 쉬움 1.2 · 보통 0.4 · 어려움 0.4,
+  // 몫은 쉬움 하나에 보통이나 어려움 하나(나머지가 같아 무작위)다. 나머지가 가장 큰 쉬움(0.6)부터 고르면 두 분야가
+  // 다 쉬움을 원하고, 먼저 고른 분야가 쉬움을 가져가면 남은 분야의 다른 칸이 판의 몫과 어긋날 수 있다
+  const banks = [bank({ easy: 3, normal: 2 }, 'history'), bank({ easy: 3, hard: 2 }, 'science')];
+  const outcomes = new Set();
+  for (let seed = 0; seed < 60; seed += 1) {
+    const quotas = allRoundQuotas(banks, 1, seeded(seed));
+    const total = { easy: 0, normal: 0, hard: 0 };
+    for (const map of quotas) for (const [level, value] of map) total[level] += value;
+    assert.equal(total.easy, 1, `쉬움은 언제나 하나다: ${JSON.stringify(total)}`);
+    assert.equal(total.normal + total.hard, 1);
+    assert.deepEqual(quotas.map((map) => [...map.values()].reduce((sum, value) => sum + value, 0)), [1, 1], '분야마다 한 문제');
+    outcomes.add(total.normal === 1 ? 'normal' : 'hard');
+  }
+  assert.deepEqual([...outcomes].sort(), ['hard', 'normal'], '나머지가 같은 보통·어려움이 판마다 갈린다');
+});
+
+test('allRoundQuotas: 분야마다 문항 수와 칸마다 내림·올림을 지키고, 맞출 수 있으면 언제나 판의 몫을 맞춘다', () => {
+  const levels = ['easy', 'normal', 'hard', 'unknown'];
+  const combos = (items, size) => (size === 0 ? [[]] : items.flatMap((item, index) => combos(items.slice(index + 1), size - 1).map((rest) => [item, ...rest])));
+  for (let seed = 0; seed < 400; seed += 1) {
+    const random = seeded(seed);
+    const banks = Array.from({ length: 1 + Math.floor(random() * 4) }, (_, row) => {
+      const sizes = Object.fromEntries(levels.map((level) => [level, random() < 0.3 ? 0 : Math.floor(random() * 9)]));
+      return [
+        ...bank({ easy: sizes.easy, normal: sizes.normal, hard: sizes.hard }, `c${row}`),
+        ...Array.from({ length: sizes.unknown }, (_, index) => question(`c${row}-u${index}`, undefined, `c${row}`)),
+      ];
+    });
+    const count = 1 + Math.floor(random() * 6);
+    const quotas = allRoundQuotas(banks, count, random);
+
+    // 분야마다: 칸마다 정확한 몫의 내림이나 올림, 합은 문항 수
+    const rows = banks.map((pool, row) => {
+      const take = Math.min(count, pool.length);
+      const sizes = tally(pool);
+      const cells = levels.filter((level) => sizes[level] > 0).map((level) => ({
+        level, floor: Math.floor((take * sizes[level]) / pool.length), raisable: (take * sizes[level]) % pool.length > 0,
+        numerator: take * sizes[level], size: pool.length,
+      }));
+      let sum = 0;
+      for (const level of levels) {
+        const value = quotas[row].get(level) ?? 0;
+        const cell = cells.find((item) => item.level === level);
+        sum += value;
+        assert.ok(cell ? value === cell.floor || (cell.raisable && value === cell.floor + 1) : value === 0, `seed ${seed} 분야 ${row} ${level}: ${value}`);
+      }
+      assert.equal(sum, take, `seed ${seed} 분야 ${row}`);
+      return { take, cells };
+    });
+
+    // 판의 목표(정확한 몫의 합)를 공통분모 정수로 셈하고, 나머지가 같은 난이도까지 고려한 최대 나머지 후보를 모두 만든다
+    const denominator = banks.reduce((lcm, pool) => {
+      if (pool.length === 0) return lcm;
+      const gcd = (a, b) => (b === 0n ? a : gcd(b, a % b));
+      return (lcm / gcd(lcm, BigInt(pool.length))) * BigInt(pool.length);
+    }, 1n);
+    const target = new Map();
+    for (const { cells } of rows) {
+      for (const cell of cells) target.set(cell.level, (target.get(cell.level) ?? 0n) + BigInt(cell.numerator) * (denominator / BigInt(cell.size)));
+    }
+    const present = levels.filter((level) => target.has(level));
+    const base = Object.fromEntries(present.map((level) => [level, Number(target.get(level) / denominator)]));
+    const extra = rows.reduce((sum, { take }) => sum + take, 0) - present.reduce((sum, level) => sum + base[level], 0);
+    const parts = present.map((level) => ({ level, part: target.get(level) % denominator })).sort((a, b) => (a.part === b.part ? 0 : a.part > b.part ? -1 : 1));
+    const options = [];
+    if (extra === 0) options.push(base);
+    else {
+      const cutoff = parts[extra - 1].part;
+      const sure = parts.filter(({ part }) => part > cutoff).map(({ level }) => level);
+      const tied = parts.filter(({ part }) => part === cutoff).map(({ level }) => level);
+      for (const chosen of combos(tied, extra - sure.length)) {
+        options.push(Object.fromEntries(present.map((level) => [level, base[level] + ([...sure, ...chosen].includes(level) ? 1 : 0)])));
+      }
+    }
+
+    // 분야마다 내림·올림을 고르는 모든 경우를 훑어, 판의 몫 후보가 모두 이룰 수 있는 것이면 결과가 그 가운데 하나다
+    const key = (totals) => present.map((level) => totals[level] ?? 0).join('/');
+    const reachable = new Set();
+    const walk = (row, totals) => {
+      if (row === rows.length) { reachable.add(key(totals)); return; }
+      const { take, cells } = rows[row];
+      const need = take - cells.reduce((sum, cell) => sum + cell.floor, 0);
+      for (const chosen of combos(cells.filter((cell) => cell.raisable), need)) {
+        const next = { ...totals };
+        for (const cell of cells) next[cell.level] = (next[cell.level] ?? 0) + cell.floor + (chosen.includes(cell) ? 1 : 0);
+        walk(row + 1, next);
+      }
+    };
+    walk(0, {});
+    if (options.every((option) => reachable.has(key(option)))) {
+      const got = Object.fromEntries(present.map((level) => [level, quotas.reduce((sum, map) => sum + (map.get(level) ?? 0), 0)]));
+      assert.ok(options.some((option) => key(option) === key(got)), `seed ${seed}: ${key(got)} — 후보 ${options.map(key).join(' | ')}`);
+    }
+  }
+});
+
+test('전체 도전도 난이도를 모르면 «모름» 한 칸이다 — 분야마다 다섯 문제, 예전 출제와 같다', () => {
+  const banks = CATEGORIES.map(({ id }) => Array.from({ length: 12 }, (_, index) => question(`${id}-u${index}`, undefined, id)));
+  for (let seed = 0; seed < 10; seed += 1) {
+    const round = buildAllRound({ banks, countPerCategory: QUESTIONS_PER_CATEGORY_IN_ALL, random: seeded(seed) });
+    assert.deepEqual(tally(round), { easy: 0, normal: 0, hard: 0, unknown: 25 });
+    assertEachCategoryWithinItsShare(round, banks, QUESTIONS_PER_CATEGORY_IN_ALL);
+  }
 });
