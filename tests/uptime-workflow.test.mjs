@@ -22,7 +22,19 @@ function step(name) {
 test('uptime runs every 15 minutes and on demand, nothing else', () => {
   assert.notEqual(jobsIndex, -1);
   const on = header.slice(header.indexOf('\non:'), header.indexOf('\npermissions:'));
-  assert.match(on, /\n {2}schedule:\n {4}- cron: '\*\/15 \* \* \* \*'\n/);
+  // 15분 간격이되 정각을 피한다 — GitHub 은 정각 부근의 예약을 늦추거나 건너뛴다. '*/15' 는 7시간 넘게 돌지 않았다
+  const cron = on.match(/\n {2}schedule:\n(?: {4}#[^\n]*\n)* {4}- cron: '([^']+)'\n/)?.[1];
+  assert.ok(cron, 'schedule 에 cron 이 하나 있다');
+  const [minutes, ...rest] = cron.split(' ');
+  assert.deepEqual(rest, ['*', '*', '*', '*'], cron);
+  const marks = minutes.split(',').map(Number);
+  assert.equal(marks.length, 4, cron);
+  assert.ok(marks.every((minute) => Number.isInteger(minute) && minute > 0 && minute < 60), `정각(0분)이 없다: ${cron}`);
+  assert.deepEqual(
+    marks.map((minute, index) => (marks[(index + 1) % 4] - minute + 60) % 60),
+    [15, 15, 15, 15],
+    `15분 간격: ${cron}`,
+  );
   assert.match(on, /\n {2}workflow_dispatch:\n/);
   // push·pull_request로 돌면 PR마다 경보가 열릴 수 있다
   assert.doesNotMatch(on, /push:|pull_request/);
