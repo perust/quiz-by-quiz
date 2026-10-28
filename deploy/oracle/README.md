@@ -327,6 +327,25 @@ keeps nothing about rankings in memory. Changing the retention, the ceiling,
 the batch or the read limits is a resource-envelope review boundary like the
 others above.
 
+### Production load check (2026-10-28, migration-011 API)
+
+Right after the #106 deploy, the owner-approved staged run used the same
+simulator against production from one client address (a classroom behind one
+NAT), with do-not-join 12-seat rooms that the simulator left afterwards:
+
+| Stage | Requests | Peak / minute | 429 | 5xx | Answers accepted | REST p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 room × 12 | 726 | 378 | 0 | 0 | 103 / 103 | 134 / 335 / 659 / 726 ms |
+| 3 rooms × 12 | 2,158 | 1,132 | 0 | 0 | 307 / 307 | 138 / 323 / 802 / 1,125 ms |
+
+Latencies were measured on the client and include the network round trip.
+No player saw a question late by more than 1 s, nobody got stuck at the end,
+and readiness stayed 200 afterwards. Server-side CPU, memory and the other
+platform services were not recorded in this run. The 5-minute operational
+summary ("Operational log and uptime monitor") reports p50/p95/max on the
+server side once that API is deployed. Measure again before promising more
+than three 12-player rooms per address.
+
 ## Caddy integration
 
 `Caddyfile.quiz-by-quiz` is a **candidate fragment**, not an automatically
