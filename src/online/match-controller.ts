@@ -61,6 +61,12 @@ const BROWSER_TIMERS: OnlineMatchTimers = {
   random: () => Math.random(),
 };
 
+/** 매치 소켓이 함께 나르는, 판 진행이 아닌 이벤트 */
+type PresenceEvent = Extract<
+  Parameters<RoomEventHandler>[0],
+  { type: 'room' | 'movement' | 'chat' | 'standing-delivery' }
+>;
+
 export interface OnlineMatchControllerDeps {
   gateway: OnlineMatchGateway;
   /** A snapshot has already passed the adapter’s phase/redaction validation. */
@@ -69,10 +75,11 @@ export interface OnlineMatchControllerDeps {
   onMissing: () => void;
   /** Network/schema failures must be visible and retain their lifecycle owner. */
   onError: (message: string, context: OnlineMatchErrorContext) => void;
-  /** The active match socket also carries authenticated room presence and chat updates. */
-  onPresenceEvent?: (
-    event: Extract<Parameters<RoomEventHandler>[0], { type: 'room' | 'movement' | 'chat' }>,
-  ) => void;
+  /**
+   * The active match socket also carries authenticated room presence and chat updates, and
+   * whether a standing-answer draft can reach the server right now (U13, `standing-delivery`).
+   */
+  onPresenceEvent?: (event: PresenceEvent) => void;
   timers?: OnlineMatchTimers;
 }
 
@@ -399,7 +406,10 @@ export function createOnlineMatchController(
       code = nextCode;
       unsubscribe = gateway.subscribe(nextCode, (event) => {
         if (openedGeneration !== generation || code !== nextCode) return;
-        if (event.type === 'room' || event.type === 'movement' || event.type === 'chat') {
+        if (
+          event.type === 'room' || event.type === 'movement' || event.type === 'chat'
+          || event.type === 'standing-delivery'
+        ) {
           onPresenceEvent(event);
           return;
         }

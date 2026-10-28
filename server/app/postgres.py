@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -12,7 +13,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from .domain import DEFAULT_CHARACTER_ID, ValidatedPlayer, ValidatedRoom
+from .domain import DEFAULT_CHARACTER_ID, MIN_MATCH_PLAYERS, ValidatedPlayer, ValidatedRoom
+from .nickname_filter import ranking_nickname
 from .question_catalog import (
     RECENT_QUESTION_MEMORY,
     CatalogError,
@@ -22,6 +24,7 @@ from .question_catalog import (
 from .repository import (
     AbsentHostSweep,
     AccessInfo,
+    CleanupCounts,
     ExpiredMatchAdvance,
     MatchAnswerView,
     MatchInProgress,
@@ -39,11 +42,17 @@ from .repository import (
     NotHost,
     NotMember,
     PlayerView,
+    RankingBoardView,
+    RankingEntryView,
+    RankingPeriod,
     RepositoryFailure,
+    RoomCounts,
     RoomFull,
     RoomNotFound,
     RoomView,
+    StandingAnswerSource,
     TokenConflict,
+    ranking_owner_key,
 )
 
 _logger = logging.getLogger(__name__)
@@ -251,6 +260,87 @@ WHERE player.expires_at <= now()
       WHERE match_player.player_id = player.id
         AND match.expires_at > now()
   )
+"""
+
+# 운영 요약(5분마다)의 방·판 수 (deploy/oracle/README.md «Operational log»). 로비와 같이 만료된 방은
+# 없는 방이고, 게임 중인 방은 진행 중인(running·revealing) 판이 있는 방이다. 집계 하나라 방이 많아도
+# 결과는 한 줄이다.
+_OPS_COUNTS_SQL = """
+SELECT
+    count(*) FILTER (WHERE NOT room_state.playing) AS waiting_rooms,
+    count(*) FILTER (WHERE room_state.playing) AS playing_rooms,
+    (
+        SELECT count(*)
+        FROM quiz_online.matches running_match
+        WHERE running_match.state IN ('running', 'revealing')
+    ) AS running_matches
+FROM quiz_online.rooms room
+CROSS JOIN LATERAL (
+    SELECT EXISTS (
+        SELECT 1
+        FROM quiz_online.matches active_match
+        WHERE active_match.room_id = room.id
+          AND active_match.state IN ('running', 'revealing')
+    ) AS playing
+) room_state
+WHERE room.expires_at > now()
+"""
+
+# 온라인 랭킹 (FR-7.13 2단계, migration 012). «이번 주»는 서울 시각 월요일 0시부터 다음 월요일 0시
+# 전까지다. 기록의 week_start(저장 열)와 같은 식으로 지금의 주를 고르고, 창의 두 끝을 함께 돌려준다.
+_RANKING_WEEK_SQL = """
+SELECT
+    week.week_start,
+    (week.week_start::timestamp AT TIME ZONE 'Asia/Seoul') AS window_start,
+    ((week.week_start + 7)::timestamp AT TIME ZONE 'Asia/Seoul') AS window_end
+FROM (
+    SELECT (
+        date_trunc('week', COALESCE(%(at)s::timestamptz, now()) AT TIME ZONE 'Asia/Seoul')
+    )::date AS week_start
+) week
+"""
+
+# 상위 기록. 점수 내림차순, 같은 점수는 먼저 남긴 기록(기록 시각 → 같은 판이면 그 판의 순위대로
+# 남긴 id)이 위다 — 혼자 하기 랭킹(FR-6.3)과 같은 «먼저 달성한 순»이다. 두 색인을 그대로 탄다.
+# 내 기록은 player id와 주인 열쇠(브라우저 토큰에서 나온 owner_key)가 모두 같을 때만이다 — id만 보면
+# players 줄이 지워진 뒤 그 id를 제 토큰으로 다시 등록한 사람이 남의 기록을 «나»로 읽는다.
+_RANKING_COLUMNS = """
+SELECT
+    ranking.nickname,
+    ranking.character_id,
+    ranking.score,
+    ranking.correct_count,
+    ranking.total_questions,
+    ranking.recorded_at,
+    COALESCE(
+        ranking.player_id = %(actor_id)s::uuid AND ranking.owner_key = %(owner_key)s::bytea,
+        false
+    ) AS is_mine
+FROM quiz_online.online_rankings ranking
+"""
+_RANKING_ORDER = """
+ORDER BY ranking.score DESC, ranking.recorded_at ASC, ranking.id ASC
+LIMIT %(limit)s
+"""
+_RANKING_ALL_SQL = _RANKING_COLUMNS + "WHERE ranking.board = %(board)s" + _RANKING_ORDER
+_RANKING_WEEK_ENTRIES_SQL = (
+    _RANKING_COLUMNS
+    + "WHERE ranking.board = %(board)s AND ranking.week_start = %(week_start)s"
+    + _RANKING_ORDER
+)
+
+_INSERT_RANKING_SQL = """
+INSERT INTO quiz_online.online_rankings (
+    match_id, player_id, mode, category_id, score, correct_count, total_questions,
+    question_time_ms, nickname, character_id, owner_key, recorded_at
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (match_id, player_id) DO NOTHING
+"""
+# 기록할 판 참가자들의 토큰 해시. 판이 도는 동안 players 줄은 지워지지 않는다
+# (`_DELETE_EXPIRED_PLAYERS_SQL`이 살아 있는 판의 참가자를 건너뛴다)
+_RANKING_OWNER_TOKENS_SQL = """
+SELECT id, token_hash FROM quiz_online.players WHERE id = ANY(%s)
 """
 
 # 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
@@ -620,7 +710,8 @@ class PostgresRoomsRepository:
                     )
                     return None
 
-                if room["host_player_id"] == actor_id:
+                host_left = room["host_player_id"] == actor_id
+                if host_left:
                     await connection.execute(
                         """
                         UPDATE quiz_online.rooms
@@ -630,12 +721,16 @@ class PostgresRoomsRepository:
                         """,
                         (next_member["player_id"], _ROOM_LIFETIME, room["id"]),
                     )
-                return await self._fetch_room(
+                view = await self._fetch_room(
                     connection,
                     actor_id,
                     code,
                     require_member=False,
                 )
+                # 운영 기록이 «나가며 방장을 넘겼다»를 남긴다. payload에는 싣지 않는다
+                if view is None or not host_left:
+                    return view
+                return replace(view, host_transferred=True)
 
     async def remove_member(
         self,
@@ -992,13 +1087,15 @@ class PostgresRoomsRepository:
                 )
                 # 방장의 시작 요청이 곧 방장의 준비다. 유예를 넘겨 끊긴 참가자는
                 # 기다리지도, 판에 넣지도 않는다(멤버십과 재입장 유예는 그대로).
+                # 세는 사람은 방장 혼자여도 된다(MIN_MATCH_PLAYERS) — 혼자 온 사람도 방을
+                # 만들어 푼다.
                 members = [
                     member
                     for member in await members_cursor.fetchall()
                     if member["player_id"] == actor_id
                     or member["player_id"] not in absent_player_ids
                 ]
-                if len(members) < 2 or any(
+                if len(members) < MIN_MATCH_PLAYERS or any(
                     not bool(member["is_ready"])
                     for member in members
                     if member["player_id"] != actor_id
@@ -1104,6 +1201,7 @@ class PostgresRoomsRepository:
                     game_mode=True,
                     total_questions=len(selected),
                     question_time_ms=question_time_ms,
+                    player_count=len(members),
                 )
 
     async def get_match(
@@ -1112,6 +1210,7 @@ class PostgresRoomsRepository:
         code: str,
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchRead:
         async with self._pool.connection() as connection:
             async with connection.transaction():
@@ -1122,6 +1221,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
                 return MatchRead(
                     match=await self._match_view(connection, actor_id, match["id"]),
@@ -1136,6 +1236,7 @@ class PostgresRoomsRepository:
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchSubmission:
         if type(position) is not int or position < 1:
             raise RepositoryFailure("answer position is invalid")
@@ -1153,6 +1254,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 ):
                     raise MatchPositionMismatch
                 if match["state"] != "running" or int(match["current_position"]) != position:
@@ -1229,13 +1331,18 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
                 view = await self._match_view(connection, actor_id, match["id"])
                 if view is None:
                     raise RepositoryFailure("match answer view could not be read")
                 return MatchSubmission(match=view, answer=feedback, advanced=advanced)
 
-    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]:
+    async def advance_expired_matches(
+        self,
+        *,
+        standing_answers: StandingAnswerSource | None = None,
+    ) -> list[ExpiredMatchAdvance]:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 cursor = await connection.execute(
@@ -1259,9 +1366,31 @@ class PostgresRoomsRepository:
                         match["state"] == "revealing"
                         and int(match["current_position"]) >= int(match["total_questions"])
                     )
-                    if await self._advance_locked_match(connection, match):
+                    # 판마다 savepoint다. 한 판이 넘어가지 못하면(랭킹 기록 실패·권한 어긋남)
+                    # 그 판만 되돌려 다음 sweep에 다시 보고, 같은 묶음의 나머지 판은 넘기고
+                    # 방송한다. 묶음을 통째로 되돌리면 마감이 가장 이른 그 판이 매번 맨 앞에
+                    # 뽑혀 모든 판의 마감이 멈춘다.
+                    try:
+                        async with connection.transaction():
+                            moved = await self._advance_locked_match(
+                                connection,
+                                match,
+                                standing_answers=standing_answers,
+                            )
+                    except (errors.Error, RepositoryFailure):
+                        # 연결이 끊겼으면 다음 판도 못 넘긴다 — 묶음째 실패로 알린다
+                        if connection.broken:
+                            raise
+                        _logger.warning("match advance skipped", exc_info=True)
+                        continue
+                    if moved:
                         advanced.append(
-                            ExpiredMatchAdvance(code=str(match["code"]), finished=finishing)
+                            ExpiredMatchAdvance(
+                                code=str(match["code"]),
+                                finished=finishing,
+                                match_id=match["id"],
+                                position=int(match["current_position"]),
+                            )
                         )
                 return advanced
 
@@ -1269,6 +1398,8 @@ class PostgresRoomsRepository:
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool:
         """누가 막 유예를 넘겨 끊겼을 때, 남은 사람이 이미 다 답했으면 마감을 기다리지 않는다.
 
@@ -1300,6 +1431,7 @@ class PostgresRoomsRepository:
                     connection,
                     match,
                     absent_player_ids=absent_player_ids,
+                    standing_answers=standing_answers,
                 )
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
@@ -1375,6 +1507,7 @@ class PostgresRoomsRepository:
         match: Mapping[str, Any],
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool:
         state = str(match["state"])
         if state not in {"running", "revealing"}:
@@ -1392,10 +1525,17 @@ class PostgresRoomsRepository:
                     WHERE id = %s
                       AND state = 'revealing'
                       AND deadline_at <= now()
-                    RETURNING id
+                    RETURNING id, finished_at
                     """,
                     (match_id,),
                 )
+                closed = await completed.fetchone()
+                if closed is None:
+                    return False
+                # 판을 닫는 바로 이 transaction에서 랭킹을 남긴다. 기록이 실패하면 판도 닫히지
+                # 않고 다음 sweep·읽기가 다시 닫는다 — 닫힌 판의 기록이 빠지는 일이 없다.
+                await self._record_rankings(connection, match, closed["finished_at"])
+                return True
             else:
                 completed = await connection.execute(
                     """
@@ -1450,7 +1590,16 @@ class PostgresRoomsRepository:
 
         # 마감이 지났거나 끊긴 사람을 빼고 앞당겼으면, 답이 없는 참가자는 시간 초과로 채운다.
         # 시간 초과는 그 판의 문항 시간(20초·40초)을 다 쓴 것으로 남는다.
+        # 그 전에 발밑 칸 초안이 있는 사람은 그 칸을 답으로 남긴다 (U13, 혼자 하기와 같은 규칙) —
+        # «시간이 끝나면 선 칸이 답»이다. 초안은 «모두 답했다»에 세지 않았으므로 여기서만 쓴다.
         if expired or absent_player_ids:
+            if standing_answers is not None:
+                await self._record_standing_answers(
+                    connection,
+                    match,
+                    current_position,
+                    standing_answers,
+                )
             await connection.execute(
                 """
                 INSERT INTO quiz_online.match_answers (
@@ -1479,6 +1628,155 @@ class PostgresRoomsRepository:
             (_REVEAL_DURATION, match_id),
         )
         return await revealed.fetchone() is not None
+
+    async def _record_rankings(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match: Mapping[str, Any],
+        finished_at: datetime,
+    ) -> None:
+        """닫힌 판의 참가자마다 온라인 랭킹 기록 한 줄 (FR-7.13 2단계, PRD 12.1).
+
+        점수·맞힌 수는 서버가 채점한 답에서 다시 센다(최종 순위와 같은 `_score_views`). 끊겨서
+        빈 답이 시간 초과로 채워진 참가자도 판의 참가자이므로 남긴다. 닉네임은 그 방에서 보인
+        이름이고, 지금 금칙 규칙에 걸리는 옛 이름이면 «익명»으로 남긴다. 같은 판·같은 사람은 한 번만
+        남는다(UNIQUE). 최종 순위 순서대로 넣어, 같은 점수·같은 시각이면 그 판의 순위가 id 순서다.
+        """
+        category_id = match["category_id"]
+        mode = "all" if category_id is None else "category"
+        scores = await self._score_views(connection, match["id"])
+        # «내 기록»의 주인 열쇠는 그 브라우저의 토큰에서 나온다(`ranking_owner_key`). 줄이
+        # 없으면 NULL — 그 기록은 누구의 «나»도 아니다
+        tokens_cursor = await connection.execute(
+            _RANKING_OWNER_TOKENS_SQL, ([score.player_id for score in scores],)
+        )
+        owner_keys = {
+            row["id"]: ranking_owner_key(bytes(row["token_hash"]))
+            for row in await tokens_cursor.fetchall()
+        }
+        for score in scores:
+            await connection.execute(
+                _INSERT_RANKING_SQL,
+                (
+                    match["id"],
+                    score.player_id,
+                    mode,
+                    category_id,
+                    score.score,
+                    score.correct_count,
+                    int(match["total_questions"]),
+                    int(match["question_time_ms"]),
+                    ranking_nickname(score.nickname),
+                    score.character_id or DEFAULT_CHARACTER_ID,
+                    owner_keys.get(score.player_id),
+                    finished_at,
+                ),
+            )
+
+    async def list_rankings(
+        self,
+        *,
+        board: str,
+        period: RankingPeriod,
+        actor_id: UUID | None = None,
+        owner_key: bytes | None = None,
+        at: datetime | None = None,
+        limit: int = 10,
+    ) -> RankingBoardView:
+        async with self._pool.connection() as connection:
+            window_start: str | None = None
+            window_end: str | None = None
+            params: dict[str, object] = {
+                "board": board,
+                "actor_id": actor_id,
+                "owner_key": owner_key,
+                "limit": limit,
+            }
+            if period == "week":
+                week_cursor = await connection.execute(_RANKING_WEEK_SQL, {"at": at})
+                week = await week_cursor.fetchone()
+                if week is None:
+                    raise RepositoryFailure("ranking week could not be computed")
+                window_start = _iso(week["window_start"])
+                window_end = _iso(week["window_end"])
+                params["week_start"] = week["week_start"]
+                cursor = await connection.execute(_RANKING_WEEK_ENTRIES_SQL, params)
+            else:
+                cursor = await connection.execute(_RANKING_ALL_SQL, params)
+            rows = await cursor.fetchall()
+        return RankingBoardView(
+            board=board,
+            period=period,
+            window_start=window_start,
+            window_end=window_end,
+            entries=tuple(
+                RankingEntryView(
+                    # 같은 점수도 먼저 남긴 기록이 위이고 순위는 그 순서다(혼자 하기 랭킹과 같다)
+                    rank=index,
+                    nickname=str(row["nickname"]),
+                    character_id=str(row["character_id"]),
+                    score=int(row["score"]),
+                    correct_count=int(row["correct_count"]),
+                    total_count=int(row["total_questions"]),
+                    recorded_at=_iso(row["recorded_at"]),
+                    is_mine=bool(row["is_mine"]),
+                )
+                for index, row in enumerate(rows, start=1)
+            ),
+        )
+
+    async def _record_standing_answers(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match: Mapping[str, Any],
+        position: int,
+        standing_answers: StandingAnswerSource,
+    ) -> None:
+        """답이 없는 참가자의 발밑 칸 초안을 그 문항의 답으로 남긴다 (U13).
+
+        채점은 보통 답과 같고(정답이면 10점), 시간 초과가 아니며, 쓴 시간은 그 판의 문항 시간을
+        다 쓴 것이다 — 로컬에서 시간이 끝날 때 선 칸을 낸 답과 같다. 잠근 판에서 다시 본다: 이 판·
+        이 문항이고 판의 참가자이며 아직 답이 없고(먼저 낸 답이 이긴다) 마감 전에 받은 초안만 쓴다.
+        """
+        drafts = standing_answers.for_question(str(match["code"]), match["id"], position)
+        player_ids: list[UUID] = []
+        choices: list[int] = []
+        received: list[datetime] = []
+        for player_id, draft in drafts.items():
+            if type(draft.choice_index) is not int or draft.choice_index not in range(4):
+                continue
+            player_ids.append(player_id)
+            choices.append(draft.choice_index)
+            received.append(draft.received_at)
+        if not player_ids:
+            return
+        await connection.execute(
+            """
+            INSERT INTO quiz_online.match_answers (
+                match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
+            )
+            SELECT
+                match.id,
+                match.current_position,
+                player.player_id,
+                draft.choice_index,
+                draft.choice_index = question.answer_index,
+                false,
+                match.question_time_ms
+            FROM unnest(%s::uuid[], %s::smallint[], %s::timestamptz[])
+                AS draft(player_id, choice_index, received_at)
+            JOIN quiz_online.matches match ON match.id = %s
+            JOIN quiz_online.match_players player
+              ON player.match_id = match.id AND player.player_id = draft.player_id
+            JOIN quiz_online.match_questions question
+              ON question.match_id = match.id AND question.position = match.current_position
+            WHERE match.state = 'running'
+              AND match.current_position = %s
+              AND draft.received_at <= match.deadline_at
+            ON CONFLICT (match_id, position, player_id) DO NOTHING
+            """,
+            (player_ids, choices, received, match["id"], position),
+        )
 
     async def _match_view(
         self,
@@ -1513,8 +1811,18 @@ class PostgresRoomsRepository:
         own_answer: MatchAnswerView | None = None
         # «문제 다시 보기»는 판이 끝난 뒤에만 만든다 (U38)
         review: tuple[MatchReviewView, ...] = ()
+        ranking_recorded = False
         if match["state"] == "finished":
             review = await self._review_views(connection, actor_id, match_id)
+            recorded_cursor = await connection.execute(
+                """
+                SELECT 1
+                FROM quiz_online.online_rankings
+                WHERE match_id = %s AND player_id = %s
+                """,
+                (match_id, actor_id),
+            )
+            ranking_recorded = await recorded_cursor.fetchone() is not None
         if match["state"] in {"running", "revealing"}:
             question_cursor = await connection.execute(
                 """
@@ -1561,6 +1869,7 @@ class PostgresRoomsRepository:
             scores=scores,
             review=review,
             question_time_ms=int(match["question_time_ms"]),
+            ranking_recorded=ranking_recorded,
         )
 
     async def _score_views(
@@ -1773,18 +2082,60 @@ class PostgresRoomsRepository:
             (_ROOM_LIFETIME, row["id"]),
         )
 
-    async def cleanup_expired_resources(self) -> None:
+    async def cleanup_expired_resources(self) -> CleanupCounts:
+        # 지우거나 넘긴 수는 운영 기록(`ops_log.cleanup`)이 한 줄로 남긴다. 무엇을 지웠는지는
+        # 싣지 않는다.
         async with self._pool.connection() as connection:
             async with connection.transaction():
-                await connection.execute("SELECT quiz_online.cleanup_expired_matches()")
-                await connection.execute(_DELETE_EXPIRED_ROOMS_SQL)
-                await connection.execute(
+                matches = await connection.execute(
+                    "SELECT quiz_online.cleanup_expired_matches() AS deleted"
+                )
+                matches_row = await matches.fetchone()
+                expired_rooms = await connection.execute(_DELETE_EXPIRED_ROOMS_SQL)
+                stale_members = await connection.execute(
                     _DELETE_STALE_MEMBERS_SQL,
                     (_MEMBER_STALE_AFTER, _MEMBER_STALE_AFTER),
                 )
-                await connection.execute(_TRANSFER_ORPHANED_HOSTS_SQL)
-                await connection.execute(_DELETE_EMPTY_ROOMS_SQL)
-                await connection.execute(_DELETE_EXPIRED_PLAYERS_SQL)
+                orphaned_hosts = await connection.execute(_TRANSFER_ORPHANED_HOSTS_SQL)
+                empty_rooms = await connection.execute(_DELETE_EMPTY_ROOMS_SQL)
+                expired_players = await connection.execute(_DELETE_EXPIRED_PLAYERS_SQL)
+                counts = CleanupCounts(
+                    rooms_deleted=_affected(expired_rooms) + _affected(empty_rooms),
+                    members_removed=_affected(stale_members),
+                    hosts_transferred=_affected(orphaned_hosts),
+                    matches_deleted=int(matches_row["deleted"] or 0) if matches_row else 0,
+                    players_deleted=_affected(expired_players),
+                )
+            # 랭킹 보존 기간 정리(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄, migration
+            # 012의 함수). 방 정리와 따로 돈다 — 이것이 실패해도 방 정리와 그 뒤의 멤버십 재확인은
+            # 이번 차례에 그대로 선다.
+            try:
+                pruned_cursor = await connection.execute(
+                    "SELECT quiz_online.prune_online_rankings() AS pruned"
+                )
+                pruned_row = await pruned_cursor.fetchone()
+            except errors.Error:
+                _logger.warning("online ranking retention sweep failed", exc_info=True)
+                return counts
+            pruned = int(pruned_row["pruned"] or 0) if pruned_row else 0
+            return replace(counts, rankings_pruned=pruned)
+
+    async def ops_counts(self) -> RoomCounts:
+        async with self._pool.connection(timeout=5) as connection:
+            cursor = await connection.execute(_OPS_COUNTS_SQL)
+            row = await cursor.fetchone()
+        if row is None:
+            raise RepositoryFailure("ops count query returned no row")
+        return RoomCounts(
+            waiting_rooms=int(row["waiting_rooms"]),
+            playing_rooms=int(row["playing_rooms"]),
+            running_matches=int(row["running_matches"]),
+        )
+
+
+def _affected(cursor: Any) -> int:
+    # psycopg는 모르는 수를 -1로 준다
+    return max(0, int(cursor.rowcount))
 
 
 def _make_code() -> str:

@@ -7,6 +7,7 @@ import type { OnlineFinishedMatch, OnlineReviewItem, OnlineScore } from '../onli
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { createQuestionReportLink, onlineQuestionReportUrl, questionReportLabel } from './report-link.js';
 import { createBody } from './sprite.js';
+import type { RankingTarget } from '../types.js';
 
 // 화면과 테스트가 이 이름으로 불러 왔다. 규칙은 공개 단계 점수판과 함께 online-standings.ts에 있다.
 export { onlinePlaceLabel };
@@ -53,6 +54,8 @@ export function onlineFinalResultView(
 export function onlineFinalSummary(view: OnlineFinalResultView, totalQuestions: number): string {
   const me = view.entries.find(({ isMe }) => isMe);
   if (!me || view.myPlace === null) return '최종 순위가 나왔어요.';
+  // 방장 혼자 연 판(혼자 여는 온라인 방). 혼자서 «최종 1위»는 순위가 아니다 — 푼 결과만 말한다
+  if (view.entries.length === 1) return `혼자 푼 판 · ${me.score}점 · ${me.correctCount}/${totalQuestions} 정답`;
   const place = view.myTied ? onlinePlaceLabel(view.myPlace, true) : `최종 ${view.myPlace}위`;
   return `${place} · ${me.score}점 · ${me.correctCount}/${totalQuestions} 정답`;
 }
@@ -114,6 +117,18 @@ export interface OnlineResultScreenDeps {
   onRoom: () => void;
   onHome: () => void;
   getPlayerId: () => string;
+  /**
+   * 「온라인 랭킹 보기」 (FR-7.13 2단계). 이 판의 분야(전체 도전이면 전체) 이번 주 랭킹을 연다. 없으면 그 버튼을
+   * 그리지 않는다
+   */
+  onOpenRanking?: (target: RankingTarget) => void;
+}
+
+/** 이 판이 쌓이는 랭킹. 분야가 없는 판은 전체 도전이다 */
+export function onlineMatchRankingTarget(snapshot: Pick<OnlineFinishedMatch, 'categoryId'>): RankingTarget {
+  return snapshot.categoryId === null
+    ? { mode: 'all', category: null }
+    : { mode: 'category', category: snapshot.categoryId };
 }
 
 export interface OnlineResultScreen {
@@ -123,10 +138,12 @@ export interface OnlineResultScreen {
 }
 
 export function createOnlineResultScreen(
-  { onAgain, onRoom, onHome, getPlayerId }: OnlineResultScreenDeps,
+  { onAgain, onRoom, onHome, getPlayerId, onOpenRanking }: OnlineResultScreenDeps,
 ): OnlineResultScreen {
   const el = {
     summary: need('online-final-summary'),
+    recorded: need('online-final-recorded'),
+    openRanking: need<HTMLButtonElement>('online-final-open-ranking'),
     list: need<HTMLOListElement>('online-final-ranking'),
     again: need<HTMLButtonElement>('online-final-again'),
     room: need<HTMLButtonElement>('online-final-room'),
@@ -157,6 +174,11 @@ export function createOnlineResultScreen(
   });
   el.room.addEventListener('click', onRoom);
   el.home.addEventListener('click', onHome);
+  /** 지금 보이는 판의 랭킹. 「온라인 랭킹 보기」가 그 분야를 연다 */
+  let rankingTarget: RankingTarget | null = null;
+  el.openRanking.addEventListener('click', () => {
+    if (rankingTarget && onOpenRanking) onOpenRanking(rankingTarget);
+  });
 
   function setReviewExpanded(expanded: boolean): void {
     el.reviewBlock.hidden = !expanded;
@@ -206,6 +228,12 @@ export function createOnlineResultScreen(
     show(snapshot, options = { inRoom: true }) {
       const view = onlineFinalResultView(snapshot, getPlayerId());
       el.summary.textContent = onlineFinalSummary(view, snapshot.totalQuestions);
+      // 서버가 이 판을 닫으며 내 결과를 랭킹에 남겼을 때만 그렇다고 말한다 (FR-7.13 2단계). 이 필드가 없는
+      // 이전 API의 판이면 아무 말도 하지 않는다 — 남지 않은 기록을 남았다고 하지 않는다
+      const recorded = snapshot.rankingRecorded === true;
+      rankingTarget = recorded ? onlineMatchRankingTarget(snapshot) : null;
+      el.recorded.hidden = !recorded;
+      el.openRanking.hidden = !recorded || onOpenRanking === undefined;
       setAgainBusy(false);
       el.again.hidden = !options.inRoom;
       // 방 밖이면 이 버튼은 로비를 연다 (app.ts) — 그 말을 그대로 쓴다
@@ -252,6 +280,9 @@ export function createOnlineResultScreen(
     hide() {
       el.list.replaceChildren();
       el.summary.textContent = '';
+      rankingTarget = null;
+      el.recorded.hidden = true;
+      el.openRanking.hidden = true;
       setAgainBusy(false);
       setReviewExpanded(false);
       el.review.replaceChildren();

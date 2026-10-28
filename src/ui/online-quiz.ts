@@ -14,9 +14,12 @@ import type {
   OnlineRunningMatch,
   PublicRoom,
   RoomEvent,
+  StandingAnswerDraft,
 } from '../online/adapter.js';
 import { onlineErrorText } from '../online/rules.js';
+import { createStandingAnswerPublisher, onlineStandingDraft } from '../online/standing-answer.js';
 import type { Arena, ArenaDeps } from './arena.js';
+import { createChatLineQueue } from './chat-queue.js';
 import { choiceLayout } from './choice-layout.js';
 import {
   createPlayerBubbleController,
@@ -25,8 +28,12 @@ import {
 import {
   createMovementPublisher,
   createPlayerMovementController,
-  normalizeViewportMovement,
   type MovementSample,
+  type MovementSendOptions,
+  type MovementStageFrame,
+  normalizeViewportMovement,
+  walkerFootPoint,
+  withMovementStage,
 } from './player-movement.js';
 import { onlinePlaceLabel, onlinePlaces } from './online-standings.js';
 import { announce } from './screens.js';
@@ -35,6 +42,10 @@ import { createBody } from './sprite.js';
 type OnlineMovementEvent = Extract<RoomEvent, { type: 'movement' }>;
 type OnlineActiveMatch = OnlineRunningMatch | OnlineRevealingMatch;
 type OnlineChatEvent = Extract<RoomEvent, { type: 'chat' }>;
+/** 대화 로그의 한 줄. 남의 말이거나(말한 사람 이름이 앞에 온다) 화면이 남기는 안내다 */
+type OnlineChatLine =
+  | { kind: 'chat'; playerId: string; nickname: string; text: string }
+  | { kind: 'notice'; text: string };
 
 /** 말풍선 수명과 최근 대화 줄 수는 대기실과 같은 계약을 쓴다. */
 const BUBBLE_MS = 3200;
@@ -218,6 +229,16 @@ export function reconcileOnlineChoiceNodes<T>(
   };
 }
 
+/** 시간이 끝나면 선 칸이 답인 판(U13)의 상태 줄. 로컬 무대 아래 규칙 줄과 같은 규칙이다 */
+export const ONLINE_STANDING_STATUS = '보기를 누르면 바로 제출돼요. 시간이 끝나면 서 있는 칸이 답이에요.';
+
+/**
+ * 같은 판인데 방 소켓이 끊겨(다시 붙는 중) 발밑 칸 초안이 닿지 않을 때의 상태 줄 (U13). 그동안 마감이 오면
+ * 끊기기 전에 알린 칸만 답이 되고(그 뒤에 옮긴 칸은 모른다) 알린 칸이 없으면 시간 초과다 — 그래서 «서 있는
+ * 칸이 답»을 그대로 약속하지 않고 확실한 길을 말한다. 직접 낸 답은 소켓이 아니라 요청으로 간다.
+ */
+export const ONLINE_STANDING_OFFLINE_STATUS = '연결이 잠시 끊겨 서 있는 칸이 답이 되지 않을 수 있어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해 주세요.';
+
 /** 서버가 남은 시간을 보내지 않을 때(구버전 서버)의 안내. 카운트다운은 그리지 않는다. */
 export const ONLINE_TIME_NOTICE = '시간이 끝나면 다 같이 결과를 확인해요.';
 
@@ -386,8 +407,16 @@ export function onlineRevealSound(
   return reveal.timedOut ? 'timeout' : 'wrong';
 }
 
-/** Pure projection: hidden match data has no path into a running UI. */
-export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
+/**
+ * Pure projection: hidden match data has no path into a running UI.
+ *
+ * `standingDeliverable`은 지금 발밑 칸 초안이 서버에 닿는가다 (U13, 저장소의 `standing-delivery`). 모르면
+ * 닿는다고 본다 — 처음 붙는 소켓은 기억한 초안을 열리자마자 보낸다.
+ */
+export function onlineQuizView(
+  snapshot: OnlineMatchSnapshot,
+  { standingDeliverable = true }: { standingDeliverable?: boolean } = {},
+): OnlineQuizView {
   if (snapshot.state === 'running') {
     const submission = snapshot.ownSubmission;
     return {
@@ -396,10 +425,14 @@ export function onlineQuizView(snapshot: OnlineMatchSnapshot): OnlineQuizView {
       canSubmit: canAttemptOnlineSubmission(snapshot),
       selectedChoiceIndex: submission?.choiceIndex ?? null,
       reveal: null,
-      // 로컬과 달리 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
-      status: submission === null
-        ? '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.'
-        : '제출 완료! 다른 친구를 기다리는 중이에요.',
+      // 답하는 규칙은 판이 정한다 (U13). 지금 판은 혼자 하기와 같다 — 시간이 끝나면 선 칸이 답이다.
+      // 소켓이 끊겨 그 칸이 닿지 않는 동안은 그렇게 약속하지 않는다. 그 필드가 없는 이전 API의 판은
+      // 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
+      status: submission !== null
+        ? '제출 완료! 다른 친구를 기다리는 중이에요.'
+        : snapshot.standingAnswers === true
+          ? standingDeliverable ? ONLINE_STANDING_STATUS : ONLINE_STANDING_OFFLINE_STATUS
+          : '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
       showFinalResult: false,
     };
   }
@@ -461,7 +494,13 @@ export function handleOnlineMovementKey(
 
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
-  onMovement: (sample: MovementSample) => void;
+  /** `onlyIfChanged`면 무대가 움직였을 뿐이다 — 소켓에 실을 줄이 지난번과 같으면 저장소가 보내지 않는다 */
+  onMovement: (sample: MovementSample & MovementSendOptions) => void;
+  /**
+   * 발밑 칸 초안 (U13). 시간이 끝나면 선 칸이 답인 판에서, 실제로 움직인 뒤 선 칸이 바뀔 때만 부른다
+   * (칸에서 내려서면 `choiceIndex: null`). 보낼 소켓이 그 초안을 받는지는 저장소가 다시 본다
+   */
+  onStandingAnswer?: (draft: StandingAnswerDraft) => void;
   onSendChat: (text: string) => Promise<{ ok: boolean }>;
   onExit: () => void;
   onFinished: (snapshot: Extract<OnlineMatchSnapshot, { state: 'finished' }>) => void;
@@ -482,6 +521,11 @@ export interface OnlineQuizScreen {
   setRoom(room: PublicRoom): void;
   /** 인증된 socket actor의 최신 이동만 반영한다. */
   updateMovement(movement: OnlineMovementEvent): void;
+  /**
+   * 발밑 칸 초안이 지금 서버에 닿는지 (U13, 저장소의 `standing-delivery`). 판의 규칙 줄이 보이는 동안만
+   * 상태 줄을 고친다 — 답을 보내지 못한 이유 같은 말은 덮지 않는다. 새 매치(`startPresence`)는 닿는다고 시작한다.
+   */
+  setStandingDelivery(deliverable: boolean): void;
   /** 같은 match socket에서 온 인증된 채팅을 로그와 캐릭터 말풍선에 반영한다. */
   updateChat(event: OnlineChatEvent): void;
   /** socket을 닫기 전에 마지막 정지 좌표를 보내고 presence를 정리한다. */
@@ -502,6 +546,7 @@ export function createOnlineQuizScreen(
   {
     onSubmit,
     onMovement,
+    onStandingAnswer = () => undefined,
     onSendChat,
     onExit,
     onFinished,
@@ -533,12 +578,19 @@ export function createOnlineQuizScreen(
     exitCancel: need<HTMLButtonElement>('online-exit-cancel'),
     exitConfirm: need<HTMLButtonElement>('online-exit-confirm'),
     remoteCharacters: need('online-remote-characters'),
+    // 원격 캐릭터를 맞추는 공유 무대(U31)인 2×2 바닥. 칸은 arena가 그리고 여기서는 자리만 잰다
+    arenaTiles: need('online-arena-tiles'),
+    arenaCharacter: need('online-arena-character'),
     bubble: need('online-bubble'),
     chatForm: need<HTMLFormElement>('online-chat-form'),
     chatInput: need<HTMLInputElement>('online-chat-input'),
     chatSubmit: need<HTMLButtonElement>('online-chat-submit'),
     chatLog: need('online-chat-log'),
     exit: need<HTMLButtonElement>('online-quiz-exit'),
+    // 답하는 규칙(U13)이 판마다 다르다 — 시간이 끝나면 선 칸이 답인 판과 직접 낸 답만 세는 이전 API의 판
+    hintRule: need('online-arena-hint-rule'),
+    helpRuleStanding: need('online-help-rule-standing'),
+    helpRuleSubmit: need('online-help-rule-submit'),
   };
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
   let snapshot: OnlineMatchSnapshot | null = null;
@@ -548,6 +600,10 @@ export function createOnlineQuizScreen(
   let lastChoiceStructureKey: string | null = null;
   let finishedMatchId: string | null = null;
   let presenceActive = false;
+  /** 발밑 칸 초안이 지금 서버에 닿는가 (U13). 매치 소켓이 처음 붙는 동안은 닿는다고 본다 */
+  let standingDeliverable = true;
+  /** render()가 마지막으로 상태 줄에 넣은 판의 말. 그 말이 보일 때만 소켓 사정으로 고친다 */
+  let ruleStatus: string | null = null;
   /** Chat POST completion from an exited/replaced match must not mutate the next screen. */
   let presenceGeneration = 0;
   let chatSendPending = false;
@@ -572,14 +628,67 @@ export function createOnlineQuizScreen(
   let revealSoundKey: string | null = null;
   /** 나가기 확인을 연 버튼. 취소하면 포커스를 되돌려 준다 */
   let exitDialogOpener: HTMLElement | null = null;
-  const remoteMovements = createPlayerMovementController();
+  /**
+   * 온라인 퀴즈의 공유 무대 (U31): 2×2 바닥. 화면마다 바닥이 질문 아래·오른쪽 열 등 다른 자리에 있어도
+   * 같은 칸의 같은 자리는 같은 좌표다. 숨은 화면·꺼진 무대는 잴 수 없어 null — 예전처럼 화면 중심의 px다.
+   */
+  function arenaStageFrame(): MovementStageFrame | null {
+    if (el.screen.hidden) return null;
+    const box = el.arenaTiles.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return null;
+    return { left: box.left, top: box.top, width: box.width, height: box.height };
+  }
+
+  const remoteMovements = createPlayerMovementController({
+    // 바닥에서 보낸 자리는 이 화면 바닥의 같은 자리에 세운다. 대기실 라운지에서 온 자리는 예전 길이다
+    stageFrame: (stage) => (stage === 'arena' ? arenaStageFrame() : null),
+  });
   const chatBubbles = createPlayerBubbleController({ durationMs: BUBBLE_MS });
   const chatBubbleNodes = new Map<string, HTMLElement>();
+  /**
+   * 대화 로그에 붙일 차례 (U42). 새 문항·공개로 질문 제목에 포커스를 옮기거나 남은 5초 경고를 낸 직후에
+   * 온 줄은 잠깐 기다렸다 붙어, 우선 낭독 뒤에 polite로 선다(`ui/chat-queue.ts`)
+   */
+  const chatLines = createChatLineQueue<OnlineChatLine>({ append: writeChatLine, limit: CHAT_LINES });
   const movementPublisher = createMovementPublisher({
-    send: (sample) => {
-      if (presenceActive) onMovement(sample);
+    send: (sample, options) => {
+      if (presenceActive) onMovement(options ? { ...sample, ...options } : sample);
+    },
+    // 바닥은 문서와 함께 스크롤된다. 보낼 때마다 지금 배치와 지금 그려진 캐릭터로 무대 좌표를 다시 잰다 (U31) —
+    // 공개 카드로 스크롤한 뒤 arena가 캐릭터를 바닥의 같은 자리로 옮겨 놓아도(이동을 알리지 않는다) 맞다
+    restage: (sample) => withMovementStage(sample, {
+      id: 'arena',
+      frame: arenaStageFrame(),
+      foot: walkerFootPoint(el.arenaCharacter),
+    }),
+  });
+
+  /**
+   * 캐릭터는 화면에 붙어 있고 바닥이 움직였다(스크롤·크기·문항마다 바뀌는 보기 배치). 원격 캐릭터를 이 화면
+   * 바닥의 자리에 다시 세우고, 바닥 위 내 자리가 바뀌었으면 알린다 (U31, 걷는 frame과 같은 간격으로 묶는다)
+   */
+  function refreshStage(): void {
+    if (!presenceActive) return;
+    remoteMovements.refresh();
+    movementPublisher.refresh();
+  }
+  window.addEventListener('scroll', refreshStage, { passive: true });
+  window.addEventListener('resize', refreshStage);
+  // 시간이 끝나면 답이 될 칸을 서버에 알린다 (U13). 스쳐 지나간 칸은 보내지 않고, 멈춰 서면 곧바로 보낸다
+  const standingPublisher = createStandingAnswerPublisher({
+    send: (draft) => {
+      if (presenceActive) onStandingAnswer(draft);
     },
   });
+
+  /** 지금 판·문항·제출 상태로 발밑 칸 초안을 다시 맞춘다. 초안을 쓰지 않는 때면 기다리던 것도 버린다 */
+  function syncStandingDraft(standingIndex: number | null): void {
+    standingPublisher.update(onlineStandingDraft(
+      snapshot,
+      standingIndex,
+      snapshot !== null && submissionGate.pendingFor(snapshot),
+    ));
+  }
 
   const arena = createCharacterArena({
     onChoose: (index) => { void submitChoice(index); },
@@ -589,8 +698,11 @@ export function createOnlineQuizScreen(
         height: window.innerHeight,
       });
       if (sample) movementPublisher.update(sample);
+      // 멈춰 섰다. 선 칸을 기다리지 않고 알린다 — 마감 직전에 선 칸도 늦지 않게
+      if (!moving) standingPublisher.flush();
       if (!el.bubble.hidden) fitChatBubble(el.bubble);
     },
+    onStandingChange: (index) => syncStandingDraft(index),
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
     trapFocus,
     ids: {
@@ -611,6 +723,7 @@ export function createOnlineQuizScreen(
     clearInterval(movementHeartbeat);
     movementHeartbeat = undefined;
     movementPublisher.reset();
+    standingPublisher.reset();
     remoteMovements.reset();
     chatBubbles.reset();
     chatBubbleNodes.clear();
@@ -621,11 +734,16 @@ export function createOnlineQuizScreen(
     el.chatSubmit.disabled = true;
     el.chatInput.value = '';
     el.chatInput.blur();
+    // 기다리던 줄도 버린다 — 떠난 매치의 말이 다음 화면의 로그에 늦게 붙지 않는다
+    chatLines.reset();
     el.chatLog.replaceChildren();
     // 로비 fetch를 기다리는 동안 문제 화면이 잠시 남아도 새 제출이나 늦은 완료가
     // 이 lifecycle을 다시 그릴 수 없어야 한다.
     submissionGate.invalidate();
     snapshot = null;
+    // 다음 매치는 새 소켓이다. 처음 붙는 동안은 초안이 닿는다고 본다
+    standingDeliverable = true;
+    ruleStatus = null;
     lastQuestionKey = null;
     lastArenaQuestionKey = null;
     lastChoiceStructureKey = null;
@@ -755,30 +873,40 @@ export function createOnlineQuizScreen(
     if (!bubble.hidden) fitChatBubble(bubble);
   }
 
-  function appendChatLine(nickname: string, text: string): void {
-    const line = document.createElement('li');
-    line.className = 'chat-log__line';
-    const who = document.createElement('span');
-    who.className = 'chat-log__who';
-    who.textContent = nickname;
-    line.append(who, ' ', text);
-    el.chatLog.append(line);
+  /**
+   * 대화 로그에 한 줄을 붙인다. 로그는 `role="log"`·`aria-relevant="additions"`라 붙인 이 줄만 낭독된다 —
+   * 말한 사람 이름이 줄 맨 앞이다. 떼어 내는 오래된 줄은 읽지 않는다. 포커스는 건드리지 않는다.
+   * 차례를 기다리는 사이에 숨긴 사람의 말은 여기서 다시 거른다 (N06).
+   */
+  function writeChatLine(line: OnlineChatLine): void {
+    const item = document.createElement('div');
+    if (line.kind === 'chat') {
+      if (line.playerId !== getPlayerId() && isChatHidden(line.playerId)) return;
+      item.className = 'chat-log__line';
+      const who = document.createElement('span');
+      who.className = 'chat-log__who';
+      who.textContent = line.nickname;
+      item.append(who, ' ', line.text);
+    } else {
+      item.className = 'chat-log__line chat-log__line--notice';
+      item.textContent = line.text;
+    }
+    el.chatLog.append(item);
     while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+    // 로그는 높이가 묶여 있다(style.css). 가장 새 줄이 칸 아래로 잘리지 않게 끝에 맞춘다 — 그 칸만 움직인다
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
 
   function chatNotice(text: string): void {
-    const line = document.createElement('li');
-    line.className = 'chat-log__line chat-log__line--notice';
-    line.textContent = text;
-    el.chatLog.append(line);
-    while (el.chatLog.children.length > CHAT_LINES) el.chatLog.firstElementChild!.remove();
+    chatLines.push({ kind: 'notice', text });
   }
 
   function updateChat(event: OnlineChatEvent): void {
     if (!presenceActive) return;
     // 내가 숨긴 사람의 말은 로그에도 말풍선에도 그리지 않는다 (N06). 내 말은 숨기지 않는다
     if (event.playerId !== getPlayerId() && isChatHidden(event.playerId)) return;
-    appendChatLine(event.nickname, event.text);
+    // 로그 줄은 우선 낭독(새 문항·남은 5초 경고)이 막 나갔으면 잠깐 기다린다. 말풍선은 곧바로 띄운다
+    chatLines.push({ kind: 'chat', playerId: event.playerId, nickname: event.nickname, text: event.text });
     chatBubbles.show(event.playerId, event.text);
     const bubble = chatBubbleNodes.get(event.playerId);
     if (bubble) fitChatBubble(bubble);
@@ -885,6 +1013,8 @@ export function createOnlineQuizScreen(
     if (view.warning && warnedQuestionKey !== questionKey) {
       warnedQuestionKey = questionKey;
       announce('시간이 얼마 남지 않았어요.');
+      // 같은 순간에 온 채팅 줄은 이 경고 뒤에 선다 (U42) — 경고가 채팅 뒤로 밀리지 않는다
+      chatLines.yieldTo();
     }
     if (remaining > 0) countdownFrame = requestAnimationFrame(tickCountdown);
   }
@@ -1186,10 +1316,20 @@ export function createOnlineQuizScreen(
     if (document.activeElement !== el.chatInput) window.scrollTo(0, 0);
   }
 
+  /**
+   * 답하는 규칙을 판마다 고른다 (U13). 시간이 끝나면 선 칸이 답인 판이면 무대 아래 규칙 줄과 조작법의
+   * 그 문단을, 직접 낸 답만 세는 이전 API의 판이면 «선택을 눌러야 제출» 문단을 보인다.
+   */
+  function renderAnswerRule(standing: boolean): void {
+    el.hintRule.hidden = !standing;
+    el.helpRuleStanding.hidden = !standing;
+    el.helpRuleSubmit.hidden = standing;
+  }
+
   function render(nextSnapshot: OnlineMatchSnapshot): void {
     submissionGate.reconcile(nextSnapshot);
     snapshot = nextSnapshot;
-    const view = onlineQuizView(nextSnapshot);
+    const view = onlineQuizView(nextSnapshot, { standingDeliverable });
     if (nextSnapshot.state === 'finished') {
       stopCountdown();
       arena.setEnabled(false);
@@ -1212,6 +1352,7 @@ export function createOnlineQuizScreen(
     el.question.textContent = question.question;
     syncCountdown(nextSnapshot);
     setStatus(view.status);
+    ruleStatus = view.status;
     const isSubmitPending = submissionGate.pendingFor(nextSnapshot);
     const choiceStructureKey = onlineChoiceStructureKey(nextSnapshot);
     if (choiceStructureKey === null) throw new Error('active match choice key is missing');
@@ -1221,13 +1362,18 @@ export function createOnlineQuizScreen(
     renderStandings(nextSnapshot, view);
     playRevealSound(nextSnapshot, view);
 
+    renderAnswerRule(nextSnapshot.standingAnswers === true);
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
     if (arenaQuestionKey !== lastArenaQuestionKey) {
       lastArenaQuestionKey = arenaQuestionKey;
+      // 새 문항은 다시 중립이다. 지난 문항에 보낸 초안의 기억을 들고 가지 않는다
+      standingPublisher.reset();
       arena.setEnabled(true);
       arena.reset(question.choices.length);
     }
     arena.setSelectionEnabled(onlineArenaSelectionEnabled(view, isSubmitPending));
+    // 공개로 넘어갔거나 답을 냈으면 초안은 끝이다. 아직 고르는 중이면 지금 선 칸을 다시 맞춘다
+    syncStandingDraft(arena.standingIndex());
     if (view.reveal !== null) {
       arena.showOutcome({
         answerIndex: view.reveal.answerIndex,
@@ -1246,9 +1392,13 @@ export function createOnlineQuizScreen(
         document.activeElement === el.chatInput,
       )) {
         el.question.focus({ preventScroll: true });
+        // 포커스가 새 문항(또는 공개된 문항)을 읽기 시작했다. 같은 순간에 온 채팅 줄은 그 뒤에 붙인다 (U42)
+        chatLines.yieldTo();
       }
     }
     revealIntoView(nextSnapshot);
+    // 보기 배치(grid·list)와 공개 카드가 바닥을 옮겼을 수 있다
+    refreshStage();
   }
 
   // ── 매치 나가기 확인 ───────────────────────────────────────────
@@ -1318,10 +1468,22 @@ export function createOnlineQuizScreen(
     if (handleOnlineMovementKey(snapshot, event, arena)) event.preventDefault();
   });
 
+  function setStandingDelivery(deliverable: boolean): void {
+    if (!presenceActive || deliverable === standingDeliverable) return;
+    standingDeliverable = deliverable;
+    const current = snapshot;
+    // 판의 규칙 줄이 보이는 동안만 고친다. 답을 보내지 못한 이유·다시 읽지 못한 이유는 그대로 둔다
+    if (current === null || current.state !== 'running' || el.status.textContent !== ruleStatus) return;
+    const status = onlineQuizView(current, { standingDeliverable }).status;
+    setStatus(status);
+    ruleStatus = status;
+  }
+
   return {
     startPresence,
     setRoom,
     updateMovement,
+    setStandingDelivery,
     updateChat,
     stopPresence,
     render,

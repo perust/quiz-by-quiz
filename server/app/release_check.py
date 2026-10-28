@@ -1,8 +1,9 @@
 """Read-only release checks for the operator (``python -m app.release_check``).
 
-``db --expect 10|11`` runs inside the ``quiz-by-quiz-migrate`` service, before and after
-migration 011 (deploy/oracle/README.md, "Fail-closed staging order"). ``bank`` runs inside
-the ``quiz-by-quiz-api`` service, which mounts the private online bank.
+``db --expect 11|12`` runs inside the ``quiz-by-quiz-migrate`` service, before and after
+migration 012 (deploy/oracle/README.md, "Fail-closed staging order"; ``--expect 10`` is the
+check before the earlier migration 011). ``bank`` runs inside the ``quiz-by-quiz-api`` service,
+which mounts the private online bank.
 
 Every line is ``OK``, ``FAIL``, ``WARN`` or ``INFO`` followed by a check name, and the exit
 status is 0 exactly when no line is ``FAIL``. Nothing here writes to the database, reads
@@ -45,7 +46,7 @@ from .question_catalog import (
 
 Status = Literal["OK", "FAIL", "WARN", "INFO"]
 
-EXPECTABLE_VERSIONS = (10, 11)
+EXPECTABLE_VERSIONS = (10, 11, 12)
 ONLINE_ID_PREFIX = "online-"
 # 판의 문항 기록 match_questions.question_id가 varchar(64)다(002). 더 긴 id도 catalog는 받아 API가
 # 뜨지만, 그 문항을 뽑은 판은 INSERT에서 막혀 시작하지 못한다.
@@ -81,7 +82,48 @@ _QUESTION_TIME_CONSTRAINTS = (
     ("match_answers", "match_answers_elapsed_ms_range_check"),
 )
 # match_answers.elapsed_ms의 상한. 002의 이름 없는 열 CHECK는 20초, 011이 40초로 넓힌다.
-_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000}
+_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000, 12: 40_000}
+
+# 012가 더하는 온라인 랭킹 표. 열 → (형식, NOT NULL, 저장 생성 열인가, identity인가).
+_RANKINGS_TABLE = "online_rankings"
+_RANKINGS_RELATION = f"quiz_online.{_RANKINGS_TABLE}"
+_RANKINGS_COLUMNS: dict[str, tuple[str, bool, bool, bool]] = {
+    "id": ("bigint", True, False, True),
+    "match_id": ("uuid", True, False, False),
+    "player_id": ("uuid", True, False, False),
+    "mode": ("character varying(8)", True, False, False),
+    "category_id": ("character varying(16)", False, False, False),
+    "board": ("character varying(16)", False, True, False),
+    "score": ("smallint", True, False, False),
+    "correct_count": ("smallint", True, False, False),
+    "total_questions": ("smallint", True, False, False),
+    "question_time_ms": ("integer", True, False, False),
+    "nickname": ("character varying(20)", True, False, False),
+    "character_id": ("character varying(32)", True, False, False),
+    # «내 기록»의 주인 열쇠(브라우저 토큰에서, 32바이트). players 줄이 없을 때만 NULL이다
+    "owner_key": ("bytea", False, False, False),
+    "recorded_at": ("timestamp with time zone", True, False, False),
+    "week_start": ("date", False, True, False),
+}
+_RANKINGS_CHECKS = (
+    "online_rankings_mode_check",
+    "online_rankings_counts_check",
+    "online_rankings_question_time_check",
+    "online_rankings_nickname_check",
+    "online_rankings_character_id_valid",
+    "online_rankings_owner_key_length",
+)
+_RANKINGS_UNIQUE = "online_rankings_match_player_key"
+_RANKINGS_INDEXES = (
+    "online_rankings_board_order_idx",
+    "online_rankings_board_week_order_idx",
+    "online_rankings_recorded_at_idx",
+)
+_RANKINGS_PRUNE_FUNCTION = "quiz_online.prune_online_rankings()"
+# 런타임 역할은 기록을 남기고 읽기만 한다. 나머지는 표 단위로도 열 단위로도 없어야 한다.
+_RANKINGS_GRANTED = ("SELECT", "INSERT")
+_RANKINGS_COLUMN_DENIED = ("UPDATE", "REFERENCES")
+_RANKINGS_TABLE_DENIED = ("DELETE", "TRUNCATE", "TRIGGER")
 
 # 런타임 역할은 migration 기록을 읽지도 쓰지도 못한다(004). has_table_privilege는 표 단위
 # 권한만 세므로 GRANT SELECT (version) 같은 열 권한을 놓친다 — 열에 줄 수 있는 넷은
@@ -255,6 +297,57 @@ WHERE state IN ('running', 'revealing')
   AND expires_at > now()
 """
 
+_RANKINGS_EXISTS_SQL = """
+SELECT to_regclass(%s::text) IS NOT NULL
+"""
+
+_RANKINGS_COLUMNS_SQL = """
+SELECT attribute.attname::text,
+       pg_catalog.format_type(attribute.atttypid, attribute.atttypmod),
+       attribute.attnotnull,
+       attribute.attgenerated::text,
+       attribute.attidentity::text
+FROM pg_catalog.pg_attribute attribute
+WHERE attribute.attrelid = to_regclass(%s::text)
+  AND attribute.attnum > 0
+  AND NOT attribute.attisdropped
+"""
+
+_UNIQUE_CONSTRAINTS_SQL = """
+SELECT constraint_row.conname::text, constraint_row.convalidated
+FROM pg_catalog.pg_constraint constraint_row
+WHERE constraint_row.conrelid = to_regclass(%s::text)
+  AND constraint_row.contype = 'u'
+"""
+
+_INDEXES_SQL = """
+SELECT index_class.relname::text, index_row.indisvalid
+FROM pg_catalog.pg_index index_row
+JOIN pg_catalog.pg_class index_class ON index_class.oid = index_row.indexrelid
+WHERE index_row.indrelid = to_regclass(%s::text)
+"""
+
+_SECURITY_DEFINER_SQL = """
+SELECT procedure.prosecdef, procedure.proconfig
+FROM pg_catalog.pg_proc procedure
+WHERE procedure.oid = to_regprocedure(%s::text)
+"""
+
+_RANKINGS_ROWS_SQL = """
+SELECT count(*), count(DISTINCT board), min(recorded_at) IS NOT NULL
+FROM quiz_online.online_rankings
+"""
+
+_TABLE_PRIVILEGES_SQL = """
+SELECT privilege, pg_catalog.has_table_privilege(%s::name, %s::text, privilege)
+FROM unnest(%s::text[]) AS privilege
+"""
+
+_ANY_COLUMN_PRIVILEGES_SQL = """
+SELECT privilege, pg_catalog.has_any_column_privilege(%s::name, %s::text, privilege)
+FROM unnest(%s::text[]) AS privilege
+"""
+
 _RECENT_MEMBERS_SQL = """
 SELECT count(*), count(DISTINCT room_id)
 FROM quiz_online.room_members
@@ -294,6 +387,7 @@ def run_database_checks(
     expect: int,
     require_idle: bool = False,
     require_default_question_time: bool = False,
+    require_empty_rankings: bool = False,
 ) -> list[Check]:
     """Connect as the migration owner, force read-only transactions and run every check."""
     try:
@@ -325,6 +419,7 @@ def run_database_checks(
             expect=expect,
             require_idle=require_idle,
             require_default_question_time=require_default_question_time,
+            require_empty_rankings=require_empty_rankings,
         )
 
 
@@ -334,17 +429,23 @@ def check_database(
     expect: int,
     require_idle: bool = False,
     require_default_question_time: bool = False,
+    require_empty_rankings: bool = False,
 ) -> list[Check]:
     """Run the release checks, each in its own verified read-only transaction.
 
     ``require_default_question_time`` (``--expect 11`` only) fails while any room or match
-    holds a question time other than 20000 — the window between migration 011 and the
+    holds a question time other than 20000 — the window between migration 011 and its
     candidate API, when only the migration-010 API (which never writes the column) serves.
+    ``require_empty_rankings`` (``--expect 12`` only) fails while the ranking table holds a
+    row — the window between migration 012 and its candidate API, when only the
+    migration-011 API (which never writes the table) serves.
     """
     if expect not in EXPECTABLE_VERSIONS:
         raise ValueError(f"expect must be one of {EXPECTABLE_VERSIONS}")
-    if require_default_question_time and expect < 11:
+    if require_default_question_time and expect != 11:
         raise ValueError("require_default_question_time needs expect 11")
+    if require_empty_rankings and expect != 12:
+        raise ValueError("require_empty_rankings needs expect 12")
 
     session = _run(connection, "session", _check_session)
     if any(check.status == "FAIL" for check in session):
@@ -368,6 +469,17 @@ def check_database(
                 lambda conn: _check_question_time_values(conn, require_default_question_time),
             )
         )
+    checks.append(("rankings-table", lambda conn: _check_rankings_table(conn, expect)))
+    if expect >= 12:
+        checks += [
+            ("rankings-constraints", _check_rankings_constraints),
+            ("rankings-indexes", _check_rankings_indexes),
+            ("rankings-retention", _check_rankings_retention),
+            (
+                "rankings-records",
+                lambda conn: _check_rankings_records(conn, require_empty_rankings),
+            ),
+        ]
     checks += [
         ("runtime-role", _check_runtime_role),
         ("runtime-schema-version-access", _check_runtime_function_access),
@@ -375,6 +487,8 @@ def check_database(
     ]
     if expect >= 11:
         checks.append(("runtime-question-time-access", _check_runtime_question_time_access))
+    if expect >= 12:
+        checks.append(("runtime-rankings-access", _check_runtime_rankings_access))
     checks += [
         ("logging", _check_logging),
         ("logging-overrides", _check_logging_overrides),
@@ -670,6 +784,153 @@ def _check_question_time_values(connection: Connection, require_default: bool) -
         yield Check("OK", "question-time-values", f"{summary}; every row at 20000")
 
 
+def _rankings_table_exists(connection: Connection) -> bool:
+    return bool(_fetchone(connection, _RANKINGS_EXISTS_SQL, (_RANKINGS_RELATION,))[0])
+
+
+def _check_rankings_table(connection: Connection, expect: int) -> Iterable[Check]:
+    name = "rankings-table"
+    exists = _rankings_table_exists(connection)
+    if expect < 12:
+        if exists:
+            yield Check("FAIL", name, f"migration 012 table already exists: {_RANKINGS_RELATION}")
+        else:
+            yield Check("OK", name, f"{_RANKINGS_RELATION} absent, as at migration {expect}")
+        return
+    if not exists:
+        yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
+        return
+    found = {
+        str(column): (str(data_type), bool(not_null), generated == "s", identity in {"a", "d"})
+        for column, data_type, not_null, generated, identity in connection.execute(
+            _RANKINGS_COLUMNS_SQL, (_RANKINGS_RELATION,)
+        ).fetchall()
+    }
+    problems: list[str] = []
+    for column, (data_type, not_null, generated, identity) in _RANKINGS_COLUMNS.items():
+        actual = found.get(column)
+        if actual is None:
+            problems.append(f"{column} is missing")
+            continue
+        if actual[0] != data_type:
+            problems.append(f"{column} is {actual[0]}, expected {data_type}")
+        if actual[1] != not_null:
+            problems.append(f"{column} is {'NOT NULL' if actual[1] else 'nullable'}")
+        if actual[2] != generated:
+            problems.append(f"{column} {'is' if actual[2] else 'is not'} a stored generated column")
+        if actual[3] != identity:
+            problems.append(f"{column} {'is' if actual[3] else 'is not'} an identity column")
+    extra = sorted(set(found) - set(_RANKINGS_COLUMNS))
+    if extra:
+        problems.append(f"unexpected columns {', '.join(extra)}")
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check(
+            "OK",
+            name,
+            f"{_RANKINGS_RELATION} has {len(_RANKINGS_COLUMNS)} columns "
+            "(board and week_start generated, id identity)",
+        )
+
+
+def _check_rankings_constraints(connection: Connection) -> Iterable[Check]:
+    name = "rankings-constraints"
+    if not _rankings_table_exists(connection):
+        yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
+        return
+    constraints = _check_constraints(connection, (_RANKINGS_TABLE,))
+    problems = _constraint_problems(
+        constraints, ((_RANKINGS_TABLE, check) for check in _RANKINGS_CHECKS)
+    )
+    question_time = constraints.get((_RANKINGS_TABLE, "online_rankings_question_time_check"))
+    if question_time is not None and _integers(question_time[1]) != _QUESTION_TIME_VALUES:
+        problems.append(
+            "online_rankings_question_time_check does not allow exactly 20000 and 40000"
+        )
+    owner_key = constraints.get((_RANKINGS_TABLE, "online_rankings_owner_key_length"))
+    if owner_key is not None and "octet_length(owner_key) = 32" not in owner_key[1]:
+        problems.append("online_rankings_owner_key_length does not require 32-byte owner keys")
+    unique = {
+        str(constraint): bool(validated)
+        for constraint, validated in connection.execute(
+            _UNIQUE_CONSTRAINTS_SQL, (_RANKINGS_RELATION,)
+        ).fetchall()
+    }
+    if _RANKINGS_UNIQUE not in unique:
+        problems.append(f"{_RANKINGS_UNIQUE} (one record per match player) is missing")
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check(
+            "OK",
+            name,
+            f"{len(_RANKINGS_CHECKS)} checks validated, {_RANKINGS_UNIQUE} present",
+        )
+
+
+def _check_rankings_indexes(connection: Connection) -> Iterable[Check]:
+    name = "rankings-indexes"
+    if not _rankings_table_exists(connection):
+        yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
+        return
+    indexes = {
+        str(index): bool(valid)
+        for index, valid in connection.execute(_INDEXES_SQL, (_RANKINGS_RELATION,)).fetchall()
+    }
+    problems = [
+        f"{index} is {'missing' if index not in indexes else 'not valid'}"
+        for index in _RANKINGS_INDEXES
+        if not indexes.get(index, False)
+    ]
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check("OK", name, f"{', '.join(_RANKINGS_INDEXES)} valid")
+
+
+def _check_rankings_retention(connection: Connection) -> Iterable[Check]:
+    name = "rankings-retention"
+    if not _fetchone(connection, _FUNCTION_EXISTS_SQL, (_RANKINGS_PRUNE_FUNCTION,))[0]:
+        yield Check("FAIL", name, f"{_RANKINGS_PRUNE_FUNCTION} is missing")
+        return
+    security_definer, config = _fetchone(
+        connection, _SECURITY_DEFINER_SQL, (_RANKINGS_PRUNE_FUNCTION,)
+    )
+    problems: list[str] = []
+    if not security_definer:
+        problems.append("is not SECURITY DEFINER (the runtime role has no DELETE)")
+    if not any(str(entry).startswith("search_path=") for entry in config or ()):
+        problems.append("has no fixed search_path")
+    if problems:
+        yield Check("FAIL", name, f"{_RANKINGS_PRUNE_FUNCTION} " + ", ".join(problems))
+    else:
+        yield Check(
+            "OK", name, f"{_RANKINGS_PRUNE_FUNCTION} SECURITY DEFINER with a fixed search_path"
+        )
+
+
+def _check_rankings_records(connection: Connection, require_empty: bool) -> Iterable[Check]:
+    name = "rankings-records"
+    if not _rankings_table_exists(connection):
+        yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
+        return
+    rows, boards, _ = _fetchone(connection, _RANKINGS_ROWS_SQL)
+    detail = f"{int(rows)} records in {int(boards)} boards"
+    # 012 뒤 후보 API로 바꾸기 전에는 011의 API만 돈다. 그 API는 이 표를 모르므로 기록이 있으면
+    # 후보 API가 너무 일찍 돌았다는 뜻이다(README 3단계).
+    if require_empty and int(rows):
+        yield Check(
+            "FAIL",
+            name,
+            f"{detail}; --require-empty-rankings needs 0 (only the candidate API records)",
+        )
+    elif require_empty:
+        yield Check("OK", name, f"{detail}; empty")
+    else:
+        yield Check("INFO", name, detail)
+
+
 def _check_runtime_role(connection: Connection) -> Iterable[Check]:
     # app.migrate의 ensure_runtime_role과 같은 기준이다. 읽기만 하고 비밀번호는 건드리지 않는다.
     role = connection.execute(_RUNTIME_ROLE_SQL, (_RUNTIME_ROLE_NAME,)).fetchone()
@@ -780,6 +1041,64 @@ def _check_runtime_question_time_access(connection: Connection) -> Iterable[Chec
             name,
             f"{_RUNTIME_ROLE_NAME} can {privileges} {_QUESTION_TIME_COLUMN} on "
             + ", ".join(_QUESTION_TIME_TABLES),
+        )
+
+
+def _check_runtime_rankings_access(connection: Connection) -> Iterable[Check]:
+    name = "runtime-rankings-access"
+    if not _runtime_role_exists(connection):
+        yield Check("FAIL", name, f"{_RUNTIME_ROLE_NAME} does not exist")
+        return
+    if not _rankings_table_exists(connection):
+        yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
+        return
+    granted = dict(
+        connection.execute(
+            _TABLE_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _RANKINGS_RELATION, list(_RANKINGS_GRANTED)),
+        ).fetchall()
+    )
+    denied_table = dict(
+        connection.execute(
+            _TABLE_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _RANKINGS_RELATION, list(_RANKINGS_TABLE_DENIED)),
+        ).fetchall()
+    )
+    denied_column = dict(
+        connection.execute(
+            _ANY_COLUMN_PRIVILEGES_SQL,
+            (_RUNTIME_ROLE_NAME, _RANKINGS_RELATION, list(_RANKINGS_COLUMN_DENIED)),
+        ).fetchall()
+    )
+    prune = _fetchone(connection, _FUNCTION_EXISTS_SQL, (_RANKINGS_PRUNE_FUNCTION,))[0] and (
+        _fetchone(
+            connection,
+            _FUNCTION_PRIVILEGE_SQL,
+            (_RUNTIME_ROLE_NAME, _RANKINGS_PRUNE_FUNCTION),
+        )[0]
+    )
+    problems = [
+        f"lacks {privilege}" for privilege in _RANKINGS_GRANTED if not granted.get(privilege)
+    ]
+    held = [
+        str(privilege)
+        for privilege, has in (*denied_table.items(), *denied_column.items())
+        if has
+    ]
+    if held:
+        problems.append(f"holds {', '.join(sorted(held))} (table or column grant)")
+    if not prune:
+        problems.append(f"cannot EXECUTE {_RANKINGS_PRUNE_FUNCTION}")
+    if problems:
+        yield Check(
+            "FAIL", name, f"{_RUNTIME_ROLE_NAME} on {_RANKINGS_RELATION}: " + "; ".join(problems)
+        )
+    else:
+        yield Check(
+            "OK",
+            name,
+            f"{_RUNTIME_ROLE_NAME} can only SELECT/INSERT {_RANKINGS_RELATION} "
+            f"and EXECUTE {_RANKINGS_PRUNE_FUNCTION}",
         )
 
 
@@ -1118,8 +1437,17 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "fail while any room or match has a question time other than 20000 "
-            "(after migration 011, before the candidate API replaces the migration-010 API; "
+            "(after migration 011, before its candidate API replaces the migration-010 API; "
             "needs --expect 11)"
+        ),
+    )
+    database.add_argument(
+        "--require-empty-rankings",
+        action="store_true",
+        help=(
+            "fail while the online ranking table holds a record "
+            "(after migration 012, before the candidate API replaces the migration-011 API; "
+            "needs --expect 12)"
         ),
     )
     commands.add_parser("bank", help="check the private online question bank at QUESTION_BANK_DIR")
@@ -1138,6 +1466,8 @@ def main(
         and arguments.expect != 11
     ):
         parser.error("--require-default-question-time needs --expect 11")
+    if arguments.command == "db" and arguments.require_empty_rankings and arguments.expect != 12:
+        parser.error("--require-empty-rankings needs --expect 12")
     source = os.environ if environment is None else environment
     try:
         if arguments.command == "db":
@@ -1146,6 +1476,7 @@ def main(
                 expect=arguments.expect,
                 require_idle=arguments.require_idle,
                 require_default_question_time=arguments.require_default_question_time,
+                require_empty_rankings=arguments.require_empty_rankings,
             )
         else:
             checks = run_bank_checks(source)

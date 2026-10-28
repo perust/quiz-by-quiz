@@ -3,12 +3,18 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .nickname_filter import nickname_problem
+
 ALLOWED_CAPACITIES = frozenset({2, 4, 6, 8, 10, 12})
 ALLOWED_CATEGORIES = frozenset({"history", "science", "geography", "general", "art"})
 # 방장이 방마다 고르는 온라인 문항 시간(ms). 제한 없음은 없다 — 한 사람이 답하지 않으면
 # 방 전체가 마감까지 멈춘다. migration 011의 CHECK와 같은 목록이다.
 DEFAULT_QUESTION_TIME_MS = 20_000
 ALLOWED_QUESTION_TIMES_MS = frozenset({DEFAULT_QUESTION_TIME_MS, 40_000})
+# 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 방장 혼자서도 연다 — 혼자 하고 싶은
+# 사람도 온라인 방을 만들어 푼다(소유자 방향: 언젠가 혼자 하기를 온라인 방 하나로 모은다). 방·세션
+# 응답이 `minPlayers`로 싣는다. 이 값을 모르는 이전 API는 둘이었다(화면은 없으면 2로 읽는다).
+MIN_MATCH_PLAYERS = 1
 ROOM_NAME_MAX_UNITS = 16
 ROOM_PASSWORD_MIN_UNITS = 4
 ROOM_PASSWORD_MAX_UNITS = 12
@@ -107,9 +113,27 @@ def validate_question_time(question_time_ms: object) -> int:
     return question_time_ms
 
 
+# 닉네임 금칙 규칙(PRD 12.1)에 걸렸을 때의 오류. 화면은 코드를 보고 제 말로 옮긴다
+# (src/online/rules.ts의 NICKNAME_REJECTION_MESSAGES). 같은 이름은 막지 않는다.
+NICKNAME_PROFANITY_CODE = "nickname-profanity"
+NICKNAME_PERSONAL_INFO_CODE = "nickname-personal-info"
+
+
 def validate_player(nickname: str | None, character_id: str | None) -> ValidatedPlayer:
     normalized_nickname = str(nickname or "").strip() or "손님"
     normalized_nickname = _truncate_utf16(normalized_nickname, NICKNAME_MAX_UNITS)
+    problem = nickname_problem(normalized_nickname)
+    if problem == "profanity":
+        raise DomainError(
+            NICKNAME_PROFANITY_CODE,
+            "닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임으로 바꿔 주세요.",
+        )
+    if problem is not None:
+        raise DomainError(
+            NICKNAME_PERSONAL_INFO_CODE,
+            "전화번호·이메일·인터넷 주소처럼 보이는 닉네임은 쓸 수 없어요. "
+            "다른 닉네임으로 바꿔 주세요.",
+        )
 
     normalized_character = (
         DEFAULT_CHARACTER_ID if character_id is None else str(character_id).strip()

@@ -70,6 +70,12 @@
 //      방장의 «내보내기»(U24)가 그려지지 않는다. 로컬 방에 점검용 손님을 잠깐 넣어 본다
 //   ㉑ 랭킹의 «기록 내보내기»(N02)는 선생님 모드 로더가 읽는 파일을 만든다(student 칸 없음, 문항별 정오 포함).
 //      내려받기와 클립보드는 가로채 실제 파일·클립보드를 건드리지 않는다
+//   ㉒ 25문제 전체 도전의 24번에서 나가면 남는 것이 없었다 (N04). 나가기 확인의 «나가고 푼 문제 N개 해설 보기»가
+//      한 문제라도 풀었을 때만 보이는지, Tab 이 확인창 안에서 도는지, 그 화면(`quiz-review`)이 걷는 화면의 계약을
+//      지키는지(조작부·방향키·빈자리 시작·안내 글을 덮지 않음), 판이 깨어나지 않는지, 「뒤로」로 떠나도
+//      **랭킹에 아무것도 남지 않는지** 본다 — 결과 화면이 아니라 떠날 때의 자동 저장(⑪)이 없어야 한다.
+//      마지막 문제까지 답했으면 같은 자리가 «결과 보기»여서 결과로 가고 기록이 남는지도 본다 — 한때 다 푼 판을
+//      기록 없는 «푼 문제»로 보내 버렸다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
@@ -404,11 +410,12 @@
     const 분야상자 = document.getElementById('category-grid').getBoundingClientRect();
     결과.push({
       자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
+      // 서버 방에 아직 들어가 있으면 줄이 이미 떠 있어 «펼치면 커진다»를 견줄 수 없다. 그때는 겹침만 본다
       통과: (줄이분야옆
         ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
-        : 줄뒤dock > 줄전dock)
+        : 줄뒤dock > 줄전dock || !원래복귀줄.숨김)
         && 줄뒤겹침.length === 0,
-      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
+      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px${원래복귀줄.숨김 ? '' : ' (줄이 이미 떠 있었다)'} · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
     });
     복귀줄.hidden = 원래복귀줄.숨김;
     복귀줄글.textContent = 원래복귀줄.글;
@@ -417,11 +424,13 @@
       const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
       const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
       const dock상자 = 홈조각.dock.getBoundingClientRect();
+      // 서버 방에 아직 들어가 있으면 방 복귀 줄이 dock 맨 위에 한 줄을 더한다(U35). 그 줄을 빼고 한 줄 dock 을 잰다
+      const 복귀줄몫 = 복귀줄.hidden ? 0 : 분야줄.top - dock상자.top;
       결과.push({
         자리: '홈', 이름: '짧은 가로: 분야와 온라인·전체 도전이 dock 한 줄에 있다',
         통과: Math.abs(분야줄.top - 주행동줄.top) <= 1 && 분야줄.right <= 주행동줄.left + 1
-          && dock상자.height <= innerHeight / 4,
-        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px / 화면 ${innerHeight}px`,
+          && dock상자.height - 복귀줄몫 <= innerHeight / 4,
+        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px${복귀줄몫 ? ` (복귀 줄 ${Math.round(복귀줄몫)}px 포함)` : ''} / 화면 ${innerHeight}px`,
       });
       const 브랜드상자 = 홈조각.브랜드.getBoundingClientRect();
       결과.push({
@@ -538,6 +547,25 @@
       통과: 랭킹탭크기.length === 6 && 랭킹탭크기.every((높이) => 높이 >= 44),
       무엇: 랭킹탭크기.map((높이) => `${높이}px`).join(', '),
     });
+    // 온라인 랭킹 (FR-7.13 2단계). 서버 랭킹을 아는 API면 범위·기간 두 칸이 44px 이상이고, 불러온 뒤 상태 줄이
+    // 무슨 일인지 말한다(«불러오는 중…»에 멈추지 않는다). 모르는 API(세션에 rankings 없음)면 범위 탭째 숨는다.
+    // 아래 검사는 예전처럼 이 브라우저의 기록에서 본다
+    if (!document.getElementById('ranking-scope-tabs').hidden) {
+      await 눌러('ranking-scope-online', 1500);
+      const 두칸 = [...(활성랭킹?.querySelectorAll('.ranking-switch__option') ?? [])]
+        .filter((칸) => 칸.getClientRects().length > 0)
+        .map((칸) => 칸.getBoundingClientRect().height);
+      const 온라인상태 = document.getElementById('ranking-online-status').textContent.trim();
+      결과.push({
+        자리: '랭킹', 이름: '온라인 랭킹의 범위·기간 칸이 44px 이상이고 상태 줄이 무슨 일인지 말한다',
+        통과: document.getElementById('ranking-scope-tabs').hidden
+          || (두칸.length === 4 && 두칸.every((높이) => 높이 >= 44) && 온라인상태 !== '' && !온라인상태.endsWith('…')),
+        무엇: document.getElementById('ranking-scope-tabs').hidden
+          ? '랭킹을 모르는 API — 범위 탭을 거뒀다'
+          : `${두칸.map((높이) => `${높이}px`).join(', ')} · ${온라인상태 || '(빈 상태 줄)'}`,
+      });
+      if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
+    }
     const 랭킹안내 = document.querySelector('.ranking-scope');
     const 랭킹캐릭터 = document.getElementById('ranking-character');
     const 겹친랭킹글 = 겹친글자줄(랭킹안내, 랭킹캐릭터.getBoundingClientRect());
@@ -695,20 +723,102 @@
     잠든퀴즈를깨워본다('답을 낸 채 나온 홈');
     살펴본곳.push('퀴즈에서 나오기');
 
+    // ㉒ 나가면서 푼 문제 보기 (N04). 끝까지 풀지 않은 판이라 아무 길로 떠나도 기록이 남으면 안 된다
+    const 나가기전랭킹 = localStorage.getItem('quiz.rankings');
+    document.querySelector('.category-card').click();
+    await 잠깐(800);
+    await 눌러('quiz-exit', 300);
+    const 해설보기 = document.getElementById('exit-review');
+    결과.push({
+      자리: '퀴즈', 이름: '한 문제도 풀지 않았으면 나가기 확인에 «해설 보기»가 없다',
+      통과: !document.getElementById('exit-dialog').hidden && 해설보기.hidden,
+      무엇: 해설보기.hidden ? '없음' : `!! ${해설보기.textContent.trim()}`,
+    });
+    await 눌러('exit-cancel', 200);
+    for (let i = 0; i < 2; i += 1) {
+      [...document.querySelectorAll('#choices .choice')].find((보기) => !보기.disabled)?.click();
+      await 잠깐(150);
+      document.getElementById('next-button').click();
+      await 잠깐(150);
+    }
+    await 눌러('quiz-exit', 300);
+    결과.push({
+      자리: '퀴즈', 이름: '두 문제를 풀고 나가면 확인창이 «나가고 푼 문제 2개 해설 보기»를 준다',
+      통과: !해설보기.hidden && 해설보기.textContent.trim() === '나가고 푼 문제 2개 해설 보기'
+        && document.activeElement === document.getElementById('exit-cancel'),
+      무엇: `${해설보기.hidden ? '!! 숨김' : 해설보기.textContent.trim()} · 포커스 ${document.activeElement?.id || '(없음)'}`,
+    });
+    해설보기.focus();
+    해설보기.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    결과.push({
+      자리: '퀴즈', 이름: '덧붙은 행동에서 Tab 은 확인창 안의 처음(«계속 풀기»)으로 돈다',
+      통과: document.activeElement === document.getElementById('exit-cancel'),
+      무엇: document.activeElement?.id || document.activeElement?.tagName || '(없음)',
+    });
+    await 눌러('exit-review', 700);
+    살펴본다('푼 문제', 'quiz-review', true);
+    잠든퀴즈를깨워본다('푼 문제');
+    프레임돌리기(3);
+    const 푼문제발밑 = document.querySelector('[data-screen="quiz-review"] .is-standing');
+    결과.push({
+      자리: '푼 문제', 이름: '버튼을 밟지 않은 자리에서 시작한다',
+      통과: !푼문제발밑,
+      무엇: 푼문제발밑 ? `!! ${푼문제발밑.id || 푼문제발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
+    });
+    const 겹친푼문제글 = 겹친글자줄(document.getElementById('quiz-review-scope'),
+      document.getElementById('quiz-review-character').getBoundingClientRect());
+    결과.push({
+      자리: '푼 문제', 이름: '주차한 캐릭터가 «기록은 남지 않아요» 안내 글을 덮지 않는다',
+      통과: 겹친푼문제글.length === 0,
+      무엇: `겹친 글자 줄 ${겹친푼문제글.length}개`,
+    });
+    const 풀이줄 = document.querySelectorAll('#quiz-review-list > .review__item');
+    결과.push({
+      자리: '푼 문제', 이름: '푼 두 문제가 풀이로 보이고 등록 칸·점수는 없다',
+      통과: 풀이줄.length === 2 && !document.querySelector('[data-screen="quiz-review"] input')
+        && [...풀이줄].every((줄) => 줄.querySelector('a.review__report-link')),
+      무엇: `${풀이줄.length}문제 · ${document.getElementById('quiz-review-summary').textContent.trim()}`,
+    });
+    history.back();
+    await 화면기다리기('home');
+    살펴본다('푼 문제에서 「뒤로」', 'home', true);
+    결과.push({
+      자리: '푼 문제', 이름: '중간에 나온 판은 «푼 문제»를 보고 떠나도 랭킹에 남지 않는다',
+      통과: localStorage.getItem('quiz.rankings') === 나가기전랭킹,
+      무엇: localStorage.getItem('quiz.rankings') === 나가기전랭킹 ? '그대로다' : '!! 기록이 늘었다',
+    });
+    살펴본곳.push('나가고 푼 문제 보기');
+
     // 퀴즈를 끝까지 풀어 결과로 간 뒤, 「다시 하기」로 되돌아온다.
     // 결과 화면의 조작부가 따라오면 여기서 걸린다 (#65)
     // ⑪ 「등록」 없이 떠나도 저장되는지 세려고 랭킹을 비워 둔다 (끝나면 되돌린다)
     localStorage.setItem('quiz.rankings', '[]');
     document.querySelector('.category-card').click();
     await 잠깐(800);
+    let 다푼판의덧붙은행동 = null;
     for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
       const 보기 = [...document.querySelectorAll('.choice')].find((b) => !b.disabled);
       if (보기) 보기.click();
       await 잠깐(120);
+      // ㉒ 마지막 문제까지 답한 뒤의 나가기 확인은 «나가고 푼 문제 N개 해설 보기»가 아니라 «결과 보기»다 —
+      // 한때 다 푼 판을 기록 없는 «푼 문제» 화면으로 보내 버렸다. 그 행동으로 결과에 가고, 아래 ⑪이 기록을 센다
+      if (!document.getElementById('feedback').hidden
+        && document.getElementById('next-label').textContent.trim() === '결과 보기') {
+        await 눌러('quiz-exit', 300);
+        다푼판의덧붙은행동 = document.getElementById('exit-review').hidden
+          ? '(숨김)' : document.getElementById('exit-review').textContent.trim();
+        await 눌러('exit-review', 800);
+        break;
+      }
       const 다음 = document.getElementById('next-button');
       if (다음 && !다음.hidden) 다음.click();
       await 잠깐(150);
     }
+    결과.push({
+      자리: '퀴즈', 이름: '마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동은 «결과 보기»이고 결과로 간다',
+      통과: 다푼판의덧붙은행동 === '결과 보기' && 지금화면() === 'result',
+      무엇: `${다푼판의덧붙은행동 ?? '!! 마지막 문제에 닿지 못했다'} → ${지금화면()}`,
+    });
     살펴본다('결과', 'result', true);
     // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
     // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다
@@ -769,6 +879,8 @@
 
     // ⑫ 시스템 「뒤로」. 앱 밖으로 나가지 않고 그 화면의 뒤로·나가기 버튼과 같이 움직인다
     await 눌러('open-ranking', 700);
+    // 이 브라우저의 기록에서 본다 — 온라인 랭킹을 아는 API면 마지막에 본 범위가 온라인일 수 있다
+    if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
     // 방금 자동 저장된 분야 기록 하나뿐이라 전체 도전 탭은 비어 있다
     document.querySelector('[data-screen="ranking"] .ranking-tab').click();
     await 잠깐(300);
@@ -976,8 +1088,10 @@
     const 온라인입구 = document.getElementById('open-online');
     결과.push({
       자리: '로비', 이름: '홈 온라인 입구의 바쁨 표시를 거뒀다',
+      // 쉬는 말은 세션이 알려 준 시작 인원을 따른다 — 묻기 전·혼자서도 여는 API·둘부터인 이전 API
       통과: !온라인입구.hasAttribute('aria-busy')
-        && document.getElementById('open-online-desc').textContent.trim() === '친구와 함께 · 2명부터',
+        && ['방을 만들거나 참가해요', '혼자서도 · 친구와 함께', '친구와 함께 · 2명부터']
+          .includes(document.getElementById('open-online-desc').textContent.trim()),
       무엇: `aria-busy ${온라인입구.getAttribute('aria-busy') ?? '없음'} · ${document.getElementById('open-online-desc').textContent.trim()}`,
     });
     const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
@@ -1119,6 +1233,30 @@
       점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
       localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
     }
+    // 서버 방이면 **로컬 API(localhost)일 때만** 두 번째 신분으로 진짜 참가시키고 끝에 내보낸다. 운영 API 에는
+    // 손님을 넣지 않는다 — 그때는 이 점검을 «건너뜀»으로 남긴다(통과로 숨기지 않고 이름에 적는다)
+    const API기준 = document.querySelector('meta[name="quiz-api-base"]')?.content.trim() ?? '';
+    const 로컬API = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(API기준);
+    let 서버손님 = null;
+    if (!점검방 && 로컬API) {
+      const 방코드 = document.getElementById('waiting-code')?.textContent.trim() ?? '';
+      const 토큰 = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const 머리 = { Authorization: `Bearer ${토큰}`, 'X-Player-Id': crypto.randomUUID(), 'Content-Type': 'application/json' };
+      const 세션 = await fetch(`${API기준}/v1/session`, { method: 'PUT', headers: 머리, body: JSON.stringify({ nickname: '점검손님', characterId: 'slime-blue' }) });
+      const 참가 = 세션.ok
+        ? await fetch(`${API기준}/v1/rooms/${방코드}/join`, { method: 'POST', headers: 머리, body: JSON.stringify({ password: null }) })
+        : null;
+      서버손님 = { 방코드, 머리, 들어옴: Boolean(참가?.ok) };
+      await 잠깐(800); // room-invalidated 를 받은 대기실이 방을 다시 읽는다
+    }
+    손님점검: {
+    if (!점검방 && !서버손님?.들어옴) {
+      결과.push({
+        자리: '대기실', 이름: '(건너뜀) 액자의 말 숨기기·내보내기 — 로컬 방도 로컬 API 도 아니라 점검 손님을 넣지 않았다',
+        통과: true, 무엇: API기준 || '(메타 없음)',
+      });
+      break 손님점검;
+    }
     // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
     await 눌러('setting-category', 400);
     const [숨기기] = 액자버튼('mute');
@@ -1180,11 +1318,18 @@
       localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
       await 눌러('setting-category', 400);
     }
+    if (서버손님?.들어옴) {
+      await fetch(`${API기준}/v1/rooms/${서버손님.방코드}/members/me`, { method: 'DELETE', headers: 서버손님.머리 });
+      await 잠깐(400);
+    }
     살펴본곳.push('대기실 액자 버튼');
+    }
 
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
-    document.getElementById('waiting-start').click();
+    // 방장 혼자서도 판이 열린다(혼자 여는 온라인 방). 네트워크 방에서 누르면 서버에 진짜 판이 생기고 나가기가
+    // «게임이 끝나면»으로 거절되므로, 시작은 이 브라우저 안의 방(점검방)에서만 실제로 누른다
+    if (점검방) document.getElementById('waiting-start').click();
     document.getElementById('waiting-leave').click();
     await 화면기다리기('online');
     살펴본다('시작하자마자 나간 뒤', 'online', true);

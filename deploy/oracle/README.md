@@ -60,7 +60,10 @@ also charges, atomically with the two above, an actor claim across room codes
 seconds, chat 36/minute, answers 24/30 seconds, tickets 18/minute) and a client
 claim of half the process limit per minute (join 150, mutations 300, chat 300,
 answers 300, tickets 150), so neither one identity nor one address can fill a
-per-endpoint process bucket. These process-global limits require
+per-endpoint process bucket. Public online-ranking reads (`GET /v1/rankings`,
+"Online rankings" below) are 300/client/minute and 1,200/process/minute; a read
+that carries a browser identity also passes the authenticated bucket above.
+These process-global limits require
 exactly one Uvicorn worker.
 Do not increase the worker count or horizontally scale this service without a
 shared distributed limiter and a fresh memory/rate-envelope review.
@@ -96,6 +99,28 @@ room read and WebSocket ticket for the same room are refused with `kicked` for
 10 minutes; the database is not changed. The block ends early on an API restart
 or when the room is deleted, and it relies on the same single-worker contract —
 a second worker would not see it.
+
+Standing-answer drafts (U13) are a third in-process record. When a match
+snapshot carries `standingAnswers: true` and the WebSocket ticket advertises
+`standingAnswer: "standing-answer-v1"`, the browser sends the tile its character
+stands on after it really moved (`{"type": "standing-answer", ...}`, debounced,
+`choiceIndex: null` when it steps off). The API keeps one draft per room+player,
+never broadcasts it, and drops drafts after 90 seconds, beyond 4,096 records
+(oldest first), when the question advances or the match ends, and on leave,
+removal or room deletion. Drafts never count toward "everyone answered"; when a
+deadline (or an absent player's fill) closes a question, a draft received before
+`deadline_at` for that match and position is stored as that player's normal
+graded answer (`timed_out = false`, full question time) instead of a timeout. An
+API restart loses the drafts: browsers resend their latest draft when the socket
+reconnects, otherwise the old timeout applies. Drafts travel only over the room
+socket, so a browser whose socket is down at the deadline (dropped and
+reconnecting, or unable to get a ticket) cannot update its draft: the API grades
+the last draft it received before the deadline — an earlier tile if the player
+moved during the outage — or records the timeout if it has none. The browser
+tells the player to submit explicitly while its socket is down. This needs no migration. Rooms
+and the session response also carry `minPlayers: 1` — the host alone may start a
+match; a frontend that sees no such field treats the API as the previous
+two-player one.
 
 Persistent growth is bounded by a two-hour player lifetime, an independent
 60-second resource cleanup loop, and lobby materialization of no more than
@@ -222,6 +247,105 @@ These review fixes need no migration and work in either deployment order: an
 older browser simply lacks the extra re-reads, and the new browser against an
 older API only sends one more read in the rare cases above.
 
+### Online rankings (FR-7.13 step 2, migration 012)
+
+Every online match the API closes is recorded, solo and multi alike (PRD 12.1,
+owner decision). In the same transaction that turns the last reveal into
+`finished`, the API inserts one row per match player into
+`quiz_online.online_rankings`: the server-graded score and correct count (the
+final standings' own aggregate over `match_answers`; no browser-reported score
+is accepted anywhere), total questions, mode (`category` or `all`) and category,
+the match's question time, the nickname as shown in that room, the character id,
+the browser player id (`players.id`, kept in the browser's localStorage), the
+owner key and the close time (`matches.finished_at`). The owner key is
+`sha256("qbb-ranking-owner:" || players.token_hash)` (32 bytes, `NULL` only if
+the player row were already gone; the token hash itself is not stored): the
+player id alone cannot prove ownership, because every lobby reader sees member
+ids and anyone may register an id again with their own token once its player row
+expired (2 hours), so a record is "mine" only for the same id **and** the same
+browser token. A player who dropped out during the match is
+recorded with the timeouts that filled their answers; a member who was absent at
+the start is not a match player and is not recorded. `UNIQUE (match_id,
+player_id)` (`online_rankings_match_player_key`) keeps a re-read of a finished
+match from recording twice. The table has no foreign key: players and matches
+are deleted within hours, the records stay. If the insert fails, the match is not
+closed either and the next read or deadline sweep closes and records it again.
+The finished match snapshot carries `rankingRecorded` for the reader.
+
+Nicknames: duplicates are allowed. `PUT /v1/session` refuses profanity with 400
+`nickname-profanity` and personal-data shapes (six or more digits in a run,
+whatever non-letter separates them — space, dot, slash, tilde, comma, dashes or
+the vowel `ㅡ` typed as a dash; `x@y`, `://`, `www.` or `name.<common suffix>`)
+with 400 `nickname-personal-info`. The short word lists and suffixes live in
+`server/app/nickname_filter.py`'s data file `nickname_rules.json`
+(`blockedWords` match anywhere in the letters-only form; `blockedTokens` such as
+`shit`, `porn`, `존나` also occur inside ordinary names like Ashita, Pornchai or
+생존나라 and only match as a standalone word), mirrored in the Pages client
+(`src/online/nickname-rules.ts`) so the home dialog explains it before
+sending. At record time the room nickname is checked again and an old
+nickname that fails is stored as `익명`.
+
+Reads: `GET /v1/rankings?mode=category&category=<id>&period=week|all` (or
+`mode=all` without a category) returns the top 10 as `{mode, categoryId, period,
+window, limit, entries}`, each entry `{rank, nickname, characterId, score,
+correctCount, totalCount, recordedAt, isMine}`. Order is score descending, then
+the earlier record (record time, then insertion order — a match inserts in its
+final standings order), and ranks follow that order (1, 2, 3), as the local
+ranking does. `week` is Monday 00:00 to the next Monday 00:00 in Asia/Seoul
+(`window: {start, end, timeZone}`; `null` for `all`). The browser player id is
+never returned; `isMine` is true only when the request carries the same
+authenticated browser identity — the same player id and an owner key derived from
+the same bearer token (a wrong identity is 401, not an anonymous read).
+Each read is one index scan of at most 10 rows (`online_rankings_board_order_idx`
+for all time, `online_rankings_board_week_order_idx` on the stored generated
+`board`/`week_start` columns for the week; about 0.05 ms measured on 100,000
+rows).
+
+Grants: the runtime role may only `INSERT` and `SELECT` the table (no `UPDATE`,
+`DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER`, table or column grant) and still
+has nothing on the ledger. Retention runs through
+`quiz_online.prune_online_rankings()`, a `SECURITY DEFINER` function with a fixed
+`search_path` and no arguments, which the 60-second resource cleanup calls after
+its own transaction (a failing prune is logged and does not stop room cleanup).
+It keeps the last 8 weeks (56 days) and, beyond that, only each board's all-time
+top 100; above 250,000 rows it trims the oldest rows even inside the 8 weeks
+(each board's top 100 always stay). It deletes at most 10,000 rows per call, and
+the `cleanup` log line counts them (`rankingsPruned`).
+
+Resource envelope: a row with its three indexes takes about 445 bytes (100,000
+synthetic rows with owner keys: 17 MB heap, 25 MB indexes). A class of 30
+playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
+weeks. The 250,000-row ceiling bounds the table at roughly 110 MB plus 600
+retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
+ten 8-second reveals (80 s, 200 s for the all-categories round), a room holds one
+match at a time with at most 12 players, and match starts share the
+600/process/minute room-mutation bucket, so ingest cannot exceed 7,200 rows a
+minute even in theory, below the 10,000 rows the prune may delete each minute
+(a 5,000-row batch took 0.12–0.19 s on 100,000 rows). Reads are bounded by the
+1,200/process/minute ranking bucket (at most 20 index scans a second); the API
+keeps nothing about rankings in memory. Changing the retention, the ceiling,
+the batch or the read limits is a resource-envelope review boundary like the
+others above.
+
+### Production load check (2026-10-28, migration-011 API)
+
+Right after the #106 deploy, the owner-approved staged run used the same
+simulator against production from one client address (a classroom behind one
+NAT), with do-not-join 12-seat rooms that the simulator left afterwards:
+
+| Stage | Requests | Peak / minute | 429 | 5xx | Answers accepted | REST p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 room × 12 | 726 | 378 | 0 | 0 | 103 / 103 | 134 / 335 / 659 / 726 ms |
+| 3 rooms × 12 | 2,158 | 1,132 | 0 | 0 | 307 / 307 | 138 / 323 / 802 / 1,125 ms |
+
+Latencies were measured on the client and include the network round trip.
+No player saw a question late by more than 1 s, nobody got stuck at the end,
+and readiness stayed 200 afterwards. Server-side CPU, memory and the other
+platform services were not recorded in this run. The 5-minute operational
+summary ("Operational log and uptime monitor") reports p50/p95/max on the
+server side once that API is deployed. Measure again before promising more
+than three 12-player rooms per address.
+
 ## Caddy integration
 
 `Caddyfile.quiz-by-quiz` is a **candidate fragment**, not an automatically
@@ -237,9 +361,15 @@ the request URI is query-free and the server selects only the public `qbb.v1`
 protocol. The event handshake remains excluded from Caddy access logs as defense
 in depth; normal REST access logging remains enabled. The API itself runs with
 Uvicorn access logging disabled and warning-level server logs so routine accepted
-or rejected handshakes cannot persist ticket-bearing request metadata. Caddy
-returns public `/healthz` and `/readyz` requests as 404; Docker and Caddy active
-health checks reach `/readyz` only on the private container network. The public
+or rejected handshakes cannot persist ticket-bearing request metadata. The
+operational log ("Operational log and uptime monitor" below) adds its own INFO
+lines. Those carry room codes and counts (the 5-minute summary adds REST
+request counts by status class and the p50/p95/max latency) and, for an
+unhandled error, the HTTP method, the route template and the exception class,
+but no request values: no paths with their values, query strings, headers,
+bodies, tickets, tokens or addresses. Caddy returns public `/healthz` and
+`/readyz` requests as 404; Docker and Caddy active health checks reach
+`/readyz` only on the private container network. The public
 `/v1/release-readiness` gate exposes only the fixed compatibility contract and
 schema version, and bounds database probes to 12 requests per client and 120
 per process per minute.
@@ -256,16 +386,30 @@ rate-limit contract.
 
 ## Fail-closed staging order
 
-The current compatibility boundary is **migration 011 → API → Pages**.
-Migration 011 stores the host-chosen online question time (20 or 40 seconds,
-default 20) on rooms, copies it onto each match, and widens the answer
-`elapsed_ms` range to 40 seconds. It only adds defaulted, constrained columns:
-the migration-010 API names its columns explicitly and never reads or writes
-them, so it keeps serving (at its fixed 20 seconds) while 011 runs and remains
-a valid rollback target afterwards. The candidate API reads and writes those
-columns, so it must not replace the 010 API before ledger version 011 exists.
-The candidate Pages client sends `questionTimeMs`, which the 010 API rejects as
-an unknown field, so Pages waits for the candidate API.
+The current compatibility boundary is **migration 012 → API → Pages**.
+Production runs the migration-010 API until #106 (migration 011, below) is
+deployed; #107 follows it without a migration, so this boundary starts from the
+migration-011 API (readiness `schemaVersion: 11`). Migration 012 adds the online
+ranking table, its indexes and the retention function ("Online rankings"
+above). It only adds: the migration-011 API never reads or writes the table, so
+it keeps serving while 012 runs and remains a valid rollback target afterwards
+(matches it closes in that window are simply not recorded). Its public
+readiness then answers 503 `migration-required`, because it requires exactly
+schema version 11 — the expected fail-closed state, not an outage. The
+candidate API records every match it closes inside the closing transaction, so
+it must not replace the 011 API before ledger version 012 exists: on a
+migration-011 database no match could close (each closing transaction fails;
+the deadline sweep isolates every match in its own savepoint, so it keeps
+advancing the other matches and retries the closing ones every second), every
+read of a finished match fails, and its readiness answers 503
+`migration-required` there too. The candidate Pages client asks for a session
+before it offers the online ranking: it shows the online ranking only when the
+session response carries `rankings: true`, hides the online ranking UI when the
+API lacks that field, and opens on the browser's own records when the session
+cannot be opened at all (API unreachable, or a saved nickname the new filter
+refuses); the "online ranking" tab stays there to retry. The Pages workflow
+still waits for `schemaVersion: 12`, so the published client's "recorded to the
+online ranking" line is always backed by a recording API.
 
 1. Recompute and verify the source and private-bank hashes against the approved
    candidate; stop on any mismatch. The source is a fresh clone checked out at
@@ -277,30 +421,61 @@ an unknown field, so Pages waits for the candidate API.
    bank.
 2. Render the overlay with the platform base and inspect the result. Do not
    `up`, restart, reload, migrate, or expose anything at this step.
-3. With the migration-010 API still serving, build and run only the explicit
+3. With the migration-011 API still serving, build and run only the explicit
    `quiz-by-quiz-migrate` service from the candidate source. Require ledger
-   versions 001–011, the `rooms_question_time_check`,
-   `matches_question_time_check`, and `match_answers_elapsed_ms_range_check`
-   constraints, and `question_time_ms = 20000` on every pre-existing room and
-   match. The 010 API's public `/v1/release-readiness` now answers 503
-   `migration-required`; that is the expected fail-closed state, not an outage.
+   versions 001–012, the `online_rankings` table with its six checks and
+   `online_rankings_match_player_key`, its three indexes,
+   `quiz_online.prune_online_rankings()` as `SECURITY DEFINER`, the runtime
+   role's `SELECT`/`INSERT`-only access to the table and `EXECUTE` on the
+   function, and no ranking record yet. The 011 API's public
+   `/v1/release-readiness` now answers 503 `migration-required`; that is the
+   expected fail-closed state, not an outage.
 4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
-   internal `/readyz`, verify that a room created without `questionTimeMs`
-   reports `questionTimeMs: 20000`, and require the exact public
+   internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`
+   and refuses an e-mail-shaped nickname with 400 `nickname-personal-info`,
+   that `GET /v1/rankings?mode=all&period=week` answers 200 with at most 10
+   entries and an Asia/Seoul window, and require the exact public
    `/v1/release-readiness` response
-   `{status: ready, contract: character-only-v1, schemaVersion: 11}`.
+   `{status: ready, contract: character-only-v1, schemaVersion: 12}`.
 5. Verify HTTPS and WSS through the existing Caddy route without changing any
    unrelated platform service or host-port exposure.
 6. Only after the production readiness response passes may the independent
    public Pages source be merged and published. The Pages workflow repeats this
    gate and fails closed before `deploy-pages`.
 
-The preceding boundary was **API → migration 010 → Pages**: never run the 010
+The preceding boundary was **migration 011 → API → Pages** (#106). Migration
+011 stores the host-chosen online question time (20 or 40 seconds, default 20)
+on rooms, copies it onto each match, and widens the answer `elapsed_ms` range to
+40 seconds. It only adds defaulted, constrained columns: the migration-010 API
+names its columns explicitly and never reads or writes them, so it keeps
+serving (at its fixed 20 seconds) while 011 runs and remains a valid rollback
+target afterwards. The migration-011 API reads and writes those columns, so it
+must not replace the 010 API before ledger version 011 exists. Its Pages client
+sends `questionTimeMs`, which the 010 API rejects as an unknown field, so Pages
+waited for that API. Its steps were the ones above with ledger versions
+001–011, the `rooms_question_time_check`, `matches_question_time_check` and
+`match_answers_elapsed_ms_range_check` constraints and `question_time_ms =
+20000` on every pre-existing room and match after step 3, a room created
+without `questionTimeMs` reporting `questionTimeMs: 20000` after step 4, and the
+exact readiness `{status: ready, contract: character-only-v1, schemaVersion:
+11}`. A database still at migration 010 (production today) must complete that
+order with a migration-011 API before step 3 above — and run that whole boundary
+from the #107 source checkout (`QUIZ_BY_QUIZ_SOURCE_DIR` at the approved #107
+commit, its `app.release_check` and its `smoke.py` with `baseline` = the
+migration-010 API and `candidate` = the migration-011 API). This candidate's
+`quiz-by-quiz-migrate` cannot stop at 011: on a migration-010 database it
+applies 011 and 012 together (`pending-migrations` names `11, 12`), which would
+leave the 010 API serving on a migration-012 database, a state no step here
+covers; and this candidate's `smoke.py` has no migration-010 baseline. The
+current candidate API does not run on a migration-010 or migration-011
+database.
+
+The boundary before that was **API → migration 010 → Pages**: never run the 010
 constraint migration while a legacy API process can still write `false` or
 `NULL` values. A database still at migration 009 must first complete that
 order with a migration-010 API (all five character-only constraints and
-readiness `schemaVersion: 10`) before step 3 above; the current candidate API
-does not run on a migration-009 database.
+readiness `schemaVersion: 10`) before the 011 boundary; the current candidate
+API does not run on a migration-009 database.
 
 If a stage fails, remove or stop only the task-owned release/service artifacts.
 Do not restart, reload, alter, or roll back unrelated n8n, BTC, Caddy,
@@ -321,42 +496,55 @@ the exit status is 0 only when no line is `FAIL`. Stop on a non-zero exit. In
 the commands below, `docker compose …` is the platform base rendered with this
 overlay.
 
-- **Step 3, before the migration** (candidate image, migration-010 API still
+- **Step 3, before the migration** (candidate image, migration-011 API still
   serving):
-  `docker compose … --profile migration run --rm --no-deps quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check db --expect 10`.
-  It requires ledger 1–10 and `character_only_schema_version() = 10`, the five
-  010 character-only constraints, no 011 column or constraint, the single
-  `elapsed_ms` check of 0..20000, a safe `quiz_by_quiz_app` (the attributes
-  `app.migrate` demands, `EXECUTE` on the schema-version function, no access to
-  the ledger), and the statement-logging preflight above: `log_statement`,
-  `log_min_duration_statement`, `log_duration` and statement sampling must be
-  off (`FAIL`); `log_min_error_statement` and any per-database or per-role
-  logging setting are `WARN`, because a failed `ALTER ROLE … PASSWORD` could be
-  logged with the password. `pending-migrations` names what this image's
-  `app.migrate` would apply (`11`), `migration-lock` warns while another
-  migrator holds the advisory lock, and `active-matches`/`recent-members` report
-  activity as `INFO`; add `--require-idle` to fail while a match is running or
-  revealing.
-- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 11 --require-default-question-time`.
-  It requires ledger 1–11, both `question_time_ms` columns as `integer NOT NULL
-  DEFAULT 20000`, validated `rooms_question_time_check`,
-  `matches_question_time_check` and `match_answers_elapsed_ms_range_check`,
-  exactly one `elapsed_ms` check of 0..40000, and the runtime role's effective
-  `SELECT`/`INSERT`/`UPDATE` on `question_time_ms` (the 004 table grants cover
-  it) still without ledger access (table or column grants). `question-time-values`
-  counts the stored values and fails on anything but `20000`/`40000`;
-  `--require-default-question-time` also fails on `40000`, because until step 4
-  only the migration-010 API serves and it never writes the column, so a
-  `40000` means the candidate API ran too early. After step 4 run `--expect 11`
-  without it: `40000` rooms are then expected and only counted (`INFO`).
+  `docker compose … --profile migration run --rm --no-deps quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check db --expect 11`.
+  It requires ledger 1–11 and `character_only_schema_version() = 11`, the five
+  010 character-only constraints, both 011 `question_time_ms` columns as
+  `integer NOT NULL DEFAULT 20000` with their validated checks, exactly one
+  `elapsed_ms` check of 0..40000, no 012 table (`rankings-table`), a safe
+  `quiz_by_quiz_app` (the attributes `app.migrate` demands, `EXECUTE` on the
+  schema-version function, effective `SELECT`/`INSERT`/`UPDATE` on
+  `question_time_ms`, no access to the ledger), and the statement-logging
+  preflight above: `log_statement`, `log_min_duration_statement`,
+  `log_duration` and statement sampling must be off (`FAIL`);
+  `log_min_error_statement` and any per-database or per-role logging setting are
+  `WARN`, because a failed `ALTER ROLE … PASSWORD` could be logged with the
+  password. `question-time-values` counts the stored values (`INFO`; the 011
+  API writes `40000` rooms) and fails on anything but `20000`/`40000`.
+  `pending-migrations` names what this image's `app.migrate` would apply
+  (`12`), `migration-lock` warns while another migrator holds the advisory
+  lock, and `active-matches`/`recent-members` report activity as `INFO`; add
+  `--require-idle` to fail while a match is running or revealing.
+- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 12 --require-empty-rankings`.
+  It requires ledger 1–12, the ranking table's 15 columns (`board` and
+  `week_start` stored generated, `id` an identity, `owner_key` a nullable
+  `bytea`), its six validated checks (`online_rankings_owner_key_length` must
+  require 32-byte keys) and `online_rankings_match_player_key`, its three indexes valid,
+  `prune_online_rankings()` `SECURITY DEFINER` with a fixed `search_path`, and
+  the runtime role's effective `SELECT`/`INSERT` on the table without `UPDATE`,
+  `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` (table or column grants),
+  `EXECUTE` on the prune function, still without ledger access.
+  `rankings-records` counts the records; `--require-empty-rankings` fails on
+  any, because until step 4 only the migration-011 API serves and it never
+  writes the table, so a record means the candidate API ran too early. After
+  step 4 run `--expect 12` without it: records are then expected and only
+  counted (`INFO`).
+- At the preceding 011 boundary the same commands ran with `--expect 10` before
+  the migration and `--expect 11 --require-default-question-time` after it
+  (every room and match still at `20000`, because only the migration-010 API
+  served until its step 4). Run them from the #107 image for a database still at
+  migration 010: this image's migrate service cannot stop at 011 (it applies 11
+  and 12 together), so its `--expect 11` check after migrating would fail with
+  "latest version is 12".
 - **Step 3, first — the private bank** (before the `db` checks, while the
-  migration-010 API still serves):
+  migration-011 API still serves):
   `docker compose … --profile migration run --build --rm --no-deps -e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank --volume "<QUIZ_ONLINE_BANK_DIR>:/run/quiz-by-quiz/online-bank:ro" quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check bank`.
   It builds the candidate migrate image, mounts only the bank read-only and
   loads it exactly as the candidate API will at startup, so a bank the candidate
-  would refuse stops the release while the database is still at 10. Do not build
+  would refuse stops the release while the database is still at 11. Do not build
   the `quiz-by-quiz-api` image for this: once that image changes, the next
-  `docker compose up` could replace the 010 API before migration 011. It prints
+  `docker compose up` could replace the 011 API before migration 012. It prints
   counts only: questions per category (`FAIL` below the 10 a category round
   needs), ids longer than 64 characters (`FAIL` — `match_questions.question_id`
   is `varchar(64)`, so the API would start but a match that draws one could
@@ -383,16 +571,186 @@ the answers, and always leaves the room again (also on Ctrl-C, SIGTERM and
 SIGHUP). It never prints tokens, tickets or response bodies, and exits 0 only
 when every step is `ok`.
 
-- Before step 3: `python3 deploy/oracle/smoke.py baseline` (the migration-010
-  API, readiness `schemaVersion: 10`). Its websocket result is the baseline for
-  step 5: a later websocket failure then points at the candidate, not at the
-  host's route.
+- Before step 3: `python3 deploy/oracle/smoke.py baseline` (the migration-011
+  API, readiness `schemaVersion: 11`; a room created without `questionTimeMs`
+  reports 20000 and its players carry `connected`; 40000 is accepted and 30000
+  refused). Its websocket result is the baseline for step 5: a later websocket
+  failure then points at the candidate, not at the host's route.
 - After step 3: `python3 deploy/oracle/smoke.py baseline-migrated` (the same
-  API on a migration-11 database; readiness must be 503 `migration-required`).
+  API on a migration-12 database; readiness must be 503 `migration-required`).
 - After step 4: `python3 deploy/oracle/smoke.py candidate` (readiness
-  `schemaVersion: 11`; a room created without `questionTimeMs` reports 20000
-  and its players carry `connected`; 40000 is accepted and 30000 refused; the
-  socket answers 101 `qbb.v1` and echoes one movement message).
+  `schemaVersion: 12`; the session answers `rankings: true`; an e-mail-shaped
+  nickname is refused with 400 `nickname-personal-info` without changing the
+  profile; an anonymous `GET /v1/rankings?mode=all&period=week` and an
+  identified all-time history read answer 200 with exactly the public fields,
+  at most 10 entries, an Asia/Seoul week window and no anonymous `isMine`, and
+  an unknown board is 400 `invalid-ranking`; then the same room, settings and
+  socket checks as the baseline — the socket answers 101 `qbb.v1` and echoes
+  one movement message). It opens no match, so it records nothing in the
+  ranking.
 
 If the host cannot reach its own public address, add `--resolve-to 127.0.0.1`;
 the URL host still names the Host header and the TLS certificate.
+
+## Operational log and uptime monitor
+
+### Operational log (`quiz.ops`)
+
+The API writes its own operational log: one JSON object per line on the
+container's stderr, at INFO, through a dedicated handler of the `quiz.ops`
+logger (`server/app/ops_log.py`). It does not depend on the Uvicorn
+`--log-level warning` of the runtime `CMD` and is not propagated to other
+loggers, so each line appears once. Docker keeps it in the existing json-file
+log of `quiz-by-quiz-api` (10 MB × 3); there is no new volume, port or service.
+In the commands below `docker compose …` is the platform base rendered with this
+overlay, as above; `docker logs <container>` works too but prints the
+container's stderr on the CLI's stderr (add `2>&1` before a pipe).
+
+```sh
+# the latest summaries
+docker compose … logs --no-log-prefix --since 1h quiz-by-quiz-api | grep -F '{"event":"summary"'
+# unhandled server errors of the last day
+docker compose … logs --no-log-prefix --since 24h quiz-by-quiz-api | grep -F '{"event":"server_error"'
+# follow every operational event (warnings and tracebacks are not JSON lines)
+docker compose … logs --no-log-prefix -f quiz-by-quiz-api | grep --line-buffered -F '{"event":'
+# summaries as a table, with the host's python3 (no jq needed)
+docker compose … logs --no-log-prefix --since 24h quiz-by-quiz-api | python3 -c '
+import json, sys
+for line in sys.stdin:
+    if line.startswith("{\"event\":\"summary\""):
+        e = json.loads(line)
+        print(e["ts"], e["rooms"], e["matches"], e["requests"], e["rateLimited"], e["latencyMs"])
+'
+```
+
+Sample lines:
+
+```json
+{"event":"api_started","ts":"2026-10-27T03:00:01.214Z","schemaVersion":12}
+{"event":"room_created","ts":"2026-10-27T03:02:12.342Z","room":"K7PQ2M","capacity":6,"category":"all","questionTimeMs":20000,"locked":false}
+{"event":"member_joined","ts":"2026-10-27T03:02:40.118Z","room":"K7PQ2M","players":2}
+{"event":"match_started","ts":"2026-10-27T03:04:03.977Z","room":"K7PQ2M","players":4,"category":"science","questionTimeMs":40000,"questions":10}
+{"event":"match_finished","ts":"2026-10-27T03:10:52.006Z","room":"K7PQ2M","via":"sweep"}
+{"event":"host_transferred","ts":"2026-10-27T03:12:30.401Z","room":"K7PQ2M","reason":"host-absent"}
+{"event":"server_error","ts":"2026-10-27T03:13:07.552Z","method":"POST","route":"/v1/rooms/{raw_code}/match/answers","error":"ConnectionError"}
+{"event":"summary","ts":"2026-10-27T03:15:00.012Z","windowSeconds":300,"sockets":14,"players":12,"rooms":{"waiting":3,"playing":1},"matches":1,"requests":{"total":1185,"2xx":1161,"3xx":0,"4xx":24,"5xx":0},"rateLimited":2,"unhandled":0,"latencyMs":{"p50":20.0,"p95":50.0,"max":212.4}}
+```
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `api_started` / `api_stopped` | `schemaVersion` (start only) | Lifespan start and shutdown. A restart also ends kick blocks and presence records (single-worker memory). |
+| `room_created` | `room`, `capacity`, `category` (`all` for the all-categories round), `questionTimeMs`, `locked` | A room is created. |
+| `room_deleted` | `room`, `reason` (`empty`) | The last member left. Rooms removed by the cleanup sweep are counted in `cleanup`. |
+| `member_joined` / `member_left` | `room`, `players` (members after the change) | A new membership (re-entering an existing one is not) / leaving through the API. |
+| `member_removed` | `room`, `players`, `blocked` | The host removed someone; `blocked` is the 10-minute kick of a connected member. |
+| `host_transferred` | `room`, `reason` (`host-left`, `host-absent`) | The host left, or the presence sweep moved the seat from a disconnected host. Cleanup handovers are counted in `cleanup`. |
+| `match_started` | `room`, `players`, `category`, `questionTimeMs`, `questions` | The host started a match. |
+| `match_finished` | `room`, `via` (`sweep`, `request`) | The last reveal ended, closed by the deadline sweep or by a player's read. |
+| `cleanup` | `roomsDeleted`, `membersRemoved`, `hostsTransferred`, `matchesDeleted`, `playersDeleted`, `rankingsPruned` | A 60-second cleanup tick that changed anything (no line otherwise); `rankingsPruned` counts ranking records past their retention ("Online rankings"). |
+| `server_error` | `method`, `route` (the route template, e.g. `/v1/rooms/{raw_code}`), `error` (exception class) | An exception no handler turned into a response; the client gets 500 and Uvicorn still logs the traceback as before. |
+| `summary` | see below | Every 5 minutes. |
+
+`summary` covers the window since the previous summary (`windowSeconds`).
+`sockets` is the open event sockets, `players` the (room, player) pairs with at
+least one live socket, `rooms.waiting`/`rooms.playing` the unexpired rooms
+without/with a running or revealing match, and `matches` the running or
+revealing matches; those three come from one aggregate query per summary and
+are `null` when it failed (the warning `ops summary room counts failed` follows).
+`requests` counts REST responses by status class, `rateLimited` the `429`s and
+`unhandled` the exceptions that became `500` (each also has a `server_error`
+line). The private health checks used by Docker and Caddy (`/healthz`,
+`/readyz`) and WebSockets are not counted. `latencyMs` is the time to the end of
+the response: `p50` and `p95` are the upper bound of the fixed bucket holding
+that rank (1, 2, 5, 10, 20, 50, 100, 200, 500, 1,000, 2,000, 5,000 and
+10,000 ms, never above `max`), `max` the slowest request, all `null` in a window
+without requests.
+
+**Never logged:** nicknames, room names, chat text, bearer tokens or their
+hashes, WebSocket tickets, IP addresses or `X-Forwarded-For`, player ids,
+passwords or password hashes, question ids or content, request paths with their
+values, query strings, bodies, and exception messages (they can carry SQL
+values). Each event is a function whose parameters are its fields
+(`EVENT_FIELDS`); there is no free-form field, and unexpected values are
+written as `<invalid>`. Room codes and counts are logged; a room code is the
+six characters the lobby already shows and is reused after the room is gone.
+`server/tests/test_ops_log.py` drives a room's whole life through the API with
+personal data in every value, including a match whose question id, text,
+choices, explanation and review pass through the responses, and asserts that
+none of it reaches a line.
+
+Resource envelope: the request counters are fixed-size (14 latency buckets, 5
+status classes and three numbers) whatever the traffic, nothing is retained per
+request, and the per-request cost is a bisect and a few increments. Events are
+per room, membership and match, not per request, so a busy classroom day is on
+the order of a few thousand lines (well under 1 MB) plus 288 summaries, and the
+30 MB json-file budget still holds weeks of history alongside the warnings. This
+changes none of the limits above.
+
+### Uptime monitor
+
+`.github/workflows/uptime.yml` runs `deploy/oracle/uptime.py check` every 15
+minutes and on `workflow_dispatch` (`gh workflow run uptime.yml`). It only
+reads — no session, room or socket is created; `smoke.py` stays the write check
+for deploys. It checks that:
+
+- `GET /v1/release-readiness` answers 200 with `status: ready`,
+  `contract: character-only-v1` and a `schemaVersion` at least the one the Pages
+  workflow's `backend-ready` job waits for (read from `.github/workflows/pages.yml`
+  of the same checkout, so the two never drift), with
+  `Access-Control-Allow-Origin: https://perust.github.io`, within 5 seconds;
+- `https://perust.github.io/quiz-by-quiz/` answers 200 itself (redirects are not
+  followed) and its `quiz-api-base` meta names that same API.
+
+A failing check is tried three times in all, 5 and 15 seconds apart; a `429`
+waits for its `Retry-After` (at most 60 seconds) instead, a response slower than
+5 seconds counts as a failed attempt, and every request times out after 15
+seconds. Only then does the check fail. The report is a few lines of status
+codes, error codes and the checked values:
+
+```text
+quiz-by-quiz uptime check 2026-10-27T13:04:44Z
+api: https://quiz-by-quiz-api.150.230.222.142.sslip.io
+pages: https://perust.github.io/quiz-by-quiz/
+expected schemaVersion >= 12 (pages.yml backend-ready)
+ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12 (want >= 12), CORS ok, 0.28s
+ok pages: HTTP 200, quiz-api-base "https://quiz-by-quiz-api.150.230.222.142.sslip.io", 0.27s
+verdict: ok
+```
+
+and on failure, for example, `FAIL readiness: HTTP 503 migration-required
+(after 3 attempts)` followed by `verdict: FAIL`.
+
+On failure the workflow (permissions `contents: read` and `issues: write`, the
+`GITHUB_TOKEN` through the `gh` CLI) opens one issue labelled `운영 경보` with
+the report and the run URL, or comments on the open one — there is never more
+than one open alert — and then fails the job, so GitHub sends its failed-run
+e-mail. For scheduled runs GitHub mails the user who created the workflow, then
+whoever last changed its `cron` line or re-enabled it, if their notification
+settings include failed Actions workflows. The next passing run comments that
+the service recovered and closes the alert. Runs share one concurrency group:
+at most one runs and one waits, and a running check is not cancelled. A run
+that is cancelled — by hand, or by reaching the job's 10-minute limit — opens,
+comments on and closes nothing (the alert steps run only when `!cancelled()`),
+because a check that never finished is not a failed check. A check that hangs
+is still reported: the probe step has its own 8-minute limit, above the
+longest designed check (two checks of three attempts, each request waiting up
+to 15 seconds to connect and 15 more for the response, with waits of at most
+60 seconds, 7 minutes in all), and a step that reaches it fails without
+cancelling the run, so the alert says the report is missing and the job
+fails. The repository is public, so the runs cost no Actions minutes and the
+alert issues are public too; the report holds nothing that is not already
+public.
+
+- Scheduled workflows run only from the default branch, so the monitor starts
+  once this file is on `main`. GitHub may delay scheduled runs at busy times,
+  and in a public repository it disables a schedule after 60 days without
+  repository activity; re-enable it in the Actions tab or with
+  `gh workflow enable uptime.yml`.
+- A planned deploy window opens an alert: while a migration runs ahead of its
+  API (step 3 until step 4 of the staging order) the serving API answers 503
+  `migration-required`. Disable the monitor before step 3 with
+  `gh workflow disable uptime.yml` and enable it again with
+  `gh workflow enable uptime.yml` once the public readiness response passes; a
+  run already in progress may still report the window.
+- Run it by hand from any machine with Python 3.8 or newer:
+  `python3 deploy/oracle/uptime.py check` (exit 0 only when the verdict is `ok`).

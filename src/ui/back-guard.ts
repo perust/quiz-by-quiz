@@ -96,6 +96,8 @@ const BACK_CONTROLS: Partial<Record<ScreenName, string>> = {
   online: 'online-home',
   // 결과: 「홈으로」가 아직 남기지 않은 기록을 자동 저장한 뒤 홈으로 간다 (FR-6.1)
   result: 'result-home',
+  // 중간에 나온 판의 «푼 문제» (N04): 나가기와 같은 곳(방에서 연 판이면 대기실)으로 간다. 저장하지 않는다
+  'quiz-review': 'quiz-review-leave',
 };
 
 export function backStepFor(

@@ -43,6 +43,24 @@ def ws_protocols(ticket: str) -> list[str]:
     return [WS_PROTOCOL, f"qbb.ticket.{ticket}"]
 
 
+def plain_room_event(event: dict[str, object]) -> dict[str, object]:
+    """room-invalidated의 판 번호(fan-out 줄이기)를 확인하고 뗀다.
+
+    이 테스트가 보는 것은 그 밖이다.
+    """
+    if event.get("type") != "room-invalidated":
+        return event
+    epoch = event.get("roomEpoch")
+    version = event.get("roomVersion")
+    assert isinstance(epoch, str) and epoch
+    assert type(version) is int and version > 0
+    return {
+        key: value
+        for key, value in event.items()
+        if key not in {"roomEpoch", "roomVersion", "readyChange"}
+    }
+
+
 def room_view(**changes: Any) -> RoomView:
     base = RoomView(
         code="ABC234",
@@ -76,7 +94,7 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 11
+        self.current_schema_version = 12
         self.schema_version_calls = 0
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
@@ -236,6 +254,8 @@ class FakeRepository:
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: Any | None = None,
     ) -> bool:
         # 이 가짜 방에는 진행 중인 판이 없다.
         return False
@@ -304,7 +324,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_11() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_12() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -312,11 +332,12 @@ def test_release_readiness_requires_character_only_contract_and_migration_11() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 11,
+            "schemaVersion": 12,
         }
 
-        # 010까지의 DB에는 방장이 고른 문항 시간 열이 없다. 이 API는 그 위에서 방을 읽지 못한다
-        for older in (9, 10):
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가 없다. 이 API는
+        # 그 위에서 방을 읽거나 판을 닫지 못한다(닫는 transaction이 랭킹을 남긴다)
+        for older in (9, 10, 11):
             repository.current_schema_version = older
             blocked = client.get("/v1/release-readiness")
             assert blocked.status_code == 503
@@ -354,7 +375,15 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json() == {"playerId": str(PLAYER_ID)}
+    # 방 snapshot이 없는 화면(홈·빈 로비·「게임 방법」)도 이 API의 규칙을 말하도록 함께 알린다 —
+    # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이며(standingAnswers, U13), 끝난
+    # 판은 서버 랭킹에 남는다(rankings, FR-7.13 2단계)
+    assert response.json() == {
+        "playerId": str(PLAYER_ID),
+        "minPlayers": 1,
+        "standingAnswers": True,
+        "rankings": True,
+    }
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text
 
@@ -716,7 +745,7 @@ class SharedAddressRoomsRepository(RotatingIdentityRepository):
     async def set_ready(self, actor_id: UUID, code: str, is_ready: bool) -> RoomView:
         return self.room
 
-    async def advance_expired_matches(self) -> list[Any]:
+    async def advance_expired_matches(self, *, standing_answers: Any | None = None) -> list[Any]:
         return []
 
     async def submit_answer(
@@ -727,6 +756,7 @@ class SharedAddressRoomsRepository(RotatingIdentityRepository):
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: Any | None = None,
     ) -> Any:
         if self.memberships.get(actor_id) != code:
             self.foreign_answers += 1
@@ -1537,7 +1567,7 @@ def test_presence_sweep_transfers_an_absent_host_and_invalidates_remaining_scree
             event = stayer_socket.receive_json()
 
     assert repository.transfer_calls[0] == {"ABC234": frozenset({leaver_id})}
-    assert event == {"type": "room-invalidated"}
+    assert plain_room_event(event) == {"type": "room-invalidated"}
 
 
 def _issue_tickets(
@@ -1583,7 +1613,7 @@ def test_presence_sweep_keeps_retrying_an_absent_host_until_someone_can_take_ove
 
             clock.now += 61
             # 끊김이 처음 보일 때 한 번 다시 읽게 한다. 넘길 사람이 없어 넘기지는 못했다.
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             wait_until(
                 lambda: len(repository.transfer_calls) >= 3,
                 "the sweep stopped looking at a room whose host is still absent",
@@ -1596,7 +1626,7 @@ def test_presence_sweep_keeps_retrying_an_absent_host_until_someone_can_take_ove
                 lambda: repository.transferred_codes == {"ABC234"},
                 "a member who joined after the failed transfer never became host",
             )
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
 
     assert repository.transferred_codes == {"ABC234"}
     assert all(
@@ -1634,7 +1664,7 @@ def test_presence_sweep_forgets_members_that_the_room_no_longer_has() -> None:
             wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
 
             clock.now += 61
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             assert hub.absent_actors("ABC234") == frozenset({leaver_id})
 
             # 정리가 끊긴 사람을 방에서 뺐다. 남은 화면도 다시 읽는다.
@@ -1643,7 +1673,7 @@ def test_presence_sweep_forgets_members_that_the_room_no_longer_has() -> None:
                 lambda: hub.absent_actors("ABC234") == frozenset(),
                 "the sweep kept the presence record of a removed member",
             )
-            assert stayer_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(stayer_socket.receive_json()) == {"type": "room-invalidated"}
             # 같은 방에 다시 들어오면 처음 본 사람처럼 새 유예로 센다.
             assert hub.is_present("ABC234", leaver_id)
 
@@ -1739,7 +1769,7 @@ def test_host_removes_a_long_disconnected_member_and_they_hear_why_when_they_ret
             removed = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
             assert removed.status_code == 200
             assert [player["id"] for player in removed.json()["players"]] == [str(host_id)]
-            assert host_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(host_socket.receive_json()) == {"type": "room-invalidated"}
 
         assert repository.remove_calls[-1] == (host_id, "ABC234", ghost_id, frozenset({ghost_id}))
         # 끊김 기록은 멤버십과 함께 끝난다.
@@ -1846,7 +1876,7 @@ def test_host_kicks_a_connected_member_who_is_told_at_once_and_kept_out_for_a_wh
                 with pytest.raises(WebSocketDisconnect) as closed:
                     guest_socket.receive_json()
                 assert closed.value.code == 4403
-            assert host_socket.receive_json() == {"type": "room-invalidated"}
+            assert plain_room_event(host_socket.receive_json()) == {"type": "room-invalidated"}
 
         assert repository.remove_allow_connected == [False, True, True]
         assert repository.remove_calls[-1][:3] == (host_id, "ABC234", guest_id)

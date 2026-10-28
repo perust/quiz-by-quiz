@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { DESKTOP, MOBILE, NARROW, lengthOf, loadStyles, node, valueOf } from './css-cascade.mjs';
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -29,8 +30,17 @@ test('퀴즈의 직접 보기와 조작법 버튼은 44px 이상 터치 목표�
   assert.match(localQuiz, /id="arena-help"[\s\S]*?<span class="sr-only">캐릭터 퀴즈 조작법<\/span>/);
   assert.match(localQuiz, /<ul class="choices" id="choices" aria-label="보기"><\/ul>/);
 
-  const compactChoice = block(css, '.quiz--character .choice');
-  assert.match(compactChoice, /min-height:\s*44px\s*;/);
+  // 보기 높이는 화면마다 다른 규칙이 정한다(56px · 420px 이하 52px · 짧은 가로 touch 44px). 예전에는 첫
+  // 평평한 블록의 글자를 보았는데, 그 블록(44px)은 뒤의 월드 배치 규칙에 늘 덮여 화면에 나오지 않는 값이었다 —
+  // 그 죽은 선언은 U49 에서 지웠다. 이제 이긴 값을 잰다
+  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']");
+  const choice = node('button.choice', node('li', node('ul.choices#choices', quiz)));
+  const envs = [DESKTOP, MOBILE, NARROW, { ...MOBILE, width: 740, height: 360 }, { ...MOBILE, width: 568, height: 320 }];
+  for (const env of envs) {
+    const height = lengthOf(rules, valueOf(rules, choice, 'min-height', env), env);
+    assert.ok(height >= 44, `${env.width}×${env.height} 보기 ${height}px`);
+  }
 
   const helpButton = block(css, '.arena__help');
   assert.match(helpButton, /width:\s*44px\s*;/);

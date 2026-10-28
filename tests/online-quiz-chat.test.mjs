@@ -92,7 +92,8 @@ test('online quiz chat reuses the active match subscription and binds bubbles to
     source('src/app.ts'),
   ]);
 
-  assert.match(controller, /\{ type: 'room' \| 'movement' \| 'chat' \}/);
+  // 발밑 칸 초안이 닿는지(`standing-delivery`, U13)도 같은 매치 소켓이 나른다
+  assert.match(controller, /\{ type: 'room' \| 'movement' \| 'chat' \| 'standing-delivery' \}/);
   assert.match(controller, /event\.type === 'room' \|\| event\.type === 'movement' \|\| event\.type === 'chat'/);
   assert.match(quiz, /createPlayerBubbleController/);
   assert.match(quiz, /bubble\.className = 'walker__bubble'/);

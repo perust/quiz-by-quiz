@@ -33,6 +33,10 @@
 ```
 
 - 모든 category에 **최소 10문제**가 필요합니다. category match는 10문제, 전체 match는 category별 5문제를 고정합니다.
+- `difficulty`(`easy`·`normal`·`hard`)가 있으면 한 판의 난이도 구성이 그 category bank의 비율을 따릅니다(FR-1.10, 공개 Pages와 같은 규칙).
+  전체 match는 category별 5문제를 지키면서 판 전체가 비율을 따릅니다(목표는 category마다의 몫의 합 — category마다 따로 나누면 작은 난이도가
+  늘 내림됩니다).
+  없거나 이 셋 밖의 값이어도 API는 거절하지 않고, 그런 문항을 한 묶음으로 보고 예전처럼 고릅니다. 비율이 한쪽으로 기울면 판마다 그만큼 기웁니다.
 - 같은 방의 다음 판은 그 방의 최근 판(최대 120문항, match 수명 동안)에 나온 문항을 후순위로 미룹니다. category의 문항이 많을수록
   «한 판 더»에서 같은 문제가 되풀이되기까지 오래 걸립니다 — 최소치(10문제)면 둘째 판부터 같은 문제가 돌아옵니다.
 - 판이 끝나면 그 판의 참가자는 자기가 푼 문항의 질문·보기·정답·해설을 다시 볼 수 있습니다(«문제 다시 보기»). 공개 단계에서 문항마다
@@ -70,7 +74,7 @@ API는 다음 경우 fail-closed로 시작하지 않습니다.
 
 ### migration 011 전에 bank 확인
 
-공개 형식 `id`를 거절하는 것은 migration 011 후보 API부터입니다. 그 전의 API(migration 010)는 `id`가 유일하기만 하면 받았으므로, 지금 잘 쓰이는 bank라도 후보 API는 시작하지 않을 수 있습니다. API를 바꾼 뒤에야 알면 후보 API가 시작하지 않아 되돌릴 때까지 온라인 매치가 멈춥니다. 그러니 실제 bank를 후보 API의 loader로 읽어 보는 검사를 **migration 011보다 먼저**(`deploy/oracle/README.md` «Fail-closed staging order»의 3단계 전, 010 API가 그대로 도는 동안) 돌리고, exit status가 0이 아니면 배포를 멈춥니다.
+공개 형식 `id`를 거절하는 것은 migration 011 후보 API부터입니다. 그 전의 API(migration 010)는 `id`가 유일하기만 하면 받았으므로, 지금 잘 쓰이는 bank라도 후보 API는 시작하지 않을 수 있습니다. API를 바꾼 뒤에야 알면 후보 API가 시작하지 않아 되돌릴 때까지 온라인 매치가 멈춥니다. 그러니 실제 bank를 후보 API의 loader로 읽어 보는 검사를 **migration 011보다 먼저**(`deploy/oracle/README.md` «Fail-closed staging order»의 3단계 전, 010 API가 그대로 도는 동안) 돌리고, exit status가 0이 아니면 배포를 멈춥니다. 지금 경계(migration 012, 온라인 랭킹)에서도 같은 명령을 **migration 012보다 먼저**, 011 API가 그대로 도는 동안 돌립니다.
 
 ```bash
 docker compose … --profile migration run --build --rm --no-deps \
@@ -80,7 +84,7 @@ docker compose … --profile migration run --build --rm --no-deps \
 ```
 
 - `docker compose …`는 platform base에 이 overlay를 함께 render한 것입니다. 3단계에서 쓸 `quiz-by-quiz-migrate` 이미지를 후보 소스로 빌드하고, 그 일회용 container에 bank만 read-only로 붙여 API가 시작할 때와 같은 loader(`QuestionCatalog.from_directory`)로 읽습니다. API를 띄우거나 DB에 붙지 않고, 출력에는 질문·보기·정답·해설이 없습니다.
-- API service로 돌리려고 `quiz-by-quiz-api` 이미지를 미리 빌드하지 않습니다. 그 이미지가 바뀌면 다음 `docker compose up`이 migration 011 전에 010 API를 후보로 바꿀 수 있습니다. API 이미지는 4단계에서 빌드합니다.
+- API service로 돌리려고 `quiz-by-quiz-api` 이미지를 미리 빌드하지 않습니다. 그 이미지가 바뀌면 다음 `docker compose up`이 그 경계의 migration 전에 지금 도는 API(011 경계에서는 010 API, 012 경계에서는 011 API)를 후보로 바꿀 수 있습니다. API 이미지는 4단계에서 빌드합니다.
 
 공개 형식 `id`가 나오면 그대로 배포하지 않습니다. 번호를 바꾸는 것은 소유자 결정입니다.
 

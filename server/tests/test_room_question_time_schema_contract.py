@@ -15,8 +15,9 @@ def _sql() -> str:
 def test_question_time_is_the_eleventh_contiguous_migration() -> None:
     versions = [migration.version for migration in discover_migrations(MIGRATIONS)]
 
-    assert versions == list(range(1, 12))
-    assert discover_migrations(MIGRATIONS)[-1].path.name == "011_room_question_time.sql"
+    # 012(온라인 랭킹)가 뒤를 잇는다 — 011은 열한 번째 자리에 그대로 있다
+    assert versions[:11] == list(range(1, 12))
+    assert discover_migrations(MIGRATIONS)[10].path.name == "011_room_question_time.sql"
     assert "values (11)" in _sql()
     assert "on conflict (version) do nothing" in _sql()
 

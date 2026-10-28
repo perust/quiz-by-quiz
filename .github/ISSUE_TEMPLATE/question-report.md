@@ -2,7 +2,7 @@
 name: 문제 신고
 about: 게임 속 문제의 정답·보기·해설이 이상할 때 알려 주세요
 title: '[문제 신고] '
-labels: ''
+labels: '문제 신고'
 assignees: ''
 ---
 

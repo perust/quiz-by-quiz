@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
@@ -38,6 +40,9 @@ class RoomView:
     in_match: bool = False
     # 방장이 고른 문항 시간(ms, 20초·40초). 판을 열 때 그 판에 옮겨 적는다.
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 이 요청(나가기)이 방장 자리를 넘겼는가. 운영 기록(`ops_log.host_transferred`)만 읽는다 —
+    # 방 payload에는 싣지 않는다.
+    host_transferred: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,9 @@ class MatchSetup:
     game_mode: bool
     total_questions: int
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 판에 든 사람 수. 운영 기록(`ops_log.match_started`)만 읽는다 — 시작 payload에는 싣지 않는다.
+    # 모르는 저장소(테스트의 가짜)는 None이다.
+    player_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +136,9 @@ class MatchView:
     # 이 판의 문항 시간(ms). 시작할 때 방 설정에서 옮겨 와 판 내내 같다 —
     # 모든 문항 마감이 이 값이다.
     question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 끝난 판에서만: 묻는 사람의 이 판 결과가 온라인 랭킹에 남았는가 (FR-7.13 2단계). 판을 닫은
+    # transaction이 남기므로 012 API가 닫은 판이면 언제나 true다(011 API가 닫은 판은 false).
+    ranking_recorded: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +162,33 @@ class ExpiredMatchAdvance:
 
     code: str
     finished: bool
+    # 넘긴 판과 넘기기 전의 문항 순서. API가 그 문항까지의 발밑 칸 초안을 버린다 (U13)
+    match_id: UUID | None = None
+    position: int | None = None
+
+
+@dataclass(frozen=True)
+class StandingAnswer:
+    """시간이 끝나면 답으로 세는 발밑 칸 (U13, 혼자 하기와 같은 규칙).
+
+    화면이 실제로 움직인 뒤 선 칸을 방 소켓으로 보낸 초안이다. API의 메모리에만 있고(presence와
+    같은 단일 worker 계약) DB에는 마감이 그 사람의 빈 답을 채울 때 보통 답으로만 남는다.
+    """
+
+    choice_index: int
+    # API가 받은 시각(UTC). 마감 뒤에 닿은 초안은 세지 않는다
+    received_at: datetime
+
+
+class StandingAnswerSource(Protocol):
+    """마감이 빈 답을 채울 때 묻는 발밑 칸 초안. 이 판·이 문항의 것만 돌려준다."""
+
+    def for_question(
+        self,
+        code: str,
+        match_id: UUID,
+        position: int,
+    ) -> Mapping[UUID, StandingAnswer]: ...
 
 
 @dataclass(frozen=True)
@@ -161,6 +199,88 @@ class AbsentHostSweep:
     transferred: frozenset[str]
     # 지금 있는 방마다 참가자. 물어본 방이 여기 없으면 사라졌거나 만료됐다.
     members: Mapping[str, frozenset[UUID]]
+
+
+@dataclass(frozen=True)
+class CleanupCounts:
+    """60초 정리 한 번이 지우거나 넘긴 수. API가 0이 아닐 때만 운영 기록에 한 줄 낸다."""
+
+    rooms_deleted: int = 0
+    members_removed: int = 0
+    hosts_transferred: int = 0
+    matches_deleted: int = 0
+    players_deleted: int = 0
+    # 보존 기간(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄)을 넘겨 지운 랭킹 기록
+    # (migration 012)
+    rankings_pruned: int = 0
+
+    @property
+    def changed(self) -> bool:
+        return any(
+            (
+                self.rooms_deleted,
+                self.members_removed,
+                self.hosts_transferred,
+                self.matches_deleted,
+                self.players_deleted,
+                self.rankings_pruned,
+            )
+        )
+
+
+# 온라인 랭킹의 판: 전체 도전('all')과 분야 다섯. migration 012의 board 열과 같은 값이다.
+RANKING_BOARDS = ("all", "history", "science", "geography", "general", "art")
+RankingPeriod = Literal["week", "all"]
+# 한 번에 내보내는 순위 수 (FR-6.4의 상위 10과 같다)
+RANKING_LIMIT = 10
+
+# «내 기록»(isMine)을 가리는 열쇠의 앞말. 열쇠는 브라우저 비밀(토큰)의 해시에서 나온다.
+_RANKING_OWNER_PREFIX = b"qbb-ranking-owner:"
+
+
+def ranking_owner_key(token_hash: bytes) -> bytes:
+    """랭킹 기록의 주인 열쇠(32바이트). 기록할 때와 읽을 때 같은 함수를 쓴다 (FR-7.13 2단계).
+
+    player id만으로 «내 기록»을 가리면, players 줄이 지워진 뒤(2시간) 그 id를 제 토큰으로
+    다시 등록한 사람이 남의 기록을 «나»로 읽는다 — player id는 로비의 방 snapshot에 실려
+    누구에게나 보인다. 그래서 브라우저만 아는 토큰의 해시에서 열쇠를 만든다. 앞말을 붙여 다시
+    해시하므로 토큰 해시 자체가 기록에 남지 않고, 열쇠로는 로그인할 수 없다.
+    """
+    return hashlib.sha256(_RANKING_OWNER_PREFIX + token_hash).digest()
+
+
+@dataclass(frozen=True)
+class RankingEntryView:
+    """랭킹 한 줄. 브라우저 신분(player_id)은 싣지 않는다 — 묻는 사람의 것인지만 알린다."""
+
+    rank: int
+    nickname: str
+    character_id: str
+    score: int
+    correct_count: int
+    total_count: int
+    recorded_at: str
+    is_mine: bool
+
+
+@dataclass(frozen=True)
+class RankingBoardView:
+    """판 하나의 한 기간 상위 기록. «이번 주»면 서울 시각 월요일 0시부터 다음 월요일까지다."""
+
+    board: str
+    period: RankingPeriod
+    entries: tuple[RankingEntryView, ...]
+    window_start: str | None = None
+    window_end: str | None = None
+
+
+@dataclass(frozen=True)
+class RoomCounts:
+    """운영 요약의 방·판 수. 5분에 한 번 집계 쿼리 하나로 읽는다(`ops_counts`)."""
+
+    waiting_rooms: int
+    playing_rooms: int
+    running_matches: int
 
 
 class RepositoryFailure(RuntimeError):
@@ -304,12 +424,15 @@ class RoomsRepository(Protocol):
 
     # absent_player_ids: 유예를 넘겨 끊긴 참가자. «모두 답했다»의 분모에서 빠진다 (U32).
     # 부르는 쪽(API)이 지금 요청한 사람은 넣지 않는다 — 요청하는 사람은 끊긴 사람이 아니다.
+    # standing_answers: 발밑 칸 초안 (U13). 마감이 빈 답을 채울 때만 묻고, «모두 답했다»에는
+    # 세지 않는다.
     async def get_match(
         self,
         actor_id: UUID,
         code: str,
         *,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchRead: ...
 
     async def submit_answer(
@@ -320,16 +443,42 @@ class RoomsRepository(Protocol):
         position: int,
         choice_index: int | None,
         absent_player_ids: frozenset[UUID] = frozenset(),
+        standing_answers: StandingAnswerSource | None = None,
     ) -> MatchSubmission: ...
 
-    async def cleanup_expired_resources(self) -> None: ...
+    # 지우거나 넘긴 수를 돌려준다. 수를 모르는 구현은 None을 돌려줘도 된다(운영 기록만 빠진다).
+    async def cleanup_expired_resources(self) -> CleanupCounts | None: ...
 
-    async def advance_expired_matches(self) -> list[ExpiredMatchAdvance]: ...
+    # 운영 요약(5분마다)의 기다리는 방·게임 중인 방·도는 판 수
+    async def ops_counts(self) -> RoomCounts: ...
+
+    # 온라인 랭킹 상위 기록 (FR-7.13 2단계). actor_id와 owner_key(`ranking_owner_key`, 인증된
+    # 그 브라우저의 토큰에서)가 모두 같은 기록에만 is_mine을 단다 — 둘 중 하나라도 없으면
+    # 아무것도 내 기록이 아니다. at은 «이번 주»를 고를 시각이다(None이면 DB의 지금) — 테스트가
+    # 주의 경계를 고른다.
+    async def list_rankings(
+        self,
+        *,
+        board: str,
+        period: RankingPeriod,
+        actor_id: UUID | None = None,
+        owner_key: bytes | None = None,
+        at: datetime | None = None,
+        limit: int = RANKING_LIMIT,
+    ) -> RankingBoardView: ...
+
+    async def advance_expired_matches(
+        self,
+        *,
+        standing_answers: StandingAnswerSource | None = None,
+    ) -> list[ExpiredMatchAdvance]: ...
 
     async def advance_past_absent_players(
         self,
         code: str,
         absent_player_ids: frozenset[UUID],
+        *,
+        standing_answers: StandingAnswerSource | None = None,
     ) -> bool: ...
 
     async def is_member(self, actor_id: UUID, code: str) -> bool: ...

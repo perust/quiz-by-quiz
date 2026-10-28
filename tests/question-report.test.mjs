@@ -345,6 +345,8 @@ test('이슈 템플릿: 한국어 «문제 신고»이고, 미리 채운 본문�
   assert.match(front[1], /^name: 문제 신고$/m);
   assert.match(front[1], /^about: .+/m);
   assert.match(front[1], /^title: '\[문제 신고\] '$/m);
+  // 신고는 저장소의 «문제 신고» 라벨로 모인다. URL 의 labels= 는 협업자만 붙일 수 있어 템플릿이 단다
+  assert.match(front[1], /^labels: '문제 신고'$/m);
 
   const headings = (body) => body.split('\n').filter((line) => /^#{2,3} /.test(line));
   const templateLines = template.split('\n');

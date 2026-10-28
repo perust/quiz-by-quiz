@@ -88,8 +88,8 @@ byId('home-note').append(byId('home-note-text'), byId('home-note-reload'), byId(
 byId('home-note').hidden = true;
 byId('rules-dialog').hidden = true;
 byId('nickname-dialog').hidden = true;
-byId('open-online').setAttribute('aria-label', '온라인, 친구와 함께 2명부터');
-byId('open-online-desc').textContent = '친구와 함께 · 2명부터';
+byId('open-online').setAttribute('aria-label', '온라인, 방을 만들거나 참가해요');
+byId('open-online-desc').textContent = '방을 만들거나 참가해요';
 const rulesPanel = new FakeElement('div');
 
 /** 문서에 단 keydown 리스너. 캡처 단계인지와 함께 순서대로 부른다 */
@@ -357,7 +357,8 @@ test('「게임 방법」: Tab 은 대화상자 안에서 맴돈다', () => {
 
 test('app: 「게임 방법」은 지금 고른 문항 시간을 읽고, 화면을 옮길 때 접는다', async () => {
   const app = await source('src/app.ts');
-  assert.match(app, /const rulesDialog = createRulesDialog\(\{ getTimeLimit: \(\) => timeLimitMs \}\);/);
+  // 온라인 한 줄은 세션을 열 때 서버가 알려 준 규칙을 따른다 (U13·혼자 여는 방)
+  assert.match(app, /const rulesDialog = createRulesDialog\(\{\s*getTimeLimit: \(\) => timeLimitMs,\s*getOnlineRules: \(\) => roomStore\.onlineRules\(\),\s*\}\);/);
   assert.match(app, /settingsDialog\.dismiss\(\);\s*rulesDialog\.dismiss\(\);/);
 });
 
@@ -402,4 +403,26 @@ test('문제 은행 알림: 라이브 리전은 글뿐이고 버튼은 그 밖�
   const science = byId('category-grid').children.find((card) => card.dataset.category === 'science');
   assert.equal(science.disabled, true);
   assert.equal(science.getAttribute('aria-label'), '과학 문제 풀기, 불러오지 못함');
+});
+
+test('홈 온라인 입구: 세션이 알려 준 시작 인원으로 보조 줄과 이름을 바꾸고, 바쁨을 거두면 그 말로 돌아온다', () => {
+  const desc = byId('open-online-desc');
+  const button = byId('open-online');
+  home.setOnlineMinPlayers(1);
+  assert.equal(desc.textContent, '혼자서도 · 친구와 함께');
+  assert.equal(button.getAttribute('aria-label'), '온라인, 혼자서도 친구와 함께');
+
+  home.setOnlineBusy(true);
+  assert.equal(desc.textContent, '연결 중…');
+  // 로비를 불러오는 사이 둘부터인 이전 API라는 것을 알았다 — 바쁨 표시는 그대로 두고, 거둘 때 쓴다
+  home.setOnlineMinPlayers(2);
+  assert.equal(desc.textContent, '연결 중…');
+  assert.equal(button.getAttribute('aria-label'), '온라인, 연결 중');
+  home.setOnlineBusy(false);
+  assert.equal(desc.textContent, '친구와 함께 · 2명부터');
+  assert.equal(button.getAttribute('aria-label'), '온라인, 친구와 함께 2명부터');
+
+  home.setOnlineMinPlayers(null);
+  assert.equal(desc.textContent, '방을 만들거나 참가해요', '아직 모르면 어느 API든 맞는 말');
+  assert.equal(button.getAttribute('aria-label'), '온라인, 방을 만들거나 참가해요');
 });

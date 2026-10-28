@@ -158,6 +158,80 @@ export function onlineQuestionTimeLabel(value: OnlineQuestionTime): string {
   return `${Math.round(value / 1000)}초`;
 }
 
+// ── 판을 여는 인원 ─────────────────────────────────────────────
+// 지금 API와 로컬 방은 방장 혼자서도 판을 연다(서버 `MIN_MATCH_PLAYERS`, 소유자 방향: 혼자 하고 싶은
+// 사람도 온라인 방을 만들어 푼다). 화면(Pages)이 API보다 먼저 나갈 수 있으므로 이 규칙을 모르는 이전
+// API도 받는다 — `minPlayers`를 보내지 않는 방·세션은 예전처럼 둘부터다.
+
+/** `minPlayers`를 보내지 않는 이전 API의 시작 인원 */
+export const LEGACY_MIN_PLAYERS = 2;
+
+/** 이전 API의 온라인 규칙: 둘부터, 직접 낸 답만 세고, 서버 랭킹이 없다 */
+export const LEGACY_ONLINE_RULES = {
+  minPlayers: LEGACY_MIN_PLAYERS,
+  standingAnswers: false,
+  rankings: false,
+} as const;
+
+/** 이 방의 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 모르면 이전 API의 2다 */
+export function roomMinPlayers(room: { minPlayers?: number }): number {
+  const value = room.minPlayers;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : LEGACY_MIN_PLAYERS;
+}
+
+/** 홈의 온라인 입구 보조 줄과 그 이름(`aria-label`). 서버에 묻기 전(null)에는 어느 쪽이든 맞는 말이다 */
+export function onlineEntryCopy(minPlayers: number | null): { desc: string; label: string } {
+  if (minPlayers === null) return { desc: '방을 만들거나 참가해요', label: '온라인, 방을 만들거나 참가해요' };
+  if (minPlayers <= 1) return { desc: '혼자서도 · 친구와 함께', label: '온라인, 혼자서도 친구와 함께' };
+  return { desc: `친구와 함께 · ${minPlayers}명부터`, label: `온라인, 친구와 함께 ${minPlayers}명부터` };
+}
+
+/** 빈 로비(방이 하나도 없다)의 말. `practice`는 홈의 「혼자 연습하기」를 함께 보일지다 */
+export interface LobbyEmptyCopy {
+  title: string;
+  copy: string;
+  label: string;
+  practice: boolean;
+}
+
+/**
+ * 방이 하나도 없는 로비 (U29). 혼자 온 사람에게 막다른 길이 되지 않게 한다 — 방장 혼자서도 여는
+ * API라면 «방을 만들면 혼자서도 바로 시작한다»를 먼저 말하고 만들기로 잇는다(혼자 연습하러 홈으로
+ * 돌려보낼 까닭이 없다). 둘부터인 이전 API(또는 아직 모르면)는 예전처럼 «친구를 불러야» +
+ * 「혼자 연습하기」다. 짧은 touch 화면은 설명 줄을 접으므로 핵심은 제목에 둔다.
+ */
+export function lobbyEmptyCopy(minPlayers: number | null): LobbyEmptyCopy {
+  if (minPlayers !== null && minPlayers <= 1) {
+    return {
+      title: '방을 만들면 혼자서도 바로 시작할 수 있어요',
+      copy: '아직 열린 방이 없어요. 혼자 풀어도 되고, 코드를 알려 주면 친구도 들어와요.',
+      label: '방 만들기',
+      practice: false,
+    };
+  }
+  const minimum = minPlayers ?? LEGACY_MIN_PLAYERS;
+  return {
+    title: `친구를 불러야 시작할 수 있어요 (${minimum}명부터)`,
+    copy: '아직 열린 방이 없어요. 방을 만들고 코드를 친구에게 알려 주세요.',
+    label: '방 만들고 친구 부르기',
+    practice: true,
+  };
+}
+
+/**
+ * 시작 인원을 모를 때(null)의 인원 도움말. 세션을 열지 못한 채(목록을 읽지 못했다) 만들기 폼을 열 수 있어서,
+ * 어느 API든 맞는 말만 한다 — 고른 수가 «모여야 하는 수»가 아니라 «들어올 수 있는 수»라는 것. 시작 인원은
+ * 말하지 않는다(이전 API는 둘부터, 지금 API는 혼자서도). 정적 HTML도 이 글로 시작한다.
+ */
+export const CAPACITY_HELP_UNKNOWN = '최대 인원까지 들어올 수 있어요';
+
+/** 방 만들기 폼의 인원 도움말. «최대 인원»이 모여야 시작하는 줄 알지 않게 시작 인원을 따로 말한다 */
+export function capacityHelpText(minPlayers: number | null): string {
+  if (minPlayers === null) return CAPACITY_HELP_UNKNOWN;
+  if (minPlayers <= 1) return '혼자서도 바로 시작할 수 있어요';
+  return `${minPlayers}명부터 시작할 수 있어요`;
+}
+
 /**
  * 방 안에서 겹치지 않는 이름을 만든다. 겹치면 뒤에 1부터 숫자를 붙인다.
  *
@@ -231,6 +305,24 @@ export const REMOVED_BY_HOST_MESSAGES: Record<RemovalKind, string> = {
 /** 서버가 알려 준 이유 코드를 내보내진 방식으로 옮긴다. 그 밖의 코드는 null */
 export function removalKind(code: unknown): RemovalKind | null {
   return code === 'kicked' || code === 'removed' ? code : null;
+}
+
+// ── 닉네임 금칙 규칙 (PRD 12.1) ─────────────────────────────────
+// 서버는 세션을 열 때(PUT /v1/session) 금칙 규칙에 걸린 닉네임을 이 코드의 400으로 거절한다. 화면은
+// 서버의 말 대신 이 말을 쓴다 — 고칠 곳(홈의 닉네임)까지 말한다. 보내기 전에 화면이 먼저 같은 규칙으로
+// 보므로(nickname-rules.ts) 보통은 닿지 않는다. 규칙이 생기기 전에 저장한 이름이면 여기서 듣는다.
+
+export type NicknameRejection = 'nickname-profanity' | 'nickname-personal-info';
+
+export const NICKNAME_REJECTION_MESSAGES: Readonly<Record<NicknameRejection, string>> = {
+  'nickname-profanity': '닉네임에 쓸 수 없는 말이 들어 있어요. 홈에서 닉네임을 바꿔 주세요.',
+  'nickname-personal-info':
+    '전화번호·이메일·인터넷 주소처럼 보이는 닉네임은 쓸 수 없어요. 홈에서 닉네임을 바꿔 주세요.',
+};
+
+/** 서버의 거절 코드가 닉네임 금칙 규칙의 것인가 */
+export function nicknameRejection(code: unknown): NicknameRejection | null {
+  return code === 'nickname-profanity' || code === 'nickname-personal-info' ? code : null;
 }
 
 /**
@@ -308,6 +400,23 @@ export function onlineErrorText(error: unknown, fallback: string): string {
   if (error instanceof OnlinePlayerError) return error.message;
   console.warn('[온라인 오류]', error);
   return fallback;
+}
+
+/**
+ * 저장된 닉네임이 금칙 규칙에 걸려 세션을 열지 않았다 (PRD 12.1). 보내기 전에 저장소가 같은 규칙으로 보고
+ * 던진다. 다시 시도해도 같으니 화면은 «다시 시도» 대신 닉네임을 고칠 곳(홈)으로 보낸다
+ */
+export class NicknameRejected extends OnlinePlayerError {
+  constructor(readonly rejection: NicknameRejection) {
+    super(NICKNAME_REJECTION_MESSAGES[rejection]);
+    this.name = 'NicknameRejected';
+  }
+}
+
+/** 닉네임 때문에 막힌 오류인가 — 보내기 전에 막았든(NicknameRejected) 서버가 400으로 거절했든 */
+export function isNicknameRejection(error: unknown): boolean {
+  return error instanceof NicknameRejected
+    || (error instanceof ApiFailure && error.status === 400 && nicknameRejection(error.code) !== null);
 }
 
 /**
