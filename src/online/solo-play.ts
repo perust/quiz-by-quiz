@@ -1,27 +1,31 @@
-// 혼자 푸는 온라인 판 (PRD FR-7.13 3단계) — 홈이 무엇을 여는가와 두 소유자 결정의 기본값.
+// 혼자 푸는 온라인 판 (PRD FR-7.13 3단계) — 홈이 무엇을 여는가와 네 소유자 결정 (PRD 10.1 #8–#11).
 //
 // 소유자 방향: 혼자 하기를 없애고 혼자 하고 싶은 사람도 온라인에서 혼자 푼다. 그래서 홈의 분야 칸과
 // 「전체 도전」은 대기실을 거치지 않는 혼자 온라인 판을 곧바로 연다(POST /v1/solo). 서버가 채점하고 기록한다.
 // DOM도 저장소도 모르는 순수 함수다 — app.ts가 저장소의 답을 넘기고 홈·결과·설정이 여기서 말을 받는다.
 //
-// **두 결정은 PR에서 소유자를 기다린다** (PRD 10.2). 기본값을 바꾸려면 이 파일의 상수 둘만 고친다.
-// - #1 서버에 닿지 않을 때: `OFFLINE_PRACTICE` — 기본은 «연습(기록 안 남음)»을 연다(docs/p2p-review.md가 P2P
-//   대신 권한 길). false면 홈은 안내만 하고 분야 칸을 잠근다
-// - #2 혼자 온라인 판의 문항 시간: `soloQuestionTime` — 기본은 설정의 20초·40초를 그대로 쓰고 «제한 없음»은 연습에만
-//   쓴다(온라인 판은 20초). 온라인에 «제한 없음»을 주려면 서버의 문항 시간 목록(migration 011의 CHECK)부터 바꿔야 한다
+// **네 결정은 소유자가 정했다** (2026-10-28). 아래 «결정 #1–#4»는 PRD 10.1 #8–#11이다(옛 10.2 #1–#4).
+// - #1 서버에 닿지 않으면 «연습(기록 안 남음)»을 연다(`probeResult`의 `practice`, docs/p2p-review.md가 P2P 대신
+//   권한 길). 다시 묻는 물러섬이 서버가 돌아오면 혼자 온라인 판으로 되돌린다
+// - #2 혼자 온라인 판의 문항 시간은 설정의 20초·40초·«제한 없음»이다(`soloQuestionTime`). «제한 없음»은 마감이
+//   없는 판(서버의 문항 시간 null, migration 013)이고 로컬 «제한 없음»과 같은 규칙이다. 친구와 푸는 방은 그대로
+//   20초·40초다. 서버가 그것을 안다고 알리지 않으면(세션의 `soloUntimed`) null을 보내지 않고 20초로 연다
+// - #3 결과의 «홈으로»는 혼자 방을 지운다 — 같은 방의 지난 판으로 피하던 최근 출제 기억(N08)도 함께 사라진다
+// - #4 혼자 판이 도는데 다른 판(분야·전체 도전)을 고르면 그 판을 기록 없이 끝내고 고른 판을 연다(확인창 없이,
+//   `soloEndedMessage`로 알린다). 같은 판이면 잇는다. 서버가 그것을 안다고 알리지 않으면(`soloRestart`) 예전처럼
+//   도는 판으로 돌아갈 줄을 보인다(`soloStillRunningMessage`)
 
 import { ONLINE_QUESTION_TIME_CHOICES, TIME_LIMIT_MS } from '../constants.js';
-import type { OnlineQuestionTime } from '../types.js';
+import type { SoloQuestionTime } from '../types.js';
 import { ApiFailure, isNicknameRejection } from './rules.js';
 
-/** 결정 #1의 기본값: 서버에 닿지 않으면 «연습(기록 안 남음)»을 연다 (PRD 10.2 #1) */
-export const OFFLINE_PRACTICE = true;
-
 /**
- * 결정 #2의 기본값: 혼자 온라인 판은 설정의 문항 시간을 쓰되 서버가 받는 20초·40초만이다. «제한 없음»(null)이나
- * 목록 밖의 값이면 기본 20초다 — «제한 없음»은 연습(기록 안 남음)에만 적용된다 (PRD 10.2 #2)
+ * 결정 #2: 혼자 온라인 판의 문항 시간은 설정의 값이다 — 20초·40초, «제한 없음»(null)이면 마감 없는 판이다.
+ * `untimedSupported`는 서버가 «제한 없음» 혼자 판을 안다고 알렸는가(세션의 `soloUntimed`)다 — 모르는 API에는
+ * null을 보내지 않고 기본 20초로 연다. 목록 밖의 값도 기본 20초다
  */
-export function soloQuestionTime(limitMs: number | null): OnlineQuestionTime {
+export function soloQuestionTime(limitMs: number | null, untimedSupported: boolean): SoloQuestionTime {
+  if (limitMs === null) return untimedSupported ? null : TIME_LIMIT_MS;
   return ONLINE_QUESTION_TIME_CHOICES.find((choice) => choice === limitMs) ?? TIME_LIMIT_MS;
 }
 
@@ -116,30 +120,20 @@ export interface PracticeNote {
 }
 
 /**
- * 홈 dock 맨 위의 연습 안내 줄. 서버 없이 연 화면(개발 문서)은 줄을 두지 않고 캡션만 말한다. `allowPractice`가
- * false면(결정 #1의 다른 길) 연습을 권하지 않고 연결할 수 없다는 것만 말한다
+ * 홈 dock 맨 위의 연습 안내 줄 (결정 #1). 서버 없이 연 화면(개발 문서)은 줄을 두지 않고 캡션만 말한다
  */
-export function practiceNote(reason: PracticeReason, allowPractice: boolean = OFFLINE_PRACTICE): PracticeNote | null {
+export function practiceNote(reason: PracticeReason): PracticeNote | null {
   switch (reason) {
     case 'offline':
-      return allowPractice
-        ? { text: '온라인에 연결할 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 연결' }
-        : { text: '온라인에 연결할 수 없어요. 연결되면 다시 풀 수 있어요', action: '다시 연결' };
+      return { text: '온라인에 연결할 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 연결' };
     case 'full':
-      return allowPractice
-        ? { text: '지금은 혼자 판 자리가 모두 차 연습(기록 안 남음)만 할 수 있어요', action: '다시 시도' }
-        : { text: '지금은 혼자 판 자리가 모두 찼어요. 잠시 뒤에 다시 풀 수 있어요', action: '다시 시도' };
+      return { text: '지금은 혼자 판 자리가 모두 차 연습(기록 안 남음)만 할 수 있어요', action: '다시 시도' };
     case 'nickname':
-      return allowPractice
-        ? { text: '이 닉네임은 온라인에서 쓸 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 확인' }
-        : { text: '이 닉네임은 온라인에서 쓸 수 없어요. 닉네임을 바꿔 주세요', action: '다시 확인' };
+      return { text: '이 닉네임은 온라인에서 쓸 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 확인' };
     default:
       return null;
   }
 }
-
-/** 연습을 열지 않을 때(결정 #1의 다른 길) 분야 칸을 누르면 알리는 말 */
-export const OFFLINE_NO_PRACTICE_MESSAGE = '온라인에 연결할 수 없어요. 연결되면 다시 시도해 주세요.';
 
 /**
  * 홈 dock 줄에 잠시 띄우는 알림 (연습 안내가 없을 때 같은 자리). 눈으로 보는 사람에게도 왜 판이 열리지 않았는지 말한다 —
@@ -156,8 +150,19 @@ export function dockNoticeNote(kind: DockNoticeKind): { text: string; action: st
 }
 
 /**
- * 풀던 혼자 판이 아직 돌고 있어 고른 판을 열지 못했다 (`POST /v1/solo`의 `resumed`인데 분야가 다르다). 판은 서버에서
- * 마감까지 계속되고(오늘의 온라인 규칙) 그동안 새 혼자 판은 열 수 없다 — 홈이 그 판으로 돌아갈 길을 보인다
+ * 결정 #4: 다른 판을 골라 풀던 혼자 판을 끝냈다 (`POST /v1/solo`의 `ended`). 확인창 없이 새 판의 화면에 보이고
+ * 낭독한다. 끝까지 풀지 않은 판은 기록되지 않는다(FR-6, 로컬 N04) — 마지막 공개만 남았던 판은 끝까지 푼 판이라
+ * 기록됐다고 말한다
+ */
+export function soloEndedMessage(label: string, recorded: boolean): string {
+  return recorded
+    ? `다 푼 «${label}» 판은 점수를 기록하고 끝냈어요.`
+    : `풀던 «${label}» 판은 끝까지 풀지 않아 기록 없이 끝냈어요.`;
+}
+
+/**
+ * 풀던 혼자 판이 아직 돌고 있어 고른 판을 열지 못했다 (`POST /v1/solo`의 `resumed`인데 분야가 다르다). 결정 #4의
+ * 끝내고 새로 열기를 모르는 API(세션에 `soloRestart`가 없다)에서만이다 — 홈이 그 판으로 돌아갈 길을 보인다
  */
 export function soloStillRunningMessage(label: string): string {
   return `풀던 «${label}» 판이 아직 진행 중이라 새 판을 열 수 없어요. 「이어 풀기」로 돌아가거나 그 판이 끝난 뒤에 시작해 주세요.`;

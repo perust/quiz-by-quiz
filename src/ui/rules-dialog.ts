@@ -70,10 +70,12 @@ export function createRulesDialog({ getTimeLimit, getOnlineRules, getPlayMode }:
     const limitMs = getTimeLimit();
     const mode = getPlayMode?.() ?? 'local';
     el.length.textContent = roundLengthRule();
-    // 혼자 온라인 판은 서버의 20초·40초다 — «제한 없음»이면 20초로 풀고 그렇다고 말한다 (PRD 10.2 #2)
-    el.time.textContent = mode === 'online' ? soloTimeRule(limitMs) : timeRule(limitMs);
+    // 혼자 온라인 판도 설정의 문항 시간이다 — «제한 없음»이면 마감 없는 판이고 답하기도 로컬 «제한 없음»과 같다
+    // (PRD 10.1 #9). 그것을 모르는 API면 20초로 풀고 그렇다고 말한다
+    const untimed = getOnlineRules?.()?.soloUntimed === true;
+    el.time.textContent = mode === 'online' ? soloTimeRule(limitMs, untimed) : timeRule(limitMs);
     el.score.textContent = scoreRule();
-    el.answer.textContent = answerRule(mode === 'online' ? soloQuestionTime(limitMs) : limitMs);
+    el.answer.textContent = answerRule(mode === 'online' ? soloQuestionTime(limitMs, untimed) : limitMs);
     el.record.textContent = mode === 'online'
       ? ONLINE_RECORD_RULE
       : mode === 'practice' ? PRACTICE_RECORD_RULE : RECORD_RULE;

@@ -49,7 +49,7 @@
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
 import { safeStorage } from '../storage/safe-storage.js';
-import type { CategoryId, OnlineQuestionTime, RankingTarget } from '../types.js';
+import type { CategoryId, OnlineQuestionTime, RankingTarget, SoloQuestionTime } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
   MovementStage,
@@ -89,9 +89,10 @@ export interface PublicRoom {
   gameMode: true;
   /**
    * 방장이 고른 문항 시간(20초·40초). 판을 열 때 그 판의 모든 문항 마감이 된다. 모두에게 보이고
-   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다.
+   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다. null은 «제한 없음» 혼자 방뿐이다
+   * (PRD 10.1 #9) — 서버가 `untimed: true`와 함께 보낼 때만 믿는다. 친구와 푸는 방에는 없다.
    */
-  questionTimeMs: OnlineQuestionTime;
+  questionTimeMs: SoloQuestionTime;
   /**
    * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
    * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
@@ -153,23 +154,46 @@ export interface OnlineRules {
    * 분야 칸으로 혼자 하기(로컬)를 연다
    */
   soloPlay: boolean;
+  /**
+   * 혼자 판이 «제한 없음»(`questionTimeMs: null`, 마감 없음)도 받는가 (PRD 10.1 #9). 세션 응답의
+   * `soloUntimed: true`다. 없으면 화면은 null을 보내지 않고 «제한 없음»이면 20초로 연다
+   */
+  soloUntimed: boolean;
+  /**
+   * 다른 판을 고르면 도는 혼자 판을 기록 없이 끝내고 새로 여는가 (PRD 10.1 #11). 세션 응답의
+   * `soloRestart: true`다. 없으면 화면은 restart를 보내지 않고 도는 판으로 돌아갈 줄을 보인다
+   */
+  soloRestart: boolean;
 }
 
 // ── 혼자 푸는 온라인 판 (FR-7.13 3단계) ─────────────────────────────
 
-/** 혼자 판을 열 때 고르는 것. 문항 시간은 친구와 푸는 방과 같은 20초·40초다 («제한 없음»은 연습에만) */
+/**
+ * 혼자 판을 열 때 고르는 것. 문항 시간은 설정의 20초·40초이거나 null(«제한 없음», PRD 10.1 #9)이다 — null은
+ * 서버가 `soloUntimed`를 알렸을 때만 보낸다. `restart`면(결정 #4) 다른 판이 돌 때 그 판을 끝내고 이 판을 연다 —
+ * 서버가 `soloRestart`를 알렸을 때만 실어 보낸다
+ */
 export interface SoloStartSpec {
   /** 「전체 도전」이면 null */
   categoryId: CategoryId | null;
-  questionTimeMs: OnlineQuestionTime;
+  questionTimeMs: SoloQuestionTime;
+  restart?: boolean;
+}
+
+/** 다른 판을 골라 끝낸 혼자 판 (PRD 10.1 #11). 끝까지 풀지 않은 판은 기록 없이 끝났다 */
+export interface EndedSoloMatch {
+  categoryId: CategoryId | null;
+  /** 마지막 공개만 남았던 판(끝까지 푼 판)이라 닫아 기록했는가 */
+  recorded: boolean;
 }
 
 /**
  * 혼자 판을 연 결과. `resumed`면 그 사람의 혼자 방에 판이 이미 돌고 있어 새 판을 열지 않았다 — 화면은 그 판을
- * 이어 그린다. 이 기능을 모르는 API·로컬 방이면 `unsupported`다(예전 혼자 하기로 돌아간다). 연결 실패는 던진다
+ * 이어 그린다. `ended`는 다른 판을 골라(restart) 끝낸 앞 판이다. 이 기능을 모르는 API·로컬 방이면
+ * `unsupported`다(예전 혼자 하기로 돌아간다). 연결 실패는 던진다
  */
 export type SoloStartResult =
-  | { ok: true; room: PublicRoom; resumed: boolean }
+  | { ok: true; room: PublicRoom; resumed: boolean; ended?: EndedSoloMatch }
   | { ok: false; reason: 'unsupported' };
 
 /** 한 판(분야·전체 도전)의 내 최고 기록. 같은 점수면 먼저 남긴 기록이다 (랭킹 순서와 같다) */
@@ -194,7 +218,8 @@ export interface MyOnlineRecord {
   score: number;
   correctCount: number;
   totalCount: number;
-  questionTimeMs: OnlineQuestionTime;
+  /** null이면 «제한 없음»으로 푼 혼자 판이다 (PRD 10.1 #9) */
+  questionTimeMs: SoloQuestionTime;
   /** 그 방에서 보인 이름(규칙에 걸리는 옛 이름은 «익명») */
   nickname: string;
   recordedAt: string;
@@ -403,11 +428,17 @@ interface OnlineMatchBase {
    * 뒤 선 칸을 초안으로 보내고 규칙을 그렇게 말한다. 이 필드가 없는 이전 API는 직접 낸 답만 센다.
    */
   standingAnswers?: true;
+  /**
+   * 마감 없는 혼자 판인가 («제한 없음», PRD 10.1 #9). 서버가 `untimed: true`를 실을 때만이고 그때
+   * `questionTimeMs`가 없다. 도는 문항에는 마감(`deadlineAt`·`remainingMs`)이 없고 발밑 칸도 답이 되지 않는다 —
+   * 직접 낸 답만 답이다(로컬 «제한 없음»과 같다). 공개(8초)에는 마감이 있다
+   */
+  untimed?: true;
 }
 
-/** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
+/** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. 마감 없는 판(`untimed`)의 도는 문항만 null이다 */
 interface OnlineActiveMatchBase extends OnlineMatchBase {
-  deadlineAt: string;
+  deadlineAt: string | null;
   /**
    * 서버가 응답 시점에 잰 이 phase의 남은 시간(ms). running이면 제출 마감까지,
    * revealing이면 다음 문제(또는 최종 순위)까지다. 기기 시계와 무관하게 남은 시간을
@@ -426,6 +457,8 @@ export interface OnlineRunningMatch extends OnlineActiveMatchBase {
 
 export interface OnlineRevealingMatch extends OnlineActiveMatchBase {
   state: 'revealing';
+  /** 공개에는 마감 없는 판에도 마감이 있다 */
+  deadlineAt: string;
   question: OnlineMatchQuestion;
   ownSubmission: null;
   reveal: OnlineReveal | null;

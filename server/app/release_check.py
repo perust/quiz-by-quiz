@@ -81,8 +81,51 @@ _QUESTION_TIME_CONSTRAINTS = (
     ("matches", "matches_question_time_check"),
     ("match_answers", "match_answers_elapsed_ms_range_check"),
 )
-# match_answers.elapsed_ms의 상한. 002의 이름 없는 열 CHECK는 20초, 011이 40초로 넓힌다.
-_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000, 12: 40_000, 13: 40_000}
+# match_answers.elapsed_ms의 상한. 002의 이름 없는 열 CHECK는 20초, 011이 40초로 넓힌다. 013은
+# «제한 없음» 혼자 판의 쓴 시간을 판의 수명(2시간)까지 받는다 — 40초를 넘는 것은 제한 없는 판의
+# 답뿐이다(아래 생성 열 + 외래 키).
+_ELAPSED_MS_UPPER_BOUND = {10: 20_000, 11: 40_000, 12: 40_000, 13: 7_200_000}
+# 013이 문항 시간 CHECK에 더하는 NULL(«제한 없음», 마감 없음)
+_QUESTION_TIME_NULL = "question_time_ms IS NULL"
+
+# 013이 더하는 «제한 없음» 혼자 판의 울타리 (PRD 10.1 #9). CHECK는 다른 표를 볼 수 없어, 문항 시간이
+# NULL인 방·판과 40초를 넘는 답이 저장 생성 열에 제 id를 싣고 그 열이 외래 키로 혼자 방(·제한 없는
+# 판)을 가리킨다. 그래서 NULL인 방·판은 혼자 방에만 있고, 혼자 방을 지우면 하나도 남지 않는다
+# (deploy/oracle/README.md «Solo online play»의 Rollback). (표, 열) → 생성 식.
+_UNTIMED_COLUMNS: dict[tuple[str, str], str] = {
+    ("rooms", "untimed_solo_room_id"): (
+        "CASE WHEN (question_time_ms IS NULL) THEN id ELSE NULL::uuid END"
+    ),
+    ("matches", "untimed_solo_room_id"): (
+        "CASE WHEN (question_time_ms IS NULL) THEN room_id ELSE NULL::uuid END"
+    ),
+    ("matches", "untimed_match_id"): (
+        "CASE WHEN (question_time_ms IS NULL) THEN id ELSE NULL::uuid END"
+    ),
+    ("match_answers", "long_elapsed_match_id"): (
+        "CASE WHEN (elapsed_ms > 40000) THEN match_id ELSE NULL::uuid END"
+    ),
+}
+# (표, 이름) → 정의(스키마 이름을 뺀 꼴). 셋 다 COMMIT에서 본다 — 혼자 방은 방을 넣은 뒤에 표시를
+# 넣고, 방을 지우는 한 문장이 표시·판·답을 함께 지운다.
+_UNTIMED_CONSTRAINTS: dict[tuple[str, str], str] = {
+    ("rooms", "rooms_untimed_solo_room_fkey"): (
+        "FOREIGN KEY (untimed_solo_room_id) REFERENCES solo_rooms(room_id) "
+        "DEFERRABLE INITIALLY DEFERRED"
+    ),
+    ("matches", "matches_untimed_solo_room_fkey"): (
+        "FOREIGN KEY (untimed_solo_room_id) REFERENCES solo_rooms(room_id) "
+        "DEFERRABLE INITIALLY DEFERRED"
+    ),
+    ("matches", "matches_untimed_match_key"): "UNIQUE (untimed_match_id)",
+    ("match_answers", "match_answers_long_elapsed_fkey"): (
+        "FOREIGN KEY (long_elapsed_match_id) REFERENCES matches(untimed_match_id) "
+        "DEFERRABLE INITIALLY DEFERRED"
+    ),
+}
+# 008의 «도는 판에는 늘 마감»을 013이 «제한 없는 판의 도는 문항만 마감이 없다»로 바꾼다
+_ACTIVE_DEADLINE_CHECK = "matches_active_deadline_check"
+_UNTIMED_DEADLINE_RULE = "((deadline_at IS NULL) = (question_time_ms IS NULL))"
 
 # 012가 더하는 온라인 랭킹 표. 열 → (형식, NOT NULL, 저장 생성 열인가, identity인가).
 _RANKINGS_TABLE = "online_rankings"
@@ -338,6 +381,41 @@ WHERE constraint_row.conrelid = to_regclass(%s::text)
   AND constraint_row.contype = 'u'
 """
 
+# 013의 생성 열(«제한 없음» 혼자 판의 울타리). 표마다 이름과 생성 식
+_GENERATED_COLUMNS_SQL = """
+SELECT relation.relname::text,
+       attribute.attname::text,
+       pg_catalog.format_type(attribute.atttypid, attribute.atttypmod),
+       attribute.attgenerated::text,
+       pg_catalog.pg_get_expr(column_default.adbin, column_default.adrelid)
+FROM pg_catalog.pg_attribute attribute
+JOIN pg_catalog.pg_class relation ON relation.oid = attribute.attrelid
+JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+LEFT JOIN pg_catalog.pg_attrdef column_default
+  ON column_default.adrelid = attribute.attrelid
+ AND column_default.adnum = attribute.attnum
+WHERE namespace.nspname = 'quiz_online'
+  AND relation.relname = ANY(%s::text[])
+  AND attribute.attname = ANY(%s::text[])
+  AND attribute.attnum > 0
+  AND NOT attribute.attisdropped
+"""
+
+# 013의 외래 키·UNIQUE. 정의와 검증 여부
+_KEY_CONSTRAINTS_SQL = """
+SELECT relation.relname::text,
+       key_row.conname::text,
+       key_row.convalidated,
+       pg_catalog.pg_get_constraintdef(key_row.oid)
+FROM pg_catalog.pg_constraint key_row
+JOIN pg_catalog.pg_class relation ON relation.oid = key_row.conrelid
+JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname = 'quiz_online'
+  AND key_row.contype IN ('f', 'u')
+  AND relation.relname = ANY(%s::text[])
+  AND key_row.conname = ANY(%s::text[])
+"""
+
 _INDEXES_SQL = """
 SELECT index_class.relname::text, index_row.indisvalid
 FROM pg_catalog.pg_index index_row
@@ -476,9 +554,10 @@ def check_database(
     ``require_empty_rankings`` (``--expect 12`` only) fails while the ranking table holds a
     row — the window between migration 012 and its candidate API, when only the
     migration-011 API (which never writes the table) serves. ``require_empty_solo_rooms``
-    (``--expect 13`` only) fails while a solo room exists — the window between migration 013
-    and its candidate API, when only the migration-012 API (which never writes the table)
-    serves.
+    (``--expect 13`` only) fails while a solo room or an untimed (``question_time_ms IS NULL``)
+    room or match exists — the window between migration 013 and its candidate API, when only
+    the migration-012 API (which never writes either) serves, and again after the rollback
+    cleanup, before the migration-012 API serves again.
     """
     if expect not in EXPECTABLE_VERSIONS:
         raise ValueError(f"expect must be one of {EXPECTABLE_VERSIONS}")
@@ -503,19 +582,25 @@ def check_database(
             lambda conn: _check_question_time_constraints(conn, expect),
         ),
         ("elapsed-ms-check", lambda conn: _check_elapsed_ms(conn, expect)),
+        ("untimed-solo-play", lambda conn: _check_untimed_solo_play(conn, expect)),
     ]
     if expect >= 11:
         checks.append(
             (
                 "question-time-values",
-                lambda conn: _check_question_time_values(conn, require_default_question_time),
+                lambda conn: _check_question_time_values(
+                    conn,
+                    require_default_question_time,
+                    expect=expect,
+                    require_no_untimed=require_empty_solo_rooms,
+                ),
             )
         )
     checks.append(("rankings-table", lambda conn: _check_rankings_table(conn, expect)))
     checks.append(("solo-rooms-table", lambda conn: _check_solo_rooms_table(conn, expect)))
     if expect >= 12:
         checks += [
-            ("rankings-constraints", _check_rankings_constraints),
+            ("rankings-constraints", lambda conn: _check_rankings_constraints(conn, expect)),
             ("rankings-indexes", lambda conn: _check_rankings_indexes(conn, expect)),
             ("rankings-retention", _check_rankings_retention),
             (
@@ -735,12 +820,21 @@ def _check_question_time_columns(connection: Connection, expect: int) -> Iterabl
         data_type, not_null, default = column
         if data_type != "integer":
             problems.append(f"{label} is {data_type}, expected integer")
-        if not not_null:
+        # 013부터 NULL(«제한 없음» 혼자 판)을 받는다. 그 앞에서는 NOT NULL이어야 한다
+        if expect >= 13 and not_null:
+            problems.append(f"{label} is NOT NULL, expected nullable (migration 013)")
+        elif expect < 13 and not not_null:
             problems.append(f"{label} is nullable")
         if default != _QUESTION_TIME_DEFAULT:
             problems.append(f"{label} default is {default or 'none'}, expected 20000")
     if problems:
         yield Check("FAIL", "question-time-columns", "; ".join(problems))
+    elif expect >= 13:
+        yield Check(
+            "OK",
+            "question-time-columns",
+            f"{names} integer DEFAULT 20000, nullable only for untimed solo play",
+        )
     else:
         yield Check("OK", "question-time-columns", f"{names} integer NOT NULL DEFAULT 20000")
 
@@ -765,8 +859,11 @@ def _check_question_time_constraints(connection: Connection, expect: int) -> Ite
     problems = _constraint_problems(constraints, _QUESTION_TIME_CONSTRAINTS)
     for table in _QUESTION_TIME_TABLES:
         found = constraints.get((table, f"{table}_question_time_check"))
-        if found is not None and _integers(found[1]) != _QUESTION_TIME_VALUES:
+        if found is None:
+            continue
+        if _integers(found[1]) != _QUESTION_TIME_VALUES:
             problems.append(f"{table}_question_time_check does not allow exactly 20000 and 40000")
+        problems += _question_time_null_problems(f"{table}_question_time_check", found[1], expect)
     if problems:
         yield Check("FAIL", "question-time-constraints", "; ".join(problems))
     else:
@@ -802,24 +899,138 @@ def _check_elapsed_ms(connection: Connection, expect: int) -> Iterable[Check]:
         yield Check("OK", "elapsed-ms-check", f"{name} allows 0..{upper}")
 
 
-def _check_question_time_values(connection: Connection, require_default: bool) -> Iterable[Check]:
+def _check_untimed_solo_play(connection: Connection, expect: int) -> Iterable[Check]:
+    """013의 «제한 없음» 혼자 판 울타리: 생성 열 넷, 외래 키 셋과 UNIQUE 하나, 도는 판의 마감 규칙.
+
+    013 전에는 생성 열이 하나도 없어야 한다(그 판의 DB다).
+    """
+    name = "untimed-solo-play"
+    tables = sorted({table for table, _ in _UNTIMED_COLUMNS})
+    columns = {
+        (str(table), str(column)): (str(data_type), str(generated), " ".join(str(expr).split()))
+        for table, column, data_type, generated, expr in connection.execute(
+            _GENERATED_COLUMNS_SQL,
+            (tables, sorted({column for _, column in _UNTIMED_COLUMNS})),
+        ).fetchall()
+    }
+    present = sorted(
+        f"{table}.{column}" for table, column in _UNTIMED_COLUMNS if (table, column) in columns
+    )
+    if expect < 13:
+        if present:
+            yield Check(
+                "FAIL", name, f"migration 013 columns already exist: {', '.join(present)}"
+            )
+        else:
+            yield Check("OK", name, f"no untimed solo play columns, as at migration {expect}")
+        return
+    problems: list[str] = []
+    for (table, column), expression in _UNTIMED_COLUMNS.items():
+        found = columns.get((table, column))
+        label = f"{table}.{column}"
+        if found is None:
+            problems.append(f"{label} is missing")
+        elif found[0] != "uuid" or found[1] != "s":
+            problems.append(f"{label} is not a stored generated uuid column")
+        elif found[2] != expression:
+            problems.append(f"{label} is generated as {found[2]!r}, expected {expression!r}")
+    # 스키마 이름은 search_path에 따라 붙거나 빠진다. 빼고 견준다
+    keys = {
+        (str(table), str(constraint)): (
+            bool(validated),
+            str(definition).replace("quiz_online.", ""),
+        )
+        for table, constraint, validated, definition in connection.execute(
+            _KEY_CONSTRAINTS_SQL,
+            (tables, sorted({constraint for _, constraint in _UNTIMED_CONSTRAINTS})),
+        ).fetchall()
+    }
+    for (table, constraint), definition in _UNTIMED_CONSTRAINTS.items():
+        found_key = keys.get((table, constraint))
+        if found_key is None:
+            problems.append(f"{constraint} on {table} is missing")
+        elif not found_key[0]:
+            problems.append(f"{constraint} on {table} is not validated")
+        elif found_key[1] != definition:
+            problems.append(
+                f"{constraint} on {table} is {found_key[1]!r}, expected {definition!r}"
+            )
+    checks = _check_constraints(connection, ("matches",))
+    deadline = checks.get(("matches", _ACTIVE_DEADLINE_CHECK))
+    if deadline is None:
+        problems.append(f"{_ACTIVE_DEADLINE_CHECK} on matches is missing")
+    elif not deadline[0]:
+        problems.append(f"{_ACTIVE_DEADLINE_CHECK} on matches is not validated")
+    elif _UNTIMED_DEADLINE_RULE not in deadline[1]:
+        problems.append(
+            f"{_ACTIVE_DEADLINE_CHECK} does not tie a running question's deadline to its "
+            "question time"
+        )
+    if problems:
+        yield Check("FAIL", name, "; ".join(problems))
+    else:
+        yield Check(
+            "OK",
+            name,
+            f"{len(_UNTIMED_COLUMNS)} generated columns, {len(_UNTIMED_CONSTRAINTS)} keys "
+            f"validated; NULL question time only for solo rooms and their matches",
+        )
+
+
+def _question_time_null_problems(name: str, definition: str, expect: int) -> list[str]:
+    """문항 시간 CHECK가 NULL(«제한 없음» 혼자 판)을 받는가. 013부터만 받아야 한다."""
+    allows_null = _QUESTION_TIME_NULL in definition
+    if expect >= 13 and not allows_null:
+        return [f"{name} does not allow NULL (untimed solo play, migration 013)"]
+    if expect < 13 and allows_null:
+        return [f"{name} already allows NULL (migration 013)"]
+    return []
+
+
+def _check_question_time_values(
+    connection: Connection,
+    require_default: bool,
+    *,
+    expect: int = 11,
+    require_no_untimed: bool = False,
+) -> Iterable[Check]:
     missing = _missing_question_time_columns(connection)
     if missing:
         yield Check("FAIL", "question-time-values", f"missing column: {missing}")
         return
     counts: dict[str, Counter[int]] = {table: Counter() for table in _QUESTION_TIME_TABLES}
+    # 문항 시간 NULL(«제한 없음» 혼자 판, migration 013)의 수
+    untimed: Counter[str] = Counter()
     for table, value, count in connection.execute(_QUESTION_TIME_VALUES_SQL).fetchall():
-        counts[str(table)][int(value)] += int(count)
+        if value is None:
+            untimed[str(table)] += int(count)
+        else:
+            counts[str(table)][int(value)] += int(count)
     unexpected = {
         table: sorted(value for value in counter if value not in _QUESTION_TIME_VALUES)
         for table, counter in counts.items()
     }
-    summary = "; ".join(
-        f"{table} " + (" ".join(f"{value}={counter[value]}" for value in sorted(counter)) or "none")
-        for table, counter in counts.items()
-    )
-    if any(unexpected.values()):
+
+    def describe(table: str, counter: Counter[int]) -> str:
+        values = [f"{value}={counter[value]}" for value in sorted(counter)]
+        if untimed[table]:
+            values.append(f"untimed={untimed[table]}")
+        return f"{table} " + (" ".join(values) or "none")
+
+    summary = "; ".join(describe(table, counter) for table, counter in counts.items())
+    if any(unexpected.values()) or (expect < 13 and sum(untimed.values())):
         yield Check("FAIL", "question-time-values", f"values other than 20000/40000: {summary}")
+    # 013 뒤 후보 API로 바꾸기 전과, 012 API로 되돌리며 혼자 방을 지운 뒤에는 NULL이 하나도 없어야
+    # 한다 — NULL은 후보 API의 혼자 판만 쓰고, 012 API는 그 방·판을 읽지 못한다(README «Rollback»)
+    elif require_no_untimed and sum(untimed.values()):
+        yield Check(
+            "FAIL",
+            "question-time-values",
+            f"{summary}; --require-empty-solo-rooms needs no untimed room or match "
+            "(only the candidate API writes NULL)",
+        )
+    elif require_no_untimed:
+        yield Check("OK", "question-time-values", f"{summary}; no untimed room or match")
     elif not require_default:
         yield Check("INFO", "question-time-values", summary)
     # 011 뒤 후보 API로 바꾸기 전에는 010의 API만 돈다. 그 API는 이 열을 쓰지 않으므로
@@ -861,6 +1072,9 @@ def _check_rankings_table(connection: Connection, expect: int) -> Iterable[Check
     }
     problems: list[str] = []
     for column, (data_type, not_null, generated, identity) in _RANKINGS_COLUMNS.items():
+        # 013부터 «제한 없음» 혼자 판의 기록은 문항 시간 NULL이다
+        if column == _QUESTION_TIME_COLUMN and expect >= 13:
+            not_null = False
         actual = found.get(column)
         if actual is None:
             problems.append(f"{column} is missing")
@@ -887,7 +1101,7 @@ def _check_rankings_table(connection: Connection, expect: int) -> Iterable[Check
         )
 
 
-def _check_rankings_constraints(connection: Connection) -> Iterable[Check]:
+def _check_rankings_constraints(connection: Connection, expect: int = 12) -> Iterable[Check]:
     name = "rankings-constraints"
     if not _rankings_table_exists(connection):
         yield Check("FAIL", name, f"{_RANKINGS_RELATION} is missing")
@@ -900,6 +1114,10 @@ def _check_rankings_constraints(connection: Connection) -> Iterable[Check]:
     if question_time is not None and _integers(question_time[1]) != _QUESTION_TIME_VALUES:
         problems.append(
             "online_rankings_question_time_check does not allow exactly 20000 and 40000"
+        )
+    if question_time is not None:
+        problems += _question_time_null_problems(
+            "online_rankings_question_time_check", question_time[1], expect
         )
     owner_key = constraints.get((_RANKINGS_TABLE, "online_rankings_owner_key_length"))
     if owner_key is not None and "octet_length(owner_key) = 32" not in owner_key[1]:

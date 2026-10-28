@@ -18,9 +18,14 @@ from app.postgres import (
 def test_reveal_window_leaves_time_to_read_the_answer_and_explanation() -> None:
     # 공개 3초로는 해설을 다 읽기 전에 다음 문제로 넘어갔다. 소유자 결정으로 8초다.
     assert _REVEAL_DURATION == "8 seconds"
+    # 공개로 넘기는 SQL은 한 자리다 — 마감 있는 판도 «제한 없음» 혼자 판(migration 013)도 그것을
+    # 탄다
+    reveal_source = inspect.getsource(PostgresRoomsRepository._reveal_locked_match)
+    assert "SET state = 'revealing', deadline_at = now() + %s::interval" in reveal_source
+    assert "(_REVEAL_DURATION, match_id)" in reveal_source
     advance_source = inspect.getsource(PostgresRoomsRepository._advance_locked_match)
-    assert "SET state = 'revealing', deadline_at = now() + %s::interval" in advance_source
-    assert "(_REVEAL_DURATION, match_id)" in advance_source
+    assert advance_source.count("await self._reveal_locked_match(connection, match_id)") == 2
+    assert "SET state = 'revealing'" not in advance_source
 
 
 def test_every_question_deadline_uses_the_matchs_own_question_time() -> None:
@@ -45,7 +50,9 @@ def test_every_question_deadline_uses_the_matchs_own_question_time() -> None:
     assert "true, match.question_time_ms" in advance
 
     submit = " ".join(inspect.getsource(PostgresRoomsRepository.submit_answer).split())
-    assert "SELECT LEAST( question_time_ms, GREATEST(" in submit
+    # «제한 없음» 혼자 판(문항 시간 NULL)은 자르지 않고 재되 판의 수명(migration 013의 상한) 안이다
+    assert "SELECT LEAST( COALESCE(question_time_ms, %s), GREATEST(" in submit
+    assert '(UNTIMED_ELAPSED_MS_CAP, match["id"])' in submit
 
     for name in ("start_game", "_start_locked_match", "_advance_locked_match", "submit_answer"):
         source = inspect.getsource(getattr(PostgresRoomsRepository, name))

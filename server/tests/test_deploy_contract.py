@@ -57,8 +57,8 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "service_completed_successfully" not in api_service
     guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
     normalized_guide = " ".join(guide.split())
-    # 013(혼자 푸는 온라인 판)은 더하기만 해서 012의 API(#108)가 도는 동안 먼저 올린다. 앞선 세
-    # 경계의 기록도 그 아래에 차례로 남는다 — 지금 경계가 맨 위다
+    # 013(혼자 푸는 온라인 판)은 012의 API(#108)가 그 위에서 그대로 도는 변경이라 그 API가 도는 동안
+    # 먼저 올린다. 앞선 세 경계의 기록도 그 아래에 차례로 남는다 — 지금 경계가 맨 위다
     assert "migration 013 → API → Pages" in normalized_guide
     assert "migration 012 → API → Pages" in normalized_guide
     assert "migration 011 → API → Pages" in normalized_guide
@@ -82,15 +82,22 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "migration-required" in normalized_guide
     assert "must not replace the 012 API before ledger version 013 exists" in normalized_guide
     assert "must not replace the 011 API before ledger version 012 exists" in normalized_guide
-    # «013이 도는 동안에도 돈다»는 쓰기가 잠깐 기다리는 것까지다 — 013의 한 transaction은 색인을
-    # 짓는 SHARE(online_rankings)와 외래 키의 SHARE ROW EXCLUSIVE(rooms)를 COMMIT까지 쥔다. 그래서
-    # 단계 3은 판이 돌지 않는 때(--require-idle)에 migrate한다
+    # «013이 도는 동안에도 돈다»는 잠깐 기다리는 것까지다 — 013의 한 transaction은 «제한 없음» 혼자
+    # 판(PRD 10.1 #9)의 CHECK·생성 열 때문에 네 표를 맨 앞에서 ACCESS EXCLUSIVE로 잡아 COMMIT까지
+    # 쥔다(읽기도 기다린다). 그래서 단계 3은 판이 돌지 않는 때(--require-idle)에 migrate한다
     window = staging[staging.index("Migration 013 is one transaction") :]
     window = window[: window.index("4. Build and replace only `quiz-by-quiz-api`")]
-    assert "`SHARE` lock on `online_rankings`" in window
-    assert "`SHARE ROW EXCLUSIVE` on `rooms`" in window
+    assert (
+        "`LOCK TABLE rooms, matches, match_answers, online_rankings IN ACCESS EXCLUSIVE MODE`"
+        in window
+    )
+    assert "reads included" in window
     assert "`lock_timeout = '15s'`" in window
     assert "`--require-idle`" in window
+    # 012 API로 되돌리기 전 정리는 그 API가 읽지 못하는 줄(문항 시간 NULL)까지 지우고
+    # 점검으로 확인한다
+    assert "release_check db --expect 13 --require-empty-solo-rooms" in normalized_guide
+    assert "int(row[\"question_time_ms\"])" in guide
     assert "rooms_question_time_check" in normalized_guide
     assert "match_answers_elapsed_ms_range_check" in normalized_guide
     # 013은 012를 제자리에서 고치지 않고 따로 선다. #108을 따로 내보내지 말라는 규칙도, 같은 번호의

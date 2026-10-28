@@ -13,7 +13,13 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from .domain import DEFAULT_CHARACTER_ID, MIN_MATCH_PLAYERS, ValidatedPlayer, ValidatedRoom
+from .domain import (
+    DEFAULT_CHARACTER_ID,
+    MIN_MATCH_PLAYERS,
+    UNTIMED_ELAPSED_MS_CAP,
+    ValidatedPlayer,
+    ValidatedRoom,
+)
 from .nickname_filter import ranking_nickname
 from .question_catalog import (
     RECENT_QUESTION_MEMORY,
@@ -28,6 +34,7 @@ from .repository import (
     AbsentHostSweep,
     AccessInfo,
     CleanupCounts,
+    EndedSoloMatch,
     ExpiredMatchAdvance,
     MatchAnswerView,
     MatchInProgress,
@@ -57,6 +64,7 @@ from .repository import (
     RoomNotFound,
     RoomView,
     SoloCreateLimited,
+    SoloEnd,
     SoloRoomsFull,
     SoloStart,
     StandingAnswerSource,
@@ -73,6 +81,9 @@ _PLAYER_LIFETIME = "2 hours"
 _MATCH_LIFETIME = "2 hours"
 # 문항 마감은 고정값이 아니다. 방장이 방마다 고른 문항 시간(20초·40초, migration 011)을 판을
 # 열 때 matches.question_time_ms에 옮겨 적고, 모든 문항 마감·시간 초과 기록이 그 판의 값을 쓴다.
+# 혼자 방의 «제한 없음»(PRD 10.1 #9, migration 013)은 NULL이다 — 마감(`now() + NULL`)도 NULL이라
+# 마감 sweep(`deadline_at <= now()`)이 보지 않고, 시간 초과·끊긴 사람 채우기·발밑 칸도 없다. 공개는
+# 그 사람이 답을 낼 때다.
 
 # 정답·해설을 실제로 읽을 시간. 공개 카드는 «다음 문제까지 N초»를 보여 준다.
 _REVEAL_DURATION = "8 seconds"
@@ -210,6 +221,44 @@ WHERE room.expires_at <= now()
       WHERE active_match.room_id = room.id
         AND active_match.state IN ('running', 'revealing')
   )
+"""
+
+# 마감이 없는 «제한 없음» 혼자 판은 스스로 끝나지 않는다(migration 013). 판의 누구도 그 방에서 30분
+# (멤버 정리와 같은 창) 넘게 보이지 않았으면 기록 없이 끝낸다 — 끝까지 풀지 않은 판은 기록하지
+# 않는다 (FR-6, N04). 그러면 아래 멤버 정리가 같은 transaction에서 그 사람과 빈 방(표시도 함께)을
+# 지운다. 판이 도는 화면은 소켓으로 15초마다 last_seen_at을 새로 쓰므로 푸는 중인 판은 끝내지
+# 않는다. 그래도 판은 시작 뒤 2시간(`_MATCH_LIFETIME`)이면 `cleanup_expired_matches()`가 지운다.
+_ABANDON_IDLE_UNTIMED_MATCHES_SQL = """
+WITH idle AS MATERIALIZED (
+    SELECT match.id
+    FROM quiz_online.matches match
+    WHERE match.state = 'running'
+      AND match.question_time_ms IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM quiz_online.match_players player
+          JOIN quiz_online.room_members member
+            ON member.room_id = match.room_id AND member.player_id = player.player_id
+          WHERE player.match_id = match.id
+            AND member.last_seen_at > now() - %s::interval
+      )
+    ORDER BY match.id
+    FOR UPDATE OF match SKIP LOCKED
+)
+UPDATE quiz_online.matches match
+SET state = 'abandoned', finished_at = now(), deadline_at = NULL
+FROM idle
+WHERE match.id = idle.id
+"""
+
+# 그 방에서 도는 판(있으면 하나다 — one_active_match_per_room_idx). 혼자 판을 끝낼 때 잠근다
+_LOCKED_ACTIVE_MATCH_SQL = """
+SELECT match.*, room.code
+FROM quiz_online.matches match
+JOIN quiz_online.rooms room ON room.id = match.room_id
+WHERE match.room_id = %s
+  AND match.state IN ('running', 'revealing')
+FOR UPDATE OF match
 """
 
 _DELETE_STALE_MEMBERS_SQL = """
@@ -1248,8 +1297,10 @@ class PostgresRoomsRepository:
         except CatalogError as error:
             raise RepositoryFailure("static question catalog is unavailable") from error
 
-        # 방장이 고른 문항 시간을 판에 옮겨 적는다. 이 판의 모든 문항 마감이 이 값이다.
-        question_time_ms = int(room["question_time_ms"])
+        # 방장이 고른 문항 시간을 판에 옮겨 적는다. 이 판의 모든 문항 마감이 이 값이다. 혼자 방의
+        # «제한 없음»(NULL)이면 마감도 NULL이다 — `now() + NULL`이 NULL이다(migration 013)
+        raw_question_time = room["question_time_ms"]
+        question_time_ms = None if raw_question_time is None else int(raw_question_time)
         created = await connection.execute(
             """
             INSERT INTO quiz_online.matches (
@@ -1339,6 +1390,7 @@ class PostgresRoomsRepository:
         spec: ValidatedRoom,
         *,
         may_create: Callable[[], float | None] | None = None,
+        restart: bool = False,
     ) -> SoloStart:
         """혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계, POST /v1/solo).
 
@@ -1354,6 +1406,11 @@ class PostgresRoomsRepository:
         만큼 있으면 SoloRoomsFull이고(혼자 판의 동시 수를 묶는다), 아니면 `may_create`가 만드는
         몫(주소·프로세스, 한 시간)을 먹는다 — 찼으면 SoloCreateLimited다. 한도는 같은 순간의
         transaction 둘이 함께 넘을 수 있는 느슨한 상한이다(넘는 만큼은 동시에 만든 수뿐이다).
+
+        `restart`면(PRD 10.1 #11, 소유자 결정) 도는 판이 다른 판(분야·전체 도전)일 때 그 판을 기록
+        없이 끝내고(`_end_locked_match`) 같은 transaction에서 고른 판을 연다 — 끝낸 판은 `ended`로
+        알린다. 같은 판이 돌면 restart여도 그 판을 잇는다(resumed). 끝내고 여는 것이 한
+        transaction이라 판이 없는 사이가 보이지 않고, 새 판을 열지 못하면 끝낸 것도 되돌아간다.
         """
         for _ in range(10):
             try:
@@ -1365,16 +1422,27 @@ class PostgresRoomsRepository:
                         cursor = await connection.execute(_SOLO_ROOM_SQL, (actor_id,))
                         room = await cursor.fetchone()
                         created = False
+                        ended: EndedSoloMatch | None = None
                         if room is not None and room["playing"]:
                             if not room["member"]:
                                 # 판의 참가자가 아닌 채로 남은 방은 판이 끝나야 지울 수 있다
                                 raise MatchInProgress
-                            view = await self._fetch_room(
-                                connection, actor_id, str(room["code"]), require_member=True
+                            active_cursor = await connection.execute(
+                                _LOCKED_ACTIVE_MATCH_SQL, (room["id"],)
                             )
-                            if view is None:
-                                raise RepositoryFailure("solo room could not be read")
-                            return SoloStart(room=view, match=None)
+                            active = await active_cursor.fetchone()
+                            if active is not None and (
+                                not restart or active["category_id"] == spec.category_id
+                            ):
+                                view = await self._fetch_room(
+                                    connection, actor_id, str(room["code"]), require_member=True
+                                )
+                                if view is None:
+                                    raise RepositoryFailure("solo room could not be read")
+                                return SoloStart(room=view, match=None)
+                            if active is not None:
+                                # 다른 판을 골랐다. 도는 판을 끝내고 아래에서 그 방을 다시 써 연다
+                                ended = await self._end_locked_match(connection, active)
                         if room is not None and (not room["alive"] or not room["member"]):
                             # 정리를 기다리던 방이다. 표시는 CASCADE로 함께 지워진다
                             await connection.execute(
@@ -1436,11 +1504,83 @@ class PostgresRoomsRepository:
                         )
                         if view is None:
                             raise RepositoryFailure("solo room could not be read")
-                        return SoloStart(room=view, match=match, created=created)
+                        return SoloStart(room=view, match=match, created=created, ended=ended)
             except errors.UniqueViolation:
                 # 방 코드가 겹쳤거나 같은 사람의 다른 요청이 먼저 혼자 방을 만들었다. 다시 읽는다
                 continue
         raise RepositoryFailure("could not open a solo room")
+
+    async def end_solo(self, actor_id: UUID) -> SoloEnd:
+        """혼자 판을 그만둔다 (DELETE /v1/solo). 도는 판은 기록 없이 끝내고 혼자 방을 지운다.
+
+        혼자 방이 없으면 아무것도 하지 않는다(code None). 방을 지우면 멤버십·판·표시가 CASCADE로
+        함께 사라진다. 끝까지 풀지 않은 판은 기록하지 않는다 — 마지막 공개만 남은 판은 끝까지 푼
+        판이라 닫아 기록한 뒤에 지운다(`_end_locked_match`). 화면은 이 길을 쓰지 않고(«홈으로»는
+        끝난 판의 방을 나간다) 배포 점검(`deploy/oracle/smoke.py candidate`)이 제가 연 혼자 판을
+        치우는 데 쓴다.
+        """
+        async with self._pool.connection() as connection:
+            async with connection.transaction():
+                cursor = await connection.execute(_SOLO_ROOM_SQL, (actor_id,))
+                room = await cursor.fetchone()
+                if room is None:
+                    return SoloEnd(code=None)
+                ended: EndedSoloMatch | None = None
+                if room["playing"]:
+                    active_cursor = await connection.execute(
+                        _LOCKED_ACTIVE_MATCH_SQL, (room["id"],)
+                    )
+                    active = await active_cursor.fetchone()
+                    if active is not None:
+                        ended = await self._end_locked_match(connection, active)
+                await connection.execute(
+                    "DELETE FROM quiz_online.rooms WHERE id = %s", (room["id"],)
+                )
+                return SoloEnd(code=str(room["code"]), ended=ended)
+
+    async def _end_locked_match(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match: Mapping[str, Any],
+    ) -> EndedSoloMatch:
+        """잠근 도는 판(`_LOCKED_ACTIVE_MATCH_SQL`)을 끝낸다 (PRD 10.1 #11).
+
+        끝까지 풀지 않은 판은 기록 없이 `abandoned`가 된다(FR-6, 로컬 N04) — 마감도 지워 sweep이
+        다시 보지 않는다. 마지막 문항까지 답해 마지막 공개만 남은 판은 끝까지 푼 판이라 그 자리에서
+        닫고 마감 sweep이 닫을 때와 같이 기록한다(로컬 나가기 확인의 «결과 보기»와 같은 규칙). 발밑
+        칸 초안·방송·운영 기록은 API가 맡는다.
+        """
+        position = int(match["current_position"])
+        total = int(match["total_questions"])
+        ended = EndedSoloMatch(
+            match_id=match["id"],
+            category_id=match["category_id"],
+            position=position,
+            total_questions=total,
+        )
+        if match["state"] == "revealing" and position >= total:
+            completed = await connection.execute(
+                """
+                UPDATE quiz_online.matches
+                SET state = 'finished', finished_at = now(), deadline_at = NULL
+                WHERE id = %s AND state = 'revealing'
+                RETURNING finished_at
+                """,
+                (match["id"],),
+            )
+            closed = await completed.fetchone()
+            if closed is not None:
+                await self._record_rankings(connection, match, closed["finished_at"])
+                return replace(ended, recorded=True)
+        await connection.execute(
+            """
+            UPDATE quiz_online.matches
+            SET state = 'abandoned', finished_at = now(), deadline_at = NULL
+            WHERE id = %s AND state IN ('running', 'revealing')
+            """,
+            (match["id"],),
+        )
+        return ended
 
     async def _insert_solo_room(
         self,
@@ -1545,7 +1685,7 @@ class PostgresRoomsRepository:
                     score=int(row["score"]),
                     correct_count=int(row["correct_count"]),
                     total_count=int(row["total_questions"]),
-                    question_time_ms=int(row["question_time_ms"]),
+                    question_time_ms=_question_time(row["question_time_ms"]),
                     nickname=str(row["nickname"]),
                     recorded_at=_iso(row["recorded_at"]),
                 )
@@ -1565,7 +1705,9 @@ class PostgresRoomsRepository:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 match = await self._locked_match(connection, actor_id, code)
-                if match is None:
+                # 기록 없이 끝낸 혼자 판(`abandoned`)은 «판이 없다»와 같다 — 같은 transaction에서
+                # 다음 판이 열리거나(restart) 방이 지워진다(그만두기·30분 정리)
+                if match is None or match["state"] == "abandoned":
                     return MatchRead(match=None, advanced=False)
                 advanced = await self._advance_locked_match(
                     connection,
@@ -1598,7 +1740,7 @@ class PostgresRoomsRepository:
         async with self._pool.connection() as connection:
             async with connection.transaction():
                 match = await self._locked_match(connection, actor_id, code)
-                if match is None:
+                if match is None or match["state"] == "abandoned":
                     raise MatchNotFound
                 if await self._advance_locked_match(
                     connection,
@@ -1622,11 +1764,13 @@ class PostgresRoomsRepository:
                 if question is None:
                     raise RepositoryFailure("current match question is missing")
 
-                # 쓴 시간은 그 판의 문항 시간을 넘지 않는다 (시간 초과 기록과 같은 상한)
+                # 쓴 시간은 그 판의 문항 시간을 넘지 않는다 (시간 초과 기록과 같은 상한). «제한
+                # 없음» 판은 자르지 않고 재되(로컬과 같다, FR-5.3) 판의 수명(2시간) 안이다 —
+                # migration 013의 상한
                 elapsed_cursor = await connection.execute(
                     """
                     SELECT LEAST(
-                        question_time_ms,
+                        COALESCE(question_time_ms, %s),
                         GREATEST(
                             0,
                             floor(extract(epoch FROM now() - question_started_at) * 1000)::integer
@@ -1635,7 +1779,7 @@ class PostgresRoomsRepository:
                     FROM quiz_online.matches
                     WHERE id = %s
                     """,
-                    (match["id"],),
+                    (UNTIMED_ELAPSED_MS_CAP, match["id"]),
                 )
                 elapsed = await elapsed_cursor.fetchone()
                 if elapsed is None:
@@ -1924,8 +2068,17 @@ class PostgresRoomsRepository:
         progress = await progress_cursor.fetchall()
         if not progress:
             raise RepositoryFailure("locked match disappeared")
+        # 마감이 NULL이면(«제한 없음») `deadline_at <= now()`도 NULL이라 마감은 지나지 않는다
         expired = bool(progress[0]["expired"])
         players = [row for row in progress if row["player_id"] is not None]
+        if match["question_time_ms"] is None:
+            # «제한 없음» 혼자 판 (PRD 10.1 #9): 시간 초과가 없고, 끊긴 사람을 빼고 앞당기거나 빈
+            # 답을 채우지 않으며, 발밑 칸도 답이 되지 않는다(마감이 없다). 판의 모두가 직접 답했을
+            # 때만 공개한다 — 혼자 판이라 그 사람이 답을 낼 때다
+            if not players or not all(bool(row["answered"]) for row in players):
+                return False
+            return await self._reveal_locked_match(connection, match_id)
+
         # 모두 답하면 마감을 기다리지 않는다. 유예를 넘겨 끊긴 참가자는 그 «모두»에서 뺀다 —
         # 한 사람이 떠났다고 남은 사람이 문제마다 마감까지 기다리지 않게 (U32). 그 사람의 빈
         # 답은 아래에서 시간 초과로 채우고, 다시 붙으면 다음 판정부터 다시 센다. 판의 모두가
@@ -1968,6 +2121,14 @@ class PostgresRoomsRepository:
                 (match_id, current_position, current_position, match_id),
             )
 
+        return await self._reveal_locked_match(connection, match_id)
+
+    async def _reveal_locked_match(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        match_id: UUID,
+    ) -> bool:
+        """도는 문항을 공개로 넘긴다. 공개(8초)에는 «제한 없음» 판에도 마감이 있다."""
         revealed = await connection.execute(
             """
             UPDATE quiz_online.matches
@@ -2015,7 +2176,9 @@ class PostgresRoomsRepository:
                     score.score,
                     score.correct_count,
                     int(match["total_questions"]),
-                    int(match["question_time_ms"]),
+                    # «제한 없음» 혼자 판이면 NULL이다(migration 013). 랭킹은 문항 시간으로 나누지
+                    # 않는다
+                    _question_time(match["question_time_ms"]),
                     ranking_nickname(score.nickname),
                     score.character_id or DEFAULT_CHARACTER_ID,
                     owner_keys.get(score.player_id),
@@ -2218,7 +2381,7 @@ class PostgresRoomsRepository:
             own_answer=own_answer,
             scores=scores,
             review=review,
-            question_time_ms=int(match["question_time_ms"]),
+            question_time_ms=_question_time(match["question_time_ms"]),
             ranking_recorded=ranking_recorded,
         )
 
@@ -2441,6 +2604,11 @@ class PostgresRoomsRepository:
                     "SELECT quiz_online.cleanup_expired_matches() AS deleted"
                 )
                 matches_row = await matches.fetchone()
+                # 마감이 없어 스스로 끝나지 않는 혼자 판을 멤버 정리 앞에서 끝낸다(migration 013) —
+                # 그래야 아래 멤버 정리가 그 방을 «판이 도는 방»으로 건너뛰지 않는다
+                idle_untimed = await connection.execute(
+                    _ABANDON_IDLE_UNTIMED_MATCHES_SQL, (_MEMBER_STALE_AFTER,)
+                )
                 expired_rooms = await connection.execute(_DELETE_EXPIRED_ROOMS_SQL)
                 stale_members = await connection.execute(
                     _DELETE_STALE_MEMBERS_SQL,
@@ -2455,6 +2623,7 @@ class PostgresRoomsRepository:
                     hosts_transferred=_affected(orphaned_hosts),
                     matches_deleted=int(matches_row["deleted"] or 0) if matches_row else 0,
                     players_deleted=_affected(expired_players),
+                    solo_matches_abandoned=_affected(idle_untimed),
                 )
             # 랭킹 보존 기간 정리(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄, migration
             # 012의 함수). 방 정리와 따로 돈다 — 이것이 실패해도 방 정리와 그 뒤의 멤버십 재확인은
@@ -2506,6 +2675,14 @@ def _iso(value: datetime) -> str:
     return value.isoformat()
 
 
+def _question_time(value: Any) -> int | None:
+    """방·판·기록의 문항 시간. NULL은 «제한 없음»(마감 없음)이다.
+
+    혼자 방과 그 판, 그 판의 기록에만 있다(migration 013).
+    """
+    return None if value is None else int(value)
+
+
 def _choices(value: object) -> tuple[str, ...]:
     if (
         not isinstance(value, list)
@@ -2540,7 +2717,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 # join_room 이 MatchInProgress 를 내는 조건과 같은 판정이다
                 "status": "playing" if row["is_playing"] else "waiting",
                 "in_match": bool(row["in_match"]),
-                "question_time_ms": int(row["question_time_ms"]),
+                "question_time_ms": _question_time(row["question_time_ms"]),
                 "solo": bool(row["solo"]),
             }
             grouped[room_id] = item

@@ -132,8 +132,11 @@ export interface OnlineExportRecord {
   correctCount: number;
   totalCount: number;
   playedAt: string;
-  /** 기본(20초)이 아닌 판에만 남긴다 — 로컬 기록과 같은 규칙이다 */
-  timeLimitMs?: number;
+  /**
+   * 기본(20초)이 아닌 판에만 남긴다 — 로컬 기록과 같은 규칙이다. null은 «제한 없음»으로 푼 혼자 판이다(PRD 10.1 #9,
+   * 로컬 기록의 `timeLimitMs: null`과 같다)
+   */
+  timeLimitMs?: number | null;
 }
 
 /** 내려받을 파일 하나. 이름은 app.ts 가 정해 화면에 넘긴다 */
@@ -220,10 +223,17 @@ export type TimeLimitChoice = 20000 | 40000 | null;
 
 /**
  * 온라인 방의 문항 시간 (밀리초). 방장이 방마다 20초(기본)나 40초를 고른다.
- * **제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
+ * **친구와 푸는 방에는 제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
  * 고를 수 있는 값은 constants.ts 의 ONLINE_QUESTION_TIME_CHOICES 에 있다.
  */
 export type OnlineQuestionTime = 20000 | 40000;
+
+/**
+ * 혼자 푸는 온라인 판의 문항 시간 (FR-7.13 3단계, PRD 10.1 #9 소유자 결정). 설정의 20초·40초이거나
+ * **null(«제한 없음», 마감 없음)** 이다 — 기다릴 사람이 없다. 서버가 그것을 안다고 알린 뒤에만(세션의
+ * `soloUntimed`) null을 보낸다. 로컬 «제한 없음»과 같은 규칙이다(시간 초과가 없고 직접 낸 답만 답이다).
+ */
+export type SoloQuestionTime = OnlineQuestionTime | null;
 
 /** 사용자 설정 (localStorage) */
 export interface Settings {

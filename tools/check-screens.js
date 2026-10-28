@@ -81,8 +81,9 @@
 //      서버에 닿지 않거나 서버 없이 연 화면이면 연습(기록 안 남음)을 연다. 그래서 이 점검은 먼저 홈이 무엇을 여는지
 //      본다 — 연습이면(서버 없이 연 사본) 아래 로컬 퀴즈 점검이 그대로 돌되 결과가 기록되지 않는 것을 본다(⑪ 대신).
 //      로컬 API를 가리키는 사본이면 혼자 온라인 판의 흐름(곧바로 열림·채팅 없음·«뒤로»의 나가기 확인·홈의 «이어 풀기»가
-//      그 판의 이름을 말하는지·판이 도는 동안 다른 분야 칸이 그 판을 말없이 열지 않는지·랭킹이 온라인부터)만 보고
-//      끝낸다 — 로컬 퀴즈 점검은 서버 없이 연 사본에서 다시 붙여넣는다
+//      그 판의 이름을 말하는지·판이 도는 동안 다른 분야 칸이 그 판을 기록 없이 끝내고 고른 판을 열며 한 줄로 말하는지
+//      (결정 #4 — 그것을 모르는 API면 그 판을 말없이 열지 않는지)·랭킹이 온라인부터)만 보고 끝낸다 — 로컬 퀴즈 점검은
+//      서버 없이 연 사본에서 다시 붙여넣는다
 //
 // **운영 API를 가리키는 페이지에서는 돌지 않는다.** 저장소의 index.html 은 운영 API를 가리키고, 분야 칸은 그 서버에
 // 혼자 방을 만들고 판을 연다(점수가 운영 랭킹에 남는다). `quiz-api-base` 메타를 지운 사본(연습)이나 로컬 API를
@@ -330,27 +331,61 @@
         && document.getElementById('home-room-note-action').textContent.trim() === '이어 풀기',
       무엇: 줄.hidden ? '!! 숨김' : 줄.textContent.replace(/\s+/g, ' ').trim(),
     });
-    // 판이 도는 동안 다른 분야 칸을 누르면 말없이 그 판을 열지 않는다 — 홈에 남고 줄이 그 판을 말한다(리뷰에서 실제로
-    // 나왔다: «한국사»를 눌렀는데 돌던 «과학» 판이 열렸고 까닭은 낭독뿐이었다)
-    const 다른칸 = [...document.querySelectorAll('#category-grid .category-card:not(:disabled)')].find((다른) => 다른 !== 칸);
+    // 판이 도는 동안 다른 분야 칸을 누르면(소유자 결정, PRD 10.1 #11) 확인창 없이 돌던 판을 기록 없이 끝내고 고른 판을
+    // 연다 — 새 판의 화면이 HUD 아래 한 줄로 그렇다고 말한다. 끝내고 새로 열기를 모르는 API면 예전처럼 홈에 남고 줄이
+    // 그 판을 말한다(리뷰에서 실제로 나왔다: «한국사»를 눌렀는데 돌던 «과학» 판이 말없이 열렸다)
+    // 분야로 고른다 — 홈이 분야 칸을 다시 그렸으면 처음 누른 칸(요소)은 이미 목록에 없어 «같은 요소가 아님»이 같은 분야를 고른다
+    const 다른칸 = [...document.querySelectorAll('#category-grid .category-card:not(:disabled)')]
+      .find((다른) => 다른.dataset.category !== 칸.dataset.category);
+    let 이을판 = 판이름;
     if (다른칸) {
+      const 다른이름 = 다른칸.querySelector('.category-card__name--full')?.textContent.trim() ?? '';
       다른칸.click();
       for (let i = 0; i < 40 && document.getElementById('home-quests').getAttribute('aria-busy') === 'true'; i += 1) await 잠깐(100);
       await 잠깐(300);
-      결과.push({
-        자리: '혼자 판', 이름: '다른 분야 칸은 돌던 판을 열지 않고 홈에 남아 그 판으로 돌아갈 줄을 보인다',
-        통과: 지금화면() === 'home' && !줄.hidden
-          && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${판이름}» 판이 아직 진행 중이에요`
-          && /새 판을 열 수 없어요/.test(document.getElementById('announcer')?.textContent ?? ''),
-        무엇: `${지금화면()} · ${줄.textContent.replace(/\s+/g, ' ').trim()} · ${document.getElementById('announcer')?.textContent ?? ''}`,
-      });
+      if (지금화면() === 'online-quiz') {
+        await 화면기다리기('online-quiz', 8000);
+        for (let i = 0; i < 50 && document.getElementById('online-solo-notice').hidden; i += 1) await 잠깐(100);
+        const 알림 = document.getElementById('online-solo-notice');
+        const 끝낸말 = `풀던 «${판이름}» 판은 끝까지 풀지 않아 기록 없이 끝냈어요.`;
+        결과.push({
+          자리: '혼자 판', 이름: '다른 분야 칸은 돌던 판을 기록 없이 끝내고 고른 판을 열며, 새 판이 그렇다고 한 줄로 말한다',
+          통과: document.getElementById('online-exit-dialog').hidden
+            && !알림.hidden && 알림.textContent.trim() === 끝낸말
+            && document.getElementById('online-quiz-category').textContent.trim() === 다른이름
+            && (document.getElementById('announcer')?.textContent ?? '').includes(끝낸말),
+          무엇: `${알림.hidden ? '!! 줄 숨김' : 알림.textContent.trim()} · 분야 ${document.getElementById('online-quiz-category').textContent.trim()}`,
+        });
+        이을판 = 다른이름;
+        await 눌러('online-quiz-exit', 300);
+        await 눌러('online-exit-confirm', 300);
+        await 화면기다리기('home', 8000);
+        for (let i = 0; i < 50 && document.getElementById('home-room-note').hidden; i += 1) await 잠깐(100);
+        결과.push({
+          자리: '혼자 판', 이름: '홈의 «이어 풀기» 줄은 새로 연 판을 말한다',
+          통과: !줄.hidden
+            && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${이을판}» 판이 아직 진행 중이에요`,
+          무엇: 줄.hidden ? '!! 숨김' : 줄.textContent.replace(/\s+/g, ' ').trim(),
+        });
+      } else {
+        결과.push({
+          자리: '혼자 판', 이름: '(끝내고 새로 열기를 모르는 API) 다른 분야 칸은 돌던 판을 열지 않고 홈에 남아 그 판으로 돌아갈 줄을 보인다',
+          통과: 지금화면() === 'home' && !줄.hidden
+            && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${판이름}» 판이 아직 진행 중이에요`
+            && /새 판을 열 수 없어요/.test(document.getElementById('announcer')?.textContent ?? ''),
+          무엇: `${지금화면()} · ${줄.textContent.replace(/\s+/g, ' ').trim()} · ${document.getElementById('announcer')?.textContent ?? ''}`,
+        });
+      }
     }
     줄.click();
     await 화면기다리기('online-quiz', 8000);
+    for (let i = 0; i < 50 && document.querySelectorAll('#online-choices .choice').length === 0; i += 1) await 잠깐(100);
     결과.push({
-      자리: '혼자 판', 이름: '«이어 풀기»가 같은 판으로 돌아간다',
-      통과: 지금화면() === 'online-quiz' && 퀴즈.dataset.solo === 'true',
-      무엇: 지금화면(),
+      자리: '혼자 판', 이름: '«이어 풀기»가 같은 판으로 돌아가고 앞 판을 끝냈다는 줄은 다시 보이지 않는다',
+      통과: 지금화면() === 'online-quiz' && 퀴즈.dataset.solo === 'true'
+        && document.getElementById('online-quiz-category').textContent.trim() === 이을판
+        && document.getElementById('online-solo-notice').hidden,
+      무엇: `${지금화면()} · 분야 ${document.getElementById('online-quiz-category').textContent.trim()}`,
     });
     await 눌러('online-quiz-exit', 300);
     await 눌러('online-exit-confirm', 300);

@@ -10,13 +10,17 @@ CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.gith
 - 012(온라인 랭킹)도 더하기만 한다: 011의 API가 도는 동안 먼저 적용하고(그 API의 방 문장이 그대로
   통하고 랭킹 표는 비어 있다), 012 전에 열린 판도 그 뒤의 API가 닫으면 참가자마다 기록이 남는다
   (migration 012 → API → Pages). 이 소스에는 #108의 API가 없어 그 판을 닫는 것은 아래의 013 후보다.
-- 013(혼자 푸는 온라인 판)도 더하기만 한다: 012의 API(#108)가 도는 동안 먼저 적용한다. 그 API의
-  코드도 이 소스에 없으므로 그 API가 쓰는 문장(방 쓰기·판 기록·보존 정리·마지막 사람이 나갈 때의
-  방 삭제)을 옮겨 **런타임 역할로** 013 DB 위에서 돌린다 — 혼자 방 표시가 붙은 방도 그 역할의 방
-  삭제로 함께 지워진다(그 표의 DELETE 권한 없이 CASCADE로). 후보 API는 013 위에서만 돈다 — 012
-  위에서는 readiness가 번호로 닫히고 방 SQL이 solo_rooms를 봐 로비부터 실패한다. 013 위에서는 013
-  전에 열린 판을 이어 가 닫을 때 참가자마다 기록을 남기고, 혼자 판을 끝까지 풀면 그 사람의 주인
-  열쇠로만 내 최고 기록이 읽힌다 (migration 013 → API → Pages).
+- 013(혼자 푸는 온라인 판)은 표·색인을 더하고, 혼자 판의 «제한 없음»(PRD 10.1 #9)을 위해 문항 시간·
+  쓴 시간·도는 판의 마감 CHECK 다섯을 같은 이름으로 바꾼다(NULL은 혼자 방과 그 판에만 — 생성 열과
+  외래 키). 012의 API(#108)가 도는 동안 먼저 적용한다. 그 API의 코드도 이 소스에 없으므로 그 API가
+  쓰는 문장(방 쓰기·판 열기·시간 초과 채우기·공개·다음 문항·판 기록·보존 정리·마지막 사람이 나갈
+  때의 방 삭제)을 옮겨 **런타임 역할로** 013 DB 위에서 돌린다 — 그 API가 쓰는 값(20000·40000,
+  0..40000)은 바뀐 제약에 그대로 들고, 혼자 방 표시가 붙은 방도 그 역할의 방 삭제로 함께 지워진다
+  (그 표의 DELETE 권한 없이 CASCADE로). 후보 API는 013 위에서만 돈다 — 012 위에서는 readiness가
+  번호로 닫히고 방 SQL이 solo_rooms를 봐 로비부터 실패한다. 013 위에서는 013 전에 열린 판을 이어 가
+  닫을 때 참가자마다 기록을 남기고, 혼자 판을 끝까지 풀면 그 사람의 주인 열쇠로만 내 최고 기록이
+  읽힌다 (migration 013 → API → Pages). 012 API로 되돌릴 때 혼자 방을 지우면 그 API가 읽지 못하는
+  줄(문항 시간 NULL인 방·판)이 하나도 남지 않고 release check가 그것을 확인한다.
 """
 
 from __future__ import annotations
@@ -197,6 +201,10 @@ def test_v9_data_upgrades_through_010_to_013_and_the_candidate_continues_it() ->
         asyncio.run(
             _exercise_candidate_against_v13(host_id, guest_id, solo_id, room_code, match_id)
         )
+        # 후보 API가 «제한 없음» 혼자 판을 남긴 채 012 API로 되돌린다(README «Solo online play»의
+        # Rollback): 혼자 방을 지우면 그 API가 읽지 못하는 줄이 하나도 남지 않는다
+        asyncio.run(_leave_an_untimed_solo_match(solo_id))
+        _rollback_cleanup_leaves_only_rows_the_v12_api_reads()
     finally:
         with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
             connection.execute(
@@ -424,6 +432,7 @@ def _v12_api_statements_run_on_v13(player_id: UUID, room_id: UUID, solo_code: st
         )
         assert cursor.rowcount == 1
         assert connection.execute(_V12_PRUNE_SQL).fetchone()[0] >= 0
+        _v12_match_statements(connection, player_id, room_id)
         # 그 API는 혼자 방 표시를 모른다. 013 API가 남긴(되돌린 뒤의) 혼자 방도 그 API가 마지막
         # 사람이 나갈 때 지우는 문장으로 지워지고, 표시는 CASCADE로 함께 사라진다 — 런타임 역할에
         # solo_rooms의 DELETE가 없어도 된다
@@ -452,6 +461,144 @@ def _v12_api_statements_run_on_v13(player_id: UUID, room_id: UUID, solo_code: st
         assert connection.execute(
             "SELECT count(*) FROM quiz_online.solo_rooms WHERE room_id = %s", (solo_room_id,)
         ).fetchone()[0] == 0
+
+
+# 012의 API가 판을 열고(`start_game`) 시간 초과를 채우고 공개하고 다음 문항으로 넘기는 문장. 013이
+# 같은 이름으로 바꾼 CHECK(문항 시간·쓴 시간·도는 판의 마감)와 더한 외래 키에 그 API의 값이 그대로
+# 든다 — 마감 있는 판은 생성 열이 NULL이라 외래 키를 보지 않는다
+_V12_START_MATCH_SQL = """
+INSERT INTO quiz_online.matches (
+    room_id, category_id, game_mode, total_questions,
+    question_time_ms, deadline_at, expires_at
+)
+VALUES (
+    %s, %s, %s, %s,
+    %s,
+    now() + %s::integer * interval '1 millisecond',
+    now() + %s::interval
+)
+RETURNING id
+"""
+_V12_TIMEOUT_FILL_SQL = """
+INSERT INTO quiz_online.match_answers (
+    match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
+)
+SELECT %s, %s, player.player_id, NULL, false, true, match.question_time_ms
+FROM quiz_online.match_players player
+JOIN quiz_online.matches match ON match.id = player.match_id
+LEFT JOIN quiz_online.match_answers answer
+  ON answer.match_id = player.match_id
+ AND answer.position = %s
+ AND answer.player_id = player.player_id
+WHERE player.match_id = %s AND answer.player_id IS NULL
+ON CONFLICT (match_id, position, player_id) DO NOTHING
+"""
+
+
+def _v12_match_statements(connection: psycopg.Connection, player_id: UUID, room_id: UUID) -> None:
+    match_id = connection.execute(
+        _V12_START_MATCH_SQL,
+        (room_id, "science", True, 2, 40_000, 40_000, "2 hours"),
+    ).fetchone()[0]
+    connection.execute(
+        "INSERT INTO quiz_online.match_players (match_id, player_id, nickname, character_id) "
+        "VALUES (%s, %s, '012API', %s)",
+        (match_id, player_id, DEFAULT_CHARACTER_ID),
+    )
+    for position in (1, 2):
+        connection.execute(
+            """
+            INSERT INTO quiz_online.match_questions (
+                match_id, position, question_id, category_id, choices, answer_index
+            )
+            VALUES (%s, %s, %s, 'science', %s, 0)
+            """,
+            (match_id, position, f"v12-probe-{position}", Jsonb(["a", "b", "c", "d"])),
+        )
+    # 마감이 지나 시간 초과를 채운다 — 쓴 시간은 그 판의 40초다(013의 0..7200000과 외래 키에 든다)
+    connection.execute(
+        "UPDATE quiz_online.matches SET question_started_at = now() - interval '1 minute', "
+        "deadline_at = now() - interval '1 minute' WHERE id = %s",
+        (match_id,),
+    )
+    assert connection.execute(_V12_TIMEOUT_FILL_SQL, (match_id, 1, 1, match_id)).rowcount == 1
+    assert connection.execute(
+        "UPDATE quiz_online.matches SET state = 'revealing', deadline_at = now() + %s::interval "
+        "WHERE id = %s AND state = 'running' RETURNING id",
+        ("8 seconds", match_id),
+    ).fetchone() is not None
+    assert connection.execute(
+        """
+        UPDATE quiz_online.matches
+        SET state = 'running',
+            current_position = current_position + 1,
+            question_started_at = now(),
+            deadline_at = now() + question_time_ms * interval '1 millisecond'
+        WHERE id = %s AND state = 'revealing'
+        RETURNING deadline_at - question_started_at
+        """,
+        (match_id,),
+    ).fetchone()[0] == timedelta(seconds=40)
+    connection.execute("DELETE FROM quiz_online.matches WHERE id = %s", (match_id,))
+
+
+async def _leave_an_untimed_solo_match(solo_id: UUID) -> None:
+    """후보 API가 «제한 없음» 혼자 판(문항 시간 NULL, 마감 없음)을 열어 둔 채 멈춘다."""
+    assert RUNTIME_URL is not None
+    repository = PostgresRoomsRepository(
+        RUNTIME_URL, question_catalog=_test_catalog(), max_pool_size=2
+    )
+    await repository.open()
+    try:
+        untimed = await repository.start_solo(
+            solo_id,
+            validate_solo_room(category_id=None, question_time_ms=None),
+            restart=True,
+        )
+        assert untimed.match is not None and untimed.match.question_time_ms is None
+        assert untimed.room.question_time_ms is None
+    finally:
+        await repository.close()
+
+
+def _rollback_cleanup_leaves_only_rows_the_v12_api_reads() -> None:
+    """README «Solo online play»의 Rollback: 012 API가 다시 돌기 전에 migrator가 혼자 방을 지운다.
+
+    012 API는 방·판의 문항 시간을 정수로 읽는다(`int(row["question_time_ms"])`) — NULL인 방 하나가
+    남으면 그 API의 로비 목록이, 마지막 공개의 NULL인 판 하나가 남으면 그 API의 마감 sweep이 늘
+    실패한다. 혼자 방만 지워도 그런 줄이 하나도 남지 않고(생성 열 + 외래 키), release check
+    `--expect 13 --require-empty-solo-rooms`가 그것을 확인한다.
+    """
+    from app.release_check import check_database
+
+    assert MIGRATOR_URL is not None
+    with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
+        before = connection.execute(
+            "SELECT count(*) FROM quiz_online.matches WHERE question_time_ms IS NULL"
+        ).fetchone()[0]
+        assert before >= 1
+        dirty = check_database(connection, expect=13, require_empty_solo_rooms=True)
+        assert {check.name for check in dirty if check.status == "FAIL"} == {
+            "question-time-values",
+            "solo-rooms-records",
+        }
+        connection.execute(
+            "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+            "WHERE s.room_id = r.id"
+        )
+        assert connection.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM quiz_online.rooms
+                 WHERE question_time_ms IS NULL OR question_time_ms NOT IN (20000, 40000)),
+                (SELECT count(*) FROM quiz_online.matches
+                 WHERE question_time_ms IS NULL OR question_time_ms NOT IN (20000, 40000)),
+                (SELECT count(*) FROM quiz_online.match_answers WHERE elapsed_ms > 40000),
+                (SELECT count(*) FROM quiz_online.matches WHERE state = 'abandoned')
+            """
+        ).fetchone() == (0, 0, 0, 0)
+        clean = check_database(connection, expect=13, require_empty_solo_rooms=True)
+        assert [check.render() for check in clean if check.status == "FAIL"] == []
 
 
 async def _finish_solo_match(

@@ -81,7 +81,8 @@ export interface OnlineRecordInput {
   score: number;
   correctCount: number;
   totalCount: number;
-  questionTimeMs: number;
+  /** null은 «제한 없음»으로 푼 혼자 판이다 (PRD 10.1 #9) */
+  questionTimeMs: number | null;
   nickname: string;
   recordedAt: string;
 }

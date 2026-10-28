@@ -5,8 +5,9 @@ import { readFile } from 'node:fs/promises';
 // 혼자 푸는 온라인 판 (PRD FR-7.13 3단계, 소유자 방향: 혼자 하기를 없애고 혼자서도 온라인에서 푼다).
 // - 홈의 분야 칸·전체 도전이 대기실 없이 곧바로 혼자 온라인 판을 연다(POST /v1/solo). 이 기능은 세션 응답의
 //   `soloPlay: true`로만 안다 — 모르는 이전 API에는 요청을 보내지 않고 홈은 예전 혼자 하기(로컬)를 연다.
-// - 서버에 닿지 않으면(연결 실패·시간 초과·5xx) 홈은 연습(기록 안 남음)을 연다 — PRD 10.2 #1의 기본값.
-// - 혼자 온라인 판의 문항 시간은 설정의 20초·40초이고 «제한 없음»은 연습에만 — PRD 10.2 #2의 기본값.
+// - 서버에 닿지 않으면(연결 실패·시간 초과·5xx) 홈은 연습(기록 안 남음)을 연다 — PRD 10.1 #8 (소유자 결정).
+// - 혼자 온라인 판의 문항 시간은 설정의 20초·40초·«제한 없음»(마감 없는 판) — #2. 세션이 `soloUntimed`를 알릴 때만
+//   null을 보낸다. 다른 판을 고르면 도는 판을 기록 없이 끝내고 새로 연다 — #4 (세션의 `soloRestart`).
 // - 별 점수·결과의 최고 기록 비교는 서버의 내 기록(주인 열쇠), 기록 내보내기도 서버 기록이다.
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -30,6 +31,8 @@ const identity = {
 };
 const MATCH_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SESSION = { playerId: identity.id, minPlayers: 1, standingAnswers: true, rankings: true, soloPlay: true };
+// 소유자 결정 #2·#4를 아는 API (PRD 10.1 #9·#11)
+const DECIDED_SESSION = { ...SESSION, soloUntimed: true, soloRestart: true };
 
 function soloRoom(changes = {}) {
   return {
@@ -120,7 +123,14 @@ test('혼자 판: 분야와 문항 시간만 보내고, 내 혼자 방(solo)을 
   assert.equal(post.method, 'POST');
   assert.deepEqual(post.body, { categoryId: 'science', questionTimeMs: 40000 }, '정원·비밀번호·점수 같은 다른 칸은 없다');
 
-  await assert.rejects(store.startSolo({ categoryId: 'science', questionTimeMs: null }), /문항 시간/, '«제한 없음»은 온라인 판에 보내지 않는다');
+  await assert.rejects(
+    store.startSolo({ categoryId: 'science', questionTimeMs: null }),
+    /문항 시간/,
+    '«제한 없음»은 그것을 안다고 알리지 않은 API(soloUntimed 없음)에 보내지 않는다',
+  );
+  // restart(PRD 10.1 #11)도 그것을 안다고 알리지 않은 API에는 싣지 않는다 — 예전처럼 도는 판을 돌려받는다
+  await store.startSolo({ categoryId: 'history', questionTimeMs: 20000, restart: true });
+  assert.deepEqual(requests.filter(({ path }) => path === '/v1/solo').at(-1).body, { categoryId: 'history', questionTimeMs: 20000 });
   await assert.rejects(store.startSolo({ categoryId: 'music', questionTimeMs: 20000 }), /분야/);
 });
 
@@ -211,20 +221,25 @@ test('로컬 방(서버 없이 연 화면)에는 혼자 온라인 판도 서버 
   assert.equal(localRooms.onlineRules().soloPlay, false);
 });
 
-// ── 두 소유자 결정의 기본값 (PRD 10.2) ─────────────────────────────────
+// ── 네 소유자 결정 (결정 #1–#4 = PRD 10.1 #8–#11) ───────────────────────
 
-test('결정 #2: 혼자 온라인 판은 설정의 20초·40초, «제한 없음»(과 목록 밖의 값)은 20초다', async () => {
+test('결정 #2: 혼자 온라인 판은 설정의 20초·40초·«제한 없음»이다 — 그것을 모르는 API면 «제한 없음»은 20초다', async () => {
   const { soloQuestionTime } = await import('../js/online/solo-play.js');
-  assert.equal(soloQuestionTime(20000), 20000);
-  assert.equal(soloQuestionTime(40000), 40000);
-  assert.equal(soloQuestionTime(null), 20000);
-  assert.equal(soloQuestionTime(30000), 20000);
+  assert.equal(soloQuestionTime(20000, true), 20000);
+  assert.equal(soloQuestionTime(40000, true), 40000);
+  assert.equal(soloQuestionTime(null, true), null, '«제한 없음»은 마감 없는 판이다');
+  assert.equal(soloQuestionTime(30000, true), 20000, '목록 밖의 값은 20초다');
+  assert.equal(soloQuestionTime(null, false), 20000, 'soloUntimed를 모르는 API에는 null을 보내지 않는다');
+  assert.equal(soloQuestionTime(40000, false), 40000);
 });
 
 test('결정 #1: 서버에 닿지 않으면 연습이고, 서버가 거절한 것·닉네임은 닿은 것이다', async () => {
-  const { probeResult, isServerUnreachable, OFFLINE_PRACTICE } = await import('../js/online/solo-play.js');
+  const solo_play = await import('../js/online/solo-play.js');
+  const { probeResult, isServerUnreachable } = solo_play;
   const { ApiFailure, NicknameRejected, OnlinePlayerError } = await import('../js/online/rules.js');
-  assert.equal(OFFLINE_PRACTICE, true, '기본값은 연습(기록 안 남음)을 연다');
+  // 소유자가 연습을 골랐다 — 다른 길(안내만)을 고르는 스위치는 걷어냈다
+  assert.equal('OFFLINE_PRACTICE' in solo_play, false);
+  assert.equal('OFFLINE_NO_PRACTICE_MESSAGE' in solo_play, false);
   const solo = { soloPlay: true };
 
   assert.deepEqual(probeResult({ supported: true }), { mode: 'online' });
@@ -293,7 +308,9 @@ test('연습 안내 줄은 까닭을 말하고 다시 연결할 길을 준다 �
   assert.deepEqual(practiceNote('offline'), { text: '온라인에 연결할 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 연결' });
   assert.equal(practiceNote('nickname').action, '다시 확인');
   assert.equal(practiceNote('no-server'), null, '서버 없이 연 화면은 줄 없이 캡션만 말한다');
-  assert.match(practiceNote('offline', false).text, /^온라인에 연결할 수 없어요/, '연습을 열지 않는 다른 길이면 연습을 권하지 않는다');
+  // 결정 #1: 연습을 연다 — 연습을 권하지 않는 다른 길은 없다
+  const app_source = await source('../src/app.ts');
+  assert.doesNotMatch(app_source, /OFFLINE_PRACTICE|OFFLINE_NO_PRACTICE_MESSAGE/);
   assert.deepEqual(practiceNote('full'), { text: '지금은 혼자 판 자리가 모두 차 연습(기록 안 남음)만 할 수 있어요', action: '다시 시도' });
   assert.deepEqual([0, 1, 2, 3, 9].map(practiceRetryDelay), [30000, 60000, 120000, 120000, 120000]);
   // 자리가 찬 것도 닿지 않은 것처럼 물러서며 다시 묻는다
@@ -378,20 +395,43 @@ test('온라인 퀴즈: 혼자 판은 채팅과 혼자인 점수판을 거두고
   assert.match(quiz, /setSolo\(next\) \{\s*solo = next;[\s\S]*?el\.chatSection\.hidden = next;\s*el\.screen\.dataset\.solo = String\(next\);/);
   assert.match(quiz, /if \(solo\) \{\s*standingsKey = null;\s*el\.standings\.hidden = true;/);
   assert.match(quiz, /if \(el\.chatSection\.hidden\) return;/, '`/`는 거둔 채팅칸으로 가지 않는다');
-  // 판이 끝날 때까지 새 혼자 판을 열 수 없다는 것도 미리 말한다 — 홈의 분야 칸은 이 판으로 돌아갈 줄만 보인다
-  assert.match(quiz, /SOLO_EXIT_BODY =\s*'나가도 판은 계속 진행되고, 끝날 때까지 새 혼자 판은 열 수 없어요\. 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인 랭킹에 남아요\.'/);
+  // 다른 분야를 고르면 이 판이 기록 없이 끝난다는 것을 미리 말한다 (PRD 10.1 #11 — 고를 때는 확인창이 없다).
+  // 마감 없는 판은 그 자리에서 기다리고 30분 넘게 돌아오지 않으면 끝난다는 것도 (결정 #2)
+  const { SOLO_EXIT_BODY, SOLO_UNTIMED_EXIT_BODY } = await import('../js/ui/online-quiz.js');
+  assert.equal(
+    SOLO_EXIT_BODY,
+    '나가도 판은 계속 진행되고, 끝나면 그 점수가 온라인 랭킹에 남아요. 홈의 「이어 풀기」나 같은 분야로 돌아올 수 있고, 다른 분야를 고르면 이 판은 기록 없이 끝나요.',
+  );
+  assert.equal(
+    SOLO_UNTIMED_EXIT_BODY,
+    '시간 제한이 없는 판이라 나가도 그 자리에서 기다려요. 홈의 「이어 풀기」나 같은 분야로 돌아와 이어 풀 수 있고, 다른 분야를 고르거나 30분 넘게 돌아오지 않으면 이 판은 기록 없이 끝나요.',
+  );
+  assert.match(quiz, /if \(solo\) setTextIfChanged\(el\.exitBody, untimed \? SOLO_UNTIMED_EXIT_BODY : SOLO_EXIT_BODY\);/);
   assert.match(
     css,
     /@media \(pointer: coarse\) \{[\s\S]*?\[data-screen='online-quiz'\]\[data-solo='true'\] \{\s*padding-bottom: calc\(var\(--walk-stick-size\) \+ var\(--space-4\) \+ var\(--space-2\) \+ env\(safe-area-inset-bottom, 0px\)\);/,
   );
 });
 
-test('설정·게임 방법: 혼자 온라인 판의 문항 시간과 기록이 어디에 남는지 말한다 (PRD 10.2 #2)', async () => {
+test('설정·게임 방법: 혼자 온라인 판의 문항 시간과 기록이 어디에 남는지 말한다 (PRD 10.1 #9)', async () => {
+  // settings-dialog 모듈은 불러오는 순간 DOM을 본다 — 글로 읽는다
   const settings = await source('../src/ui/settings-dialog.ts');
-  assert.match(settings, /«제한 없음»은 연습\(기록 안 남음\)에만 적용되고 온라인 판은 20초예요/);
-  const { soloTimeRule, ONLINE_RECORD_RULE, PRACTICE_RECORD_RULE, RECORD_RULE } = await import('../js/ui/round-rules.js');
-  assert.equal(soloTimeRule(40000), '문항당 40초 · 설정에서 바꿀 수 있어요');
-  assert.equal(soloTimeRule(null), '문항당 20초 · 설정의 «제한 없음»은 연습에만 적용돼요');
+  assert.match(
+    settings,
+    /SOLO_TIME_NOTE =\s*'기본은 20초예요\. 새로 시작하는 판부터 적용돼요\. 혼자 푸는 온라인 판도 이 시간을 쓰고, «제한 없음»이면 시간 제한 없이 풀어요\. 친구와 푸는 방은 방장이 방마다 20초나 40초로 정해요\.';/,
+  );
+  assert.match(settings, /SOLO_TIMED_TIME_NOTE =\s*'[^']*지금은 «제한 없음»이면 20초로 풀어요\./, '그것을 모르는 API의 말');
+  assert.match(settings, /const text = !soloOnline \? legacyTimeNote : untimed \? SOLO_TIME_NOTE : SOLO_TIMED_TIME_NOTE;/);
+  const app = await source('../src/app.ts');
+  assert.match(app, /settingsDialog\.setOnlineSolo\(rules\?\.soloPlay === true, rules\?\.soloUntimed === true\);/);
+  const { soloTimeRule, answerRule, ONLINE_RECORD_RULE, PRACTICE_RECORD_RULE, RECORD_RULE } = await import('../js/ui/round-rules.js');
+  assert.equal(soloTimeRule(40000, true), '문항당 40초 · 설정에서 바꿀 수 있어요');
+  assert.equal(soloTimeRule(null, true), '시간 제한 없음 · 설정에서 바꿀 수 있어요');
+  assert.equal(soloTimeRule(null, false), '문항당 20초 · 지금은 «제한 없음» 온라인 판을 열 수 없어 20초예요');
+  // 마감 없는 혼자 판의 답하기는 로컬 «제한 없음»과 같다 — 칸 위에서 선택을 눌러 낸다
+  const rules = await source('../src/ui/rules-dialog.ts');
+  assert.match(rules, /answerRule\(mode === 'online' \? soloQuestionTime\(limitMs, untimed\) : limitMs\)/);
+  assert.match(answerRule(null), /칸 위에서 선택 버튼이나 Enter · Space를 눌러요/);
   assert.equal(ONLINE_RECORD_RULE, '끝까지 푼 판은 온라인 랭킹에 남아요');
   assert.equal(PRACTICE_RECORD_RULE, '연습 판은 기록이 남지 않아요');
   assert.equal(RECORD_RULE, '이 브라우저에만 저장돼요', '모르는 API의 예전 말은 그대로다');
@@ -448,8 +488,13 @@ test('app: 홈의 분야 칸은 지금의 판 종류로 연다 — 묻는 중이
   assert.match(play, /await startRound\(round\);\s*\}\n/);
 
   const solo = app.slice(app.indexOf('  async function startSoloOnline('), app.indexOf('  async function resumeSolo('));
-  assert.match(solo, /questionTimeMs: soloQuestionTime\(timeLimitMs\),/, '설정의 문항 시간 — «제한 없음»이면 20초 (PRD 10.2 #2)');
-  assert.match(solo, /if \(probe\.mode === 'practice'\) \{\s*setPlayMode\('practice', probe\.reason\);/, '서버에 닿지 않으면 홈이 연습을 연다 (PRD 10.2 #1)');
+  assert.match(
+    solo,
+    /questionTimeMs: soloQuestionTime\(timeLimitMs, rules\?\.soloUntimed === true\),/,
+    '설정의 문항 시간 — «제한 없음»은 그것을 아는 API에만 null (PRD 10.1 #9)',
+  );
+  assert.match(solo, /restart: true,/, '다른 판이 돌면 끝내고 연다 (PRD 10.1 #11) — 저장소가 soloRestart를 볼 때만 싣는다');
+  assert.match(solo, /if \(probe\.mode === 'practice'\) \{\s*setPlayMode\('practice', probe\.reason\);/, '서버에 닿지 않으면 홈이 연습을 연다 (PRD 10.1 #8)');
   assert.match(solo, /homeRoomNote\.enter\(code\);/, '새로고침한 뒤의 홈이 «이어 풀기»를 묻는다');
   assert.doesNotMatch(solo, /openWaitingRoom|activeRoomCode = /, '대기실을 거치지 않는다');
   assert.match(solo, /await openOnlineMatch\(code, \{/);
@@ -502,9 +547,10 @@ test('app: 혼자 판의 결과는 그 화면의 것이다 — 랭킹으로 떠�
   assert.deepEqual(calls, ['leave SQL234', 'friend rematch']);
 });
 
-test('app: 고른 것과 다른 혼자 판이 아직 돌면 말없이 그 판을 열지 않는다 — 홈에 «이어 풀기» 줄과 까닭', async () => {
+test('app: 끝내고 새로 열기를 모르는 API에서 고른 것과 다른 혼자 판이 돌면 말없이 그 판을 열지 않는다 — 홈에 «이어 풀기» 줄과 까닭', async () => {
   // 리뷰에서 실제로 나왔다: 판 도중에 나온 사람이 «한국사»를 누르면 돌던 «과학» 판이 말없이 열렸다(까닭은 낭독뿐).
-  // 서버는 판이 끝날 때까지 나가기를 거절하고 로비에도 혼자 방이 없어 다른 길도 없었다
+  // 서버는 판이 끝날 때까지 나가기를 거절하고 로비에도 혼자 방이 없어 다른 길도 없었다. 지금 API(soloRestart)는
+  // 그 판을 끝내고 고른 판을 연다(PRD 10.1 #11, 아래) — 이 길은 그것을 모르는 API에서만이다
   const { soloStillRunningMessage, soloRoomNoteText } = await import('../js/online/solo-play.js');
   assert.equal(
     soloStillRunningMessage('과학'),
@@ -549,4 +595,218 @@ test('app: 서버 없이 연 화면은 늘 연습이고 묻지 않는다. 그 �
 test('로비: 내 혼자 방은 목록에 그리지 않는다 — 친구와 함께 푸는 곳이다', async () => {
   const online = await source('../src/ui/online.ts');
   assert.match(online, /return \(await roomStore\.listRooms\(\)\)\.filter\(\(room\) => room\.solo !== true\);/);
+});
+
+// ── 소유자 결정 #2·#4 (PRD 10.1 #9·#11): «제한 없음» 혼자 판과 다른 판을 골라 끝내고 새로 열기 ─────
+
+function untimedMatch(changes = {}) {
+  return {
+    matchId: MATCH_ID,
+    state: 'running',
+    categoryId: 'science',
+    gameMode: true,
+    currentPosition: 1,
+    totalQuestions: 10,
+    questionTimeMs: null,
+    deadlineAt: null,
+    remainingMs: null,
+    standingAnswers: false,
+    untimed: true,
+    question: {
+      id: 'online-science-001',
+      categoryId: 'science',
+      question: '문제?',
+      choices: ['가', '나', '다', '라'],
+      position: 1,
+      total: 10,
+    },
+    ownSubmission: null,
+    reveal: null,
+    scores: [],
+    ...changes,
+  };
+}
+
+test('결정 #2·#4를 아는 API에만: «제한 없음»은 null로, 다른 판은 restart로 보내고 끝낸 앞 판을 받는다', async () => {
+  const { store, requests } = await storeWith((url) => {
+    if (url.pathname === '/v1/session') return json(DECIDED_SESSION);
+    if (url.pathname === '/v1/solo') {
+      return json({
+        room: soloRoom({ questionTimeMs: null, untimed: true }),
+        match: { matchId: MATCH_ID, categoryId: 'science', gameMode: true, totalQuestions: 10, questionTimeMs: null, untimed: true },
+        resumed: false,
+        ended: { matchId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', categoryId: 'history', recorded: false },
+      }, 201);
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  const started = await store.startSolo({ categoryId: 'science', questionTimeMs: null, restart: true });
+  assert.equal(store.onlineRules().soloUntimed, true);
+  assert.equal(store.onlineRules().soloRestart, true);
+  const post = requests.find(({ path }) => path === '/v1/solo');
+  assert.deepEqual(post.body, { categoryId: 'science', questionTimeMs: null, restart: true });
+  assert.equal(started.ok, true);
+  assert.equal(started.room.questionTimeMs, null, '«제한 없음» 혼자 방');
+  assert.deepEqual(started.ended, { categoryId: 'history', recorded: false });
+  // 이전 판을 끝내지 않았으면 ended가 없다. 모양이 틀린 ended는 알리지 않을 뿐 판은 연다
+  const { store: plain } = await storeWith((url) => {
+    if (url.pathname === '/v1/session') return json(DECIDED_SESSION);
+    return json({ room: soloRoom(), match: null, resumed: true, ended: { categoryId: 'music', recorded: 'no' } }, 201);
+  });
+  const resumed = await plain.startSolo({ categoryId: 'science', questionTimeMs: 40000, restart: true });
+  assert.equal(resumed.ok, true);
+  assert.equal('ended' in resumed, false);
+});
+
+test('혼자 판 앞 세션 규칙: soloPlay를 모르는 API가 soloUntimed·soloRestart만 알려도 믿지 않는다', async () => {
+  const { store } = await storeWith((url) => {
+    if (url.pathname === '/v1/session') {
+      return json({ playerId: identity.id, minPlayers: 1, standingAnswers: true, rankings: true, soloUntimed: true, soloRestart: true });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  await store.getMyBestScores();
+  assert.deepEqual(store.onlineRules(), {
+    minPlayers: 1, standingAnswers: true, rankings: true, soloPlay: false, soloUntimed: false, soloRestart: false,
+  });
+});
+
+test('«제한 없음» 방·판은 untimed 표시가 함께일 때만 믿는다 — 없는 null·어긋난 마감은 다른 계약이다', async () => {
+  const snapshots = new Map();
+  const { store } = await storeWith((url) => {
+    if (url.pathname === '/v1/session') return json(DECIDED_SESSION);
+    if (url.pathname === '/v1/rooms/SQL234/match') return json(snapshots.get('match'));
+    if (url.pathname === '/v1/rooms/SQL234') return json(snapshots.get('room'));
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  snapshots.set('match', untimedMatch());
+  const running = await store.getMatch('SQL234');
+  assert.equal(running.state, 'running');
+  assert.equal(running.untimed, true);
+  assert.equal(running.deadlineAt, null, '도는 문항에 마감이 없다');
+  assert.equal('remainingMs' in running, false);
+  assert.equal('questionTimeMs' in running, false);
+  assert.equal('standingAnswers' in running, false, '서 있는 칸은 답이 되지 않는다');
+  // 마감 없는 판도 공개(8초)에는 마감이 있다
+  snapshots.set('match', untimedMatch({
+    state: 'revealing',
+    deadlineAt: '2026-10-28T00:00:08+00:00',
+    remainingMs: 7000,
+    reveal: { position: 1, choiceIndex: 0, timedOut: false, correct: true, answerIndex: 0, explanation: '해설' },
+    scores: [{ playerId: identity.id, nickname: '퀴즈왕', characterId: 'slime-blue', score: 10, correctCount: 1, answeredCount: 1, lastAnswerCorrect: true }],
+  }));
+  const revealing = await store.getMatch('SQL234');
+  assert.equal(revealing.state, 'revealing');
+  assert.equal(revealing.remainingMs, 7000);
+
+  for (const [label, broken] of [
+    ['표시 없는 null 마감', untimedMatch({ untimed: undefined })],
+    ['마감 없는 판의 마감', untimedMatch({ deadlineAt: '2026-10-28T00:00:20+00:00' })],
+    ['마감 없는 판의 남은 시간', untimedMatch({ remainingMs: 5000 })],
+    ['마감 없는 판의 문항 시간', untimedMatch({ questionTimeMs: 20000 })],
+  ]) {
+    snapshots.set('match', broken);
+    await assert.rejects(store.getMatch('SQL234'), Error, label);
+  }
+
+  snapshots.set('room', soloRoom({ questionTimeMs: null, untimed: true }));
+  assert.equal((await store.getRoom('SQL234')).questionTimeMs, null);
+  for (const [label, broken] of [
+    ['표시 없는 null', soloRoom({ questionTimeMs: null })],
+    ['혼자 방이 아닌 방의 null', soloRoom({ questionTimeMs: null, untimed: true, solo: undefined })],
+  ]) {
+    snapshots.set('room', broken);
+    await assert.rejects(store.getRoom('SQL234'), /문항 시간/, label);
+  }
+});
+
+test('«제한 없음»으로 푼 혼자 판의 기록도 내보낸다 — 로컬 기록처럼 timeLimitMs: null이다', async () => {
+  const { store } = await storeWith((url) => {
+    if (url.pathname === '/v1/session') return json(DECIDED_SESSION);
+    if (url.pathname === '/v1/rankings/mine/records') {
+      return json({
+        records: [{ mode: 'category', categoryId: 'art', score: 70, correctCount: 7, totalCount: 10, questionTimeMs: null, nickname: '퀴즈왕', recordedAt: '2026-10-28T01:00:00+00:00' }],
+        limit: 500,
+        truncated: false,
+      });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const result = await store.getMyOnlineRecords();
+  assert.equal(result.records[0].questionTimeMs, null);
+  const { buildOnlineRecordsExport } = await import('../js/core/records-export.js');
+  const file = buildOnlineRecordsExport({
+    records: [{ ...result.records[0], mode: 'category', category: 'art' }],
+    nickname: '퀴즈왕',
+    now: new Date('2026-10-28T02:00:00.000Z'),
+    limit: 500,
+    truncated: false,
+  });
+  assert.equal(file.records[0].timeLimitMs, null);
+});
+
+test('마감 없는 혼자 판: 발밑 칸 초안을 보내지 않고, 상태 줄·무대 아래 규칙·조작법이 직접 내라고 말한다', async () => {
+  const { onlineStandingDraft } = await import('../js/online/standing-answer.js');
+  const {
+    onlineQuizView,
+    onlineHelpTimeText,
+    ONLINE_UNTIMED_STATUS,
+    ONLINE_UNTIMED_RULE_HINT,
+    ONLINE_UNTIMED_TIMER_TEXT,
+  } = await import('../js/ui/online-quiz.js');
+  const { arenaRuleHint } = await import('../js/ui/round-rules.js');
+  const { timeLimitLabel } = await import('../js/ui/time-limit.js');
+  const snapshot = { ...untimedMatch(), deadlineAt: null };
+  delete snapshot.questionTimeMs;
+  delete snapshot.remainingMs;
+  delete snapshot.standingAnswers;
+  // 서버가 잘못 standingAnswers를 실어도 마감 없는 판이면 초안은 없다
+  assert.equal(onlineStandingDraft({ ...snapshot, standingAnswers: true }, 2, false), null);
+  assert.equal(onlineQuizView(snapshot).status, ONLINE_UNTIMED_STATUS);
+  assert.equal(ONLINE_UNTIMED_STATUS, '시간 제한이 없어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해요.');
+  // 로컬 «제한 없음»과 같은 말이다
+  assert.equal(ONLINE_UNTIMED_RULE_HINT, arenaRuleHint(null));
+  assert.equal(ONLINE_UNTIMED_TIMER_TEXT, timeLimitLabel(null));
+  assert.equal(onlineHelpTimeText({ solo: false, untimed: false }), null, '친구와 푸는 방은 정적 HTML의 말(방장이 고른다)');
+  assert.equal(onlineHelpTimeText({ solo: true, untimed: true }), '혼자 푸는 판의 문항 시간은 설정에서 골라요. 이 판은 시간 제한이 없어요.');
+  assert.equal(onlineHelpTimeText({ solo: true, untimed: false }), '혼자 푸는 판의 문항 시간은 설정에서 골라요.');
+
+  const quiz = await source('../src/ui/online-quiz.ts');
+  // 로컬 «제한 없음»처럼 프레임을 돌리지 않는다 — 막대(.timer--unlimited)도 남은 5초 경고도 없다
+  assert.match(quiz, /el\.timer\.classList\.toggle\('timer--unlimited', active\.untimed === true\);\s*if \(active\.untimed === true && active\.state === 'running'\) \{\s*renderUntimed\(\);\s*return;\s*\}/);
+  const untimed = quiz.slice(quiz.indexOf('  function renderUntimed('), quiz.indexOf('  function syncCountdown('));
+  assert.match(untimed, /stopCountdown\(\);/);
+  assert.match(untimed, /el\.timer\.classList\.remove\('timer--warning'\);/);
+  assert.doesNotMatch(untimed, /requestAnimationFrame|announce\(/);
+  // 화면을 떠나면 다음 판(친구와 푸는 방)에 막대를 되돌린다
+  assert.match(quiz, /el\.timer\.classList\.remove\('timer--unlimited'\);\s*hideSoloNotice\(\);/);
+  const html = await source('../index.html');
+  assert.match(html, /<span id="online-help-time">문항 시간은 방장이 방마다 20초나 40초로 정해요\.<\/span>/);
+  const css = await source('../css/style.css');
+  assert.match(css, /\.timer--unlimited \.timer__track \{\s*display: none;\s*\}/, '로컬과 같은 클래스가 막대를 거둔다');
+});
+
+test('결정 #4: 다른 판을 골라 앞 판을 끝냈으면 새 판의 화면에 한 줄로 보이고 낭독한다 — 확인창은 없다', async () => {
+  const { soloEndedMessage } = await import('../js/online/solo-play.js');
+  assert.equal(soloEndedMessage('한국사', false), '풀던 «한국사» 판은 끝까지 풀지 않아 기록 없이 끝냈어요.');
+  assert.equal(soloEndedMessage('전체 도전', true), '다 푼 «전체 도전» 판은 점수를 기록하고 끝냈어요.');
+
+  const app = await source('../src/app.ts');
+  const solo = app.slice(app.indexOf('  async function startSoloOnline('), app.indexOf('  async function resumeSolo('));
+  assert.match(solo, /soloNotice: ended && endedLabel \? soloEndedMessage\(endedLabel, ended\.recorded\) : undefined,/);
+  assert.doesNotMatch(solo, /confirm\(|exitDialog|dialog/, '확인창을 열지 않는다 (소유자 결정)');
+  // 보인 뒤에 화면의 줄을 채우고 낭독한다 — 숨은 화면에 넣으면 낭독되지 않는다
+  const open = app.slice(app.indexOf('  async function openOnlineMatch('), app.indexOf('  async function resumeActiveNetworkMatch('));
+  assert.match(open, /await onlineMatchController\?\.open\(code\);\s*if \(!ownsOnlineMatchNavigation\(\)\) return;[\s\S]*?if \(soloNotice\) \{\s*onlineQuizScreen\.showSoloNotice\(soloNotice\);\s*announce\(soloNotice\);/);
+
+  const quiz = await source('../src/ui/online-quiz.ts');
+  // 그 판의 첫 문항 동안만 보인다 — 다음 문항·다른 판이면 거둔다
+  assert.match(quiz, /if \(soloNoticeKey === ''\) soloNoticeKey = arenaQuestionKey;\s*else if \(soloNoticeKey !== null && soloNoticeKey !== arenaQuestionKey\) hideSoloNotice\(\);/);
+  const html = await source('../index.html');
+  assert.match(html, /<\/div>\s*<!--[\s\S]*?-->\s*<p class="online-solo-notice" id="online-solo-notice" hidden><\/p>\s*<h1 class="question" id="online-question-text"/);
+  const theme = await source('../css/voxel-theme.css');
+  assert.match(theme, /\.online-match-status::before,\s*\.online-solo-notice::before \{/);
+  assert.match(theme, /@media \(forced-colors: active\)[\s\S]*?\.online-solo-notice::before,/, '강제 색상에서도 아이콘이 보인다');
 });

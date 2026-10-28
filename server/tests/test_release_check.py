@@ -792,8 +792,17 @@ def test_latest_database_passes_expect_13_with_only_read_statements(
     assert output.startswith("OK session read-only as ")
     latest = discover_migrations()[-1].version
     assert f"OK ledger versions 1..{latest} contiguous, latest {latest}" in output
-    assert "OK question-time-columns" in output
-    assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..40000" in output
+    # 013부터 문항 시간은 NULL(«제한 없음» 혼자 판, PRD 10.1 #9)을 받고 쓴 시간은 판의
+    # 수명(2시간)까지다
+    assert (
+        "OK question-time-columns rooms.question_time_ms, matches.question_time_ms integer "
+        "DEFAULT 20000, nullable only for untimed solo play"
+    ) in output
+    assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..7200000" in output
+    assert (
+        "OK untimed-solo-play 4 generated columns, 4 keys validated; NULL question time only "
+        "for solo rooms and their matches"
+    ) in output
     assert "OK runtime-question-time-access" in output
     assert "OK runtime-ledger-access" in output
     assert "OK rankings-table quiz_online.online_rankings has 15 columns" in output
@@ -857,7 +866,12 @@ def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> 
     assert "FAIL schema-version" in output
     assert "FAIL question-time-columns migration 011 columns already exist" in output
     assert "FAIL question-time-constraints migration 011 constraints already exist" in output
-    assert "allows 0..40000, expected 0..20000" in output
+    assert "allows 0..7200000, expected 0..20000" in output
+    assert (
+        "FAIL untimed-solo-play migration 013 columns already exist: "
+        "match_answers.long_elapsed_match_id, matches.untimed_match_id, "
+        "matches.untimed_solo_room_id, rooms.untimed_solo_room_id"
+    ) in output
     assert "FAIL rankings-table migration 012 table already exists" in output
     assert "FAIL solo-rooms-table migration 013 table already exists" in output
     assert output.splitlines()[-1].startswith("FAIL result ")
@@ -879,9 +893,13 @@ def test_latest_database_fails_expect_11(capsys: pytest.CaptureFixture[str]) -> 
     assert "FAIL ledger latest version is 13, expected 11" in output
     assert "FAIL rankings-table migration 012 table already exists" in output
     assert "FAIL solo-rooms-table migration 013 table already exists" in output
-    # 011이 더한 것은 그대로 맞다
-    assert lines["question-time-columns"] == ["OK"]
-    assert lines["elapsed-ms-check"] == ["OK"]
+    # 011이 더한 열·제약은 있지만 013이 «제한 없음»으로 바꿨다 — 011 점검으로는 맞지 않는다
+    assert (
+        "FAIL question-time-columns rooms.question_time_ms is nullable; "
+        "matches.question_time_ms is nullable"
+    ) in output
+    assert "allows 0..7200000, expected 0..40000" in output
+    assert lines["untimed-solo-play"] == ["FAIL"]
     assert "rankings-constraints" not in lines and "runtime-rankings-access" not in lines
     assert "solo-rooms-constraints" not in lines and "runtime-solo-rooms-access" not in lines
 
@@ -906,10 +924,16 @@ def test_latest_database_fails_expect_12(capsys: pytest.CaptureFixture[str]) -> 
         "FAIL rankings-indexes migration 013 index already exists: "
         "online_rankings_player_board_order_idx"
     ) in output
-    # 012가 더한 것은 그대로 맞다
+    # 013이 바꾼 것(«제한 없음» 혼자 판의 NULL·쓴 시간·생성 열)은 012 점검으로는 맞지 않는다
+    assert (
+        "FAIL rankings-constraints online_rankings_question_time_check already allows NULL "
+        "(migration 013)"
+    ) in output
+    assert "FAIL rankings-table question_time_ms is nullable" in output
+    assert "allows 0..7200000, expected 0..40000" in output
+    assert lines["untimed-solo-play"] == ["FAIL"]
+    # 012가 더한 나머지는 그대로 맞다
     for name in (
-        "rankings-table",
-        "rankings-constraints",
         "rankings-retention",
         "runtime-rankings-access",
     ):
@@ -1175,6 +1199,13 @@ def test_migration_12_database_passes_expect_12_and_fails_expect_13() -> None:
     ) in rendered_12
     assert "INFO rankings-records 1 records in 1 boards" in rendered_12
     assert "OK solo-rooms-table quiz_online.solo_rooms absent, as at migration 12" in rendered_12
+    assert (
+        "OK untimed-solo-play no untimed solo play columns, as at migration 12" in rendered_12
+    )
+    assert (
+        "OK question-time-columns rooms.question_time_ms, matches.question_time_ms integer "
+        "NOT NULL DEFAULT 20000"
+    ) in rendered_12
     names_12 = {check.name for check in at_12}
     assert not names_12 & {"solo-rooms-constraints", "solo-rooms-records"}
     assert "runtime-solo-rooms-access" not in names_12
@@ -1188,7 +1219,20 @@ def test_migration_12_database_passes_expect_12_and_fails_expect_13() -> None:
         "solo-rooms-constraints",
         "solo-rooms-records",
         "runtime-solo-rooms-access",
+        # 013의 «제한 없음» 혼자 판 (PRD 10.1 #9): NULL을 받는 열·CHECK, 판의 수명까지의 쓴 시간,
+        # 그 NULL을 혼자 방과 그 판에 묶는 생성 열·외래 키
+        "question-time-columns",
+        "question-time-constraints",
+        "elapsed-ms-check",
+        "untimed-solo-play",
+        "rankings-table",
+        "rankings-constraints",
     }
+    untimed = next(check for check in at_13 if check.name == "untimed-solo-play")
+    assert untimed.detail.startswith("rooms.untimed_solo_room_id is missing; ")
+    assert "matches_active_deadline_check does not tie a running question's deadline" in (
+        untimed.detail
+    )
     indexes = next(check for check in at_13 if check.name == "rankings-indexes")
     assert indexes.render() == (
         "FAIL rankings-indexes online_rankings_player_board_order_idx is missing"
@@ -1496,3 +1540,101 @@ def test_solo_rooms_must_stay_empty_until_the_candidate_api_runs() -> None:
     after = next(check for check in after_step_4 if check.name == "solo-rooms-records")
     assert after.render() == "INFO solo-rooms-records 1 solo rooms"
     assert [check.name for check in after_step_4 if check.status == "FAIL"] == []
+
+
+@pytest.mark.integration
+@needs_database
+def test_untimed_solo_play_must_stay_tied_to_solo_rooms() -> None:
+    """«제한 없음»(문항 시간 NULL, PRD 10.1 #9)을 혼자 방과 그 판에 묶는 울타리가 풀리면 실패한다.
+
+    외래 키를 COMMIT이 아니라 문장마다 보면 혼자 방을 만들 수 없고(방을 넣은 뒤에 표시를 넣는다),
+    외래 키가 없으면 혼자 방이 아닌 방·판에도 NULL이 들어가 012 API로 되돌릴 때 정리가 그것을
+    놓친다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.rooms DROP CONSTRAINT rooms_untimed_solo_room_fkey"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.rooms ADD CONSTRAINT rooms_untimed_solo_room_fkey "
+                "FOREIGN KEY (untimed_solo_room_id) REFERENCES quiz_online.solo_rooms(room_id)"
+            )
+            immediate = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.match_answers "
+                "DROP CONSTRAINT match_answers_long_elapsed_fkey"
+            )
+            unbounded = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.matches DROP CONSTRAINT matches_active_deadline_check"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.matches ADD CONSTRAINT matches_active_deadline_check "
+                "CHECK ((state IN ('running', 'revealing') AND deadline_at IS NOT NULL) "
+                "OR (state = 'finished' AND deadline_at IS NULL) OR state = 'abandoned')"
+            )
+            old_deadline = check_database(connection, expect=13)
+
+    def detail(checks: list[Check]) -> str:
+        found = next(check for check in checks if check.name == "untimed-solo-play")
+        assert found.status == "FAIL", found.render()
+        return found.detail
+
+    assert detail(immediate) == (
+        "rooms_untimed_solo_room_fkey on rooms is 'FOREIGN KEY (untimed_solo_room_id) "
+        "REFERENCES solo_rooms(room_id)', expected 'FOREIGN KEY (untimed_solo_room_id) "
+        "REFERENCES solo_rooms(room_id) DEFERRABLE INITIALLY DEFERRED'"
+    )
+    assert detail(unbounded) == "match_answers_long_elapsed_fkey on match_answers is missing"
+    assert detail(old_deadline) == (
+        "matches_active_deadline_check does not tie a running question's deadline to its "
+        "question time"
+    )
+
+
+@pytest.mark.integration
+@needs_database
+def test_untimed_rows_fail_the_empty_solo_rooms_check_until_the_rollback_cleanup() -> None:
+    """후보 API 전(3단계)과 012 API로 되돌리기 전에는 문항 시간 NULL인 방·판이 없어야 한다.
+
+    012 API는 방·판의 문항 시간을 정수로 읽는다 — NULL인 방 하나가 남으면 그 API의 로비 목록이
+    실패한다. 혼자 방을 지우는 정리(README «Solo online play»의 Rollback)가 그 줄까지 지운다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+                "WHERE s.room_id = r.id"
+            )
+            player_id, room_id = _seed_room(connection, question_time_ms=20_000)
+            connection.execute(
+                "INSERT INTO quiz_online.solo_rooms (room_id, player_id) VALUES (%s, %s)",
+                (room_id, player_id),
+            )
+            connection.execute(
+                "UPDATE quiz_online.rooms SET question_time_ms = NULL WHERE id = %s", (room_id,)
+            )
+            dirty = check_database(connection, expect=13, require_empty_solo_rooms=True)
+            after_step_4 = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+                "WHERE s.room_id = r.id"
+            )
+            clean = check_database(connection, expect=13, require_empty_solo_rooms=True)
+
+    values = next(check for check in dirty if check.name == "question-time-values")
+    assert values.status == "FAIL"
+    assert "rooms " in values.detail and "untimed=1" in values.detail
+    assert "--require-empty-solo-rooms needs no untimed room or match" in values.detail
+    assert _statuses(after_step_4)["question-time-values"] == "INFO"
+    assert [check.render() for check in clean if check.status == "FAIL"] == []
+    clean_values = next(check for check in clean if check.name == "question-time-values")
+    assert clean_values.render().endswith("; no untimed room or match")

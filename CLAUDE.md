@@ -197,10 +197,11 @@ positioned world로 쓰고, 다른 화면의 상단 HUD는 오른쪽 64px을 비
   이름까지 «소리 꺼짐»으로 바꾸면 «소리 꺼짐, 눌리지 않음»으로 부정이 겹쳐 읽혔다(U54). 소리를 켜면 그 클릭 안에서
   `playToggleOn()` 한 음을 낸다
 - 문항 시간은 **새로 여는 판부터** 쓴다(FR-3.12 일시정지 없음은 그대로). 홈의 분야 칸이 여는 **혼자 온라인 판**(아래
-  «혼자 푸는 온라인 판»)도 이 값을 쓰되 서버가 받는 20초·40초뿐이라 «제한 없음»이면 20초다 — «제한 없음»은 연습(기록 안
-  남음)과 예전 혼자 하기에만 적용된다(PRD 10.2 #2의 기본값, `online/solo-play.ts`의 `soloQuestionTime`). 친구와 푸는 방은 이
-  설정을 따르지 않고 방장이 방마다 고른 20초·40초다(아래 «대기실»의 문항 시간). 도움말(`#settings-time-note`)은 세션이
-  `soloPlay`를 알리면 그 규칙(`SOLO_TIME_NOTE`, `setOnlineSolo`)을, 모르는 API·묻기 전에는 정적 HTML의 예전 말을 한다
+  «혼자 푸는 온라인 판»)도 이 값을 그대로 쓴다 — «제한 없음»이면 마감 없는 혼자 판이다(PRD 10.1 #9 소유자 결정,
+  `online/solo-play.ts`의 `soloQuestionTime`). 그것을 모르는 API(세션에 `soloUntimed`가 없다)에는 null을 보내지 않고 20초로 연다.
+  친구와 푸는 방은 이 설정을 따르지 않고 방장이 방마다 고른 20초·40초다(아래 «대기실»의 문항 시간). 도움말(`#settings-time-note`)은
+  세션이 `soloPlay`를 알리면 그 규칙(`SOLO_TIME_NOTE`, `soloUntimed`가 없으면 `SOLO_TIMED_TIME_NOTE`, `setOnlineSolo`)을, 모르는
+  API·묻기 전에는 정적 HTML의 예전 말을 한다
 - 닫으면 연 자리로 포커스를 돌려준다. 다만 뒤에서 퀴즈 시간이 끝났으면 `quizScreen.resumeAfterDialog()`가 «다음 문제»로
   잇고 그때는 돌려주지 않는다. 화면이 바뀌면(매치 시작 등) `goTo`가 `dismiss()`로 조용히 접는다 — 새 화면 위에 남지 않는다
 - **「게임 방법」(`ui/rules-dialog.ts`, U01)도 같은 계약이다** — 패널 포커스·캡처 단계 키·Tab 가두기·Esc·연 자리로 돌려주기,
@@ -208,8 +209,9 @@ positioned world로 쓰고, 다른 화면의 상단 HUD는 오른쪽 64px을 비
   점수(정답당 10점, 빨리 답해도 같다)·답하기(보기·바닥 칸을 누르면 바로 / 시간이 끝나면 선 칸 / 십자 틈은 무응답 — 제한
   없음이면 «선택·Enter로 낸다»)·움직이기·기록(어디에 남는지는 판 종류를 따른다 — 아래). 숫자는 `ui/round-rules.ts`가 상수에서 만든다. **이 목록은 «혼자 하기»
   묶음 이름(`h3.dialog__heading`) 아래다** — 홈에 온라인 입구가 함께 있어 범위 없이 쓰면 온라인 규칙으로도 읽혔다(local-ux-1).
-  그 목록은 분야 칸이 지금 여는 판의 규칙이다(`getPlayMode`, FR-7.13 3단계) — 혼자 온라인 판이면 문항 시간이 서버가 받는 20초·40초
-  (`soloTimeRule`, «제한 없음»이면 20초라고 말한다)이고 기록은 «끝까지 푼 판은 온라인 랭킹에 남아요»(`ONLINE_RECORD_RULE`), 연습이면
+  그 목록은 분야 칸이 지금 여는 판의 규칙이다(`getPlayMode`, FR-7.13 3단계) — 혼자 온라인 판이면 문항 시간이 설정의 값(`soloTimeRule`,
+  «제한 없음»도 그대로, 그것을 모르는 API면 «20초예요»)이고 답하기도 그 시간을 따르며(«제한 없음»이면 «칸 위에서 선택 버튼 · Enter ·
+  Space로 낸다») 기록은 «끝까지 푼 판은 온라인 랭킹에 남아요»(`ONLINE_RECORD_RULE`), 연습이면
   «연습 판은 기록이 남지 않아요», 이 기능을 모르는 API·묻는 중이면 예전 말(«이 브라우저에만 저장돼요»)이다. 온라인은
   «온라인» 아래 한 줄(`onlineRule`, `#rules-online`)로 말하고, 그 줄은 세션을 열 때 서버가 알려 준 규칙(`roomStore.onlineRules()`, 아래
   «혼자 여는 온라인 방»)을 따른다: 지금 API는 «답하기는 혼자 하기와 같아요 — 시간이 끝나면 선 칸이 답»(U13) + «방을 만들면 혼자서도»,
@@ -228,9 +230,12 @@ positioned world로 쓰고, 다른 화면의 상단 HUD는 오른쪽 64px을 비
 **제한 시간은 판마다 정한다** (FR-3.7, PRD v1.2). `createSession({ timeLimitMs })`이 그 판의 값을 들고 `quiz.ts`가
 판을 열 때 타이머를 새로 만든다. 기본은 `TIME_LIMIT_MS`(20초), 로컬 판은 설정에서 `TIME_LIMIT_CHOICES`(20초·40초·null)를
 고른다. **제한 없음(null)은 «아주 긴 시간»이 아니다** — 프레임을 돌리지 않아 `handleTimeout`으로 가는 길이 아예 없고,
-막대(`.timer--unlimited`)와 남은 5초 경고도 없다. 쓴 시간은 그대로 잰다(FR-5.3, 자르지 않는다). 온라인은 방장이 방에 고른
-20초·40초를 서버가 판에 옮겨 적은 값이고, 제한 없음이 없다(아래 «대기실»). 혼자 온라인 판은 설정의 20초·40초(제한 없음이면
-20초)를 혼자 방에 적어 같은 길로 판에 옮긴다(아래 «혼자 푸는 온라인 판»).
+막대(`.timer--unlimited`)와 남은 5초 경고도 없다. 쓴 시간은 그대로 잰다(FR-5.3, 자르지 않는다). 친구와 푸는 온라인 방은 방장이
+방에 고른 20초·40초를 서버가 판에 옮겨 적은 값이고, 제한 없음이 없다(아래 «대기실»). 혼자 온라인 판은 설정의 20초·40초·제한
+없음을 혼자 방에 적어 같은 길로 판에 옮긴다 — **제한 없음은 서버에서도 «아주 긴 마감»이 아니라 마감이 없는 판이다**(문항 시간
+null, migration 013): 마감 sweep이 보지 않고, 끊긴 사람 채우기·발밑 칸이 없으며, 그 사람이 답을 내야 공개한다. 화면도 로컬과 같다 —
+프레임을 돌리지 않고(`renderUntimed`), 막대(같은 `.timer--unlimited`)와 남은 5초 경고가 없으며, 상태 줄·무대 아래 규칙·조작법이
+직접 내라고 말한다. 쓴 시간은 판의 수명(2시간) 안에서 자르지 않는다(아래 «혼자 푸는 온라인 판»).
 
 **보기 순서** — `sampler.shuffleChoices()`가 보기를 섞으면서 `answerIndex`를 새 위치로 옮긴다. 화면에 뜬 문제의 `answerIndex`는 JSON의 값과 다르다. 채점은 반드시 섞인 뒤의 객체로 한다.
 
@@ -546,7 +551,13 @@ arena 길이에 맞춰 늘어 왼쪽 사이를 벌리지 않는다). 온라인�
 칸이 답이 되지 않을 수 있어요. …눌러 제출해 주세요»(`ONLINE_STANDING_OFFLINE_STATUS`)로 바꾼다(아래 «발밑 칸 초안»의 «소켓이 끊긴
 동안»). `standingAnswers`를 보내지 않는 이전 API의 판은 예전 그대로 칸에 서 있기만
 해서는 답이 나가지 않고 선택·Enter·Space나 칸·보기를 직접 눌러야 제출되며, 화면도 그 말(«칸 위에서 선택을 누르거나 보기를 눌러야
-제출돼요», 조작법의 `#online-help-rule-submit`)을 한다. 어느 판이든 직접 낸 답이 초안을 이긴다. 모두 **직접** 답하면 마감을 기다리지
+제출돼요», 조작법의 `#online-help-rule-submit`)을 한다. **마감 없는 혼자 판**(snapshot의 `untimed: true`, «제한 없음», PRD 10.1 #9)은
+도는 문항에 마감·남은 시간·문항 시간이 없고(`deadlineAt`·`remainingMs`·`questionTimeMs` null) `standingAnswers`도 없다 — 로컬 «제한 없음»처럼
+표시 루프를 돌리지 않고(`renderUntimed`) 막대(`.timer--unlimited`)·남은 5초 경고·안전망 GET이 없으며 HUD가 «시간 제한 없음», 상태 줄이
+«시간 제한이 없어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해요.»(`ONLINE_UNTIMED_STATUS`), 무대 아래 규칙 줄이 «… 칸 위에서 선택하면
+답», 조작법이 «선택을 눌러야 제출» 문단과 «이 판은 시간 제한이 없어요»(`#online-help-time`)다. 발밑 칸 초안은 보내지 않는다. 공개(8초)에는
+그 판에도 마감이 있어 «다음 문제까지 N초» 글만 센다(막대는 거둔 채다). 화면은 `untimed: true`와 함께 온 null만 믿는다 — 표시 없는 null
+마감·문항 시간은 예전처럼 다른 계약이다. 어느 판이든 직접 낸 답이 초안을 이긴다. 모두 **직접** 답하면 마감을 기다리지
 않고 공개로 넘어간다 — 초안은 그 «모두»에 세지 않고, 60초 넘게 끊긴 참가자는 뺀다(아래 «판 도중 끊긴 사람도 기다리지 않는다»). 정답 공개는 8초이고(`postgres.py`의
 `_REVEAL_DURATION`) 그동안 HUD는 «다음 문제까지 N초»를 보인다. 무효화가 몰려도 match controller는 GET을 한 번에 하나만 보내고 그동안 온
 무효화를 후속 GET 하나로 합친다. **이 남은 시간이 지나고 2초(`SAFETY_REREAD_GRACE_MS`)가 더 지나도 phase가 그대로면 GET을 한 번
@@ -762,7 +773,7 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
   기다리는 동안 다른 행동을 누르면 그쪽이 이긴다 — 늦게 끝난 이동은 `app.ts`의 navigation 세대(`invalidateWaitingRoomEntry`)가
   버리고, 결과 화면은 마지막으로 옮긴 쪽만 등록 칸 문구와 저장 실패 알림을 한 번 남긴다. 기다리는 「대기실로」는
   `aria-busy`와 «연결 중…»(홈의 온라인 입구와 같은 말)을 달되 잠그지 않는다(같은 버튼을 다시 누르면 겹쳐 보내지 않는다)
-- **연습 판은 저장하지 않는다** (FR-7.13 3단계, PRD 10.2 #1의 기본값). `ResultView.practice`면 등록 칸(`#result-register-block`)과
+- **연습 판은 저장하지 않는다** (FR-7.13 3단계, PRD 10.1 #8 소유자 결정). `ResultView.practice`면 등록 칸(`#result-register-block`)과
   「랭킹 보기」를 거두고 최고 기록 칩 자리에 «연습 판이라 점수가 기록되지 않아요.»를 쓰며, `registered`를 처음부터 참으로 둬 떠나는 길·
   `pagehide`의 `flush`가 저장을 부르지 않는다. `app.ts`는 연습 판에 `pending`을 만들지 않고 `getBestScore`도 부르지 않는다
 - `pagehide` 저장은 로컬 구현이 `saveRecord` 호출 **안에서 동기로** 쓰는 것에 기대고 있다. 그래서 `registerRecord`와 `save()`는 저장소를 부르기 전에 아무것도 기다리지 않는다. 서버 구현으로 바꾸면 이 자리를 다시 본다
@@ -1152,7 +1163,9 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
 **문항 시간은 방장이 방마다 고른다** (FR-3.7, 소유자 결정). 세 번째 설정 칸 «문항 시간»이 20초(기본) ↔ 40초로 돌고,
 방 만들기 폼에서도 같은 둘 가운데 고른다(`ONLINE_QUESTION_TIME_CHOICES`, 서버 `ALLOWED_QUESTION_TIMES_MS`·DB CHECK와 같은 목록).
 - **제한 없음은 없다.** 로컬 설정과 달리 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다. 개인 설정(`quiz.settings`)도
-  온라인 판에는 쓰지 않는다 — 여럿이 같은 시계를 쓴다
+  친구와 푸는 판에는 쓰지 않는다 — 여럿이 같은 시계를 쓴다. 혼자 푸는 온라인 판만 설정의 «제한 없음»을 받는다(PRD 10.1 #9, 아래
+  «혼자 푸는 온라인 판»). 방 만들기(422)·방 설정 바꾸기(400 `invalid-question-time`)는 null을 그대로 거절하고, DB도 혼자 방이 아닌
+  방·판의 null을 COMMIT에서 거절한다(migration 013의 생성 열·외래 키)
 - 다른 설정과 같다 — 방장만 바꾸고(`not-host`, 화면은 미리 잠근다) 모두에게 보이며, 판이 도는 동안은 서버가 `game-in-progress`로
   거절한다(판에서 빠진 방장의 대기실도 `status: 'playing'`이면 세 칸을 모두 잠근다). 판을 열 때 방의 값을 `matches.question_time_ms`에 옮겨 적고 첫 문항·다음 문항 마감, 시간 초과 답의 `elapsed_ms`, 제출의
   쓴 시간 상한이 모두 그 판의 값이다(`postgres.py`에 고정 20초가 남지 않는다). 방·판 snapshot이 `questionTimeMs`로 싣는다
@@ -1160,8 +1173,9 @@ dialog를 닫으면 패널과 다음 행동을 드러낸다.
   배포는 **migration 011 → API → Pages**였다(#106, `deploy/oracle/README.md`의 앞선 경계). 이 client는 만들기에 `questionTimeMs`를
   보내 010의 API(모르는 필드를 거절한다)와 함께 나가면 방을 못 만든다 — Pages workflow가 막는다. 지금의 gate는 그 위의 013이다(아래
   «혼자 푸는 온라인 판»)
-- 문항 시간을 모르는 이전 서버의 방은 20초로 읽고, 있는데 20초·40초가 아니면(null 포함) 믿지 않는다. 로컬 방(`local-rooms.ts`)도
-  같은 목록만 담고 예전에 저장된 방은 20초로 읽는다
+- 문항 시간을 모르는 이전 서버의 방은 20초로 읽고, 있는데 20초·40초가 아니면(null 포함) 믿지 않는다 — 다만 «제한 없음» 혼자 방은
+  `untimed: true`·`solo: true`와 함께 온 null을 믿는다(`PublicRoom.questionTimeMs`가 null, 대기실에는 오지 않지만 오면 «제한 없음»으로
+  읽고 다음 값은 20초다). 로컬 방(`local-rooms.ts`)도 같은 목록만 담고 예전에 저장된 방은 20초로 읽는다
 - 좁은 화면(480px 미만)에서는 세 칸이 «예술과문화»·«전체 도전»을 ↻ 표식 자리와 함께 담지 못해 두 칸씩 놓고 문항 시간이 한 줄을
   다 쓴다(`style.css`의 `.waiting-settings`)
 
@@ -1545,7 +1559,7 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
 - 기록 내보내기(N02)의 서버 기록 이전(PRD FR-7.13 2단계의 남은 일)은 3단계와 함께 했다 — 위 «기록 내보내기 (N02)»와 아래
   «혼자 푸는 온라인 판»
 
-### 혼자 푸는 온라인 판 (FR-7.13 3단계, `online/solo-play.ts`, PR — 소유자 결정 대기)
+### 혼자 푸는 온라인 판 (FR-7.13 3단계, `online/solo-play.ts`, PR — 소유자 결정 반영, 배포 뒤 병합)
 
 **소유자 방향: 혼자 하기를 없앤다 — 혼자 하고 싶은 사람도 온라인에서 혼자 푼다.** 홈의 분야 칸·「전체 도전」은 대기실을 거치지 않고
 곧바로 **혼자 온라인 판**을 연다. 서버가 출제·채점·마감·기록(위 «온라인 랭킹», #108의 기록 길 그대로)을 맡고, 화면은 온라인 퀴즈·온라인
@@ -1564,7 +1578,9 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
 - **기능은 더하기만 해서 안다** (Pages gate는 readiness의 `schemaVersion`만 본다). 세션 응답의 `soloPlay: true`(`OnlineRules.soloPlay`)가 없으면
   `POST /v1/solo`도 내 기록 요청도 보내지 않고(`{ok:false}`·`{supported:false}`) 홈은 오늘과 똑같다 — 로컬 판·로컬 기록·로컬 별 점수·등록
   칸. 서버 없이 연 화면(`quiz-api-base` 없음, 로컬 방)은 늘 연습이다(`localRooms`도 혼자 온라인 판을 모른다)
-- **결정 #1 (PRD 10.2 #1, 기본값: 비상용 연습)** — 서버에 닿지 않으면(연결 실패·응답 시간 초과·5xx — DB가 안 되거나 migration을 기다리는
+**네 소유자 결정**(2026-10-28, PRD 10.1 #8–#11 — 옛 10.2 #1–#4, 코드의 «결정 #1–#4»)이 아래 넷이다. 기본값으로 짜 두고 기다리던 것을
+소유자가 정했다 — #1·#3은 그 기본값 그대로, #2·#4는 다른 길이다.
+- **결정 #1 (PRD 10.1 #8): 서버에 닿지 않으면 기록 없는 연습** — 서버에 닿지 않으면(연결 실패·응답 시간 초과·5xx — DB가 안 되거나 migration을 기다리는
   API 포함 — ·읽을 수 없는 응답, `isServerUnreachable`) 홈은 연습을 연다. 로컬 퀴즈 그대로이되 **기록·최고 점수가 없고** HUD 분야 칩과
   결과 머리가 «연습 · 과학»이며(`practiceLabel`) dock 캡션·안내 줄이 그렇다고 말한다(위 «홈이 돌아갈 방» 자리의 «다시 연결»). 홈이 보이는
   동안 30초 → 1분 → 2분 간격으로 다시 묻고(`practiceRetryDelay`), 서버가 답하면 혼자 온라인 판으로 돌아온다(«온라인에 다시 연결됐어요»).
@@ -1572,26 +1588,50 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   다시 시도», 결과·랭킹 화면에서 눌렀으면 홈으로 가서)과 낭독으로 말한다. 혼자 판 자리가 모두 찼으면(503 `solo-busy`, 아래 «서버») 닿지
   않은 것처럼 연습이되 까닭이 다르다(`full`, «지금은 혼자 판 자리가 모두 차 연습(기록 안 남음)만 할 수 있어요 · 다시 시도», 같은 물러섬으로
   다시 묻는다). 혼자 판을 아는 API가 저장된 닉네임을 거절하면 연습이고 안내 줄이 닉네임을 말한다(바꾸면 다시 묻는다 — 아는지 모를 때는 위처럼
-  `local`). 다른 길(안내만, 연습 없음)로 바꾸려면 `OFFLINE_PRACTICE`를 false로 둔다 — 안내 줄과 분야 칸이
-  연습을 권하지 않는다. 왜 P2P가 아닌지는 `docs/p2p-review.md`
-- **결정 #2 (PRD 10.2 #2, 기본값: 20초·40초)** — 혼자 온라인 판의 문항 시간은 설정의 20초·40초이고 «제한 없음»이면 20초다(`soloQuestionTime`).
-  «제한 없음»은 연습과 예전 혼자 하기에만 적용되고 설정 도움말이 그렇게 말한다(위 «설정 대화상자»). 온라인에 «제한 없음»을 주려면 서버의
-  문항 시간 목록(migration 011의 CHECK, `ALLOWED_QUESTION_TIMES_MS`)부터 바꿔야 한다
+  `local`). 안내만 하고 연습을 열지 않는 다른 길의 스위치(`OFFLINE_PRACTICE`)는 소유자가 연습을 고른 뒤 걷어냈다 — 되살리지 말 것.
+  왜 P2P가 아닌지는 `docs/p2p-review.md`
+- **결정 #2 (PRD 10.1 #9): 혼자 판도 «제한 없음»** — 혼자 온라인 판의 문항 시간은 설정의 20초·40초·제한 없음 그대로다(`soloQuestionTime`).
+  친구와 푸는 방은 그대로 20초·40초다(앞선 결정, 위 «대기실»의 문항 시간). 로컬 «제한 없음»(위 «제한 시간은 판마다 정한다»)과 같은 규칙이다 —
+  - **서버**: `POST /v1/solo`의 `questionTimeMs: null`이면 혼자 방과 판의 문항 시간이 NULL이고 도는 문항의 마감도 NULL이다(`now() + NULL`).
+    마감 sweep(`deadline_at <= now()`)이 보지 않고, 끊긴 사람을 빼고 앞당기기·빈 답 채우기·발밑 칸(`_record_standing_answers`)을 모두
+    건너뛰며(`_advance_locked_match`), 판의 모두가 직접 답했을 때만 공개한다 — 혼자 판이라 그 사람이 답을 낼 때다. 공개(8초)에는 마감이 있다.
+    쓴 시간은 자르지 않고 재되 판의 수명(2시간, `UNTIMED_ELAPSED_MS_CAP` 7,200,000) 안이다. 기록은 문항 시간 NULL로 남고 랭킹은 문항 시간으로
+    나누지 않는다(로컬과 같다). snapshot은 더하기만 해서 말한다 — `questionTimeMs: null`과 `untimed: true`, 도는 문항의 `deadlineAt`·
+    `remainingMs` null, `standingAnswers: false`. 친구와 푸는 방의 API(만들기·설정)는 null을 그대로 거절한다
+  - **아무도 보지 않는 마감 없는 판**: 스스로 끝나지 않으므로 60초 정리가 판의 누구도 그 방에서 30분(멤버 정리와 같은 창) 넘게 보이지 않은
+    판을 기록 없이 끝내고(`abandoned`, `_ABANDON_IDLE_UNTIMED_MATCHES_SQL`) 같은 transaction의 멤버 정리가 그 사람과 빈 방을 지운다. 판이 도는
+    화면은 소켓이 15초마다 `last_seen_at`을 새로 쓰므로 푸는 중인 판은 끝내지 않는다. 그래서 버려진 마감 없는 혼자 방은 마지막으로 보인 뒤
+    30분 + 정리 한 번 안에 사라지고(혼자 방 동시 한도의 몫 셈이 그대로다) 어떤 경우에도 판의 수명 2시간을 넘지 않는다
+  - **DB(migration 013만 고친다 — 011·012는 잠겨 있다)**: 문항 시간 CHECK 셋(방·판·랭킹)이 NULL도 받고, 도는 판의 마감 CHECK가 «마감 없는
+    판의 도는 문항만 마감이 없다», 쓴 시간 CHECK가 0..7,200,000이다. CHECK는 다른 표를 볼 수 없어 NULL이 **혼자 방과 그 판에만** 있다는 것은
+    저장 생성 열과 외래 키가 지킨다(방·판의 `untimed_solo_room_id` → `solo_rooms`, 40초를 넘는 답의 `long_elapsed_match_id` → 마감 없는 판, 모두
+    COMMIT에서 본다). 그래서 혼자 방을 지우면 012 API가 읽지 못하는 줄(문항 시간 NULL)이 하나도 남지 않는다 — 되돌리기의 정리가 그것에 기댄다
+  - **화면**: 세션의 `soloUntimed: true`를 본 뒤에만 null을 보낸다(모르는 API면 20초로 연다 — 422를 받지 않는다). 온라인 퀴즈는 `untimed`면
+    HUD가 «시간 제한 없음»이고 막대(`.timer--unlimited`)·남은 5초 경고·표시 루프가 없으며, 상태 줄·무대 아래 규칙·조작법이 직접 내라고 말하고
+    (위 «온라인 남은 시간은 표시만 한다») 발밑 칸 초안을 보내지 않는다. 설정 도움말·「게임 방법」이 혼자 판도 이 시간을 쓴다고 말한다
 - **흐름은 오늘의 온라인 규칙 그대로다.** 판은 `openOnlineMatch`(controller·소켓·presence·발밑 칸 초안)로 열고, 「나가기」·브라우저 «뒤로»
-  (`#online-quiz-exit`의 확인창 — 혼자 판이면 «혼자 판을 떠날까요? / … 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인
-  랭킹에 남아요»)는 **홈**으로 간다(혼자 판은 로비 목록에 없다). 판은 서버에서 마감까지 계속되고 끝나면 기록된다 — 친구와 푸는 방과 같다.
-  탭을 닫거나 새로고침해도 홈의 «이어 풀기»가 그 판으로 돌아간다(위 «홈이 돌아갈 방»). 이미 혼자 판이 돌고 있으면 서버는 새 판을 열지 않고
-  그 판을 돌려준다(`resumed`). **같은 판(분야·전체 도전)을 눌렀으면 그 판을 잇고**(«진행 중이던 혼자 판을 이어서 풀어요» 낭독, HUD가 그 판의
-  분야와 위치를 보인다), **다른 판을 눌렀으면 말없이 열지 않는다** — 홈에 남아 그 판의 «이어 풀기» 줄을 곧바로 보이고(`homeRoomNote.present`)
-  «풀던 «과학» 판이 아직 진행 중이라 새 판을 열 수 없어요…»를 낭독한다(`showSoloStillRunning`). 한때 «한국사»를 누른 사람이 까닭 없이 «과학»
-  판에 들어갔다. 판은 마감까지 계속되고 그동안 새 혼자 판은 열 수 없다 — 나가기 확인이 미리 말한다(`SOLO_EXIT_BODY` «… 끝날 때까지 새 혼자
-  판은 열 수 없어요»). 판을 일찍 끝내고 새로 시작하는 길(서버의 `restart`)은 소유자 결정이다(PRD 10.2 #4)
-- **결과**: 위 «최종 순위» — «다시 하기»(같은 혼자 방의 새 판)·«홈으로»(혼자 방을 나가 지운다)·최고 기록 칩. «온라인 랭킹 보기»로 떠나도
-  «홈으로»처럼 나간다. 홈의 별 점수는 그 자리에서 이 판까지 넣어 두고 다음 홈에서 서버 값으로 다시 읽는다. **«홈으로»가 방을 지우므로
-  최근 출제 기억(N08)도 함께 사라진다** — 같은 방의 지난 판만 보고 출제하기 때문이다(`_RECENT_ROOM_QUESTIONS_SQL`). «다시 하기» 사이에는
-  FR-1.4가 서지만, 판을 끝내고 홈으로 가서 같은 분야를 다시 고르면 새 혼자 방이라 방금 푼 문제가 다시 나올 수 있다(로컬 혼자 하기는
-  `recentQuestionIds`로 피했다). 소유자에게 보이는 결과로 PRD 10.2 #3에 적었다 — 다른 길은 «홈으로»가 끝난 혼자 방을 남겨 두는 것(30분
-  정리가 지운다, 다음 판이 그 방을 다시 쓴다)이고, 고르면 `app.ts`의 `leaveSoloResult`와 홈의 `myRooms` 정리(끝난 혼자 방을 나가는 줄)를 함께 고친다
+  (`#online-quiz-exit`의 확인창 — 혼자 판이면 «혼자 판을 떠날까요? / 나가도 판은 계속 진행되고, 끝나면 그 점수가 온라인 랭킹에 남아요. 홈의
+  「이어 풀기」나 같은 분야로 돌아올 수 있고, 다른 분야를 고르면 이 판은 기록 없이 끝나요»(`SOLO_EXIT_BODY`), 마감 없는 판이면 «… 그 자리에서
+  기다려요 … 30분 넘게 돌아오지 않으면 … 기록 없이 끝나요»(`SOLO_UNTIMED_EXIT_BODY`))는 **홈**으로 간다(혼자 판은 로비 목록에 없다). 마감 있는
+  판은 서버에서 마감까지 계속되고 끝나면 기록된다 — 친구와 푸는 방과 같다. 탭을 닫거나 새로고침해도 홈의 «이어 풀기»가 그 판으로 돌아간다
+  (위 «홈이 돌아갈 방»). 이미 혼자 판이 돌고 있을 때 **같은 판(분야·전체 도전)을 눌렀으면 그 판을 잇는다**(서버의 `resumed`, «진행 중이던
+  혼자 판을 이어서 풀어요» 낭독, HUD가 그 판의 분야와 위치를 보인다)
+- **결정 #4 (PRD 10.1 #11): 다른 판을 고르면 도는 판을 끝내고 새로 연다** — 확인창 없이(소유자 결정). 화면은 세션의 `soloRestart: true`를
+  본 뒤에만 `POST /v1/solo`에 `restart: true`를 싣고(저장소가 거른다 — 모르는 API에는 보내지 않는다), 서버가 같은 transaction에서 도는 판을
+  끝내고(`_end_locked_match`) 고른 판을 연다. **끝까지 풀지 않은 판은 기록하지 않는다**(FR-6, 로컬 N04) — `abandoned`가 되고 마감을 지워
+  sweep이 다시 보지 않으며, 그 판의 발밑 칸 초안을 버리고(`standing.settle`) 운영 기록은 `solo_abandoned`(`via: restart`) 한 줄이다. 마지막
+  문항까지 답해 마지막 공개만 남은 판은 끝까지 푼 판이라(로컬 나가기 확인의 «결과 보기»와 같은 규칙) 그 자리에서 닫아 기록한다(`recorded`,
+  `match_finished`의 `via: restart`). 응답의 `ended`로 새 판의 화면이 HUD 바로 아래 한 줄(`#online-solo-notice`, `showSoloNotice` — 그 판의 첫
+  문항 동안만)을 보이고 화면이 보인 뒤 낭독한다: «풀던 «과학» 판은 끝까지 풀지 않아 기록 없이 끝냈어요.»(`soloEndedMessage`). `abandoned`
+  판은 «판이 없다»와 같다(GET 404) — 같은 방의 최근 출제 기억에는 남는다. 요청 한도는 혼자 판 열기와 같다. `soloRestart`를 모르는 API면 예전처럼
+  말없이 열지 않고 홈에 그 판의 «이어 풀기» 줄을 곧바로 보이며(`homeRoomNote.present`) «풀던 «과학» 판이 아직 진행 중이라 새 판을 열 수
+  없어요…»를 낭독한다(`showSoloStillRunning`, 한때 «한국사»를 누른 사람이 까닭 없이 «과학» 판에 들어갔다). 혼자 판을 그만두는 길
+  (`DELETE /v1/solo` — 도는 판을 같은 규칙으로 끝내고 혼자 방을 지운다)은 서버에만 있고 화면은 쓰지 않는다(배포 점검이 제가 연 판을 치운다)
+- **결정 #3 (PRD 10.1 #10): «홈으로»는 혼자 방을 지운다** (지금 동작 그대로). **결과**: 위 «최종 순위» — «다시 하기»(같은 혼자 방의 새 판)·
+  «홈으로»(혼자 방을 나가 지운다)·최고 기록 칩. «온라인 랭킹 보기»로 떠나도 «홈으로»처럼 나간다. 홈의 별 점수는 그 자리에서 이 판까지 넣어
+  두고 다음 홈에서 서버 값으로 다시 읽는다. **«홈으로»가 방을 지우므로 최근 출제 기억(N08)도 함께 사라진다** — 같은 방의 지난 판만 보고
+  출제하기 때문이다(`_RECENT_ROOM_QUESTIONS_SQL`). «다시 하기» 사이에는 FR-1.4가 서지만, 판을 끝내고 홈으로 가서 같은 분야를 다시 고르면 새
+  혼자 방이라 방금 푼 문제가 다시 나올 수 있다(로컬 혼자 하기는 `recentQuestionIds`로 피했다). 소유자가 이 결과를 알고 골랐다
 - **서버** (`POST /v1/solo`, `deploy/oracle/README.md`의 «Solo online play»): 그 사람의 혼자 방을 다시 쓰거나(분야·문항 시간·닉네임은 이번 값)
   만들고 같은 transaction에서 판을 연다(`start_solo` → «게임 시작»과 같은 `_start_locked_match` — 같은 방의 지난 판을 피하는 출제(N08)가 「다시
   하기」 사이에 그대로 선다). 혼자 방은 migration 013의 `solo_rooms` 표시가 붙은 보통 방(정원 2·공개·비밀번호 없음)이고 **그 방의 사람에게만
@@ -1602,26 +1642,34 @@ transaction으로 묶던 때는 닫히지 못하는 판 하나(기록 실패·�
   방 만들기의 100/시간 몫을 타지 않아 한 주소가 한 시간에 판 수천 개를 함께 돌릴 수 있었다). 내 최고 기록(`GET /v1/rankings/mine`, `excludeMatch`)과 내 기록
   (`GET /v1/rankings/mine/records`)은 player id와 주인 열쇠가 모두 같은 기록만 읽고 신분을 싣지 않는다(위 «온라인 랭킹»의 `isMine`과 같다)
 - **배포는 migration 013 → API → Pages**이고 공개 release gate는 `schemaVersion: 13`이다(`deploy/oracle/README.md` «Fail-closed staging order»).
-  서버 변화(혼자 방 표시 `solo_rooms`와 그 권한, 내 기록 색인 `online_rankings_player_board_order_idx`)는 모두 `013_solo_play.sql`에 있고 012는
-  #108의 글 그대로다. 한때 아직 올리지 않은 012에 접어 넣었는데, 같은 번호(12)가 두 스키마를 뜻하면 번호만 보는 migrator가 #108의 012가 먼저
+  서버 변화(혼자 방 표시 `solo_rooms`와 그 권한, 내 기록 색인 `online_rankings_player_board_order_idx`, 결정 #2의 CHECK 다섯·생성 열 넷·외래 키
+  셋)는 모두 `013_solo_play.sql`에 있고 012는 #108의 글 그대로다. 한때 아직 올리지 않은 012에 접어 넣었는데, 같은 번호(12)가 두 스키마를 뜻하면 번호만 보는 migrator가 #108의 012가 먼저
   올라간 DB에서 고친 012를 영영 돌리지 않는다. 그래서 #108은 제 경계(012)로 따로 나가고 이 PR은 그 위의 013으로 나간다 — 012를 다시 고치지
   않는다. **나간 migration(001–012)은 글의 sha256을 잠근다** (`server/tests/test_released_migrations_contract.py`, 012는
   `test_online_rankings_schema_contract.py`도) — 혼자 판의 것이 없는지만 보면 권한·열·제약을 고친 012가 지나갔다. 고칠 것은 다음 번호에 더하고,
-  그 번호를 낸 PR이 배포 전에 제 글을 고쳤으면 그 PR에서 값을 고친다. 013은 나가면 잠근다. 012의 API(#108)는 표·색인을 모른 채
-  013이 도는 동안에도 돌고 그 gate는 503 `migration-required`로 닫힌다. 다만 013의 transaction이 COMMIT할 때까지(잠금을 얻는 데 migrator의
-  `lock_timeout` 15초까지 + 색인 짓기, 개발 PC에서 250,000줄에 0.5초) 그 API의 방 쓰기·판 기록·보존 정리는 기다린다(읽기는 돈다) — 그래서 단계 3은
-  `release_check db --expect 12 --require-idle`이 통하는 조용한 때에 migrate한다(README 단계 3). 013의 API는 012 DB 위에서 돌지 않는다 — readiness가 번호(13)로
+  그 번호를 낸 PR이 배포 전에 제 글을 고쳤으면 그 PR에서 값을 고친다. 013은 나가면 잠근다. 012의 API(#108)는 표·색인·생성 열을 모른 채
+  013이 도는 동안에도 돌고(그 API가 쓰는 20000·40000·40초 이하의 쓴 시간은 바뀐 CHECK에 그대로 든다) 그 gate는 503 `migration-required`로
+  닫힌다. 다만 013의 transaction은 맨 앞에서 네 표(rooms·matches·match_answers·online_rankings)를 ACCESS EXCLUSIVE로 한 번에 잡아 COMMIT까지
+  쥔다 — 그동안(잠금을 얻는 데 migrator의 `lock_timeout` 15초까지 + 세 표 다시 쓰기·CHECK 확인·색인 짓기, 개발 PC에서 랭킹 250,000줄·방 2,400개에
+  0.7초) 그 API의 그 네 표 읽기·쓰기가 모두 기다린다 — 그래서 단계 3은 `release_check db --expect 12 --require-idle`이 통하는 조용한 때에
+  migrate한다(README 단계 3). 013의 API는 012 DB 위에서 돌지 않는다 — readiness가 번호(13)로
   닫히고, 방 SQL이 `solo_rooms`를 봐 로비·방·만들기·참가·소켓 티켓·`POST /v1/solo`가 실패한다. 이 화면은 `soloPlay`를 모르는 API와 함께
-  돌아도 오늘의 혼자 하기라 깨지지 않지만 Pages workflow는 13을 기다린다. 012 API로 되돌릴 때는 그 API가 다시 돌기 전에 남은 혼자 방을
-  지운다(README «Solo online play»의 Rollback — 그 API에는 남의 목록에 보이는 보통 방이다). `release_check db --expect 13
-  --require-empty-solo-rooms`가 단계 3에서 혼자 방이 아직 없음을, `smoke.py candidate`가 단계 4에서 `soloPlay`를 본다
+  돌아도 오늘의 혼자 하기라 깨지지 않지만 Pages workflow는 13을 기다린다. 012 API로 되돌릴 때는 후보 API를 멈추고 그 API가 다시 돌기 전에
+  남은 혼자 방을 지운다(README «Solo online play»의 Rollback). 그 API에는 남의 목록에 보이는 보통 방일 뿐 아니라, 방·판의 문항 시간을 정수로
+  읽어(`int(row["question_time_ms"])`) 남은 «제한 없음» 혼자 방 하나가 모든 로비 목록을, 마지막 공개의 마감 없는 판 하나가 마감 sweep 전체를
+  깨뜨린다. 혼자 방을 지우면 그런 줄이 하나도 남지 않고(생성 열 + 외래 키), `release_check db --expect 13 --require-empty-solo-rooms`가
+  혼자 방 0개와 문항 시간 NULL인 방·판 0개를 확인한다. 랭킹의 NULL 문항 시간은 남지만 012 API는 그 열을 읽지 않는다. 같은 점검이 단계 3에서
+  혼자 방·NULL이 아직 없음을, `smoke.py candidate`가 단계 4에서 `soloPlay`·`soloUntimed`·`soloRestart`와 «제한 없음» 혼자 판 하나(열고 마감이
+  없는지 본 뒤 `DELETE /v1/solo`로 기록 없이 끝낸다)를 본다
 - 화면 점검(`tools/check-screens.js` ㉓)은 홈이 무엇을 여는지 먼저 본다 — 연습(서버 없이 연 사본)이면 로컬 퀴즈 점검을 그대로 돌리되 결과가 기록되지
   않는 것을 보고, 로컬 API를 가리키는 사본이면 혼자 판의 흐름만 본다. **운영 API를 가리키는 페이지에서는 아무것도 누르지 않고 멈춘다**
-- `tests/online-solo-play.test.mjs`(저장소·두 결정·호환·화면의 말·흐름), `tests/home-first-visit.test.mjs`(dock 줄의 «연결 중…»·포커스),
+- `tests/online-solo-play.test.mjs`(저장소·네 결정·호환·화면의 말·흐름·«제한 없음» snapshot·끝낸 앞 판의 한 줄), `tests/home-first-visit.test.mjs`(dock 줄의 «연결 중…»·포커스),
   `tests/ranking-empty-state.test.mjs`(연습의 빈 탭), `server/tests/test_solo_play_api.py`·`test_solo_play_integration.py`(서버 — 동시 한도·만드는
-  몫 포함), `server/tests/test_solo_play_schema_contract.py`(013의 계약), `test_character_only_migration_integration.py`(012 → 013 업그레이드,
+  몫 포함), `server/tests/test_solo_decisions_integration.py`(결정 #2·#4를 실제 DB에서 — 마감 없는 판·끝내고 새로 열기·그만두기·30분 정리·NULL의
+  울타리와 되돌리기 정리), `server/tests/test_match_progress.py`(마감 없는 문항의 진행 규칙), `server/tests/test_solo_play_schema_contract.py`(013의 계약), `test_character_only_migration_integration.py`(012 → 013 업그레이드,
   012 DB 위의 후보 API, 013 DB 위에서 런타임 역할로 돈 012 API의 문장, 끝까지 푼 혼자 판의 내 최고 기록), `test_released_migrations_contract.py`
-  (001–012의 글), `test_release_check.py`(`--expect 12`가 013의 것이 없는 #108의 DB를, `--expect 13`이 혼자 방 표·색인·권한을 본다)
+  (001–012의 글), `test_release_check.py`(`--expect 12`가 013의 것이 없는 #108의 DB를, `--expect 13`이 혼자 방 표·색인·권한과 «제한 없음»의
+  CHECK·생성 열·외래 키, `--require-empty-solo-rooms`가 NULL 줄까지 본다), `tests/test_oracle_smoke.py`(점검의 `solo` 단계와 그 정리)
 
 ## 문제 데이터
 

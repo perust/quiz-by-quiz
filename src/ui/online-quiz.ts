@@ -242,6 +242,33 @@ export const ONLINE_STANDING_OFFLINE_STATUS = '연결이 잠시 끊겨 서 있�
 /** 서버가 남은 시간을 보내지 않을 때(구버전 서버)의 안내. 카운트다운은 그리지 않는다. */
 export const ONLINE_TIME_NOTICE = '시간이 끝나면 다 같이 결과를 확인해요.';
 
+/**
+ * 마감 없는 혼자 판(«제한 없음», PRD 10.1 #9)의 HUD 글. 로컬 «제한 없음»과 같은 말이다(`timeLimitLabel(null)`) —
+ * 막대는 디자인 층이 `.timer--unlimited`를 보고 거둔다
+ */
+export const ONLINE_UNTIMED_TIMER_TEXT = '시간 제한 없음';
+
+/**
+ * 마감 없는 혼자 판의 상태 줄. 시간이 끝나는 일이 없어 서 있는 칸은 답이 되지 않는다 — 직접 내야 한다(로컬
+ * «제한 없음»과 같은 규칙, CLAUDE.md «제한 시간은 판마다 정한다»)
+ */
+export const ONLINE_UNTIMED_STATUS = '시간 제한이 없어요. 칸 위에서 선택을 누르거나 보기를 눌러 제출해요.';
+
+/** 무대 아래 규칙 줄 — 시간이 끝나면 선 칸이 답인 판과 마감 없는 판(로컬 `arenaRuleHint`와 같은 말) */
+export const ONLINE_STANDING_RULE_HINT = '보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답';
+export const ONLINE_UNTIMED_RULE_HINT = '보기를 누르면 바로 답 · 칸 위에서 선택하면 답';
+
+/**
+ * 온라인 조작법의 문항 시간 한 줄. 친구와 푸는 방은 방장이 고르고(정적 HTML의 말), 혼자 판은 설정에서 고른다 —
+ * «제한 없음»이면 그 판은 시간 제한이 없다(PRD 10.1 #9)
+ */
+export function onlineHelpTimeText({ solo, untimed }: { solo: boolean; untimed: boolean }): string | null {
+  if (!solo) return null;
+  return untimed
+    ? '혼자 푸는 판의 문항 시간은 설정에서 골라요. 이 판은 시간 제한이 없어요.'
+    : '혼자 푸는 판의 문항 시간은 설정에서 골라요.';
+}
+
 export interface OnlineCountdownView {
   text: string;
   /** 타이머 막대의 채움. 0~1 */
@@ -430,9 +457,11 @@ export function onlineQuizView(
       // 칸에 서 있기만 해서는 답이 나가지 않는다. 그 규칙을 그대로 말한다.
       status: submission !== null
         ? '제출 완료! 다른 친구를 기다리는 중이에요.'
-        : snapshot.standingAnswers === true
-          ? standingDeliverable ? ONLINE_STANDING_STATUS : ONLINE_STANDING_OFFLINE_STATUS
-          : '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
+        : snapshot.untimed === true
+          ? ONLINE_UNTIMED_STATUS
+          : snapshot.standingAnswers === true
+            ? standingDeliverable ? ONLINE_STANDING_STATUS : ONLINE_STANDING_OFFLINE_STATUS
+            : '칸 위에서 선택을 누르거나 보기를 눌러야 제출돼요.',
       showFinalResult: false,
     };
   }
@@ -493,12 +522,16 @@ export function handleOnlineMovementKey(
 }
 
 /**
- * 혼자 판의 나가기 확인 (FR-7.13 3단계). 친구와 푸는 방과 같은 규칙이다 — 판은 서버에서 계속되고 방에서 나간 것도
- * 아니다. 돌아오는 길은 로비 목록이 아니라 홈의 «이어 풀기» 줄이고, 끝까지 가면 그 점수가 기록된다. 판이 끝날 때까지
- * 다른 혼자 판은 열 수 없다는 것도 미리 말한다 — 홈의 분야 칸을 누르면 이 판으로 돌아갈 줄만 보인다
+ * 혼자 판의 나가기 확인 (FR-7.13 3단계). 친구와 푸는 방과 같은 규칙이다 — 판은 서버에 남고 방에서 나간 것도 아니다.
+ * 돌아오는 길은 로비 목록이 아니라 홈의 «이어 풀기» 줄이나 같은 판(분야·전체 도전)이다. 다른 판을 고르면 이 판은
+ * 기록 없이 끝난다는 것을 미리 말한다(PRD 10.1 #11 — 고를 때는 확인창이 없다). 마감 있는 판은 나가 있는 동안에도
+ * 문항이 넘어가 끝나면 기록되고, 마감 없는 판(«제한 없음», #2)은 그 자리에서 기다리다 30분 넘게 돌아오지 않으면
+ * 기록 없이 끝난다(서버의 멤버 정리)
  */
 export const SOLO_EXIT_BODY =
-  '나가도 판은 계속 진행되고, 끝날 때까지 새 혼자 판은 열 수 없어요. 홈의 「이어 풀기」로 돌아올 수 있고, 판이 끝나면 그 점수가 온라인 랭킹에 남아요.';
+  '나가도 판은 계속 진행되고, 끝나면 그 점수가 온라인 랭킹에 남아요. 홈의 「이어 풀기」나 같은 분야로 돌아올 수 있고, 다른 분야를 고르면 이 판은 기록 없이 끝나요.';
+export const SOLO_UNTIMED_EXIT_BODY =
+  '시간 제한이 없는 판이라 나가도 그 자리에서 기다려요. 홈의 「이어 풀기」나 같은 분야로 돌아와 이어 풀 수 있고, 다른 분야를 고르거나 30분 넘게 돌아오지 않으면 이 판은 기록 없이 끝나요.';
 
 export interface OnlineQuizScreenDeps {
   onSubmit: (spec: OnlineSubmissionOwner & { choiceIndex: number }) => Promise<void>;
@@ -546,6 +579,11 @@ export interface OnlineQuizScreen {
    * 1/1명»)도 그리지 않는다. 나가기 확인은 홈의 «이어 풀기»로 돌아온다고 말한다. 판의 규칙·채점·마감은 같다
    */
   setSolo(solo: boolean): void;
+  /**
+   * 혼자 판 화면의 한 줄 알림 (PRD 10.1 #11 — 다른 판을 골라 앞 판을 기록 없이 끝냈다). 확인창 대신 이 판의 첫 문항
+   * 동안 보인다. 낭독은 부르는 쪽이 화면이 보인 뒤에 한다. 다음 문항·다른 판·화면을 떠나면 거둔다
+   */
+  showSoloNotice(message: string): void;
   /** 오류가 아닌 안내용 transport/state 문구. */
   setNotice(message: string): void;
   /** Background refresh failures are visible but never release an in-flight submit. */
@@ -607,7 +645,17 @@ export function createOnlineQuizScreen(
     hintRule: need('online-arena-hint-rule'),
     helpRuleStanding: need('online-help-rule-standing'),
     helpRuleSubmit: need('online-help-rule-submit'),
+    // 조작법의 문항 시간 한 줄. 친구와 푸는 방은 정적 HTML의 말이고 혼자 판은 설정이 정한다
+    helpTime: need('online-help-time'),
+    // 혼자 판의 한 줄 알림 (PRD 10.1 #11)
+    soloNotice: need('online-solo-notice'),
   };
+  const helpTimeCopy = el.helpTime.textContent ?? '';
+  /**
+   * 혼자 판의 한 줄 알림이 붙은 판·문항. 그 문항을 지나면 거둔다. 빈 글자면 다음에 그리는 문항에 붙인다(판을
+   * 아직 그리지 못했을 때), null이면 알림이 없다
+   */
+  let soloNoticeKey: string | null = null;
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
   let snapshot: OnlineMatchSnapshot | null = null;
   const submissionGate = createOnlineSubmissionGate();
@@ -781,6 +829,8 @@ export function createOnlineQuizScreen(
     el.standings.hidden = true;
     el.standings.replaceChildren();
     el.reveal.hidden = true;
+    el.timer.classList.remove('timer--unlimited');
+    hideSoloNotice();
     // 확인 대화상자는 <main> 밖이라 화면과 함께 숨지 않는다. 열어 둔 채 떠나면 다음 화면을 덮는다.
     // 화면을 떠나는 중이므로 포커스는 되돌리지 않고 닫기만 한다.
     el.exitDialog.hidden = true;
@@ -985,7 +1035,24 @@ export function createOnlineQuizScreen(
     setTextIfChanged(el.timerText, ONLINE_TIME_NOTICE);
   }
 
+  /**
+   * 마감 없는 혼자 판의 도는 문항 (PRD 10.1 #9). 로컬 «제한 없음»처럼 프레임을 돌리지 않는다 — 막대(디자인 층이
+   * `.timer--unlimited`로 거둔다)도 남은 5초 경고도 없다. 마감 판정은 원래 서버뿐이고 여기에는 마감이 없다
+   */
+  function renderUntimed(): void {
+    stopCountdown();
+    el.timer.classList.remove('timer--warning');
+    el.timerFill.style.transform = 'scaleX(1)';
+    setTextIfChanged(el.timerText, ONLINE_UNTIMED_TIMER_TEXT);
+  }
+
   function syncCountdown(active: OnlineActiveMatch): void {
+    // 마감 없는 판은 막대를 늘 거둔다 — 공개(8초)에는 «다음 문제까지 N초» 글만 센다
+    el.timer.classList.toggle('timer--unlimited', active.untimed === true);
+    if (active.untimed === true && active.state === 'running') {
+      renderUntimed();
+      return;
+    }
     const remainingMs = active.remainingMs;
     if (remainingMs === undefined) {
       renderTimeNotice();
@@ -1345,12 +1412,25 @@ export function createOnlineQuizScreen(
 
   /**
    * 답하는 규칙을 판마다 고른다 (U13). 시간이 끝나면 선 칸이 답인 판이면 무대 아래 규칙 줄과 조작법의
-   * 그 문단을, 직접 낸 답만 세는 이전 API의 판이면 «선택을 눌러야 제출» 문단을 보인다.
+   * 그 문단을, 직접 낸 답만 세는 이전 API의 판이면 «선택을 눌러야 제출» 문단을 보인다. 마감 없는 혼자 판
+   * (PRD 10.1 #9)도 직접 낸 답만 답이다 — 조작법은 «선택을 눌러야 제출» 문단이고, 무대 아래 규칙 줄은 로컬
+   * «제한 없음»과 같은 «칸 위에서 선택하면 답»이다. 조작법의 문항 시간 줄도 판을 따른다
    */
-  function renderAnswerRule(standing: boolean): void {
-    el.hintRule.hidden = !standing;
+  function renderAnswerRule(snapshot: OnlineActiveMatch): void {
+    const untimed = snapshot.untimed === true;
+    const standing = !untimed && snapshot.standingAnswers === true;
+    el.hintRule.hidden = !standing && !untimed;
+    setTextIfChanged(el.hintRule, untimed ? ONLINE_UNTIMED_RULE_HINT : ONLINE_STANDING_RULE_HINT);
     el.helpRuleStanding.hidden = !standing;
     el.helpRuleSubmit.hidden = standing;
+    setTextIfChanged(el.helpTime, onlineHelpTimeText({ solo, untimed }) ?? helpTimeCopy);
+    if (solo) setTextIfChanged(el.exitBody, untimed ? SOLO_UNTIMED_EXIT_BODY : SOLO_EXIT_BODY);
+  }
+
+  function hideSoloNotice(): void {
+    soloNoticeKey = null;
+    el.soloNotice.hidden = true;
+    el.soloNotice.textContent = '';
   }
 
   function render(nextSnapshot: OnlineMatchSnapshot): void {
@@ -1389,8 +1469,11 @@ export function createOnlineQuizScreen(
     renderStandings(nextSnapshot, view);
     playRevealSound(nextSnapshot, view);
 
-    renderAnswerRule(nextSnapshot.standingAnswers === true);
+    renderAnswerRule(nextSnapshot);
     const arenaQuestionKey = `${nextSnapshot.matchId}:${question.position}`;
+    // 앞 판을 끝냈다는 한 줄은 이 판의 첫 문항 동안만이다 — 다음 문항이나 다른 판이면 거둔다
+    if (soloNoticeKey === '') soloNoticeKey = arenaQuestionKey;
+    else if (soloNoticeKey !== null && soloNoticeKey !== arenaQuestionKey) hideSoloNotice();
     if (arenaQuestionKey !== lastArenaQuestionKey) {
       lastArenaQuestionKey = arenaQuestionKey;
       // 새 문항은 다시 중립이다. 지난 문항에 보낸 초안의 기억을 들고 가지 않는다
@@ -1526,8 +1609,19 @@ export function createOnlineQuizScreen(
       el.chatSection.hidden = next;
       el.screen.dataset.solo = String(next);
       el.exitTitle.textContent = next ? '혼자 판을 떠날까요?' : exitCopy.title;
+      // 마감 없는 판이면 판을 그린 뒤(renderAnswerRule) 그 판의 말로 바꾼다
       el.exitBody.textContent = next ? SOLO_EXIT_BODY : exitCopy.body;
+      setTextIfChanged(el.helpTime, onlineHelpTimeText({ solo: next, untimed: false }) ?? helpTimeCopy);
       standingsKey = null;
+    },
+    showSoloNotice(message) {
+      // 지금 보이는 문항에 붙인다. 아직 판을 그리지 못했으면 다음에 그릴 첫 문항이다
+      const current = snapshot;
+      soloNoticeKey = current !== null && current.state !== 'finished'
+        ? `${current.matchId}:${current.question.position}`
+        : '';
+      el.soloNotice.textContent = message;
+      el.soloNotice.hidden = false;
     },
     setNotice(message) {
       setStatus(message);

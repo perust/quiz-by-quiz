@@ -10,9 +10,10 @@ requests·websockets가 없어도 된다::
     python3 deploy/oracle/smoke.py candidate --resolve-to 127.0.0.1
     python3 deploy/oracle/smoke.py candidate --api http://127.0.0.1:18083
 
-한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션(혼자 온라인 판 soloPlay는 candidate에만),
-닉네임 금칙 규칙과 온라인 랭킹 읽기, 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로 지나고,
-끝에는 언제나 방을 나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
+한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션(혼자 온라인 판 soloPlay·soloUntimed·soloRestart는
+candidate에만), 닉네임 금칙 규칙과 온라인 랭킹 읽기, 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로
+지나고, candidate는 «제한 없음» 혼자 판 하나를 열어 마감이 없는지 본 뒤 기록 없이 끝낸다(DELETE /v1/solo,
+PRD 10.1 #9·#11). 끝에는 언제나 방을 나가고 열린 혼자 판을 끝낸다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
 멈췄어도 그렇다. 단계마다 ``ok <step>: ...`` 또는 ``FAIL <step>: <reason>`` 한 줄이고, 다시 묻는
 것은 stderr에 적는다. 종료 코드는 모든 줄이 ``ok``일 때만 0이다(그 밖에는 1, Ctrl-C 뒤 130,
 SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티켓·응답 본문은 출력하지 않고
@@ -21,7 +22,8 @@ SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티�
 ``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 013인데 012 API가
 아직 돈다. 그 API의 gate는 503 ``migration-required``로 닫혀 있는 것이 정상이므로 이 모드는 그
 답만 ok로 보고, 세션·닉네임·랭킹·방·소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지
-않는다 — 이 점검은 판도 혼자 판도 열지 않으므로 랭킹 기록도 혼자 방도 남기지 않는다.
+않는다 — 이 점검은 친구와 푸는 판을 열지 않고, candidate가 여는 혼자 판은 끝까지 풀지 않고 끝내므로
+(``abandoned``) 랭킹 기록도 혼자 방도 남기지 않는다.
 
 ``--resolve-to IP``는 TCP만 그 IP로 붙고 Host 헤더와 TLS SNI·인증서 검증은 URL 호스트로 한다
 (제 공인 주소로 돌아오지 못하는 호스트의 hairpin NAT). ``http://``는 브라우저 화면처럼 루프백
@@ -101,6 +103,9 @@ RANKING_ENTRY_FIELDS = frozenset(
     }
 )
 REJECTED_RANKING_CODE = "invalid-ranking"
+# candidate의 혼자 판 (FR-7.13 3단계): 전체 도전 «제한 없음»(questionTimeMs null, PRD 10.1 #9)을 열고, 마감이
+# 없는지 본 뒤 DELETE /v1/solo로 기록 없이 끝낸다(#4의 끝내기). 혼자 방 하나·판 하나를 잠깐 쓴다
+SOLO_START = {"categoryId": None, "questionTimeMs": None}
 CHARACTER_ID = "slime-blue"
 ROOM_NAME = "배포 점검"
 USER_AGENT = "quiz-by-quiz-smoke/1"
@@ -601,6 +606,12 @@ class Smoke:
         # 만들기 요청이 HTTP 답을 받았는가. 받지 못했으면 방이 생겼는지 모른다(cleanup이 찾아본다).
         self.room_answered = False
         self.room_code: str | None = None
+        # 혼자 판을 열려고 했는가, 연 혼자 방과 그것을 끝냈는가. 끝내지 못했으면 cleanup이 끝낸다
+        self.solo_requested = False
+        # 혼자 판 열기가 HTTP 답을 받았는가. 받지 못했으면 혼자 방이 생겼는지 모른다(cleanup이 끝내 본다)
+        self.solo_answered = False
+        self.solo_code: str | None = None
+        self.solo_ended = False
         self.current: str | None = None
 
     def call(
@@ -646,6 +657,12 @@ class Smoke:
                     self.report.fail(name, "not run (no room)")
                 else:
                     self._step(name, action)
+            # 혼자 온라인 판은 migration 013 API(이 후보)의 것이다 — 012 API(baseline)에는 없다
+            if self.candidate:
+                if not self.session_ready:
+                    self.report.fail("solo", "not run (no session)")
+                else:
+                    self._step("solo", self.solo)
         except KeyboardInterrupt as error:
             interrupted = error
             self.report.fail(self.current or "run", f"interrupted ({interruption_name(error)})")
@@ -734,13 +751,20 @@ class Smoke:
         self.session_ready = True
         problems = cors_problems(reply)
         # migration 012 API부터 끝난 판을 서버 랭킹에 남긴다고(rankings) 알리고, 013 API는 홈의 혼자
-        # 온라인 판도 연다고(soloPlay, FR-7.13 3단계) 알린다. 012 API(#108)에는 soloPlay가 없다
-        solo_play: object = True if self.candidate else _MISSING
-        problems += field_problems(session, {"rankings": True, "soloPlay": solo_play})
+        # 온라인 판도 연다고(soloPlay, FR-7.13 3단계), 그 판이 «제한 없음»(soloUntimed)과 다른 판을 골라
+        # 끝내고 새로 열기(soloRestart, PRD 10.1 #9·#11)를 안다고 알린다. 012 API(#108)에는 셋 다 없다
+        solo: object = True if self.candidate else _MISSING
+        problems += field_problems(
+            session,
+            {"rankings": True, "soloPlay": solo, "soloUntimed": solo, "soloRestart": solo},
+        )
         if problems:
             raise Failure("; ".join(problems))
         if self.candidate:
-            return "HTTP 200 playerId is this identity, rankings true, soloPlay true"
+            return (
+                "HTTP 200 playerId is this identity, rankings true, "
+                "soloPlay soloUntimed soloRestart true"
+            )
         return "HTTP 200 playerId is this identity, rankings true, no soloPlay"
 
     def nickname(self) -> str:
@@ -961,6 +985,84 @@ class Smoke:
             f"closed {CLOSE_NORMAL}"
         )
 
+    def solo(self) -> str:
+        """«제한 없음» 혼자 판 하나를 열고(마감이 없다) 기록 없이 끝낸다 (PRD 10.1 #9·#11)."""
+        self.solo_requested = True
+        reply = self.call("POST", "/v1/solo", SOLO_START)
+        self.solo_answered = True
+        expect_status(reply, 201, what="POST /v1/solo")
+        started = reply.json_object()
+        room = started.get("room")
+        match = started.get("match")
+        code = room.get("code") if isinstance(room, dict) else None
+        if not isinstance(code, str) or not _ROOM_CODE.fullmatch(code):
+            raise Failure("POST /v1/solo: room code is missing or malformed")
+        self.solo_code = code
+        problems = field_problems(started, {"resumed": False})
+        problems += [
+            f"room {problem}"
+            for problem in field_problems(
+                room, {"solo": True, "untimed": True, "questionTimeMs": None}
+            )
+        ]
+        problems += [
+            f"match {problem}"
+            for problem in field_problems(match, {"untimed": True, "questionTimeMs": None})
+        ]
+        if self._only_me(room.get("players") if isinstance(room, dict) else None) is None:
+            problems.append("room players is not exactly this identity")
+        if problems:
+            raise Failure("POST /v1/solo: " + "; ".join(problems))
+
+        reply = self.call("GET", f"/v1/rooms/{code}/match")
+        expect_status(reply, 200, what="GET match")
+        # 마감 없는 도는 문항이다 — 마감·남은 시간이 없고 서 있는 칸은 답이 되지 않는다
+        problems = field_problems(
+            reply.json_object(),
+            {
+                "state": "running",
+                "untimed": True,
+                "questionTimeMs": None,
+                "deadlineAt": None,
+                "remainingMs": None,
+                "standingAnswers": False,
+            },
+        )
+        if problems:
+            raise Failure("GET match: " + "; ".join(problems))
+
+        ended = self._end_solo()
+        return (
+            f"HTTP 201 untimed solo room {code}; GET match running with no deadline; "
+            f"{ended}"
+        )
+
+    def _end_solo(self) -> str:
+        """DELETE /v1/solo — 도는 판을 기록 없이 끝내고 혼자 방을 지운다. 그 방은 다시 읽히지 않는다."""
+        reply = self.call("DELETE", "/v1/solo")
+        if self.solo_code is None:
+            # 열기의 답을 받지 못했다 — 혼자 방이 있으면 끝내고, 없으면(404는 그 길이 없는 API) 할 일이 없다
+            expect_status(reply, 200, 404, what="DELETE /v1/solo")
+            self.solo_ended = True
+            return f"DELETE /v1/solo -> {reply.status}"
+        expect_status(reply, 200, what="DELETE /v1/solo")
+        body_value = reply.json_object()
+        problems = field_problems(body_value, {"left": True})
+        problems += [
+            f"ended {problem}"
+            for problem in field_problems(body_value.get("ended"), {"recorded": False})
+        ]
+        if problems:
+            raise Failure("DELETE /v1/solo: " + "; ".join(problems))
+        reply = self.call("GET", f"/v1/rooms/{self.solo_code}")
+        if reply.status != 404:
+            raise Failure(
+                f"solo room {self.solo_code} is still readable after ending "
+                f"({status_text(reply)})"
+            )
+        self.solo_ended = True
+        return f"DELETE /v1/solo -> 200 ended unrecorded, GET {self.solo_code} -> 404"
+
     def _is_my_movement(self, frame: Frame) -> bool:
         if frame.opcode != OPCODE_TEXT:
             return False
@@ -1021,13 +1123,18 @@ class Smoke:
     def cleanup(self) -> str:
         if not self.session_ready:
             return "nothing to leave (no session)"
+        # 열려고 한 혼자 판을 끝내지 못했으면(실패·중단) 여기서 끝낸다. 혼자 방이 없으면 아무 일도 없다
+        solo = ""
+        unknown = not self.solo_answered
+        if self.solo_requested and not self.solo_ended and (self.solo_code or unknown):
+            solo = "; " + self._end_solo()
         codes = [self.room_code] if self.room_code else []
         if not codes and self.room_requested:
             codes = self._created_room_codes()
             if not codes and not self.room_answered:
                 raise Failure("create outcome unknown; no joined room seen")
         if not codes:
-            return "nothing to leave (no room)"
+            return "nothing to leave (no room)" + solo
         for code in codes:
             path = f"/v1/rooms/{code}"
             reply = self.call("DELETE", f"{path}/members/me")
@@ -1035,7 +1142,7 @@ class Smoke:
             reply = self.call("GET", path)
             if reply.status != 404:
                 raise Failure(f"room {code} is still readable after leaving ({status_text(reply)})")
-        return f"left room {', '.join(codes)}, GET -> 404"
+        return f"left room {', '.join(codes)}, GET -> 404" + solo
 
 
 def _is_close(frame: Frame) -> bool:

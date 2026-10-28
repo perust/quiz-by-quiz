@@ -9,7 +9,7 @@ import {
   ROOM_PASSWORD_MAX_LENGTH, ROOM_PASSWORD_MIN_LENGTH,
   TIME_LIMIT_MS,
 } from '../constants.js';
-import type { OnlineQuestionTime } from '../types.js';
+import type { OnlineQuestionTime, SoloQuestionTime } from '../types.js';
 
 /**
  * 검사 결과.
@@ -147,15 +147,19 @@ export function onlineQuestionTimeOrDefault(value: unknown): OnlineQuestionTime 
   return isOnlineQuestionTime(value) ? value : TIME_LIMIT_MS;
 }
 
-/** 대기실 설정 칸이 누를 때마다 도는 다음 값 (20초 → 40초 → 20초) */
-export function nextOnlineQuestionTime(current: OnlineQuestionTime): OnlineQuestionTime {
+/**
+ * 대기실 설정 칸이 누를 때마다 도는 다음 값 (20초 → 40초 → 20초). 방에 «제한 없음»(null)은 혼자 방에만 있어
+ * 대기실에 오지 않지만, 오면 첫 값(20초)으로 돈다 — 친구와 푸는 방에는 20초·40초뿐이다
+ */
+export function nextOnlineQuestionTime(current: SoloQuestionTime): OnlineQuestionTime {
+  if (current === null) return ONLINE_QUESTION_TIME_CHOICES[0];
   const index = ONLINE_QUESTION_TIME_CHOICES.indexOf(current);
   return ONLINE_QUESTION_TIME_CHOICES[(index + 1) % ONLINE_QUESTION_TIME_CHOICES.length];
 }
 
-/** 설정 칸·만들기 폼에 쓰는 짧은 이름: «20초» */
-export function onlineQuestionTimeLabel(value: OnlineQuestionTime): string {
-  return `${Math.round(value / 1000)}초`;
+/** 설정 칸·만들기 폼에 쓰는 짧은 이름: «20초». null(혼자 방의 «제한 없음»)은 «제한 없음» */
+export function onlineQuestionTimeLabel(value: SoloQuestionTime): string {
+  return value === null ? '제한 없음' : `${Math.round(value / 1000)}초`;
 }
 
 // ── 판을 여는 인원 ─────────────────────────────────────────────
@@ -172,6 +176,8 @@ export const LEGACY_ONLINE_RULES = {
   standingAnswers: false,
   rankings: false,
   soloPlay: false,
+  soloUntimed: false,
+  soloRestart: false,
 } as const;
 
 /** 이 방의 판을 여는 데 필요한 세는 사람(방장 + 연결된 참가자)의 수. 모르면 이전 API의 2다 */

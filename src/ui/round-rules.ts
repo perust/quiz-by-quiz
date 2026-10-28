@@ -65,18 +65,18 @@ export const RECORD_RULE = '이 브라우저에만 저장돼요';
 /** 혼자 하기가 온라인으로 옮긴 뒤(FR-7.13 3단계)의 «기록» 줄. 서버가 채점한 점수만 남는다 */
 export const ONLINE_RECORD_RULE = '끝까지 푼 판은 온라인 랭킹에 남아요';
 
-/** 서버에 닿지 않아 연습(PRD 10.2 #1의 기본값)으로 여는 동안의 «기록» 줄 */
+/** 서버에 닿지 않아 연습(PRD 10.1 #8 소유자 결정)으로 여는 동안의 «기록» 줄 */
 export const PRACTICE_RECORD_RULE = '연습 판은 기록이 남지 않아요';
 
 /**
- * 혼자 푸는 온라인 판의 «문항 시간» 줄 (FR-7.13 3단계). 온라인 판은 20초·40초만이라 «제한 없음»을 골랐으면 20초로
- * 풀고 그렇다고 말한다(PRD 10.2 #2의 기본값, `soloQuestionTime`)
+ * 혼자 푸는 온라인 판의 «문항 시간» 줄 (FR-7.13 3단계, PRD 10.1 #9). 설정의 값 그대로다 — «제한 없음»이면 마감 없는
+ * 판이다(`soloQuestionTime`). 이 API가 «제한 없음» 혼자 판을 모르면(`soloUntimed`가 없다) 20초로 풀고 그렇다고 말한다
  */
-export function soloTimeRule(limitMs: number | null): string {
-  const used = timeLimitLabel(soloQuestionTime(limitMs));
-  return limitMs === null
-    ? `${used} · 설정의 «제한 없음»은 연습에만 적용돼요`
-    : `${used} · 설정에서 바꿀 수 있어요`;
+export function soloTimeRule(limitMs: number | null, untimedSupported: boolean): string {
+  const used = soloQuestionTime(limitMs, untimedSupported);
+  return limitMs === null && used !== null
+    ? `${timeLimitLabel(used)} · 지금은 «제한 없음» 온라인 판을 열 수 없어 20초예요`
+    : `${timeLimitLabel(used)} · 설정에서 바꿀 수 있어요`;
 }
 
 /** 「게임 방법」 온라인 줄이 말할 규칙. `online/adapter.ts`의 `OnlineRules`와 같은 모양이다 */

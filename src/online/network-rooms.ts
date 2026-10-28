@@ -1,10 +1,11 @@
 import { CATEGORIES, ROOM_CAPACITY_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import type { KeyValueStorage } from '../storage/safe-storage.js';
-import type { CategoryId, RankingTarget } from '../types.js';
+import type { CategoryId, OnlineQuestionTime, RankingTarget } from '../types.js';
 import type {
   CreateRoomResult,
   CreateRoomSpec,
+  EndedSoloMatch,
   JoinRoomResult,
   JoinRoomSpec,
   MatchSetup,
@@ -358,9 +359,11 @@ function parseRoom(value: unknown): PublicRoom {
     throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
   }
   // 문항 시간을 모르는 이전 API의 방은 모두 20초였다. 있는데 20초·40초가 아니면 다른 계약이다 —
-  // null(로컬 설정의 «제한 없음»)도 20초로 바꿔 읽지 않는다.
+  // null(로컬 설정의 «제한 없음»)도 20초로 바꿔 읽지 않는다. 다만 «제한 없음» 혼자 방(PRD 10.1 #9)은
+  // 서버가 `untimed: true`·`solo: true`와 함께 null을 보낸다 — 그때만 null을 믿는다
+  const untimedSoloRoom = value.untimed === true && value.solo === true && value.questionTimeMs === null;
   const questionTimeMs = value.questionTimeMs === undefined ? TIME_LIMIT_MS : value.questionTimeMs;
-  if (!isOnlineQuestionTime(questionTimeMs)) {
+  if (!untimedSoloRoom && !isOnlineQuestionTime(questionTimeMs)) {
     throw new Error('서버 방 문항 시간이 올바르지 않습니다.');
   }
   // 방장 자동 준비(U28)와 접속 상태(U24)는 같은 API에서 함께 생겼다. 참가자마다 `connected`를
@@ -379,7 +382,8 @@ function parseRoom(value: unknown): PublicRoom {
     categoryId: categoryId as CategoryId | null,
     capacity,
     gameMode: true,
-    questionTimeMs,
+    // 바로 위에서 20초·40초이거나 «제한 없음» 혼자 방의 null인 것을 확인했다
+    questionTimeMs: untimedSoloRoom ? null : questionTimeMs as OnlineQuestionTime,
     players: players.map(parsePlayer),
     isPublic: value.isPublic,
     hasPassword: value.hasPassword,
@@ -578,6 +582,10 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
   // 이 판의 문항 시간은 남은 시간 막대의 «가득»에만 쓴다. remainingMs처럼 표시용이라 없거나 모르는
   // 값이면 빼고(막대는 처음 받은 남은 시간을 가득으로 본다) 매치 전체를 거절하지 않는다.
   const questionTimeMs = value.questionTimeMs;
+  // 마감 없는 혼자 판 (PRD 10.1 #9). `untimed: true`와 null 문항 시간이 함께일 때만 믿는다 — 하나만 오면 다른
+  // 계약이다. 그 판은 발밑 칸이 답이 되지 않는다(직접 낸 답만)
+  const untimed = value.untimed === true;
+  if (untimed && questionTimeMs !== null) throw new Error('서버 매치 문항 시간이 서로 맞지 않습니다.');
   const base = {
     matchId,
     categoryId,
@@ -586,7 +594,8 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     totalQuestions,
     ...(isOnlineQuestionTime(questionTimeMs) ? { questionTimeMs } : {}),
     // 시간이 끝나면 발밑 칸이 답인 판 (U13). true만 믿는다 — 없거나 다른 값이면 이전 규칙(직접 낸 답만)이다
-    ...(value.standingAnswers === true ? { standingAnswers: true as const } : {}),
+    ...(value.standingAnswers === true && !untimed ? { standingAnswers: true as const } : {}),
+    ...(untimed ? { untimed: true as const } : {}),
   };
   const activeDeadlineAt = (): string => {
     const deadlineAt = value.deadlineAt;
@@ -594,6 +603,14 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       throw new Error('진행 중인 서버 매치 마감 시각이 올바르지 않습니다.');
     }
     return deadlineAt;
+  };
+  /** 도는 문항의 마감. 마감 없는 판이면 마감도 남은 시간도 없어야 한다 */
+  const runningDeadline = (): { deadlineAt: string | null; remainingMs?: number } => {
+    if (!untimed) return { deadlineAt: activeDeadlineAt(), ...activeRemainingMs() };
+    if (value.deadlineAt !== null || (value.remainingMs !== null && value.remainingMs !== undefined)) {
+      throw new Error('마감 없는 서버 매치에 마감 시각이 섞였습니다.');
+    }
+    return { deadlineAt: null };
   };
   // 표시용 남은 시간이다. 구버전 서버처럼 없거나 쓸 수 없는 값이면 빼고, 화면은 예전 안내로
   // 돌아간다 — 카운트다운 힌트 하나 때문에 매치 전체를 거절하지 않는다.
@@ -625,8 +642,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     }
     return {
       ...base,
-      deadlineAt: activeDeadlineAt(),
-      ...activeRemainingMs(),
+      ...runningDeadline(),
       state: 'running',
       question,
       ownSubmission,
@@ -691,7 +707,24 @@ function sessionRules(body: Record<string, unknown>): OnlineRules {
     rankings: body.rankings === true,
     // 혼자 푸는 온라인 판 (FR-7.13 3단계). true만 믿는다 — 없는 이전 API면 홈이 예전 혼자 하기(로컬)를 연다
     soloPlay: body.soloPlay === true,
+    // 혼자 판의 «제한 없음»(PRD 10.1 #9)과 다른 판을 골라 끝내고 새로 열기(#11). true만 믿는다 — 없으면 null도
+    // restart도 보내지 않는다. 혼자 판을 모르는 API가 이것만 알릴 수는 없다
+    soloUntimed: body.soloPlay === true && body.soloUntimed === true,
+    soloRestart: body.soloPlay === true && body.soloRestart === true,
   };
+}
+
+/**
+ * 다른 판을 골라 끝낸 혼자 판 (PRD 10.1 #11, `POST /v1/solo`의 `ended`). 없거나 모양이 틀리면 undefined다 —
+ * 알리는 말 하나 때문에 새 판을 거절하지 않는다
+ */
+function parseEndedSolo(value: unknown): EndedSoloMatch | undefined {
+  if (!isObject(value) || typeof value.recorded !== 'boolean') return undefined;
+  const categoryId = value.categoryId;
+  if (categoryId !== null && (typeof categoryId !== 'string' || !CATEGORIES_SET.has(categoryId))) {
+    return undefined;
+  }
+  return { categoryId: categoryId as CategoryId | null, recorded: value.recorded };
 }
 
 /** 내 최고 기록 응답의 판 이름. 서버의 `RANKING_BOARDS`와 같다 */
@@ -743,7 +776,10 @@ function parseOwnRecord(value: unknown): MyOnlineRecord {
   if (typeof recordedAt !== 'string' || !Number.isFinite(Date.parse(recordedAt))) {
     throw new Error('서버 내 기록 시각이 올바르지 않습니다.');
   }
-  if (!isOnlineQuestionTime(questionTimeMs)) throw new Error('서버 내 기록 문항 시간이 올바르지 않습니다.');
+  // null은 «제한 없음»으로 푼 혼자 판의 기록이다 (PRD 10.1 #9)
+  if (questionTimeMs !== null && !isOnlineQuestionTime(questionTimeMs)) {
+    throw new Error('서버 내 기록 문항 시간이 올바르지 않습니다.');
+  }
   const totalCount = parseInteger(value.totalCount, '내 기록 문제 수', 1);
   const correctCount = parseInteger(value.correctCount, '내 기록 정답 수');
   const score = parseInteger(value.score, '내 기록 점수');
@@ -1096,7 +1132,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
   /**
    * 혼자 푸는 온라인 판 (FR-7.13 3단계). 세션을 열어 이 API가 아는지(`soloPlay`) 먼저 본다 — 모르는 이전 API에는
-   * 요청을 보내지 않는다. 4xx 거절(요청 한도 등)은 서버의 말을 가진 `ApiFailure`로, 연결 실패는 그대로 던진다
+   * 요청을 보내지 않는다. 4xx 거절(요청 한도 등)은 서버의 말을 가진 `ApiFailure`로, 연결 실패는 그대로 던진다.
+   * «제한 없음»(null, PRD 10.1 #9)은 세션이 `soloUntimed`를 알렸을 때만 보내고 — 모르는 API에 보내면 422다 —
+   * `restart`(결정 #4)는 `soloRestart`를 알렸을 때만 싣는다(모르면 빼고 보내 예전처럼 도는 판을 돌려받는다)
    */
   async function startSolo(spec: SoloStartSpec): Promise<SoloStartResult> {
     await ensureSession();
@@ -1104,11 +1142,19 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     if (spec.categoryId !== null && !CATEGORIES_SET.has(spec.categoryId)) {
       throw new Error('혼자 판 분야가 올바르지 않습니다.');
     }
-    if (!isOnlineQuestionTime(spec.questionTimeMs)) throw new Error('혼자 판 문항 시간이 올바르지 않습니다.');
+    const untimed = spec.questionTimeMs === null;
+    if (untimed ? learnedRules.soloUntimed !== true : !isOnlineQuestionTime(spec.questionTimeMs)) {
+      throw new Error('혼자 판 문항 시간이 올바르지 않습니다.');
+    }
+    const restart = spec.restart === true && learnedRules.soloRestart === true;
     const value = await request('/v1/solo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId: spec.categoryId, questionTimeMs: spec.questionTimeMs }),
+      body: JSON.stringify({
+        categoryId: spec.categoryId,
+        questionTimeMs: spec.questionTimeMs,
+        ...(restart ? { restart: true } : {}),
+      }),
     });
     if (!isObject(value) || typeof value.resumed !== 'boolean') {
       throw new Error('서버 혼자 판 응답이 올바르지 않습니다.');
@@ -1116,7 +1162,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     const room = parseRoom(value.room);
     // 혼자 방이 아니거나 내가 들어가 있지 않은 방이면 다른 계약이다 — 남의 방을 혼자 판으로 열지 않는다
     if (room.solo !== true || !room.joined) throw new Error('서버 혼자 판 방이 올바르지 않습니다.');
-    return { ok: true, room, resumed: value.resumed };
+    // 끝낸 앞 판(PRD 10.1 #11)은 restart를 보낸 응답에만 있다. 모양이 틀리면 알리지 않을 뿐 판은 연다
+    const ended = restart && value.resumed === false ? parseEndedSolo(value.ended) : undefined;
+    return { ok: true, room, resumed: value.resumed, ...(ended ? { ended } : {}) };
   }
 
   /** 내 판마다 최고 기록 (FR-7.13 3단계). 세션을 연 뒤 `soloPlay`를 아는 API에만 묻는다 */

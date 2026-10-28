@@ -50,12 +50,11 @@ import { nicknameProblem } from './online/nickname-rules.js';
 import { isNicknameRejection, normalizeCode, onlineErrorText, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import {
   dockNoticeNote,
-  OFFLINE_NO_PRACTICE_MESSAGE,
-  OFFLINE_PRACTICE,
   practiceNote,
   practiceRetryDelay,
   practiceStillMessage,
   probeResult,
+  soloEndedMessage,
   soloQuestionTime,
   soloStillRunningMessage,
   type DockNoticeKind,
@@ -165,7 +164,7 @@ async function main(): Promise<void> {
 
   // ── 혼자 푸는 온라인 판 (FR-7.13 3단계, 소유자 방향: 혼자 하기를 없애고 온라인에서 혼자 푼다) ──
   // 홈의 분야 칸·전체 도전이 무엇을 여는지. 세션의 `soloPlay`를 아는 API면 혼자 온라인 판, 모르는 이전 API면
-  // 예전 혼자 하기(로컬), 서버에 닿지 않으면 연습(기록 안 남음, PRD 10.2 #1의 기본값)이다. 아직 묻지 않았으면
+  // 예전 혼자 하기(로컬), 서버에 닿지 않으면 연습(기록 안 남음, PRD 10.1 #8 소유자 결정)이다. 아직 묻지 않았으면
   // `checking` — 누르면 답을 기다렸다 고른다. 「게임 방법」이 만들어지며 곧바로 읽으므로 대화상자들보다 먼저 둔다
   let playMode: HomePlayMode = roomStore.isNetworked ? 'checking' : 'practice';
   let practiceReason: PracticeReason | null = roomStore.isNetworked ? null : 'no-server';
@@ -752,7 +751,14 @@ async function main(): Promise<void> {
   }
 
   /** start event/reconnect 직후 이 controller가 room socket을 독립적으로 소유한다. */
-  async function openOnlineMatch(code: string, { notice }: { notice?: string } = {}): Promise<void> {
+  /**
+   * 온라인 판 화면을 연다. `notice`는 보인 뒤에 낭독만 하는 말이고(이어 푸는 혼자 판), `soloNotice`는 그 판의 첫 문항
+   * 동안 화면에도 남는 한 줄이다(다른 판을 골라 앞 판을 끝냈다, PRD 10.1 #11)
+   */
+  async function openOnlineMatch(
+    code: string,
+    { notice, soloNotice }: { notice?: string; soloNotice?: string } = {},
+  ): Promise<void> {
     if (!roomStore.isNetworked) return;
     if (onlineMatchRoomCode === code && ownsOnlineMatchNavigation()) return;
     stopOnlineMatch();
@@ -764,8 +770,14 @@ async function main(): Promise<void> {
     goTo('online-quiz');
     onlineMatchNavigationGeneration = waitingRoomEntryGeneration;
     await onlineMatchController?.open(code);
+    if (!ownsOnlineMatchNavigation()) return;
     // 보인 뒤에 알린다 — 숨은 화면의 상태 줄은 낭독되지 않는다 (이어 푸는 혼자 판)
-    if (notice && ownsOnlineMatchNavigation()) announce(notice);
+    if (soloNotice) {
+      onlineQuizScreen.showSoloNotice(soloNotice);
+      announce(soloNotice);
+    } else if (notice) {
+      announce(notice);
+    }
   }
 
   /**
@@ -955,7 +967,8 @@ async function main(): Promise<void> {
     // 연습이면 그 안내가 먼저다. 알림(요청 한도·사라진 판)은 연습과 함께 두지 않는다 — 까닭이 달라졌다
     if (mode === 'practice') dockNotice = null;
     renderPlayView();
-    settingsDialog.setOnlineSolo(roomStore.onlineRules()?.soloPlay === true);
+    const rules = roomStore.onlineRules();
+    settingsDialog.setOnlineSolo(rules?.soloPlay === true, rules?.soloUntimed === true);
     void homeBestScores().then((scores) => {
       if (playMode === mode) homeScreen.setBestScores(scores);
     });
@@ -983,7 +996,7 @@ async function main(): Promise<void> {
       ? { text: practice.text, action: practice.action }
       : (playMode !== 'practice' && dockNotice ? dockNoticeNote(dockNotice.kind) : null);
     homeScreen.setPlayMode({
-      practice: playMode === 'practice' && OFFLINE_PRACTICE,
+      practice: playMode === 'practice',
       note,
       soloOnline: playMode === 'online',
     });
@@ -1060,11 +1073,7 @@ async function main(): Promise<void> {
       return;
     }
     if (playMode === 'practice') {
-      // 결정 #1의 다른 길(연습을 열지 않는다)이면 알리기만 한다
-      if (!OFFLINE_PRACTICE && practiceReason !== 'no-server') {
-        announce(OFFLINE_NO_PRACTICE_MESSAGE);
-        return;
-      }
+      // 결정 #1: 서버에 닿지 않으면 연습(기록 안 남음)이다
       await startRound(round, undefined, { practice: true });
       return;
     }
@@ -1075,8 +1084,9 @@ async function main(): Promise<void> {
 
   /**
    * 혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계). 대기실을 거치지 않는다 — 서버가 그 사람의 혼자 방을 다시 쓰거나
-   * 만들고 판을 연다(POST /v1/solo). 문항 시간은 설정의 20초·40초이고 «제한 없음»이면 20초다(PRD 10.2 #2). 이미 판이
-   * 돌고 있으면 그 판을 잇는다. 서버에 닿지 않으면 홈을 연습으로 바꾸고 그렇다고 말한다(PRD 10.2 #1)
+   * 만들고 판을 연다(POST /v1/solo). 문항 시간은 설정의 20초·40초·«제한 없음»(마감 없는 판, PRD 10.1 #9)이다. 같은 판이
+   * 돌고 있으면 그 판을 잇고, 다른 판이 돌고 있으면 그 판을 기록 없이 끝내고 고른 판을 연다(결정 #4, 확인창 없이 새 판의
+   * 화면에 그렇다고 보이고 낭독한다). 서버에 닿지 않으면 홈을 연습으로 바꾸고 그렇다고 말한다(결정 #1)
    */
   async function startSoloOnline(round: Round): Promise<void> {
     if (soloStarting) return;
@@ -1086,9 +1096,13 @@ async function main(): Promise<void> {
     try {
       let result;
       try {
+        const rules = roomStore.onlineRules();
         result = await roomStore.startSolo({
           categoryId: round.categoryId,
-          questionTimeMs: soloQuestionTime(timeLimitMs),
+          // «제한 없음»은 이 API가 안다고 알렸을 때만 null로 보낸다(모르면 20초) — PRD 10.1 #9
+          questionTimeMs: soloQuestionTime(timeLimitMs, rules?.soloUntimed === true),
+          // 다른 판이 돌면 끝내고 연다(결정 #4). 저장소가 이 API가 안다고 알렸을 때만 싣는다
+          restart: true,
         });
       } catch (error) {
         console.warn('[혼자 판] 판을 열지 못했습니다', error);
@@ -1097,11 +1111,9 @@ async function main(): Promise<void> {
           setPlayMode('practice', probe.reason);
           const message = probe.reason === 'nickname'
             ? onlineErrorText(error, '홈에서 닉네임을 바꿔 주세요.')
-            : !OFFLINE_PRACTICE
-              ? OFFLINE_NO_PRACTICE_MESSAGE
-              : probe.reason === 'full'
-                ? '지금은 혼자 판 자리가 모두 찼어요. 연습(기록 안 남음)은 할 수 있어요.'
-                : '온라인에 연결할 수 없어요. 연습(기록 안 남음)은 할 수 있어요.';
+            : probe.reason === 'full'
+              ? '지금은 혼자 판 자리가 모두 찼어요. 연습(기록 안 남음)은 할 수 있어요.'
+              : '온라인에 연결할 수 없어요. 연습(기록 안 남음)은 할 수 있어요.';
           if (currentScreen !== 'home' && isCurrentNavigation(navigation)) await goHome();
           announce(message);
         } else if (probe.mode === 'local') {
@@ -1132,13 +1144,21 @@ async function main(): Promise<void> {
       // 그사이 다른 화면으로 옮겼으면 그 화면을 빼앗지 않는다. 판은 홈의 «이어 풀기»로 돌아올 수 있다
       if (!isCurrentNavigation(navigation)) return;
       if (result.resumed && result.room.categoryId !== round.categoryId) {
-        // 풀던 혼자 판이 아직 돈다 — 고른 것과 다른 판이다. 말없이 그 판을 열면 «한국사»를 누른 사람이 까닭 없이
-        // «과학» 판에 들어간다. 홈에 남아 그 판으로 돌아갈 줄을 보이고 까닭을 말한다(판은 마감까지 계속된다)
+        // 풀던 혼자 판이 아직 돈다 — 고른 것과 다른 판이다. 끝내고 새로 열기(결정 #4)를 모르는 API에서만 온다. 말없이 그 판을
+        // 열면 «한국사»를 누른 사람이 까닭 없이 «과학» 판에 들어간다. 홈에 남아 그 판으로 돌아갈 줄을 보이고 까닭을 말한다
         await showSoloStillRunning(code, result.room.name, result.room.categoryId);
         return;
       }
+      // 다른 판을 골라 풀던 판을 끝냈다(결정 #4) — 확인창 없이, 새 판의 화면에 한 줄로 보이고 낭독한다
+      const ended = result.ended;
+      const endedLabel = ended
+        ? labelFor(ended.categoryId === null
+          ? { mode: 'all', categoryId: null }
+          : { mode: 'category', categoryId: ended.categoryId })
+        : null;
       await openOnlineMatch(code, {
         notice: result.resumed ? '진행 중이던 혼자 판을 이어서 풀어요.' : undefined,
+        soloNotice: ended && endedLabel ? soloEndedMessage(endedLabel, ended.recorded) : undefined,
       });
     } finally {
       soloStarting = false;
@@ -1332,7 +1352,7 @@ async function main(): Promise<void> {
     const target: RankingTarget = { mode: summary.mode, category: summary.categoryId };
     const modeLabel = labelFor({ mode: summary.mode, categoryId: summary.categoryId });
 
-    // 연습 판 (FR-7.13 3단계, PRD 10.2 #1의 기본값)은 기록하지 않는다 — 최고 점수를 읽지도, 등록할 판을 들지도 않는다
+    // 연습 판 (FR-7.13 3단계, PRD 10.1 #8 소유자 결정)은 기록하지 않는다 — 최고 점수를 읽지도, 등록할 판을 들지도 않는다
     if (lastRoundPractice) {
       pending = null;
       registeredId = null;

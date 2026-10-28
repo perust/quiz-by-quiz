@@ -319,6 +319,10 @@
         </div>
       </div>
 
+      <!-- 혼자 판의 한 줄 알림 (PRD 10.1 #11): 다른 분야를 골라 풀던 판을 기록 없이 끝냈다. 확인창 대신 이 판의
+           첫 문항 동안만 보이고 online-quiz.js 가 거둔다. 낭독은 화면이 보인 뒤에 announce()로 한 번 한다 -->
+      <p class="online-solo-notice" id="online-solo-notice" hidden></p>
+
       <h1 class="question" id="online-question-text" tabindex="-1"></h1>
       <ul class="choices" id="online-choices" aria-label="온라인 보기"></ul>
       <p class="sr-only" id="online-presence-status" aria-live="polite"></p>
@@ -332,8 +336,9 @@
           </div>
         </div>
         <p class="arena__hint" aria-hidden="true">
-          <!-- 시간이 끝나면 선 칸이 답인 판(U13, snapshot의 standingAnswers)에서만 보인다. 이전 API의 판은
-               직접 낸 답만 세므로 숨긴다 — online-quiz.js 가 판마다 고른다 -->
+          <!-- 시간이 끝나면 선 칸이 답인 판(U13, snapshot의 standingAnswers)에서 보인다. 마감 없는 혼자 판(«제한
+               없음», snapshot의 untimed)이면 로컬 «제한 없음»처럼 «칸 위에서 선택하면 답»으로 바꿔 보인다. 이전 API의
+               판은 직접 낸 답만 세므로 숨긴다 — online-quiz.js 가 판마다 고른다 -->
           <span class="arena__hint-rule" id="online-arena-hint-rule" hidden>보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답</span>
           <span class="arena__hint-key">방향키·WASD로 움직이고 Enter/Space로 제출하세요</span>
           <span class="arena__hint-touch">스틱으로 움직이고 선택 버튼으로 제출하세요</span>
@@ -976,8 +981,8 @@
     <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="online-help-dialog-title">
       <h2 class="dialog__title" id="online-help-dialog-title">온라인 캐릭터 퀴즈 조작법</h2>
       <!-- 답하는 규칙은 판이 정한다(snapshot의 standingAnswers, U13). 지금 판은 혼자 하는 퀴즈와 같다 —
-           시간이 끝나면 선 칸이 답이다. 이 필드를 모르는 이전 API의 판은 직접 낸 답만 센다.
-           online-quiz.js 가 판마다 한쪽만 보인다 -->
+           시간이 끝나면 선 칸이 답이다. 이 필드를 모르는 이전 API의 판과 마감 없는 혼자 판(untimed, PRD 10.1 #9)은
+           직접 낸 답만 센다. online-quiz.js 가 판마다 한쪽만 보인다 -->
       <p class="dialog__body">
         <span id="online-help-rule-standing" hidden>
           <strong>시간이 다 되면 그때 밟고 있는 칸이 답</strong>이 돼요.
@@ -990,7 +995,8 @@
         </span>
         바닥 칸이나 위의 보기를 직접 눌러도 바로 제출돼요.
         순위는 맞힌 개수로만 정해요. 빨리 답해도 점수는 같아요.
-        문항 시간은 방장이 방마다 20초나 40초로 정해요.
+        <!-- 혼자 판은 설정의 문항 시간이고 «제한 없음»이면 시간 제한이 없다 (PRD 10.1 #9, online-quiz.js 가 바꾼다) -->
+        <span id="online-help-time">문항 시간은 방장이 방마다 20초나 40초로 정해요.</span>
       </p>
       <dl class="help-list">
         <dt>움직이기</dt>

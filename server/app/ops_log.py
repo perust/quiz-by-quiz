@@ -67,6 +67,10 @@ EVENT_FIELDS: dict[str, frozenset[str]] = {
     # 혼자 푸는 온라인 판을 열었다 (FR-7.13 3단계). 그 방을 이번에 만들었는가와 판의 모양뿐이다 —
     # 혼자 판은 room_created·match_started 대신 이 한 줄이다(판이 끝나면 match_finished는 같다)
     "solo_started": frozenset({"room", "created", "category", "questionTimeMs", "questions"}),
+    # 혼자 판을 끝까지 풀지 않고 끝냈다 (PRD 10.1 #11) — 다른 판을 골랐거나(`via: restart`) 그만뒀다
+    # (`left`, DELETE /v1/solo). 기록은 남지 않는다. 끝낼 때 열려 있던 문항 순서와 판의 문항
+    # 수뿐이다. 마지막 공개만 남은 판은 닫혀 기록되므로 이 줄 대신 match_finished(같은 via)다
+    "solo_abandoned": frozenset({"room", "via", "position", "questions"}),
     "cleanup": frozenset(
         {
             "roomsDeleted",
@@ -75,6 +79,7 @@ EVENT_FIELDS: dict[str, frozenset[str]] = {
             "matchesDeleted",
             "playersDeleted",
             "rankingsPruned",
+            "soloMatchesAbandoned",
         }
     ),
     "server_error": frozenset({"method", "route", "error"}),
@@ -252,9 +257,10 @@ def solo_started(
     *,
     created: bool,
     category_id: str | None,
-    question_time_ms: int,
+    question_time_ms: int | None,
     questions: int,
 ) -> None:
+    # «제한 없음» 혼자 판이면 questionTimeMs가 null이다 (PRD 10.1 #9)
     _emit(
         "solo_started",
         {
@@ -262,6 +268,18 @@ def solo_started(
             "created": bool(created),
             "category": _category(category_id),
             "questionTimeMs": _count(question_time_ms),
+            "questions": _count(questions),
+        },
+    )
+
+
+def solo_abandoned(code: str, *, via: str, position: int, questions: int) -> None:
+    _emit(
+        "solo_abandoned",
+        {
+            "room": _room(code),
+            "via": _reason(via),
+            "position": _count(position),
             "questions": _count(questions),
         },
     )
@@ -281,6 +299,7 @@ def cleanup(counts: CleanupCounts) -> None:
             "matchesDeleted": _count(counts.matches_deleted),
             "playersDeleted": _count(counts.players_deleted),
             "rankingsPruned": _count(counts.rankings_pruned),
+            "soloMatchesAbandoned": _count(counts.solo_matches_abandoned),
         },
     )
 

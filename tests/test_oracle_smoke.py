@@ -156,6 +156,9 @@ class FakeApi:
         self.tickets: dict[str, str] = {}
         self.players: set[str] = set()
         self.rooms: dict[str, dict] = {}
+        # 혼자 판 (FR-7.13 3단계): 연 혼자 방과 그 판이 «제한 없음»인가, 끝냈는가
+        self.solo_rooms: dict[str, dict] = {}
+        self.solo_ended: list[str] = []
 
     def _cors(self, headers: dict) -> dict:
         origin = headers.get("Origin")
@@ -275,6 +278,9 @@ class FakeApi:
                 session["rankings"] = True
             if self.solo_play:
                 session["soloPlay"] = True
+                # 소유자 결정 (PRD 10.1 #9·#11): «제한 없음» 혼자 판, 다른 판을 골라 끝내고 새로 열기
+                session["soloUntimed"] = True
+                session["soloRestart"] = True
             return self._ok(200, session, headers)
         if player not in self.players:
             return error(401, "unauthorized")
@@ -309,6 +315,15 @@ class FakeApi:
             return self._ok(201, self._room(self.rooms[code]), headers)
         if (method, path) == ("GET", "/v1/rooms"):
             return self._ok(200, [self._room(room) for room in self.rooms.values()], headers)
+        if path == "/v1/solo":
+            return self._solo(method, player, payload, headers)
+        solo = re.fullmatch(r"/v1/rooms/(SQL234)(/match)?", path)
+        if solo is not None and method == "GET":
+            if solo.group(1) not in self.solo_rooms:
+                return error(404, "not-found")
+            if solo.group(2) is None:
+                return self._ok(200, self.solo_rooms[solo.group(1)], headers)
+            return self._ok(200, self._untimed_match(), headers)
         match = re.fullmatch(r"/v1/rooms/([A-Z0-9]{6})(/.*)?", path)
         assert match is not None, path
         code, rest = match.group(1), match.group(2) or ""
@@ -330,6 +345,81 @@ class FakeApi:
             del self.rooms[code]
             return smoke.Reply(204, self._cors(headers))
         raise AssertionError(f"unexpected request {method} {path}")
+
+    def _solo(self, method, player, payload, headers):
+        """server/app/main.py의 POST·DELETE /v1/solo. 혼자 판을 모르는 API에는 그 경로가 없다."""
+        if not self.solo_play:
+            return smoke.Reply(404, self._cors(headers), body({"detail": "Not Found"}))
+        if method == "POST":
+            # 점검은 전체 도전 «제한 없음»만 연다 — restart 없이(도는 판이 없다)
+            assert payload == {"categoryId": None, "questionTimeMs": None}, payload
+            code = "SQL234"
+            self.solo_rooms[code] = {
+                "code": code,
+                "name": "혼자 하기",
+                "categoryId": None,
+                "capacity": 2,
+                "gameMode": True,
+                "questionTimeMs": None,
+                "untimed": True,
+                "solo": True,
+                "players": [
+                    {
+                        "id": player,
+                        "nickname": "점검",
+                        "characterId": "slime-blue",
+                        "isReady": False,
+                        "connected": True,
+                    }
+                ],
+                "isPublic": True,
+                "hasPassword": False,
+                "isMine": True,
+                "joined": True,
+                "createdAt": "2026-10-28T00:00:00Z",
+                "status": "playing",
+                "inMatch": True,
+            }
+            match = {
+                "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "categoryId": None,
+                "gameMode": True,
+                "totalQuestions": 25,
+                "questionTimeMs": None,
+                "untimed": True,
+            }
+            return self._ok(
+                201,
+                {"room": self.solo_rooms[code], "match": match, "resumed": False},
+                headers,
+            )
+        assert method == "DELETE" and payload is None
+        if not self.solo_rooms:
+            return self._ok(200, {"ended": None, "left": False}, headers)
+        (code,) = self.solo_rooms
+        del self.solo_rooms[code]
+        self.solo_ended.append(code)
+        ended = {"matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "categoryId": None, "recorded": False}
+        return self._ok(200, {"ended": ended, "left": True}, headers)
+
+    def _untimed_match(self) -> dict:
+        return {
+            "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "state": "running",
+            "categoryId": None,
+            "gameMode": True,
+            "currentPosition": 1,
+            "totalQuestions": 25,
+            "questionTimeMs": None,
+            "deadlineAt": None,
+            "remainingMs": None,
+            "standingAnswers": False,
+            "untimed": True,
+            "question": {"id": "online-history-001", "position": 1, "total": 25},
+            "ownSubmission": None,
+            "reveal": None,
+            "scores": [],
+        }
 
     def upgrade(self, path, headers):
         self.upgrades.append((path, dict(headers)))
@@ -471,14 +561,24 @@ class SmokeRunTests(unittest.TestCase):
                 "ok room",
                 "ok room-settings",
                 "ok websocket",
+                "ok solo",
                 "ok cleanup",
             ],
         )
         self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 13")
         self.assertEqual(
             run.lines[1],
-            "ok session: HTTP 200 playerId is this identity, rankings true, soloPlay true",
+            "ok session: HTTP 200 playerId is this identity, rankings true, "
+            "soloPlay soloUntimed soloRestart true",
         )
+        # «제한 없음» 혼자 판을 열어 마감이 없는지 보고 기록 없이 끝낸다 (PRD 10.1 #9·#11)
+        self.assertEqual(
+            run.lines[7],
+            "ok solo: HTTP 201 untimed solo room SQL234; GET match running with no deadline; "
+            "DELETE /v1/solo -> 200 ended unrecorded, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
         self.assertEqual(
             run.lines[2],
             "ok nickname: HTTP 400 nickname-personal-info for an e-mail-shaped nickname",
@@ -569,7 +669,13 @@ class SmokeRunTests(unittest.TestCase):
             run.lines[0],
             "FAIL readiness: schemaVersion=13 (want 12)",
         )
-        self.assertEqual(run.lines[1], "FAIL session: soloPlay=true (want missing)")
+        self.assertEqual(
+            run.lines[1],
+            "FAIL session: soloPlay=true (want missing); soloUntimed=true (want missing); "
+            "soloRestart=true (want missing)",
+        )
+        # baseline은 혼자 판을 열지 않는다
+        self.assertFalse(any(path == "/v1/solo" for _, path, _, _ in run.api.requests))
         self.assertEqual(
             [line.split(":")[0] for line in run.lines[2:]],
             [
@@ -730,13 +836,15 @@ class SmokeRunTests(unittest.TestCase):
         self.assertEqual(run.code, 1)
         self.assertEqual(
             run.lines[1],
-            "FAIL session: rankings=missing (want true); soloPlay=missing (want true)",
+            "FAIL session: rankings=missing (want true); soloPlay=missing (want true); "
+            "soloUntimed=missing (want true); soloRestart=missing (want true)",
         )
         self.assertEqual(
             run.lines[2], "FAIL nickname: HTTP 200, expected HTTP 400 nickname-personal-info"
         )
         self.assertEqual(run.lines[3], "FAIL rankings: anonymous week: HTTP 404, expected 200")
         self.assertEqual(run.lines[6], WEBSOCKET_OK)
+        self.assertEqual(run.lines[7], "FAIL solo: POST /v1/solo: HTTP 404, expected 201")
         self.assert_left_the_room(run)
 
     def test_candidate_against_the_012_api_fails_the_gate_and_the_session(self):
@@ -745,8 +853,20 @@ class SmokeRunTests(unittest.TestCase):
         run = Run("candidate", FakeApi(schema_version=12, solo_play=False))
         self.assertEqual(run.code, 1)
         self.assertEqual(run.lines[0], "FAIL readiness: schemaVersion=12 (want 13)")
-        self.assertEqual(run.lines[1], "FAIL session: soloPlay=missing (want true)")
+        self.assertEqual(
+            run.lines[1],
+            "FAIL session: soloPlay=missing (want true); soloUntimed=missing (want true); "
+            "soloRestart=missing (want true)",
+        )
         self.assertTrue(run.lines[3].startswith("ok rankings"), run.lines[3])
+        # 그 API에는 혼자 판이 없다 — 연 것이 없으니 cleanup은 혼자 판을 끝내러 가지 않는다
+        self.assertEqual(
+            run.lines[7], "FAIL solo: POST /v1/solo: HTTP 404, expected 201"
+        )
+        self.assertEqual(
+            [(method, path) for method, path, _, _ in run.api.requests if path == "/v1/solo"],
+            [("POST", "/v1/solo")],
+        )
         self.assert_left_the_room(run)
 
     def test_candidate_on_a_migration_12_database_fails_the_gate(self):
@@ -808,6 +928,33 @@ class SmokeRunTests(unittest.TestCase):
         self.assertEqual(run.code, 130)
         self.assertEqual(run.lines[-2], "FAIL websocket: interrupted (Ctrl-C)")
         self.assert_left_the_room(run)
+
+    def test_ctrl_c_in_the_solo_step_still_ends_the_solo_match(self):
+        # 혼자 판을 연 뒤에 멈췄다 — cleanup이 그 판을 기록 없이 끝내고 혼자 방을 지운다
+        run = Run("candidate", FakeApi(interrupt=("GET", "/v1/rooms/SQL234/match")))
+        self.assertEqual(run.code, 130)
+        self.assertEqual(run.lines[-2], "FAIL solo: interrupted (Ctrl-C)")
+        self.assertEqual(
+            run.lines[-1],
+            "ok cleanup: left room QZ7K2M, GET -> 404; "
+            "DELETE /v1/solo -> 200 ended unrecorded, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+
+    def test_lost_solo_response_is_ended_anyway(self):
+        # 서버는 혼자 판을 열었는데 답을 받기 전에 SIGTERM이 왔다 — 방 코드를 몰라도 DELETE /v1/solo가 끝낸다
+        previous = smoke.trap_termination()
+        try:
+            run = Run("candidate", FakeApi(terminate=("POST", "/v1/solo")))
+        finally:
+            smoke.restore_signals(previous)
+        self.assertEqual(run.code, 143)
+        self.assertEqual(run.lines[-2], "FAIL solo: interrupted (SIGTERM)")
+        self.assertEqual(
+            run.lines[-1], "ok cleanup: left room QZ7K2M, GET -> 404; DELETE /v1/solo -> 200"
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
 
     def test_sigterm_through_the_installed_handler_still_leaves_the_room(self):
         previous = smoke.trap_termination()
