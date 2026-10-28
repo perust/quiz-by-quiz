@@ -228,6 +228,12 @@ PY
 파일 모양이 바뀌면 앱이 `schemaVersion` 을 올린다 (`src/core/records-export.ts`, 회귀 fixture는
 `tests/fixtures/records-export.json`).
 
+**온라인 기록 내보내기** (FR-7.13 3단계) — 혼자 푸는 판이 온라인으로 옮긴 배포에서는 랭킹의 «온라인 랭킹» 범위에서 누른
+「기록 내보내기」가 서버에 남은 **내 온라인 기록**(최근 8주와 판마다 상위 100 가운데 최근 500개)을 같은 감싼 형태로 내보낸다.
+줄마다 `"source": "online"` 이 붙고 `durationMs`·`questionResults` 가 없다 — 서버가 소요 시간과 문항별 정오를 내보내지 않는다.
+로더는 그대로 읽고(소요 시간은 0), 대시보드 9구획(문항별 분석)에서는 빠진다. 닉네임이 온라인 규칙에 걸려 «익명»으로 남은 줄도
+있다. 예전 기록은 «이 브라우저의 예전 기록» 범위에서 예전처럼 내보낸다 (회귀 fixture는 `tests/fixtures/records-export-online.json`).
+
 **배열만 있는 형태** — `localStorage.getItem('quiz.rankings')` 를 그대로 붙여넣은 경우다.
 이때는 **파일명이 학생 이름이 된다.**
 

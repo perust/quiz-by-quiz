@@ -21,6 +21,9 @@
 //   sendStandingAnswer     시간이 끝나면 답이 되는 발밑 칸 초안 (U13, 받는다고 알린 서버에만)
 //   onlineRules()          세션을 열 때 서버가 알려 준 규칙(시작 인원·발밑 칸·서버 랭킹). 모르면 null
 //   getOnlineRankings(q)   온라인 랭킹 상위 10 (FR-7.13 2단계). 랭킹을 모르는 API·로컬 방은 {supported:false}
+//   startSolo(spec)        혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계). 모르는 API·로컬 방은 {ok:false}
+//   getMyBestScores(o?)    내 판마다 최고 기록 (홈의 별 점수·결과의 최고 기록 비교). 모르는 API는 {supported:false}
+//   getMyOnlineRecords()   내 온라인 기록 (기록 내보내기). 모르는 API·로컬 방은 {supported:false}
 //   subscribe(code, fn)    방에서 일어나는 일. 그만 들으려면 되돌려 준 함수를 부른다
 //
 // 구독으로 오는 이벤트
@@ -46,7 +49,7 @@
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
 import { safeStorage } from '../storage/safe-storage.js';
-import type { CategoryId, OnlineQuestionTime, RankingTarget } from '../types.js';
+import type { CategoryId, OnlineQuestionTime, RankingTarget, SoloQuestionTime } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
   MovementStage,
@@ -86,9 +89,10 @@ export interface PublicRoom {
   gameMode: true;
   /**
    * 방장이 고른 문항 시간(20초·40초). 판을 열 때 그 판의 모든 문항 마감이 된다. 모두에게 보이고
-   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다.
+   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다. null은 «제한 없음» 혼자 방뿐이다
+   * (PRD 10.1 #9) — 서버가 `untimed: true`와 함께 보낼 때만 믿는다. 친구와 푸는 방에는 없다.
    */
-  questionTimeMs: OnlineQuestionTime;
+  questionTimeMs: SoloQuestionTime;
   /**
    * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
    * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
@@ -123,6 +127,11 @@ export interface PublicRoom {
    * 혼자서도 연다. 이 필드를 보내지 않는 이전 API는 둘이었다(`rules.ts`의 `roomMinPlayers`가 2로 읽는다).
    */
   minPlayers?: number;
+  /**
+   * 혼자 푸는 온라인 판의 방인가 (FR-7.13 3단계). 그 사람에게만 보이고 남이 들어오지 못한다. 로비 목록에는
+   * 그리지 않고 홈의 «풀던 혼자 판» 줄로만 잇는다. 이 필드를 모르는 이전 API와 로컬 방은 없다(false)
+   */
+  solo?: boolean;
 }
 
 /**
@@ -139,7 +148,86 @@ export interface OnlineRules {
    * 이 필드가 없는 이전 API면 false — 화면은 온라인 랭킹을 숨긴다
    */
   rankings: boolean;
+  /**
+   * 홈의 분야 칸이 혼자 푸는 온라인 판을 곧바로 여는가 (FR-7.13 3단계). 세션 응답의 `soloPlay: true`다 —
+   * POST /v1/solo, 내 최고 기록, 내 기록 내보내기가 함께 있다. 이 필드가 없는 이전 API면 false — 홈은 예전처럼
+   * 분야 칸으로 혼자 하기(로컬)를 연다
+   */
+  soloPlay: boolean;
+  /**
+   * 혼자 판이 «제한 없음»(`questionTimeMs: null`, 마감 없음)도 받는가 (PRD 10.1 #9). 세션 응답의
+   * `soloUntimed: true`다. 없으면 화면은 null을 보내지 않고 «제한 없음»이면 20초로 연다
+   */
+  soloUntimed: boolean;
+  /**
+   * 다른 판을 고르면 도는 혼자 판을 기록 없이 끝내고 새로 여는가 (PRD 10.1 #11). 세션 응답의
+   * `soloRestart: true`다. 없으면 화면은 restart를 보내지 않고 도는 판으로 돌아갈 줄을 보인다
+   */
+  soloRestart: boolean;
 }
+
+// ── 혼자 푸는 온라인 판 (FR-7.13 3단계) ─────────────────────────────
+
+/**
+ * 혼자 판을 열 때 고르는 것. 문항 시간은 설정의 20초·40초이거나 null(«제한 없음», PRD 10.1 #9)이다 — null은
+ * 서버가 `soloUntimed`를 알렸을 때만 보낸다. `restart`면(결정 #4) 다른 판이 돌 때 그 판을 끝내고 이 판을 연다 —
+ * 서버가 `soloRestart`를 알렸을 때만 실어 보낸다
+ */
+export interface SoloStartSpec {
+  /** 「전체 도전」이면 null */
+  categoryId: CategoryId | null;
+  questionTimeMs: SoloQuestionTime;
+  restart?: boolean;
+}
+
+/** 다른 판을 골라 끝낸 혼자 판 (PRD 10.1 #11). 끝까지 풀지 않은 판은 기록 없이 끝났다 */
+export interface EndedSoloMatch {
+  categoryId: CategoryId | null;
+  /** 마지막 공개만 남았던 판(끝까지 푼 판)이라 닫아 기록했는가 */
+  recorded: boolean;
+}
+
+/**
+ * 혼자 판을 연 결과. `resumed`면 그 사람의 혼자 방에 판이 이미 돌고 있어 새 판을 열지 않았다 — 화면은 그 판을
+ * 이어 그린다. `ended`는 다른 판을 골라(restart) 끝낸 앞 판이다. 이 기능을 모르는 API·로컬 방이면
+ * `unsupported`다(예전 혼자 하기로 돌아간다). 연결 실패는 던진다
+ */
+export type SoloStartResult =
+  | { ok: true; room: PublicRoom; resumed: boolean; ended?: EndedSoloMatch }
+  | { ok: false; reason: 'unsupported' };
+
+/** 한 판(분야·전체 도전)의 내 최고 기록. 같은 점수면 먼저 남긴 기록이다 (랭킹 순서와 같다) */
+export interface OnlineBestScore {
+  score: number;
+  correctCount: number;
+  totalCount: number;
+  /** 서버가 판을 닫은 시각 (ISO 8601) */
+  recordedAt: string;
+}
+
+/** 판마다 내 최고 기록. 기록이 없는 판은 null. 키는 분야 id와 전체 도전의 'all'이다 */
+export type OnlineBestScores = Partial<Record<CategoryId | 'all', OnlineBestScore | null>>;
+
+export type MyBestScoresResult =
+  | { supported: false }
+  | { supported: true; best: OnlineBestScores };
+
+/** 내 온라인 기록 한 줄 (기록 내보내기). 서버가 채점한 점수다. 브라우저 신분은 오지 않는다 */
+export interface MyOnlineRecord {
+  target: RankingTarget;
+  score: number;
+  correctCount: number;
+  totalCount: number;
+  /** null이면 «제한 없음»으로 푼 혼자 판이다 (PRD 10.1 #9) */
+  questionTimeMs: SoloQuestionTime;
+  /** 그 방에서 보인 이름(규칙에 걸리는 옛 이름은 «익명») */
+  nickname: string;
+  recordedAt: string;
+}
+
+export type MyOnlineRecordsResult =
+  | { supported: false }
+  | { supported: true; records: MyOnlineRecord[]; limit: number; truncated: boolean };
 
 // ── 온라인 랭킹 (FR-7.13 2단계, PRD 12.1) ─────────────────────────
 // 서버가 채점한 온라인 판의 결과다. 브라우저가 점수를 보고하지 않는다 — 읽기만 한다.
@@ -340,11 +428,17 @@ interface OnlineMatchBase {
    * 뒤 선 칸을 초안으로 보내고 규칙을 그렇게 말한다. 이 필드가 없는 이전 API는 직접 낸 답만 센다.
    */
   standingAnswers?: true;
+  /**
+   * 마감 없는 혼자 판인가 («제한 없음», PRD 10.1 #9). 서버가 `untimed: true`를 실을 때만이고 그때
+   * `questionTimeMs`가 없다. 도는 문항에는 마감(`deadlineAt`·`remainingMs`)이 없고 발밑 칸도 답이 되지 않는다 —
+   * 직접 낸 답만 답이다(로컬 «제한 없음»과 같다). 공개(8초)에는 마감이 있다
+   */
+  untimed?: true;
 }
 
-/** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
+/** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. 마감 없는 판(`untimed`)의 도는 문항만 null이다 */
 interface OnlineActiveMatchBase extends OnlineMatchBase {
-  deadlineAt: string;
+  deadlineAt: string | null;
   /**
    * 서버가 응답 시점에 잰 이 phase의 남은 시간(ms). running이면 제출 마감까지,
    * revealing이면 다음 문제(또는 최종 순위)까지다. 기기 시계와 무관하게 남은 시간을
@@ -363,6 +457,8 @@ export interface OnlineRunningMatch extends OnlineActiveMatchBase {
 
 export interface OnlineRevealingMatch extends OnlineActiveMatchBase {
   state: 'revealing';
+  /** 공개에는 마감 없는 판에도 마감이 있다 */
+  deadlineAt: string;
   question: OnlineMatchQuestion;
   ownSubmission: null;
   reveal: OnlineReveal | null;
@@ -521,6 +617,18 @@ export interface RoomStore {
    * 읽기만 하고, 브라우저 신분을 실어 보내 내 기록(isMine)을 서버가 가린다
    */
   getOnlineRankings(query: { target: RankingTarget; period: OnlineRankingPeriod }): Promise<OnlineRankingResult>;
+  /**
+   * 혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계). 대기실을 거치지 않는다 — 그 사람의 혼자 방을 다시 쓰거나
+   * 만들고 판을 연다. 세션을 열어 이 API가 아는지(`soloPlay`) 먼저 보고, 모르면 요청하지 않고 `unsupported`다
+   */
+  startSolo(spec: SoloStartSpec): Promise<SoloStartResult>;
+  /**
+   * 내 판마다 최고 기록 (FR-7.13 3단계 — 홈의 별 점수 FR-2.3, 결과의 최고 기록 비교 FR-5.7). `excludeMatchId`를 주면
+   * 그 판의 기록은 빼고 센다 — 방금 닫힌 판 «전의» 최고 기록이다. 모르는 API·로컬 방은 {supported:false}
+   */
+  getMyBestScores(options?: { excludeMatchId?: string }): Promise<MyBestScoresResult>;
+  /** 내 온라인 기록 (서버 기록의 기록 내보내기, N02). 최근 것부터 서버의 한도까지다 */
+  getMyOnlineRecords(): Promise<MyOnlineRecordsResult>;
   /** 판을 연다. 여는 사람이 직접 시작하지 않고 «시작됐다»는 이벤트를 보낸다 */
   startGame(spec: { code: string }): Promise<StartGameResult>;
   /** 활성 또는 방금 끝난 server-authoritative match. 없으면 null */

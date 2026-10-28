@@ -136,7 +136,8 @@ test('app: 로컬 판을 열 때만 센다 — 처음 RULE_HINT_ROUNDS 판은 �
   assert.match(app, /let ruleHintRounds = await preferences\.getRuleHintRounds\(\);/);
   const start = app.slice(app.indexOf('  async function startRound('), app.indexOf('  function labelFor('));
   assert.match(start, /const pinRules = ruleHintRounds < RULE_HINT_ROUNDS;\s*if \(pinRules\) \{\s*ruleHintRounds \+= 1;\s*void preferences\.setRuleHintRounds\(ruleHintRounds\);\s*\}/);
-  assert.match(start, /quizScreen\.start\(session, \{ categoryLabel: labelFor\(round\), pinRules \}\);/);
+  // 연습 판(FR-7.13 3단계)이면 분야 칩 앞에 «연습 · »이 붙는다 — 규칙 줄 고정은 그대로 넘긴다
+  assert.match(start, /quizScreen\.start\(session, \{ categoryLabel: practiceLabel\(labelFor\(round\), practice\), pinRules \}\);/);
   assert.ok(start.indexOf('if (questions.length === 0)') < start.indexOf('const pinRules'), '열지 못한 판은 세지 않는다');
   // localStorage 는 safe-storage 한 곳만 만진다
   assert.doesNotMatch(app, /localStorage/);

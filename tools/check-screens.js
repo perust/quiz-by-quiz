@@ -77,6 +77,18 @@
 //      마지막 문제까지 답했으면 같은 자리가 «결과 보기»여서 결과로 가고 기록이 남는지도 본다 — 한때 다 푼 판을
 //      기록 없는 «푼 문제»로 보내 버렸다
 //
+//   ㉓ 혼자 하기가 온라인으로 옮겼다 (FR-7.13 3단계). 홈의 분야 칸은 대기실 없이 곧바로 혼자 온라인 판을 열고,
+//      서버에 닿지 않거나 서버 없이 연 화면이면 연습(기록 안 남음)을 연다. 그래서 이 점검은 먼저 홈이 무엇을 여는지
+//      본다 — 연습이면(서버 없이 연 사본) 아래 로컬 퀴즈 점검이 그대로 돌되 결과가 기록되지 않는 것을 본다(⑪ 대신).
+//      로컬 API를 가리키는 사본이면 혼자 온라인 판의 흐름(곧바로 열림·채팅 없음·«뒤로»의 나가기 확인·홈의 «이어 풀기»가
+//      그 판의 이름을 말하는지·판이 도는 동안 다른 분야 칸이 그 판을 기록 없이 끝내고 고른 판을 열며 한 줄로 말하는지
+//      (결정 #4 — 그것을 모르는 API면 그 판을 말없이 열지 않는지)·랭킹이 온라인부터)만 보고 끝낸다 — 로컬 퀴즈 점검은
+//      서버 없이 연 사본에서 다시 붙여넣는다
+//
+// **운영 API를 가리키는 페이지에서는 돌지 않는다.** 저장소의 index.html 은 운영 API를 가리키고, 분야 칸은 그 서버에
+// 혼자 방을 만들고 판을 연다(점수가 운영 랭킹에 남는다). `quiz-api-base` 메타를 지운 사본(연습)이나 로컬 API를
+// 가리키는 사본에서 붙여넣는다 — 그 밖의 주소면 아무것도 누르지 않고 멈춘다.
+//
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
 // 바꿨다가 화면에서 원래 값으로 되돌린다. 판을 여는 만큼 «규칙 줄을 보인 판 수»(⑱)가 늘어 그것도 되돌린다
@@ -85,6 +97,18 @@
 (async () => {
   const 결과 = [];
   const 살펴본곳 = [];
+
+  // ㉓ 운영 API를 가리키는 페이지면 멈춘다 — 분야 칸이 운영 서버에 혼자 판을 열어 랭킹에 남긴다
+  const API주소 = document.querySelector('meta[name="quiz-api-base"]')?.content.trim() ?? '';
+  const 로컬API = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/:]+\.localhost|[^/:]+\.test)(:\d+)?(\/|$)/i;
+  if (API주소 && !로컬API.test(API주소)) {
+    console.error(
+      `%c운영 API(${API주소})를 가리키는 페이지라 점검하지 않아요.`,
+      'font-weight:bold;color:#db2121',
+      '\nquiz-api-base 메타를 지운 사본(연습)이나 로컬 API를 가리키는 사본을 띄워 다시 붙여넣어 주세요.',
+    );
+    return { 검사: 0, 실패: 0, 멈춤: '운영 API' };
+  }
 
   // ── 도구 ──────────────────────────────────────────────────────
 
@@ -243,6 +267,168 @@
     시간되돌리기(밀기);
   }
 
+  // ── 혼자 온라인 판 (㉓, FR-7.13 3단계) ─────────────────────────
+
+  /**
+   * 홈의 분야 칸이 무엇을 여는가. 부팅 직후에는 서버에 묻는 중이라 잠깐 기다린다 —
+   * `online`(혼자 온라인 판) · `practice`(연습, 기록 안 남음) · `local`(이 기능을 모르는 API의 예전 혼자 하기)
+   */
+  async function 홈판종류() {
+    for (let i = 0; i < 40; i += 1) {
+      if (document.getElementById('category-caption').textContent.trim().startsWith('연습 ·')) return 'practice';
+      if (document.getElementById('open-online-desc').textContent.trim() === '친구와 함께 풀기') return 'online';
+      await 잠깐(100);
+    }
+    return 'local';
+  }
+
+  /** 로컬 API를 가리키는 사본에서만 돈다. 판은 서버에서 마감까지 돌고 기록된다 — 끝까지 풀지 않는다 */
+  async function 혼자온라인판점검() {
+    const 칸 = document.querySelector('#category-grid .category-card:not(:disabled)');
+    칸.click();
+    await 화면기다리기('online-quiz', 8000);
+    const 퀴즈 = document.querySelector('[data-screen="online-quiz"]');
+    결과.push({
+      자리: '혼자 판', 이름: '분야 칸이 대기실을 거치지 않고 곧바로 혼자 온라인 판을 연다',
+      통과: 지금화면() === 'online-quiz' && 퀴즈.dataset.solo === 'true',
+      무엇: `화면 ${지금화면()} · data-solo ${퀴즈.dataset.solo}`,
+    });
+    for (let i = 0; i < 50 && document.querySelectorAll('#online-choices .choice').length === 0; i += 1) await 잠깐(100);
+    살펴본다('혼자 온라인 판', 'online-quiz', true);
+    결과.push({
+      자리: '혼자 판', 이름: '혼자 판은 채팅과 혼자인 점수판을 거둔다',
+      통과: document.getElementById('online-quiz-chat').hidden && document.getElementById('online-standings').hidden,
+      무엇: `채팅 ${document.getElementById('online-quiz-chat').hidden ? '숨김' : '!! 보임'}`,
+    });
+    const 보기크기 = [...document.querySelectorAll('#online-choices .choice')].map((보기) => 보기.getBoundingClientRect().height);
+    결과.push({
+      자리: '혼자 판', 이름: '보기의 터치 목표가 44px 이상이다',
+      통과: 보기크기.length === 4 && 보기크기.every((높이) => 높이 >= 44),
+      무엇: 보기크기.map((높이) => `${높이}px`).join(', ') || '!! 문항이 오지 않았다',
+    });
+    // 「뒤로」는 판을 버리지 않고 나가기 확인을 연다 — 오늘의 온라인 규칙 그대로다
+    history.back();
+    await 잠깐(400);
+    결과.push({
+      자리: '혼자 판', 이름: '「뒤로」는 나가기 확인을 열고, 홈의 «이어 풀기»로 돌아온다고 말한다',
+      통과: !document.getElementById('online-exit-dialog').hidden
+        && document.getElementById('online-exit-dialog-title').textContent.trim() === '혼자 판을 떠날까요?'
+        && /이어 풀기/.test(document.getElementById('online-exit-dialog-body').textContent),
+      무엇: document.getElementById('online-exit-dialog-body').textContent.trim(),
+    });
+    await 눌러('online-exit-confirm', 300);
+    await 화면기다리기('home', 8000);
+    for (let i = 0; i < 50 && document.getElementById('home-room-note').hidden; i += 1) await 잠깐(100);
+    살펴본다('혼자 판에서 나온 홈', 'home', true);
+    const 줄 = document.getElementById('home-room-note');
+    const 판이름 = 칸.dataset.category
+      ? 칸.querySelector('.category-card__name--full')?.textContent.trim() ?? ''
+      : '전체 도전';
+    결과.push({
+      자리: '혼자 판', 이름: '홈의 dock 줄이 «풀던 «분야» 판이 아직 진행 중이에요 · 이어 풀기»다',
+      통과: !줄.hidden && 줄.dataset.kind === 'room'
+        && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${판이름}» 판이 아직 진행 중이에요`
+        && document.getElementById('home-room-note-action').textContent.trim() === '이어 풀기',
+      무엇: 줄.hidden ? '!! 숨김' : 줄.textContent.replace(/\s+/g, ' ').trim(),
+    });
+    // 판이 도는 동안 다른 분야 칸을 누르면(소유자 결정, PRD 10.1 #11) 확인창 없이 돌던 판을 기록 없이 끝내고 고른 판을
+    // 연다 — 새 판의 화면이 HUD 아래 한 줄로 그렇다고 말한다. 끝내고 새로 열기를 모르는 API면 예전처럼 홈에 남고 줄이
+    // 그 판을 말한다(리뷰에서 실제로 나왔다: «한국사»를 눌렀는데 돌던 «과학» 판이 말없이 열렸다)
+    // 분야로 고른다 — 홈이 분야 칸을 다시 그렸으면 처음 누른 칸(요소)은 이미 목록에 없어 «같은 요소가 아님»이 같은 분야를 고른다
+    const 다른칸 = [...document.querySelectorAll('#category-grid .category-card:not(:disabled)')]
+      .find((다른) => 다른.dataset.category !== 칸.dataset.category);
+    let 이을판 = 판이름;
+    if (다른칸) {
+      const 다른이름 = 다른칸.querySelector('.category-card__name--full')?.textContent.trim() ?? '';
+      다른칸.click();
+      for (let i = 0; i < 40 && document.getElementById('home-quests').getAttribute('aria-busy') === 'true'; i += 1) await 잠깐(100);
+      await 잠깐(300);
+      if (지금화면() === 'online-quiz') {
+        await 화면기다리기('online-quiz', 8000);
+        for (let i = 0; i < 50 && document.getElementById('online-solo-notice').hidden; i += 1) await 잠깐(100);
+        const 알림 = document.getElementById('online-solo-notice');
+        const 끝낸말 = `풀던 «${판이름}» 판은 끝까지 풀지 않아 기록 없이 끝냈어요.`;
+        결과.push({
+          자리: '혼자 판', 이름: '다른 분야 칸은 돌던 판을 기록 없이 끝내고 고른 판을 열며, 새 판이 그렇다고 한 줄로 말한다',
+          통과: document.getElementById('online-exit-dialog').hidden
+            && !알림.hidden && 알림.textContent.trim() === 끝낸말
+            && document.getElementById('online-quiz-category').textContent.trim() === 다른이름
+            && (document.getElementById('announcer')?.textContent ?? '').includes(끝낸말),
+          무엇: `${알림.hidden ? '!! 줄 숨김' : 알림.textContent.trim()} · 분야 ${document.getElementById('online-quiz-category').textContent.trim()}`,
+        });
+        // 짧은 가로 touch 두 열(U15)에서 알림이 왼쪽 열(HUD 아래)에 서면 그 높이만큼 보기가 밀려, 끝내고 연 판의 첫
+        // 문항 동안 740×360에서 아래 줄 보기가 화면 밖으로 7–13px 나갔다(리뷰에서 실제로 나왔다). 알림은 두 열 아래에 선다
+        if (!알림.hidden && matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches) {
+          for (let i = 0; i < 50 && document.querySelectorAll('#online-choices .choice').length === 0; i += 1) await 잠깐(100);
+          document.getAnimations().forEach((움직임) => 움직임.finish());
+          await 그려질때까지();
+          const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
+          const 위쪽 = [document.querySelector('[data-screen="online-quiz"] .quiz-hud'), document.getElementById('online-question-text')]
+            .map((요소) => 요소.getBoundingClientRect());
+          const 보기상자 = [...document.querySelectorAll('#online-choices .choice')].map((보기) => 보기.getBoundingClientRect());
+          const 칸상자 = [...document.querySelectorAll('#online-arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
+          const 알림상자 = 알림.getBoundingClientRect();
+          결과.push({
+            자리: '혼자 판', 이름: '짧은 가로: 앞 판 알림이 보여도 HUD·질문·네 보기·네 바닥 칸이 화면 안에 있고, 알림은 두 열 아래다',
+            통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안)
+              && 알림상자.top >= Math.max(...보기상자.map((상자) => 상자.bottom), ...칸상자.map((상자) => 상자.bottom)) - 1,
+            무엇: `${innerWidth}×${innerHeight} · 보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px · 알림 ${Math.round(알림상자.top)}–${Math.round(알림상자.bottom)}px`,
+          });
+        }
+        이을판 = 다른이름;
+        await 눌러('online-quiz-exit', 300);
+        await 눌러('online-exit-confirm', 300);
+        await 화면기다리기('home', 8000);
+        for (let i = 0; i < 50 && document.getElementById('home-room-note').hidden; i += 1) await 잠깐(100);
+        결과.push({
+          자리: '혼자 판', 이름: '홈의 «이어 풀기» 줄은 새로 연 판을 말한다',
+          통과: !줄.hidden
+            && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${이을판}» 판이 아직 진행 중이에요`,
+          무엇: 줄.hidden ? '!! 숨김' : 줄.textContent.replace(/\s+/g, ' ').trim(),
+        });
+      } else {
+        결과.push({
+          자리: '혼자 판', 이름: '(끝내고 새로 열기를 모르는 API) 다른 분야 칸은 돌던 판을 열지 않고 홈에 남아 그 판으로 돌아갈 줄을 보인다',
+          통과: 지금화면() === 'home' && !줄.hidden
+            && document.getElementById('home-room-note-text').textContent.trim() === `풀던 «${판이름}» 판이 아직 진행 중이에요`
+            && /새 판을 열 수 없어요/.test(document.getElementById('announcer')?.textContent ?? ''),
+          무엇: `${지금화면()} · ${줄.textContent.replace(/\s+/g, ' ').trim()} · ${document.getElementById('announcer')?.textContent ?? ''}`,
+        });
+      }
+    }
+    줄.click();
+    await 화면기다리기('online-quiz', 8000);
+    for (let i = 0; i < 50 && document.querySelectorAll('#online-choices .choice').length === 0; i += 1) await 잠깐(100);
+    결과.push({
+      자리: '혼자 판', 이름: '«이어 풀기»가 같은 판으로 돌아가고 앞 판을 끝냈다는 줄은 다시 보이지 않는다',
+      통과: 지금화면() === 'online-quiz' && 퀴즈.dataset.solo === 'true'
+        && document.getElementById('online-quiz-category').textContent.trim() === 이을판
+        && document.getElementById('online-solo-notice').hidden,
+      무엇: `${지금화면()} · 분야 ${document.getElementById('online-quiz-category').textContent.trim()}`,
+    });
+    await 눌러('online-quiz-exit', 300);
+    await 눌러('online-exit-confirm', 300);
+    await 화면기다리기('home', 8000);
+    // 랭킹: 이 브라우저의 기록은 «예전 기록»이고, 온라인 범위의 「기록 내보내기」가 내 서버 기록을 담는다.
+    // (범위는 이 페이지에서 마지막으로 고른 것이 남는다 — 앞의 랭킹 점검이 골랐을 수 있어 온라인을 눌러 본다)
+    await 눌러('open-ranking', 900);
+    if (document.getElementById('ranking-scope-online').getAttribute('aria-pressed') !== 'true') {
+      await 눌러('ranking-scope-online', 900);
+    }
+    결과.push({
+      자리: '혼자 판', 이름: '이 브라우저의 기록은 «예전 기록»이고 온라인 범위에 내보내기가 있다',
+      통과: document.getElementById('ranking-scope-online').getAttribute('aria-pressed') === 'true'
+        && document.getElementById('ranking-scope-local').textContent.trim() === '이 브라우저의 예전 기록'
+        && !document.getElementById('ranking-export').hidden,
+      무엇: `온라인 ${document.getElementById('ranking-scope-online').getAttribute('aria-pressed')} · `
+        + `${document.getElementById('ranking-scope-local').textContent.trim()}`,
+    });
+    history.back();
+    await 화면기다리기('home');
+    살펴본다('랭킹에서 「뒤로」', 'home', true);
+    살펴본곳.push('혼자 온라인 판');
+  }
+
   // ── 검사 ──────────────────────────────────────────────────────
 
   const 방백업 = localStorage.getItem('quiz.rooms');
@@ -262,6 +448,13 @@
     if (지금화면() === 'waiting') await 눌러('waiting-leave');
     if (지금화면() === 'online') await 눌러('online-home');
     살펴본다('홈', 'home', true);
+    // ㉓ 홈의 분야 칸이 무엇을 여는가 (FR-7.13 3단계)
+    const 판종류 = await 홈판종류();
+    결과.push({
+      자리: '홈', 이름: '분야 칸이 여는 판이 정해졌다 (혼자 온라인 판 · 연습 · 예전 혼자 하기)',
+      통과: API주소 === '' ? 판종류 === 'practice' : 판종류 !== 'practice' || !document.getElementById('home-room-note').hidden,
+      무엇: `${판종류} · API ${API주소 || '(없음 — 연습)'}`,
+    });
     결과.push({
       자리: '홈', 이름: '모드 토글이 없다',
       통과: !document.getElementById('game-mode-toggle'),
@@ -395,7 +588,7 @@
     // 선택 원이 「게임 방법」을, 높이 421–480px 에서는 설정·닉네임까지 덮었다 (layout-01). 568×320 에서는 dock 이
     // 206px 이 되어 두 입구가 닉네임·설정을, 스틱·선택 원이 복귀 줄을 덮었다 — 그 크기에서는 줄이 분야 줄 왼쪽
     // 칸에 들어 dock 이 커지지 않는다. 이 점검은 로컬이라 줄이 뜨지 않으므로 잠깐 펼쳐 dock 이 다시 재어진
-    // 뒤(그려질때까지)의 자리를 보고 되돌린다
+    // 뒤(그려질때까지)의 자리를 보고 되돌린다. 줄이 이미 떠 있으면(풀던 혼자 판·연습 안내, ㉓) dock 은 이미 큰 채다
     const 복귀줄 = document.getElementById('home-room-note');
     const 복귀줄글 = document.getElementById('home-room-note-text');
     const 원래복귀줄 = { 숨김: 복귀줄.hidden, 글: 복귀줄글.textContent };
@@ -413,7 +606,7 @@
       // 서버 방에 아직 들어가 있으면 줄이 이미 떠 있어 «펼치면 커진다»를 견줄 수 없다. 그때는 겹침만 본다
       통과: (줄이분야옆
         ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
-        : 줄뒤dock > 줄전dock || !원래복귀줄.숨김)
+        : (원래복귀줄.숨김 ? 줄뒤dock > 줄전dock : 줄뒤dock >= 줄전dock))
         && 줄뒤겹침.length === 0,
       무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px${원래복귀줄.숨김 ? '' : ' (줄이 이미 떠 있었다)'} · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
     });
@@ -443,8 +636,8 @@
     const 캡션 = document.getElementById('category-caption');
     const 캡션보임 = getComputedStyle(캡션).position !== 'absolute';
     결과.push({
-      자리: '홈', 이름: 'dock 이 «분야 골라 10문제»를 말한다 (짧은 가로 화면은 이름으로만)',
-      통과: 캡션.textContent.trim() === '분야 골라 10문제'
+      자리: '홈', 이름: 'dock 이 «분야 골라 10문제»를 말한다 (연습이면 앞뒤에 그렇다고, 짧은 가로 화면은 이름으로만)',
+      통과: 캡션.textContent.trim() === (판종류 === 'practice' ? '연습 · 분야 골라 10문제 · 기록 안 남음' : '분야 골라 10문제')
         && (캡션보임 || innerHeight <= 480)
         && document.getElementById('category-grid').getAttribute('aria-labelledby') === 'category-caption',
       무엇: `${캡션.textContent.trim()} · ${캡션보임 ? '보임' : '눈에서만 접힘'} · ${innerWidth}×${innerHeight}`,
@@ -458,10 +651,15 @@
       }
     })();
     결과.push({
-      자리: '홈', 이름: '기록 없는 전체 도전은 «25문제», 있으면 «최고 N점»',
-      통과: 전체기록있나
-        ? /^최고 \d+점$/.test(전체도전기록.textContent.trim())
-        : 전체도전기록.textContent.trim() === '25문제' && /25문제/.test(document.getElementById('start-all').getAttribute('aria-label') ?? ''),
+      자리: '홈', 이름: '기록 없는 전체 도전은 «25문제», 있으면 «최고 N점» (연습이면 «연습»이고 이름이 기록 안 남음을 말한다)',
+      통과: 판종류 === 'practice'
+        ? 전체도전기록.textContent.trim() === '연습'
+          && /25문제, 기록 안 남음/.test(document.getElementById('start-all').getAttribute('aria-label') ?? '')
+        // 혼자 온라인 판이면 최고 점수는 서버의 내 기록이다 — 이 브라우저의 랭킹으로는 알 수 없다
+        : 판종류 === 'online' ? /^(25문제|최고 \d+점)$/.test(전체도전기록.textContent.trim())
+        : 전체기록있나
+          ? /^최고 \d+점$/.test(전체도전기록.textContent.trim())
+          : 전체도전기록.textContent.trim() === '25문제' && /25문제/.test(document.getElementById('start-all').getAttribute('aria-label') ?? ''),
       무엇: `${전체도전기록.textContent.trim()} · 이름 ${document.getElementById('start-all').getAttribute('aria-label')}`,
     });
 
@@ -611,735 +809,727 @@
     await 눌러('characters-back');
     살펴본곳.push('내 캐릭터');
 
-    // 퀴즈에 들어갔다가 **답을 낸 채로** 나온다. 시트와 세션이 함께 접혀야 한다
-    document.querySelector('.category-card').click();
-    await 잠깐(800);
-    살펴본다('처음 연 퀴즈', 'quiz', true);
-    // ⑱ 처음 세 판은 짧은 touch·좁은 화면에서도 규칙 줄이 남는다. 그 뒤로는 예전처럼 접힌다
-    const 규칙줄 = document.getElementById('arena-hint');
-    const 규칙줄남기나 = 규칙줄본판 < 3;
-    결과.push({
-      자리: '퀴즈', 이름: '처음 세 판은 무대 아래 규칙 줄이 보이고 판의 문항 시간을 말한다',
-      통과: 규칙줄.dataset.pinned === String(규칙줄남기나)
-        && (!규칙줄남기나 || (getComputedStyle(규칙줄).display !== 'none'
-          && getComputedStyle(document.getElementById('arena-hint-rule')).display !== 'none'))
-        && document.getElementById('arena-hint-rule').textContent.startsWith('보기를 누르면 바로 답'),
-      무엇: `본 판 ${규칙줄본판} · data-pinned ${규칙줄.dataset.pinned} · display ${getComputedStyle(규칙줄).display}`
-        + ` · ${document.getElementById('arena-hint-rule').textContent.trim()}`,
-    });
-    const 보기크기 = [...document.querySelectorAll('#choices .choice')]
-      .map((보기) => 보기.getBoundingClientRect().height);
-    결과.push({
-      자리: '퀴즈', 이름: '직접 보기의 터치 목표가 44px 이상이다',
-      통과: 보기크기.length === 4 && 보기크기.every((높이) => 높이 >= 44),
-      무엇: 보기크기.map((높이) => `${높이}px`).join(', '),
-    });
-    const 도움크기 = document.getElementById('arena-help').getBoundingClientRect();
-    결과.push({
-      자리: '퀴즈', 이름: '조작법 버튼의 터치 목표가 44px 이상이다',
-      통과: 도움크기.width >= 44 && 도움크기.height >= 44,
-      무엇: `${도움크기.width}px × ${도움크기.height}px`,
-    });
-    // ⑰ 짧은 가로 touch 화면(U15). 세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래였고,
-    // 고정 스틱·선택이 3·4번 보기를 덮었다. 두 열(왼쪽 HUD·질문·보기, 오른쪽 바닥)에서는 답하기 전에 스크롤 없이
-    // 넷이 다 보이고, 조작부는 양옆 여백에 있다. 은행에서 가장 긴 질문과 긴 보기가 겹치면 넘칠 수 있다
-    const 짧은가로퀴즈 = matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches;
-    if (짧은가로퀴즈) {
-      // 워커는 다음 프레임에 십자 한가운데에 선다
-      프레임돌리기(3);
-      const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
-      const 보기상자 = [...document.querySelectorAll('#choices .choice')].map((보기) => 보기.getBoundingClientRect());
-      const 칸상자 = [...document.querySelectorAll('#arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
-      const 위쪽 = [document.querySelector('[data-screen="quiz"] .quiz-hud'), document.getElementById('question-text')]
-        .map((요소) => 요소.getBoundingClientRect());
-      const 문서높이 = document.documentElement.scrollHeight;
+    // ㉓ 로컬 API를 가리키는 사본이면 분야 칸이 혼자 온라인 판을 연다. 로컬 퀴즈 점검(아래)은 연습(서버 없이 연
+    // 사본)이나 예전 혼자 하기에서만 돈다 — 혼자 판의 흐름만 보고 끝낸다
+    if (판종류 === 'online') {
+      await 혼자온라인판점검();
+    } else {
+      // 퀴즈에 들어갔다가 **답을 낸 채로** 나온다. 시트와 세션이 함께 접혀야 한다
+      document.querySelector('.category-card').click();
+      await 잠깐(800);
+      살펴본다('처음 연 퀴즈', 'quiz', true);
+      // ⑱ 처음 세 판은 짧은 touch·좁은 화면에서도 규칙 줄이 남는다. 그 뒤로는 예전처럼 접힌다
+      const 규칙줄 = document.getElementById('arena-hint');
+      const 규칙줄남기나 = 규칙줄본판 < 3;
       결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: 답하기 전에 문서가 화면 높이를 넘지 않는다',
-        통과: 문서높이 <= innerHeight + 1 && scrollY === 0,
-        무엇: `${innerWidth}×${innerHeight} · 문서 ${문서높이}px · scrollY ${scrollY} · 질문 ${document.getElementById('question-text').textContent.length}자`,
+        자리: '퀴즈', 이름: '처음 세 판은 무대 아래 규칙 줄이 보이고 판의 문항 시간을 말한다',
+        통과: 규칙줄.dataset.pinned === String(규칙줄남기나)
+          && (!규칙줄남기나 || (getComputedStyle(규칙줄).display !== 'none'
+            && getComputedStyle(document.getElementById('arena-hint-rule')).display !== 'none'))
+          && document.getElementById('arena-hint-rule').textContent.startsWith('보기를 누르면 바로 답'),
+        무엇: `본 판 ${규칙줄본판} · data-pinned ${규칙줄.dataset.pinned} · display ${getComputedStyle(규칙줄).display}`
+          + ` · ${document.getElementById('arena-hint-rule').textContent.trim()}`,
       });
+      const 보기크기 = [...document.querySelectorAll('#choices .choice')]
+        .map((보기) => 보기.getBoundingClientRect().height);
       결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: HUD·질문·네 보기·네 바닥 칸이 모두 화면 안에 있다',
-        통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안),
-        무엇: `보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px`,
+        자리: '퀴즈', 이름: '직접 보기의 터치 목표가 44px 이상이다',
+        통과: 보기크기.length === 4 && 보기크기.every((높이) => 높이 >= 44),
+        무엇: 보기크기.map((높이) => `${높이}px`).join(', '),
       });
+      const 도움크기 = document.getElementById('arena-help').getBoundingClientRect();
       결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: 바닥은 보기 오른쪽 열에 있다',
-        통과: 칸상자.length === 4 && Math.min(...칸상자.map((상자) => 상자.left)) >= Math.max(...보기상자.map((상자) => 상자.right)),
-        무엇: `보기 오른쪽 ${Math.round(Math.max(...보기상자.map((상자) => 상자.right)))}px · 칸 왼쪽 ${Math.round(Math.min(...칸상자.map((상자) => 상자.left)))}px`,
+        자리: '퀴즈', 이름: '조작법 버튼의 터치 목표가 44px 이상이다',
+        통과: 도움크기.width >= 44 && 도움크기.height >= 44,
+        무엇: `${도움크기.width}px × ${도움크기.height}px`,
       });
-      const 조작부상자 = [document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')]
-        .map((요소) => 요소.getBoundingClientRect());
-      const 덮인넓이 = [...보기상자, ...칸상자]
-        .reduce((합, 상자) => 합 + 조작부상자.reduce((작은합, 조작부) => 작은합 + 겹친넓이(상자, 조작부), 0), 0);
-      결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: 고정 스틱·선택이 보기와 바닥 칸을 덮지 않는다',
-        통과: 조작부상자.every((상자) => 상자.width >= 44) && 덮인넓이 === 0,
-        무엇: `조작부 ${조작부상자.map((상자) => `${Math.round(상자.width)}px`).join(' · ')} · 덮인 넓이 ${Math.round(덮인넓이)}px²`,
-      });
-      결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: 캐릭터가 바닥 십자 한가운데(아무 칸도 아닌 자리)에서 시작한다',
-        통과: !document.querySelector('[data-screen="quiz"] .is-standing'),
-        무엇: document.querySelector('[data-screen="quiz"] .is-standing')?.className ?? '중립',
-      });
-    }
-    document.querySelector('.choice').click();
-    await 잠깐(400);
-    결과.push({
-      자리: '퀴즈', 이름: '답을 내면 시트가 뜬다',
-      통과: !document.getElementById('feedback').hidden, 무엇: '준비된 상태를 만든다',
-    });
-    if (짧은가로퀴즈) {
-      // 결과 패널 높이 한도가 60vh(360px 화면에서 216px)이면 「다음 문제」가 패널 안 스크롤 밑에 잘렸다
-      const 화면안 = (요소) => {
-        const 상자 = 요소.getBoundingClientRect();
-        return 상자.top >= -1 && 상자.bottom <= innerHeight + 1;
-      };
-      const 정답줄 = document.getElementById('feedback-answer');
-      결과.push({
-        자리: '퀴즈', 이름: '짧은 가로: 답한 뒤 판정·정답 줄·「다음 문제」가 한 화면에 보인다',
-        통과: 화면안(document.getElementById('feedback-verdict'))
-          && (정답줄.hidden || 화면안(정답줄))
-          && 화면안(document.getElementById('next-button')),
-        무엇: `scrollY ${Math.round(scrollY)} · 다음 문제 bottom ${Math.round(document.getElementById('next-button').getBoundingClientRect().bottom)}px / ${innerHeight}px`,
-      });
-    }
-    // ⑩ 질문 머리와 패널 끝 사이의 거리는 스크롤과 무관하다. 그 거리가 화면에 들면
-    // 질문 머리도 패널 끝도 화면 안이어야 하고, 들지 않으면 패널 끝(「다음 문제」)에 맞춘다
-    const 질문상자 = document.getElementById('question-text').getBoundingClientRect();
-    const 패널상자 = document.getElementById('feedback').getBoundingClientRect();
-    const 함께담기나 = 패널상자.bottom - 질문상자.top <= innerHeight + 1;
-    결과.push({
-      자리: '퀴즈', 이름: '피드백을 보는 동안 질문 머리가 화면 안에 남는다',
-      통과: 함께담기나
-        ? 질문상자.top >= -1 && 패널상자.bottom <= innerHeight + 1
-        : Math.abs(패널상자.bottom - innerHeight) <= 1,
-      무엇: `${innerWidth}×${innerHeight} · 질문 top ${Math.round(질문상자.top)}px · 패널 bottom ${Math.round(패널상자.bottom)}px`
-        + (함께담기나 ? '' : ' · 한 화면에 들지 않아 패널 끝에 맞춤'),
-    });
-    await 눌러('quiz-exit', 300);
-    await 눌러('exit-confirm', 700);
-    살펴본다('답을 낸 채 나온 홈', 'home', true);
-    잠든퀴즈를깨워본다('답을 낸 채 나온 홈');
-    살펴본곳.push('퀴즈에서 나오기');
-
-    // ㉒ 나가면서 푼 문제 보기 (N04). 끝까지 풀지 않은 판이라 아무 길로 떠나도 기록이 남으면 안 된다
-    const 나가기전랭킹 = localStorage.getItem('quiz.rankings');
-    document.querySelector('.category-card').click();
-    await 잠깐(800);
-    await 눌러('quiz-exit', 300);
-    const 해설보기 = document.getElementById('exit-review');
-    결과.push({
-      자리: '퀴즈', 이름: '한 문제도 풀지 않았으면 나가기 확인에 «해설 보기»가 없다',
-      통과: !document.getElementById('exit-dialog').hidden && 해설보기.hidden,
-      무엇: 해설보기.hidden ? '없음' : `!! ${해설보기.textContent.trim()}`,
-    });
-    await 눌러('exit-cancel', 200);
-    for (let i = 0; i < 2; i += 1) {
-      [...document.querySelectorAll('#choices .choice')].find((보기) => !보기.disabled)?.click();
-      await 잠깐(150);
-      document.getElementById('next-button').click();
-      await 잠깐(150);
-    }
-    await 눌러('quiz-exit', 300);
-    결과.push({
-      자리: '퀴즈', 이름: '두 문제를 풀고 나가면 확인창이 «나가고 푼 문제 2개 해설 보기»를 준다',
-      통과: !해설보기.hidden && 해설보기.textContent.trim() === '나가고 푼 문제 2개 해설 보기'
-        && document.activeElement === document.getElementById('exit-cancel'),
-      무엇: `${해설보기.hidden ? '!! 숨김' : 해설보기.textContent.trim()} · 포커스 ${document.activeElement?.id || '(없음)'}`,
-    });
-    해설보기.focus();
-    해설보기.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
-    결과.push({
-      자리: '퀴즈', 이름: '덧붙은 행동에서 Tab 은 확인창 안의 처음(«계속 풀기»)으로 돈다',
-      통과: document.activeElement === document.getElementById('exit-cancel'),
-      무엇: document.activeElement?.id || document.activeElement?.tagName || '(없음)',
-    });
-    await 눌러('exit-review', 700);
-    살펴본다('푼 문제', 'quiz-review', true);
-    잠든퀴즈를깨워본다('푼 문제');
-    프레임돌리기(3);
-    const 푼문제발밑 = document.querySelector('[data-screen="quiz-review"] .is-standing');
-    결과.push({
-      자리: '푼 문제', 이름: '버튼을 밟지 않은 자리에서 시작한다',
-      통과: !푼문제발밑,
-      무엇: 푼문제발밑 ? `!! ${푼문제발밑.id || 푼문제발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
-    });
-    const 겹친푼문제글 = 겹친글자줄(document.getElementById('quiz-review-scope'),
-      document.getElementById('quiz-review-character').getBoundingClientRect());
-    결과.push({
-      자리: '푼 문제', 이름: '주차한 캐릭터가 «기록은 남지 않아요» 안내 글을 덮지 않는다',
-      통과: 겹친푼문제글.length === 0,
-      무엇: `겹친 글자 줄 ${겹친푼문제글.length}개`,
-    });
-    const 풀이줄 = document.querySelectorAll('#quiz-review-list > .review__item');
-    결과.push({
-      자리: '푼 문제', 이름: '푼 두 문제가 풀이로 보이고 등록 칸·점수는 없다',
-      통과: 풀이줄.length === 2 && !document.querySelector('[data-screen="quiz-review"] input')
-        && [...풀이줄].every((줄) => 줄.querySelector('a.review__report-link')),
-      무엇: `${풀이줄.length}문제 · ${document.getElementById('quiz-review-summary').textContent.trim()}`,
-    });
-    history.back();
-    await 화면기다리기('home');
-    살펴본다('푼 문제에서 「뒤로」', 'home', true);
-    결과.push({
-      자리: '푼 문제', 이름: '중간에 나온 판은 «푼 문제»를 보고 떠나도 랭킹에 남지 않는다',
-      통과: localStorage.getItem('quiz.rankings') === 나가기전랭킹,
-      무엇: localStorage.getItem('quiz.rankings') === 나가기전랭킹 ? '그대로다' : '!! 기록이 늘었다',
-    });
-    살펴본곳.push('나가고 푼 문제 보기');
-
-    // 퀴즈를 끝까지 풀어 결과로 간 뒤, 「다시 하기」로 되돌아온다.
-    // 결과 화면의 조작부가 따라오면 여기서 걸린다 (#65)
-    // ⑪ 「등록」 없이 떠나도 저장되는지 세려고 랭킹을 비워 둔다 (끝나면 되돌린다)
-    localStorage.setItem('quiz.rankings', '[]');
-    document.querySelector('.category-card').click();
-    await 잠깐(800);
-    let 다푼판의덧붙은행동 = null;
-    for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
-      const 보기 = [...document.querySelectorAll('.choice')].find((b) => !b.disabled);
-      if (보기) 보기.click();
-      await 잠깐(120);
-      // ㉒ 마지막 문제까지 답한 뒤의 나가기 확인은 «나가고 푼 문제 N개 해설 보기»가 아니라 «결과 보기»다 —
-      // 한때 다 푼 판을 기록 없는 «푼 문제» 화면으로 보내 버렸다. 그 행동으로 결과에 가고, 아래 ⑪이 기록을 센다
-      if (!document.getElementById('feedback').hidden
-        && document.getElementById('next-label').textContent.trim() === '결과 보기') {
-        await 눌러('quiz-exit', 300);
-        다푼판의덧붙은행동 = document.getElementById('exit-review').hidden
-          ? '(숨김)' : document.getElementById('exit-review').textContent.trim();
-        await 눌러('exit-review', 800);
-        break;
+      // ⑰ 짧은 가로 touch 화면(U15). 세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래였고,
+      // 고정 스틱·선택이 3·4번 보기를 덮었다. 두 열(왼쪽 HUD·질문·보기, 오른쪽 바닥)에서는 답하기 전에 스크롤 없이
+      // 넷이 다 보이고, 조작부는 양옆 여백에 있다. 은행에서 가장 긴 질문과 긴 보기가 겹치면 넘칠 수 있다
+      const 짧은가로퀴즈 = matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches;
+      if (짧은가로퀴즈) {
+        // 워커는 다음 프레임에 십자 한가운데에 선다
+        프레임돌리기(3);
+        const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
+        const 보기상자 = [...document.querySelectorAll('#choices .choice')].map((보기) => 보기.getBoundingClientRect());
+        const 칸상자 = [...document.querySelectorAll('#arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
+        const 위쪽 = [document.querySelector('[data-screen="quiz"] .quiz-hud'), document.getElementById('question-text')]
+          .map((요소) => 요소.getBoundingClientRect());
+        const 문서높이 = document.documentElement.scrollHeight;
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: 답하기 전에 문서가 화면 높이를 넘지 않는다',
+          통과: 문서높이 <= innerHeight + 1 && scrollY === 0,
+          무엇: `${innerWidth}×${innerHeight} · 문서 ${문서높이}px · scrollY ${scrollY} · 질문 ${document.getElementById('question-text').textContent.length}자`,
+        });
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: HUD·질문·네 보기·네 바닥 칸이 모두 화면 안에 있다',
+          통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안),
+          무엇: `보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px`,
+        });
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: 바닥은 보기 오른쪽 열에 있다',
+          통과: 칸상자.length === 4 && Math.min(...칸상자.map((상자) => 상자.left)) >= Math.max(...보기상자.map((상자) => 상자.right)),
+          무엇: `보기 오른쪽 ${Math.round(Math.max(...보기상자.map((상자) => 상자.right)))}px · 칸 왼쪽 ${Math.round(Math.min(...칸상자.map((상자) => 상자.left)))}px`,
+        });
+        const 조작부상자 = [document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')]
+          .map((요소) => 요소.getBoundingClientRect());
+        const 덮인넓이 = [...보기상자, ...칸상자]
+          .reduce((합, 상자) => 합 + 조작부상자.reduce((작은합, 조작부) => 작은합 + 겹친넓이(상자, 조작부), 0), 0);
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: 고정 스틱·선택이 보기와 바닥 칸을 덮지 않는다',
+          통과: 조작부상자.every((상자) => 상자.width >= 44) && 덮인넓이 === 0,
+          무엇: `조작부 ${조작부상자.map((상자) => `${Math.round(상자.width)}px`).join(' · ')} · 덮인 넓이 ${Math.round(덮인넓이)}px²`,
+        });
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: 캐릭터가 바닥 십자 한가운데(아무 칸도 아닌 자리)에서 시작한다',
+          통과: !document.querySelector('[data-screen="quiz"] .is-standing'),
+          무엇: document.querySelector('[data-screen="quiz"] .is-standing')?.className ?? '중립',
+        });
       }
-      const 다음 = document.getElementById('next-button');
-      if (다음 && !다음.hidden) 다음.click();
-      await 잠깐(150);
-    }
-    결과.push({
-      자리: '퀴즈', 이름: '마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동은 «결과 보기»이고 결과로 간다',
-      통과: 다푼판의덧붙은행동 === '결과 보기' && 지금화면() === 'result',
-      무엇: `${다푼판의덧붙은행동 ?? '!! 마지막 문제에 닿지 못했다'} → ${지금화면()}`,
-    });
-    살펴본다('결과', 'result', true);
-    // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
-    // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다
-    프레임돌리기(3);
-    const 결과캐릭터 = document.getElementById('result-character');
-    결과.push({
-      자리: '결과', 이름: '캐릭터가 화면 안 자리에 선다',
-      통과: Boolean(결과캐릭터.style.transform),
-      무엇: 결과캐릭터.style.transform || '!! 자리를 잡지 못했다 (좌상단)',
-    });
-    const 결과발밑 = document.querySelector('[data-screen="result"] .is-standing');
-    결과.push({
-      자리: '결과', 이름: '버튼을 밟지 않은 자리에서 시작한다',
-      통과: !결과발밑,
-      무엇: 결과발밑 ? `!! ${결과발밑.id || 결과발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
-    });
-    // ⑥ 발밑이 비면 Space 는 브라우저 것이다. 워커가 삼키면 키보드만 쓰는 사람이 긴 오답
-    // 풀이를 내려 읽을 수 없다. 발밑에 무엇이 있으면(앱 바 포함) Space 가 그것을 누르므로 보내지 않는다
-    let 빈자리스페이스 = null;
-    if (!document.querySelector('.is-standing')) {
-      const 스페이스 = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
-      document.dispatchEvent(스페이스);
-      document.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
-      빈자리스페이스 = 스페이스.defaultPrevented;
-    }
-    결과.push({
-      자리: '결과', 이름: '발밑이 비면 Space로 스크롤된다',
-      통과: 빈자리스페이스 === false,
-      무엇: 빈자리스페이스 === null ? '!! 발밑이 비지 않아 보내지 않았다'
-        : (빈자리스페이스 ? '!! 워커가 삼킨다' : '브라우저 것이다'),
-    });
-    const 결과행동 = document.getElementById('result-retry').closest('.result-actions');
-    const 오답풀이 = document.getElementById('result-review-block');
-    결과.push({
-      자리: '결과', 이름: '핵심 행동이 긴 오답 풀이보다 먼저 온다',
-      통과: Boolean(결과행동 && 오답풀이
-        && (결과행동.compareDocumentPosition(오답풀이) & Node.DOCUMENT_POSITION_FOLLOWING)),
-      무엇: 결과행동 && 오답풀이
-        ? `행동 ${결과행동.getBoundingClientRect().top}px · 오답 풀이 ${오답풀이.getBoundingClientRect().top}px`
-        : '요소 없음',
-    });
-    결과.push({
-      자리: '결과', 이름: '등록 칸이 홈 닉네임으로 채워져 있다',
-      통과: document.getElementById('nickname-input').value === 닉네임값.textContent.trim(),
-      무엇: `칸 ${document.getElementById('nickname-input').value || '(비어 있음)'} · 홈 ${닉네임값.textContent.trim()}`,
-    });
-    await 눌러('result-retry', 800);
-    살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', true);
-    const 자동저장 = JSON.parse(localStorage.getItem('quiz.rankings') ?? '[]');
-    결과.push({
-      자리: '결과', 이름: '「등록」 없이 「다시 하기」를 눌러도 기록이 남는다',
-      통과: Array.isArray(자동저장) && 자동저장.length === 1,
-      무엇: `저장된 기록 ${Array.isArray(자동저장) ? 자동저장.length : '(깨짐)'}개`,
-    });
-    await 눌러('quiz-exit', 300);
-    await 눌러('exit-confirm', 700);
-    살펴본곳.push('결과 → 다시 하기');
-
-    // ⑫ 시스템 「뒤로」. 앱 밖으로 나가지 않고 그 화면의 뒤로·나가기 버튼과 같이 움직인다
-    await 눌러('open-ranking', 700);
-    // 이 브라우저의 기록에서 본다 — 온라인 랭킹을 아는 API면 마지막에 본 범위가 온라인일 수 있다
-    if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
-    // 방금 자동 저장된 분야 기록 하나뿐이라 전체 도전 탭은 비어 있다
-    document.querySelector('[data-screen="ranking"] .ranking-tab').click();
-    await 잠깐(300);
-    결과.push({
-      자리: '랭킹', 이름: '빈 탭의 행동은 그 탭의 판을 연다',
-      통과: document.getElementById('ranking-empty-start').textContent.trim() === '전체 도전 시작하기',
-      무엇: document.getElementById('ranking-empty-start').textContent.trim(),
-    });
-    결과.push({
-      자리: '랭킹', 이름: '다른 탭에 기록이 있으면 「모든 기록 지우기」가 남는다',
-      통과: !document.getElementById('ranking-footer').hidden,
-      무엇: document.getElementById('ranking-footer').hidden ? '!! 숨김' : '보임',
-    });
-
-    // ㉑ 기록 내보내기. 실제 내려받기·클립보드는 가로챈다
-    결과.push({
-      자리: '랭킹', 이름: '기록이 있으면 「기록 내보내기」가 보인다',
-      통과: !document.getElementById('ranking-export').hidden,
-      무엇: document.getElementById('ranking-export').hidden ? '!! 숨김' : '보임',
-    });
-    const 진짜링크클릭 = HTMLAnchorElement.prototype.click;
-    let 내려받기 = null;
-    HTMLAnchorElement.prototype.click = function 가로챈클릭() {
-      내려받기 = { 이름: this.download, 주소: this.href };
-    };
-    try {
-      await 눌러('ranking-export-file', 400);
-    } finally {
-      HTMLAnchorElement.prototype.click = 진짜링크클릭;
-    }
-    const 파일 = 내려받기 ? await fetch(내려받기.주소).then((r) => r.json()).catch(() => null) : null;
-    결과.push({
-      자리: '랭킹', 이름: '내보낸 파일은 선생님 모드가 읽는 모양이다 (student 없음·문항별 정오)',
-      통과: Boolean(파일) && 파일.schemaVersion === 1 && !('student' in 파일)
-        && Array.isArray(파일.records) && 파일.records.length >= 1
-        && 파일.records.some((기록) => Array.isArray(기록.questionResults))
-        && /^quiz-by-quiz-기록-.+-\d{4}-\d{2}-\d{2}\.json$/.test(내려받기.이름),
-      무엇: 파일 ? `${내려받기.이름} · 기록 ${파일.records?.length}개` : '!! 파일을 만들지 않았다',
-    });
-    const 클립보드 = navigator.clipboard;
-    let 복사한글 = null;
-    if (클립보드) 클립보드.writeText = async (글) => { 복사한글 = 글; };
-    try {
-      await 눌러('ranking-export-copy', 400);
-    } finally {
-      if (클립보드) delete 클립보드.writeText;
-    }
-    const 펼친글 = document.getElementById('ranking-export-text');
-    const 복사본 = 복사한글 ?? (펼친글.hidden ? null : 펼친글.value);
-    결과.push({
-      자리: '랭킹', 이름: '「기록 복사」는 같은 글을 클립보드에 넣거나 펼쳐 골라 둔다',
-      통과: Boolean(복사본) && JSON.parse(복사본).records.length === 파일?.records?.length,
-      무엇: document.getElementById('ranking-export-status').textContent || '(안내 없음)',
-    });
-    history.back();
-    await 화면기다리기('home');
-    살펴본다('랭킹에서 「뒤로」', 'home', true);
-
-    document.querySelector('.category-card').click();
-    await 잠깐(800);
-    history.back();
-    await 잠깐(400);
-    결과.push({
-      자리: '퀴즈', 이름: '「뒤로」는 판을 버리지 않고 나가기 확인을 연다',
-      통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
-      무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
-    });
-    await 눌러('exit-cancel', 300);
-    history.back();
-    await 잠깐(400);
-    결과.push({
-      자리: '퀴즈', 이름: '확인을 무른 뒤 다시 「뒤로」를 눌러도 앱 안에 남는다',
-      통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
-      무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
-    });
-    await 눌러('exit-confirm', 700);
-    살펴본다('퀴즈에서 「뒤로」로 나온 홈', 'home', true);
-    잠든퀴즈를깨워본다('퀴즈에서 「뒤로」로 나온 홈');
-    살펴본곳.push('뒤로 가기');
-
-    // ⑭ 설정 대화상자와 «제한 없음». 키는 실제처럼 포커스가 있는 요소에서 보낸다 —
-    // 대화상자는 문서의 캡처 단계에서 키를 멈추므로 document 자신에게 보내면 그 길을 타지 않는다
-    const 포커스에서키 = (키) => {
-      const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true });
-      (document.activeElement ?? document.body).dispatchEvent(이벤트);
-      document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
-      return 이벤트.defaultPrevented;
-    };
-    const 설정창 = document.getElementById('settings-dialog');
-    const 시간칸 = (값) => document.querySelector(`#settings-dialog [data-time-limit="${값}"]`);
-    const 원래시간 = document.querySelector('#settings-dialog [data-time-limit][aria-pressed="true"]')?.dataset.timeLimit ?? '20000';
-    document.getElementById('open-settings').focus();
-    await 눌러('open-settings', 300);
-    결과.push({
-      자리: '설정', 이름: '「설정」이 인페이지 대화상자를 열고 패널에 포커스를 둔다',
-      통과: !설정창.hidden && document.activeElement === 설정창.querySelector('[role="dialog"]'),
-      무엇: `${설정창.hidden ? '!! 닫힘' : '열림'} · 포커스 ${document.activeElement?.id || document.activeElement?.className || '(없음)'}`,
-    });
-    const 대화상자방향키 = 포커스에서키('ArrowDown');
-    결과.push({
-      자리: '설정', 이름: '열려 있는 동안 캐릭터가 방향키를 받지 않는다',
-      통과: !대화상자방향키,
-      무엇: 대화상자방향키 ? '!! 뒤에서 캐릭터가 걷는다' : '캐릭터는 그대로다',
-    });
-    시간칸('none').click();
-    await 잠깐(100);
-    결과.push({
-      자리: '설정', 이름: '«제한 없음» 하나만 눌려 있다',
-      통과: 시간칸('none').getAttribute('aria-pressed') === 'true'
-        && document.querySelectorAll('#settings-dialog [data-time-limit][aria-pressed="true"]').length === 1,
-      무엇: [...document.querySelectorAll('#settings-dialog [data-time-limit]')]
-        .map((칸) => `${칸.textContent.trim()} ${칸.getAttribute('aria-pressed')}`).join(' · '),
-    });
-    포커스에서키('Escape');
-    await 잠깐(100);
-    결과.push({
-      자리: '설정', 이름: 'Esc 로 닫으면 「설정」 버튼으로 포커스가 돌아온다',
-      통과: 설정창.hidden && document.activeElement === document.getElementById('open-settings'),
-      무엇: `${설정창.hidden ? '닫힘' : '!! 열림'} · 포커스 ${document.activeElement?.id || '(없음)'}`,
-    });
-    document.querySelector('.category-card').click();
-    await 잠깐(800);
-    살펴본다('«제한 없음» 퀴즈', 'quiz', true);
-    const 막대 = document.querySelector('#timer .timer__track');
-    결과.push({
-      자리: '설정', 이름: '«제한 없음» 판의 HUD는 «시간 제한 없음»을 말하고 막대를 거둔다',
-      통과: document.getElementById('timer-text').textContent.trim() === '시간 제한 없음'
-        && getComputedStyle(막대).display === 'none'
-        && document.getElementById('question-time-limit').textContent.trim() === '시간 제한 없음',
-      무엇: `${document.getElementById('timer-text').textContent.trim()} · 막대 ${getComputedStyle(막대).display}`,
-    });
-    시간앞당기기(25000);
-    const 시간초과났나 = !document.getElementById('feedback').hidden;
-    결과.push({
-      자리: '설정', 이름: '«제한 없음» 판은 25초를 앞당겨도 시간 초과가 나지 않는다',
-      통과: !시간초과났나 && 지금화면() === 'quiz'
-        && [...document.querySelectorAll('#choices .choice')].every((보기) => !보기.disabled),
-      무엇: 시간초과났나 ? `!! ${document.getElementById('feedback-verdict').textContent}` : '판이 그대로 기다린다',
-    });
-    시간되돌리기(25000);
-    await 눌러('quiz-exit', 300);
-    await 눌러('exit-confirm', 700);
-    살펴본다('«제한 없음» 퀴즈에서 나온 홈', 'home', true);
-    // 화면에서 원래 값으로 되돌린다. 저장소만 되돌리면 앱이 기억한 값과 어긋난다
-    await 눌러('open-settings', 300);
-    시간칸(원래시간).click();
-    await 눌러('settings-close', 300);
-    결과.push({
-      자리: '설정', 이름: '문항 시간을 원래 값으로 되돌렸다',
-      통과: 시간칸(원래시간).getAttribute('aria-pressed') === 'true' && 설정창.hidden,
-      무엇: 원래시간,
-    });
-    살펴본곳.push('설정 «제한 없음»');
-
-    // ⑲ 전체 도전 결과의 오답 묶음 (N04). 마지막 보기만 골라 여러 분야에서 틀리게 한다
-    await 눌러('start-all', 800);
-    살펴본다('전체 도전', 'quiz', true);
-    for (let i = 0; i < 80 && 지금화면() === 'quiz'; i += 1) {
-      const 보기들 = [...document.querySelectorAll('#choices .choice')].filter((b) => !b.disabled);
-      if (보기들.length) 보기들[보기들.length - 1].click();
-      await 잠깐(100);
-      const 다음 = document.getElementById('next-button');
-      if (다음 && !document.getElementById('feedback').hidden) 다음.click();
-      await 잠깐(120);
-    }
-    살펴본다('전체 도전 결과', 'result', true);
-    const 오답목록 = document.getElementById('result-review');
-    const 묶음들 = [...오답목록.children];
-    const 펼침줄들 = 묶음들.map((묶음) => 묶음.querySelector('details > summary.review-group__summary'));
-    결과.push({
-      자리: '전체 도전 결과', 이름: '오답 풀이가 분야별 접힌 묶음이다 — 한 목록으로 펼치지 않는다',
-      통과: document.getElementById('result-review-block').hidden
-        || (묶음들.length > 0
-          && 묶음들.every((묶음) => 묶음.classList.contains('review-group'))
-          && 펼침줄들.every((줄) => 줄 && 줄.getBoundingClientRect().height >= 44)
-          && (묶음들.length === 1 || 묶음들.every((묶음) => !묶음.querySelector('details').open))),
-      무엇: 묶음들.map((묶음) => 묶음.querySelector('summary')?.textContent.replace(/\s+/g, ' ').trim() ?? `!! ${묶음.className}`).join(' · ') || '오답 없음',
-    });
-    const 전체결과행동 = document.getElementById('result-retry').closest('.result-actions');
-    결과.push({
-      자리: '전체 도전 결과', 이름: '핵심 행동이 오답 묶음보다 먼저 온다',
-      통과: Boolean(전체결과행동.compareDocumentPosition(document.getElementById('result-review-block')) & Node.DOCUMENT_POSITION_FOLLOWING),
-      무엇: `행동 ${Math.round(전체결과행동.getBoundingClientRect().top)}px · 묶음 ${Math.round(document.getElementById('result-review-block').getBoundingClientRect().top)}px`,
-    });
-    if (펼침줄들[0]) {
-      // 걸어가 누르는 것과 같은 길 — 워커의 고르기는 발밑의 진짜 click() 이다
-      const 첫묶음 = 펼침줄들[0].parentElement;
-      const 처음열림 = 첫묶음.open;
-      펼침줄들[0].click();
-      결과.push({
-        자리: '전체 도전 결과', 이름: '펼침 줄을 누르면(걸어가 누르기와 같은 click) 묶음이 여닫힌다',
-        통과: 첫묶음.open !== 처음열림,
-        무엇: `${처음열림 ? '열림' : '닫힘'} → ${첫묶음.open ? '열림' : '닫힘'}`,
-      });
-    }
-    await 눌러('result-home', 700);
-    살펴본다('전체 도전 결과에서 온 홈', 'home', true);
-    살펴본곳.push('전체 도전 결과');
-
-    // 로비와 대기실. 방을 하나 만들어 오간다
-    await 눌러('open-online', 0);
-    await 화면기다리기('online');
-    살펴본다('로비', 'online', true);
-    // 로비를 불러오는 동안 단 «연결 중…»이 남으면 홈에 돌아왔을 때 입구가 계속 바쁜 척한다 (U34)
-    const 온라인입구 = document.getElementById('open-online');
-    결과.push({
-      자리: '로비', 이름: '홈 온라인 입구의 바쁨 표시를 거뒀다',
-      // 쉬는 말은 세션이 알려 준 시작 인원을 따른다 — 묻기 전·혼자서도 여는 API·둘부터인 이전 API
-      통과: !온라인입구.hasAttribute('aria-busy')
-        && ['방을 만들거나 참가해요', '혼자서도 · 친구와 함께', '친구와 함께 · 2명부터']
-          .includes(document.getElementById('open-online-desc').textContent.trim()),
-      무엇: `aria-busy ${온라인입구.getAttribute('aria-busy') ?? '없음'} · ${document.getElementById('open-online-desc').textContent.trim()}`,
-    });
-    const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
-      .map((id) => [id, document.getElementById(id).getBoundingClientRect()]);
-    프레임돌리기();
-    결과.push({
-      자리: '로비', 이름: '반복 조작의 터치 목표가 44px 이상이다',
-      통과: 로비터치크기.every(([, 크기]) => 크기.width >= 44 && 크기.height >= 44),
-      무엇: 로비터치크기.map(([id, 크기]) => `${id} ${크기.width}px × ${크기.height}px`).join(' · '),
-    });
-    const 로비동작이름 = [...document.querySelectorAll('.online-action-card__body strong')];
-    결과.push({
-      자리: '로비', 이름: '세 주요 동작의 이름이 좁은 화면에서도 8px 이상 여유를 둔다',
-      통과: 로비동작이름.every((이름) => 이름.clientWidth - 글자너비(이름) >= 8),
-      무엇: 로비동작이름.map((이름) =>
-        `${이름.textContent.trim()} 여유 ${(이름.clientWidth - 글자너비(이름)).toFixed(1)}px`).join(' · '),
-    });
-    const 온라인안내 = document.getElementById('online-note');
-    const 온라인캐릭터 = document.getElementById('online-character');
-    const 겹친온라인글 = 겹친글자줄(온라인안내, 온라인캐릭터.getBoundingClientRect());
-    결과.push({
-      자리: '로비', 이름: '주차한 캐릭터가 연결 안내 글을 덮지 않는다',
-      통과: 겹친온라인글.length === 0,
-      무엇: `겹친 글자 줄 ${겹친온라인글.length}개`,
-    });
-    // ⑬ 이 브라우저 안의 방(로컬)일 때 보이는 안내다. 개발 용어로 말하지 않는다
-    결과.push({
-      자리: '로비', 이름: '연결 안내 문구에 «서버»·API 같은 개발 용어가 없다',
-      통과: !/서버|API|snapshot/i.test(온라인안내.textContent),
-      무엇: 온라인안내.textContent.trim(),
-    });
-    const 설정버튼위치 = getComputedStyle(document.querySelector('.app-bar')).position;
-    결과.push({
-      자리: '로비', 이름: '짧은 가로에서는 설정 버튼이 스크롤 동작을 덮지 않고 문서와 함께 흐른다',
-      통과: innerHeight > 480 || 설정버튼위치 === 'absolute',
-      무엇: `높이 ${innerHeight}px · position ${설정버튼위치}`,
-    });
-    잠든퀴즈를깨워본다('로비');
-
-    // ⑭ 설정은 어느 화면에서나 열린다. 로비의 Esc 는 «홈으로»라, 대화상자를 닫는 Esc 가 새면 홈으로 튕긴다
-    await 눌러('open-settings', 300);
-    포커스에서키('Escape');
-    await 잠깐(300);
-    결과.push({
-      자리: '로비', 이름: '설정 대화상자의 Esc 는 대화상자만 닫고 화면은 그대로다',
-      통과: document.getElementById('settings-dialog').hidden && 지금화면() === 'online',
-      무엇: `화면 ${지금화면()} · 설정 ${document.getElementById('settings-dialog').hidden ? '닫힘' : '!! 열림'}`,
-    });
-
-    // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다
-    const 키를보낸다 = (키, 옵션 = {}) => {
-      const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true, ...옵션 });
-      document.dispatchEvent(이벤트);
-      document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
-      return 이벤트.defaultPrevented;
-    };
-
-    // 걷기 키(s·←)와 겹치는 브라우저 단축키를 워커가 먹으면 저장·뒤로 가기가 죽는다.
-    // 짝인 «발밑이 비면 Space로 스크롤된다»는 빈자리에서 시작함이 보장된 결과 화면에서 본다
-    const 단축키를가로챘나 = 키를보낸다('s', { ctrlKey: true });
-    결과.push({
-      자리: '로비', 이름: 'Ctrl+S를 워커가 가로채지 않는다',
-      통과: !단축키를가로챘나,
-      무엇: 단축키를가로챘나 ? '!! 워커가 가로챈다' : '브라우저 것이다',
-    });
-    // ⑬ 조작법과 무대 안내가 «방향키·WASD»라고 말한다. 맨 d 는 캐릭터 몫이어야 한다
-    const 걷기키를받았나 = 키를보낸다('d');
-    결과.push({
-      자리: '로비', 이름: '조작법이 말하는 WASD도 캐릭터가 받는다',
-      통과: 걷기키를받았나,
-      무엇: 걷기키를받았나 ? '캐릭터가 받는다' : '!! 아무도 안 받는다',
-    });
-
-    // 체크박스에서 Space 는 체크박스 것이다. 워커가 가로채면 preventDefault 가
-    // 기본 동작까지 죽여 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없다
-    // 주요 동작은 탭처럼 본문 하나만 열므로, 검사할 입력이 있는 본문부터 연다.
-    await 눌러('open-create-room', 250);
-    const 체크박스 = document.getElementById('create-private');
-    체크박스.focus();
-    const 스페이스를가로챘나 = 키를보낸다(' ');
-    결과.push({
-      자리: '로비', 이름: '체크박스의 Space 를 워커가 가로채지 않는다',
-      통과: !스페이스를가로챘나,
-      무엇: 스페이스를가로챘나 ? '!! 워커가 가로챈다' : '체크박스 것이다',
-    });
-
-    // Tab 으로 버튼에 간 사람의 Enter 는 그 버튼 것이다
-    document.getElementById('online-home').focus();
-    결과.push({
-      자리: '로비', 이름: 'Tab 으로 간 버튼의 Enter 를 워커가 가로채지 않는다',
-      통과: !키를보낸다('Enter'), 무엇: document.activeElement.id,
-    });
-
-    // 글자를 적는 중이면 방향키는 커서 것이다. 캐릭터가 같이 걸어가면 안 된다
-    await 눌러('open-private-join', 250);
-    const 코드칸 = document.getElementById('join-code');
-    코드칸.focus();
-    코드칸.value = 'ABCD';
-    키를보낸다('ArrowDown');
-    결과.push({
-      자리: '로비', 이름: '입력칸에서는 방향키가 커서 것이다',
-      통과: document.activeElement === 코드칸 && 코드칸.value === 'ABCD',
-      무엇: `커서 ${document.activeElement.id || '(잃음)'} · 적은 값 ${코드칸.value || '(지워짐)'}`,
-    });
-
-    // 들어갔으면 나올 길이 있어야 한다. Esc 는 화면 쪽으로 새지 않는다 —
-    // 로비의 Esc 는 «홈으로»라, 새면 적던 것이 통째로 날아간다
-    키를보낸다('Escape');
-    결과.push({
-      자리: '로비', 이름: 'Esc 로 입력칸에서 나오고 화면은 그대로다',
-      통과: document.activeElement !== 코드칸 && 지금화면() === 'online' && 코드칸.value === 'ABCD',
-      무엇: `화면 ${지금화면()} · 적은 값 ${코드칸.value || '(지워짐)'}`,
-    });
-    코드칸.value = '';
-
-    await 눌러('open-create-room', 250);
-    const 이름칸 = document.getElementById('create-name');
-    // 값처럼 보이는 placeholder만 두면 비운 채 만들다 거절당했다 (U41)
-    결과.push({
-      자리: '로비', 이름: '방 이름이 «닉네임의 방»으로 채워져 있다',
-      통과: 이름칸.value.trim().endsWith('의 방'),
-      무엇: 이름칸.value || '(비어 있음)',
-    });
-    이름칸.value = '점검용 방';
-    document.getElementById('create-form').requestSubmit();
-    await 화면기다리기('waiting');
-    살펴본다('대기실', 'waiting', true);
-
-    // ⑳ 액자의 말 숨기기·내보내기. 로컬 방은 이 브라우저의 나뿐이라 점검용 손님을 잠깐 넣는다
-    const 액자버튼 = (행동) => [...document.querySelectorAll(`#lounge-players [data-portrait-action="${행동}"]`)];
-    결과.push({
-      자리: '대기실', 이름: '내 액자에는 말 숨기기·내보내기가 없다',
-      통과: 액자버튼('mute').length === 0 && 액자버튼('remove').length === 0,
-      무엇: `말 숨기기 ${액자버튼('mute').length} · 내보내기 ${액자버튼('remove').length}`,
-    });
-    const 손님방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
-    const 점검방 = 손님방.find((방) => 방.name === '점검용 방');
-    if (점검방) {
-      점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
-      localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
-    }
-    // 서버 방이면 **로컬 API(localhost)일 때만** 두 번째 신분으로 진짜 참가시키고 끝에 내보낸다. 운영 API 에는
-    // 손님을 넣지 않는다 — 그때는 이 점검을 «건너뜀»으로 남긴다(통과로 숨기지 않고 이름에 적는다)
-    const API기준 = document.querySelector('meta[name="quiz-api-base"]')?.content.trim() ?? '';
-    const 로컬API = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(API기준);
-    let 서버손님 = null;
-    if (!점검방 && 로컬API) {
-      const 방코드 = document.getElementById('waiting-code')?.textContent.trim() ?? '';
-      const 토큰 = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
-      const 머리 = { Authorization: `Bearer ${토큰}`, 'X-Player-Id': crypto.randomUUID(), 'Content-Type': 'application/json' };
-      const 세션 = await fetch(`${API기준}/v1/session`, { method: 'PUT', headers: 머리, body: JSON.stringify({ nickname: '점검손님', characterId: 'slime-blue' }) });
-      const 참가 = 세션.ok
-        ? await fetch(`${API기준}/v1/rooms/${방코드}/join`, { method: 'POST', headers: 머리, body: JSON.stringify({ password: null }) })
-        : null;
-      서버손님 = { 방코드, 머리, 들어옴: Boolean(참가?.ok) };
-      await 잠깐(800); // room-invalidated 를 받은 대기실이 방을 다시 읽는다
-    }
-    손님점검: {
-    if (!점검방 && !서버손님?.들어옴) {
-      결과.push({
-        자리: '대기실', 이름: '(건너뜀) 액자의 말 숨기기·내보내기 — 로컬 방도 로컬 API 도 아니라 점검 손님을 넣지 않았다',
-        통과: true, 무엇: API기준 || '(메타 없음)',
-      });
-      break 손님점검;
-    }
-    // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
-    await 눌러('setting-category', 400);
-    const [숨기기] = 액자버튼('mute');
-    // 화면 밖이면 elementFromPoint 가 null 이다. 보이는 데로 옮겨 놓고 잰다
-    숨기기?.scrollIntoView({ block: 'center' });
-    await 잠깐(100);
-    const 숨기기상자 = 숨기기?.getBoundingClientRect();
-    const 발밑 = 숨기기상자
-      ? document.elementFromPoint(숨기기상자.left + 숨기기상자.width / 2, 숨기기상자.top + 숨기기상자.height / 2)
-      : null;
-    결과.push({
-      자리: '대기실', 이름: '남의 액자에는 걸어가 밟을 수 있는 44px 말 숨기기 버튼이 있다',
-      통과: Boolean(숨기기) && 숨기기상자.width >= 44 && 숨기기상자.height >= 44
-        && Boolean(발밑?.closest('[data-portrait-action="mute"]'))
-        && 숨기기.getAttribute('aria-label') === '점검손님 님 말 숨기기',
-      무엇: 숨기기 ? `${Math.round(숨기기상자.width)}×${Math.round(숨기기상자.height)} · 발밑 ${발밑?.className || '(없음)'}` : '!! 버튼 없음',
-    });
-    숨기기?.click();
-    await 잠깐(200);
-    const 숨긴뒤 = 액자버튼('mute')[0];
-    const 로그끝 = document.getElementById('chat-log').lastElementChild?.textContent ?? '';
-    결과.push({
-      자리: '대기실', 이름: '말 숨기기는 aria-pressed 로 켜지고 조용한 한 줄을 남긴다',
-      통과: 숨긴뒤?.getAttribute('aria-pressed') === 'true' && 로그끝.includes('점검손님 님의 말을 숨겼어요'),
-      무엇: `${숨긴뒤?.getAttribute('aria-pressed')} · ${로그끝 || '(로그 없음)'}`,
-    });
-    숨긴뒤?.click();
-    // 방장은 접속 중인 사람도 확인창을 거쳐 내보낸다(소유자 결정). 확인창만 열어 보고 «그대로 두기»로 닫는다
-    const [내보내기] = 액자버튼('remove');
-    const 내보내기상자 = 내보내기?.getBoundingClientRect();
-    결과.push({
-      자리: '대기실', 이름: '방장 화면의 남의 액자에는 44px 내보내기 버튼이 있다',
-      통과: Boolean(내보내기) && 내보내기상자.height >= 44
-        && 내보내기.getAttribute('aria-label') === '점검손님 님 내보내기',
-      무엇: 내보내기 ? `${Math.round(내보내기상자.width)}×${Math.round(내보내기상자.height)}` : '!! 버튼 없음',
-    });
-    내보내기?.click();
-    await 잠깐(100);
-    const 확인창 = document.getElementById('remove-member-dialog');
-    const 확인설명 = document.getElementById('remove-member-body').textContent ?? '';
-    결과.push({
-      자리: '대기실', 이름: '접속 중인 사람의 내보내기는 «잠시 다시 들어올 수 없어요» 확인창을 거친다',
-      통과: !확인창.hidden
-        && document.getElementById('remove-member-title').textContent === '점검손님 님을 방에서 내보낼까요?'
-        && 확인설명.startsWith('잠시 다시 들어올 수 없어요')
-        && document.activeElement === document.getElementById('remove-member-cancel'),
-      무엇: `${확인창.hidden ? '닫힘' : '열림'} · ${확인설명 || '(설명 없음)'} · 포커스 ${document.activeElement?.id || document.activeElement?.tagName}`,
-    });
-    document.getElementById('remove-member-cancel').click();
-    await 잠깐(100);
-    결과.push({
-      자리: '대기실', 이름: '그대로 두기는 확인창을 닫고 연 내보내기 버튼으로 포커스를 돌려준다',
-      통과: 확인창.hidden && document.activeElement === 액자버튼('remove')[0],
-      무엇: `${확인창.hidden ? '닫힘' : '열림'} · 포커스 ${document.activeElement?.getAttribute?.('aria-label') || document.activeElement?.tagName}`,
-    });
-    if (점검방) {
-      const 되돌린방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
-      for (const 방 of 되돌린방) 방.players = (방.players ?? []).filter((사람) => 사람.id !== 'check-guest');
-      localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
-      await 눌러('setting-category', 400);
-    }
-    if (서버손님?.들어옴) {
-      await fetch(`${API기준}/v1/rooms/${서버손님.방코드}/members/me`, { method: 'DELETE', headers: 서버손님.머리 });
+      document.querySelector('.choice').click();
       await 잠깐(400);
-    }
-    살펴본곳.push('대기실 액자 버튼');
-    }
+      결과.push({
+        자리: '퀴즈', 이름: '답을 내면 시트가 뜬다',
+        통과: !document.getElementById('feedback').hidden, 무엇: '준비된 상태를 만든다',
+      });
+      if (짧은가로퀴즈) {
+        // 결과 패널 높이 한도가 60vh(360px 화면에서 216px)이면 「다음 문제」가 패널 안 스크롤 밑에 잘렸다
+        const 화면안 = (요소) => {
+          const 상자 = 요소.getBoundingClientRect();
+          return 상자.top >= -1 && 상자.bottom <= innerHeight + 1;
+        };
+        const 정답줄 = document.getElementById('feedback-answer');
+        결과.push({
+          자리: '퀴즈', 이름: '짧은 가로: 답한 뒤 판정·정답 줄·「다음 문제」가 한 화면에 보인다',
+          통과: 화면안(document.getElementById('feedback-verdict'))
+            && (정답줄.hidden || 화면안(정답줄))
+            && 화면안(document.getElementById('next-button')),
+          무엇: `scrollY ${Math.round(scrollY)} · 다음 문제 bottom ${Math.round(document.getElementById('next-button').getBoundingClientRect().bottom)}px / ${innerHeight}px`,
+        });
+      }
+      // ⑩ 질문 머리와 패널 끝 사이의 거리는 스크롤과 무관하다. 그 거리가 화면에 들면
+      // 질문 머리도 패널 끝도 화면 안이어야 하고, 들지 않으면 패널 끝(「다음 문제」)에 맞춘다
+      const 질문상자 = document.getElementById('question-text').getBoundingClientRect();
+      const 패널상자 = document.getElementById('feedback').getBoundingClientRect();
+      const 함께담기나 = 패널상자.bottom - 질문상자.top <= innerHeight + 1;
+      결과.push({
+        자리: '퀴즈', 이름: '피드백을 보는 동안 질문 머리가 화면 안에 남는다',
+        통과: 함께담기나
+          ? 질문상자.top >= -1 && 패널상자.bottom <= innerHeight + 1
+          : Math.abs(패널상자.bottom - innerHeight) <= 1,
+        무엇: `${innerWidth}×${innerHeight} · 질문 top ${Math.round(질문상자.top)}px · 패널 bottom ${Math.round(패널상자.bottom)}px`
+          + (함께담기나 ? '' : ' · 한 화면에 들지 않아 패널 끝에 맞춤'),
+      });
+      await 눌러('quiz-exit', 300);
+      await 눌러('exit-confirm', 700);
+      살펴본다('답을 낸 채 나온 홈', 'home', true);
+      잠든퀴즈를깨워본다('답을 낸 채 나온 홈');
+      살펴본곳.push('퀴즈에서 나오기');
 
-    // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
-    // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
-    // 방장 혼자서도 판이 열린다(혼자 여는 온라인 방). 네트워크 방에서 누르면 서버에 진짜 판이 생기고 나가기가
-    // «게임이 끝나면»으로 거절되므로, 시작은 이 브라우저 안의 방(점검방)에서만 실제로 누른다
-    if (점검방) document.getElementById('waiting-start').click();
-    document.getElementById('waiting-leave').click();
-    await 화면기다리기('online');
-    살펴본다('시작하자마자 나간 뒤', 'online', true);
-    잠든퀴즈를깨워본다('시작하자마자 나간 뒤');
-    // 한 번 더. 세션이 살아 있으면 다음 문항으로 넘어가 또 뜬다
-    잠든퀴즈를깨워본다('시작하자마자 나간 뒤 (한 번 더)', 50000);
-    살펴본곳.push('게임 시작 직후 나가기');
+      // ㉒ 나가면서 푼 문제 보기 (N04). 끝까지 풀지 않은 판이라 아무 길로 떠나도 기록이 남으면 안 된다
+      const 나가기전랭킹 = localStorage.getItem('quiz.rankings');
+      document.querySelector('.category-card').click();
+      await 잠깐(800);
+      await 눌러('quiz-exit', 300);
+      const 해설보기 = document.getElementById('exit-review');
+      결과.push({
+        자리: '퀴즈', 이름: '한 문제도 풀지 않았으면 나가기 확인에 «해설 보기»가 없다',
+        통과: !document.getElementById('exit-dialog').hidden && 해설보기.hidden,
+        무엇: 해설보기.hidden ? '없음' : `!! ${해설보기.textContent.trim()}`,
+      });
+      await 눌러('exit-cancel', 200);
+      for (let i = 0; i < 2; i += 1) {
+        [...document.querySelectorAll('#choices .choice')].find((보기) => !보기.disabled)?.click();
+        await 잠깐(150);
+        document.getElementById('next-button').click();
+        await 잠깐(150);
+      }
+      await 눌러('quiz-exit', 300);
+      결과.push({
+        자리: '퀴즈', 이름: '두 문제를 풀고 나가면 확인창이 «나가고 푼 문제 2개 해설 보기»를 준다',
+        통과: !해설보기.hidden && 해설보기.textContent.trim() === '나가고 푼 문제 2개 해설 보기'
+          && document.activeElement === document.getElementById('exit-cancel'),
+        무엇: `${해설보기.hidden ? '!! 숨김' : 해설보기.textContent.trim()} · 포커스 ${document.activeElement?.id || '(없음)'}`,
+      });
+      해설보기.focus();
+      해설보기.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+      결과.push({
+        자리: '퀴즈', 이름: '덧붙은 행동에서 Tab 은 확인창 안의 처음(«계속 풀기»)으로 돈다',
+        통과: document.activeElement === document.getElementById('exit-cancel'),
+        무엇: document.activeElement?.id || document.activeElement?.tagName || '(없음)',
+      });
+      await 눌러('exit-review', 700);
+      살펴본다('푼 문제', 'quiz-review', true);
+      잠든퀴즈를깨워본다('푼 문제');
+      프레임돌리기(3);
+      const 푼문제발밑 = document.querySelector('[data-screen="quiz-review"] .is-standing');
+      결과.push({
+        자리: '푼 문제', 이름: '버튼을 밟지 않은 자리에서 시작한다',
+        통과: !푼문제발밑,
+        무엇: 푼문제발밑 ? `!! ${푼문제발밑.id || 푼문제발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
+      });
+      const 겹친푼문제글 = 겹친글자줄(document.getElementById('quiz-review-scope'),
+        document.getElementById('quiz-review-character').getBoundingClientRect());
+      결과.push({
+        자리: '푼 문제', 이름: '주차한 캐릭터가 «기록은 남지 않아요» 안내 글을 덮지 않는다',
+        통과: 겹친푼문제글.length === 0,
+        무엇: `겹친 글자 줄 ${겹친푼문제글.length}개`,
+      });
+      const 풀이줄 = document.querySelectorAll('#quiz-review-list > .review__item');
+      결과.push({
+        자리: '푼 문제', 이름: '푼 두 문제가 풀이로 보이고 등록 칸·점수는 없다',
+        통과: 풀이줄.length === 2 && !document.querySelector('[data-screen="quiz-review"] input')
+          && [...풀이줄].every((줄) => 줄.querySelector('a.review__report-link')),
+        무엇: `${풀이줄.length}문제 · ${document.getElementById('quiz-review-summary').textContent.trim()}`,
+      });
+      history.back();
+      await 화면기다리기('home');
+      살펴본다('푼 문제에서 「뒤로」', 'home', true);
+      결과.push({
+        자리: '푼 문제', 이름: '중간에 나온 판은 «푼 문제»를 보고 떠나도 랭킹에 남지 않는다',
+        통과: localStorage.getItem('quiz.rankings') === 나가기전랭킹,
+        무엇: localStorage.getItem('quiz.rankings') === 나가기전랭킹 ? '그대로다' : '!! 기록이 늘었다',
+      });
+      살펴본곳.push('나가고 푼 문제 보기');
 
-    await 눌러('online-home', 700);
-    살펴본다('돌아온 홈', 'home', true);
+      // 퀴즈를 끝까지 풀어 결과로 간 뒤, 「다시 하기」로 되돌아온다.
+      // 결과 화면의 조작부가 따라오면 여기서 걸린다 (#65)
+      // ⑪ 「등록」 없이 떠나도 저장되는지 세려고 랭킹을 비워 둔다 (끝나면 되돌린다)
+      localStorage.setItem('quiz.rankings', '[]');
+      document.querySelector('.category-card').click();
+      await 잠깐(800);
+      let 다푼판의덧붙은행동 = null;
+      for (let i = 0; i < 40 && 지금화면() === 'quiz'; i += 1) {
+        const 보기 = [...document.querySelectorAll('.choice')].find((b) => !b.disabled);
+        if (보기) 보기.click();
+        await 잠깐(120);
+        // ㉒ 마지막 문제까지 답한 뒤의 나가기 확인은 «나가고 푼 문제 N개 해설 보기»가 아니라 «결과 보기»다 —
+        // 한때 다 푼 판을 기록 없는 «푼 문제» 화면으로 보내 버렸다. 그 행동으로 결과에 가고, 아래 ⑪이 기록을 센다
+        if (!document.getElementById('feedback').hidden
+          && document.getElementById('next-label').textContent.trim() === '결과 보기') {
+          await 눌러('quiz-exit', 300);
+          다푼판의덧붙은행동 = document.getElementById('exit-review').hidden
+            ? '(숨김)' : document.getElementById('exit-review').textContent.trim();
+          await 눌러('exit-review', 800);
+          break;
+        }
+        const 다음 = document.getElementById('next-button');
+        if (다음 && !다음.hidden) 다음.click();
+        await 잠깐(150);
+      }
+      결과.push({
+        자리: '퀴즈', 이름: '마지막 문제까지 답한 뒤 나가기 확인의 덧붙은 행동은 «결과 보기»이고 결과로 간다',
+        통과: 다푼판의덧붙은행동 === '결과 보기' && 지금화면() === 'result',
+        무엇: `${다푼판의덧붙은행동 ?? '!! 마지막 문제에 닿지 못했다'} → ${지금화면()}`,
+      });
+      살펴본다('결과', 'result', true);
+      // ⑦ 워커는 다음 프레임에 자리를 잡는다. 프레임을 돌려도 transform 이 비어 있으면
+      // 캐릭터가 좌상단(0,0)에 박혀 있는 것이다
+      프레임돌리기(3);
+      const 결과캐릭터 = document.getElementById('result-character');
+      결과.push({
+        자리: '결과', 이름: '캐릭터가 화면 안 자리에 선다',
+        통과: Boolean(결과캐릭터.style.transform),
+        무엇: 결과캐릭터.style.transform || '!! 자리를 잡지 못했다 (좌상단)',
+      });
+      const 결과발밑 = document.querySelector('[data-screen="result"] .is-standing');
+      결과.push({
+        자리: '결과', 이름: '버튼을 밟지 않은 자리에서 시작한다',
+        통과: !결과발밑,
+        무엇: 결과발밑 ? `!! ${결과발밑.id || 결과발밑.className} 위 — Enter 가 그대로 누른다` : '빈자리',
+      });
+      // ⑥ 발밑이 비면 Space 는 브라우저 것이다. 워커가 삼키면 키보드만 쓰는 사람이 긴 오답
+      // 풀이를 내려 읽을 수 없다. 발밑에 무엇이 있으면(앱 바 포함) Space 가 그것을 누르므로 보내지 않는다
+      let 빈자리스페이스 = null;
+      if (!document.querySelector('.is-standing')) {
+        const 스페이스 = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        document.dispatchEvent(스페이스);
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+        빈자리스페이스 = 스페이스.defaultPrevented;
+      }
+      결과.push({
+        자리: '결과', 이름: '발밑이 비면 Space로 스크롤된다',
+        통과: 빈자리스페이스 === false,
+        무엇: 빈자리스페이스 === null ? '!! 발밑이 비지 않아 보내지 않았다'
+          : (빈자리스페이스 ? '!! 워커가 삼킨다' : '브라우저 것이다'),
+      });
+      const 결과행동 = document.getElementById('result-retry').closest('.result-actions');
+      const 오답풀이 = document.getElementById('result-review-block');
+      결과.push({
+        자리: '결과', 이름: '핵심 행동이 긴 오답 풀이보다 먼저 온다',
+        통과: Boolean(결과행동 && 오답풀이
+          && (결과행동.compareDocumentPosition(오답풀이) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        무엇: 결과행동 && 오답풀이
+          ? `행동 ${결과행동.getBoundingClientRect().top}px · 오답 풀이 ${오답풀이.getBoundingClientRect().top}px`
+          : '요소 없음',
+      });
+      결과.push({
+        자리: '결과', 이름: '등록 칸이 홈 닉네임으로 채워져 있다',
+        통과: document.getElementById('nickname-input').value === 닉네임값.textContent.trim(),
+        무엇: `칸 ${document.getElementById('nickname-input').value || '(비어 있음)'} · 홈 ${닉네임값.textContent.trim()}`,
+      });
+      await 눌러('result-retry', 800);
+      살펴본다('「다시 하기」로 돌아온 퀴즈', 'quiz', true);
+      const 자동저장 = JSON.parse(localStorage.getItem('quiz.rankings') ?? '[]');
+      // ㉓ 연습 판(서버에 닿지 않을 때·서버 없이 연 화면)은 기록하지 않는다 — 등록 칸도 없다
+      결과.push(판종류 === 'practice'
+        ? {
+          자리: '결과', 이름: '연습 판은 「다시 하기」로 떠나도 기록이 남지 않는다',
+          통과: Array.isArray(자동저장) && 자동저장.length === 0 && document.getElementById('result-register-block').hidden,
+          무엇: `저장된 기록 ${Array.isArray(자동저장) ? 자동저장.length : '(깨짐)'}개`,
+        }
+        : {
+          자리: '결과', 이름: '「등록」 없이 「다시 하기」를 눌러도 기록이 남는다',
+          통과: Array.isArray(자동저장) && 자동저장.length === 1,
+          무엇: `저장된 기록 ${Array.isArray(자동저장) ? 자동저장.length : '(깨짐)'}개`,
+        });
+      await 눌러('quiz-exit', 300);
+      await 눌러('exit-confirm', 700);
+      살펴본곳.push('결과 → 다시 하기');
+
+      // ⑫ 시스템 「뒤로」. 앱 밖으로 나가지 않고 그 화면의 뒤로·나가기 버튼과 같이 움직인다
+      if (판종류 === 'practice') {
+        // 연습 판은 기록하지 않으므로 아래 랭킹·내보내기 점검이 읽을 예전 기록 하나를 심는다(끝나면 되돌린다)
+        localStorage.setItem('quiz.rankings', JSON.stringify([{
+          id: 'check-screens-1', nickname: 닉네임값.textContent.trim(), mode: 'category', category: 'history',
+          score: 80, correctCount: 8, totalCount: 10, durationMs: 96400, playedAt: new Date().toISOString(),
+          questionResults: [{ id: 'history-001', correct: true, timedOut: false }],
+        }]));
+      }
+      await 눌러('open-ranking', 700);
+      // 이 브라우저의 기록에서 본다 — 온라인 랭킹을 아는 API면 마지막에 본 범위가 온라인일 수 있다
+      if (!document.getElementById('ranking-scope-tabs').hidden) await 눌러('ranking-scope-local', 300);
+      // 방금 자동 저장된 분야 기록 하나뿐이라 전체 도전 탭은 비어 있다
+      document.querySelector('[data-screen="ranking"] .ranking-tab').click();
+      await 잠깐(300);
+      결과.push({
+        자리: '랭킹', 이름: '빈 탭의 행동은 그 탭의 판을 연다',
+        통과: document.getElementById('ranking-empty-start').textContent.trim() === '전체 도전 시작하기',
+        무엇: document.getElementById('ranking-empty-start').textContent.trim(),
+      });
+      결과.push({
+        자리: '랭킹', 이름: '다른 탭에 기록이 있으면 「모든 기록 지우기」가 남는다',
+        통과: !document.getElementById('ranking-footer').hidden,
+        무엇: document.getElementById('ranking-footer').hidden ? '!! 숨김' : '보임',
+      });
+
+      // ㉑ 기록 내보내기. 실제 내려받기·클립보드는 가로챈다
+      결과.push({
+        자리: '랭킹', 이름: '기록이 있으면 「기록 내보내기」가 보인다',
+        통과: !document.getElementById('ranking-export').hidden,
+        무엇: document.getElementById('ranking-export').hidden ? '!! 숨김' : '보임',
+      });
+      const 진짜링크클릭 = HTMLAnchorElement.prototype.click;
+      let 내려받기 = null;
+      HTMLAnchorElement.prototype.click = function 가로챈클릭() {
+        내려받기 = { 이름: this.download, 주소: this.href };
+      };
+      try {
+        await 눌러('ranking-export-file', 400);
+      } finally {
+        HTMLAnchorElement.prototype.click = 진짜링크클릭;
+      }
+      const 파일 = 내려받기 ? await fetch(내려받기.주소).then((r) => r.json()).catch(() => null) : null;
+      결과.push({
+        자리: '랭킹', 이름: '내보낸 파일은 선생님 모드가 읽는 모양이다 (student 없음·문항별 정오)',
+        통과: Boolean(파일) && 파일.schemaVersion === 1 && !('student' in 파일)
+          && Array.isArray(파일.records) && 파일.records.length >= 1
+          && 파일.records.some((기록) => Array.isArray(기록.questionResults))
+          && /^quiz-by-quiz-기록-.+-\d{4}-\d{2}-\d{2}\.json$/.test(내려받기.이름),
+        무엇: 파일 ? `${내려받기.이름} · 기록 ${파일.records?.length}개` : '!! 파일을 만들지 않았다',
+      });
+      const 클립보드 = navigator.clipboard;
+      let 복사한글 = null;
+      if (클립보드) 클립보드.writeText = async (글) => { 복사한글 = 글; };
+      try {
+        await 눌러('ranking-export-copy', 400);
+      } finally {
+        if (클립보드) delete 클립보드.writeText;
+      }
+      const 펼친글 = document.getElementById('ranking-export-text');
+      const 복사본 = 복사한글 ?? (펼친글.hidden ? null : 펼친글.value);
+      결과.push({
+        자리: '랭킹', 이름: '「기록 복사」는 같은 글을 클립보드에 넣거나 펼쳐 골라 둔다',
+        통과: Boolean(복사본) && JSON.parse(복사본).records.length === 파일?.records?.length,
+        무엇: document.getElementById('ranking-export-status').textContent || '(안내 없음)',
+      });
+      history.back();
+      await 화면기다리기('home');
+      살펴본다('랭킹에서 「뒤로」', 'home', true);
+
+      document.querySelector('.category-card').click();
+      await 잠깐(800);
+      history.back();
+      await 잠깐(400);
+      결과.push({
+        자리: '퀴즈', 이름: '「뒤로」는 판을 버리지 않고 나가기 확인을 연다',
+        통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
+        무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
+      });
+      await 눌러('exit-cancel', 300);
+      history.back();
+      await 잠깐(400);
+      결과.push({
+        자리: '퀴즈', 이름: '확인을 무른 뒤 다시 「뒤로」를 눌러도 앱 안에 남는다',
+        통과: 지금화면() === 'quiz' && !document.getElementById('exit-dialog').hidden,
+        무엇: `화면 ${지금화면()} · 확인 ${document.getElementById('exit-dialog').hidden ? '닫힘' : '열림'}`,
+      });
+      await 눌러('exit-confirm', 700);
+      살펴본다('퀴즈에서 「뒤로」로 나온 홈', 'home', true);
+      잠든퀴즈를깨워본다('퀴즈에서 「뒤로」로 나온 홈');
+      살펴본곳.push('뒤로 가기');
+
+      // ⑭ 설정 대화상자와 «제한 없음». 키는 실제처럼 포커스가 있는 요소에서 보낸다 —
+      // 대화상자는 문서의 캡처 단계에서 키를 멈추므로 document 자신에게 보내면 그 길을 타지 않는다
+      const 포커스에서키 = (키) => {
+        const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true });
+        (document.activeElement ?? document.body).dispatchEvent(이벤트);
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
+        return 이벤트.defaultPrevented;
+      };
+      const 설정창 = document.getElementById('settings-dialog');
+      const 시간칸 = (값) => document.querySelector(`#settings-dialog [data-time-limit="${값}"]`);
+      const 원래시간 = document.querySelector('#settings-dialog [data-time-limit][aria-pressed="true"]')?.dataset.timeLimit ?? '20000';
+      document.getElementById('open-settings').focus();
+      await 눌러('open-settings', 300);
+      결과.push({
+        자리: '설정', 이름: '「설정」이 인페이지 대화상자를 열고 패널에 포커스를 둔다',
+        통과: !설정창.hidden && document.activeElement === 설정창.querySelector('[role="dialog"]'),
+        무엇: `${설정창.hidden ? '!! 닫힘' : '열림'} · 포커스 ${document.activeElement?.id || document.activeElement?.className || '(없음)'}`,
+      });
+      const 대화상자방향키 = 포커스에서키('ArrowDown');
+      결과.push({
+        자리: '설정', 이름: '열려 있는 동안 캐릭터가 방향키를 받지 않는다',
+        통과: !대화상자방향키,
+        무엇: 대화상자방향키 ? '!! 뒤에서 캐릭터가 걷는다' : '캐릭터는 그대로다',
+      });
+      시간칸('none').click();
+      await 잠깐(100);
+      결과.push({
+        자리: '설정', 이름: '«제한 없음» 하나만 눌려 있다',
+        통과: 시간칸('none').getAttribute('aria-pressed') === 'true'
+          && document.querySelectorAll('#settings-dialog [data-time-limit][aria-pressed="true"]').length === 1,
+        무엇: [...document.querySelectorAll('#settings-dialog [data-time-limit]')]
+          .map((칸) => `${칸.textContent.trim()} ${칸.getAttribute('aria-pressed')}`).join(' · '),
+      });
+      포커스에서키('Escape');
+      await 잠깐(100);
+      결과.push({
+        자리: '설정', 이름: 'Esc 로 닫으면 「설정」 버튼으로 포커스가 돌아온다',
+        통과: 설정창.hidden && document.activeElement === document.getElementById('open-settings'),
+        무엇: `${설정창.hidden ? '닫힘' : '!! 열림'} · 포커스 ${document.activeElement?.id || '(없음)'}`,
+      });
+      document.querySelector('.category-card').click();
+      await 잠깐(800);
+      살펴본다('«제한 없음» 퀴즈', 'quiz', true);
+      const 막대 = document.querySelector('#timer .timer__track');
+      결과.push({
+        자리: '설정', 이름: '«제한 없음» 판의 HUD는 «시간 제한 없음»을 말하고 막대를 거둔다',
+        통과: document.getElementById('timer-text').textContent.trim() === '시간 제한 없음'
+          && getComputedStyle(막대).display === 'none'
+          && document.getElementById('question-time-limit').textContent.trim() === '시간 제한 없음',
+        무엇: `${document.getElementById('timer-text').textContent.trim()} · 막대 ${getComputedStyle(막대).display}`,
+      });
+      시간앞당기기(25000);
+      const 시간초과났나 = !document.getElementById('feedback').hidden;
+      결과.push({
+        자리: '설정', 이름: '«제한 없음» 판은 25초를 앞당겨도 시간 초과가 나지 않는다',
+        통과: !시간초과났나 && 지금화면() === 'quiz'
+          && [...document.querySelectorAll('#choices .choice')].every((보기) => !보기.disabled),
+        무엇: 시간초과났나 ? `!! ${document.getElementById('feedback-verdict').textContent}` : '판이 그대로 기다린다',
+      });
+      시간되돌리기(25000);
+      await 눌러('quiz-exit', 300);
+      await 눌러('exit-confirm', 700);
+      살펴본다('«제한 없음» 퀴즈에서 나온 홈', 'home', true);
+      // 화면에서 원래 값으로 되돌린다. 저장소만 되돌리면 앱이 기억한 값과 어긋난다
+      await 눌러('open-settings', 300);
+      시간칸(원래시간).click();
+      await 눌러('settings-close', 300);
+      결과.push({
+        자리: '설정', 이름: '문항 시간을 원래 값으로 되돌렸다',
+        통과: 시간칸(원래시간).getAttribute('aria-pressed') === 'true' && 설정창.hidden,
+        무엇: 원래시간,
+      });
+      살펴본곳.push('설정 «제한 없음»');
+
+      // ⑲ 전체 도전 결과의 오답 묶음 (N04). 마지막 보기만 골라 여러 분야에서 틀리게 한다
+      await 눌러('start-all', 800);
+      살펴본다('전체 도전', 'quiz', true);
+      for (let i = 0; i < 80 && 지금화면() === 'quiz'; i += 1) {
+        const 보기들 = [...document.querySelectorAll('#choices .choice')].filter((b) => !b.disabled);
+        if (보기들.length) 보기들[보기들.length - 1].click();
+        await 잠깐(100);
+        const 다음 = document.getElementById('next-button');
+        if (다음 && !document.getElementById('feedback').hidden) 다음.click();
+        await 잠깐(120);
+      }
+      살펴본다('전체 도전 결과', 'result', true);
+      const 오답목록 = document.getElementById('result-review');
+      const 묶음들 = [...오답목록.children];
+      const 펼침줄들 = 묶음들.map((묶음) => 묶음.querySelector('details > summary.review-group__summary'));
+      결과.push({
+        자리: '전체 도전 결과', 이름: '오답 풀이가 분야별 접힌 묶음이다 — 한 목록으로 펼치지 않는다',
+        통과: document.getElementById('result-review-block').hidden
+          || (묶음들.length > 0
+            && 묶음들.every((묶음) => 묶음.classList.contains('review-group'))
+            && 펼침줄들.every((줄) => 줄 && 줄.getBoundingClientRect().height >= 44)
+            && (묶음들.length === 1 || 묶음들.every((묶음) => !묶음.querySelector('details').open))),
+        무엇: 묶음들.map((묶음) => 묶음.querySelector('summary')?.textContent.replace(/\s+/g, ' ').trim() ?? `!! ${묶음.className}`).join(' · ') || '오답 없음',
+      });
+      const 전체결과행동 = document.getElementById('result-retry').closest('.result-actions');
+      결과.push({
+        자리: '전체 도전 결과', 이름: '핵심 행동이 오답 묶음보다 먼저 온다',
+        통과: Boolean(전체결과행동.compareDocumentPosition(document.getElementById('result-review-block')) & Node.DOCUMENT_POSITION_FOLLOWING),
+        무엇: `행동 ${Math.round(전체결과행동.getBoundingClientRect().top)}px · 묶음 ${Math.round(document.getElementById('result-review-block').getBoundingClientRect().top)}px`,
+      });
+      if (펼침줄들[0]) {
+        // 걸어가 누르는 것과 같은 길 — 워커의 고르기는 발밑의 진짜 click() 이다
+        const 첫묶음 = 펼침줄들[0].parentElement;
+        const 처음열림 = 첫묶음.open;
+        펼침줄들[0].click();
+        결과.push({
+          자리: '전체 도전 결과', 이름: '펼침 줄을 누르면(걸어가 누르기와 같은 click) 묶음이 여닫힌다',
+          통과: 첫묶음.open !== 처음열림,
+          무엇: `${처음열림 ? '열림' : '닫힘'} → ${첫묶음.open ? '열림' : '닫힘'}`,
+        });
+      }
+      await 눌러('result-home', 700);
+      살펴본다('전체 도전 결과에서 온 홈', 'home', true);
+      살펴본곳.push('전체 도전 결과');
+
+      // 로비와 대기실. 방을 하나 만들어 오간다
+      await 눌러('open-online', 0);
+      await 화면기다리기('online');
+      살펴본다('로비', 'online', true);
+      // 로비를 불러오는 동안 단 «연결 중…»이 남으면 홈에 돌아왔을 때 입구가 계속 바쁜 척한다 (U34)
+      const 온라인입구 = document.getElementById('open-online');
+      결과.push({
+        자리: '로비', 이름: '홈 온라인 입구의 바쁨 표시를 거뒀다',
+        // 쉬는 말은 세션이 알려 준 시작 인원을 따른다 — 묻기 전·혼자서도 여는 API·둘부터인 이전 API
+        통과: !온라인입구.hasAttribute('aria-busy')
+          && ['방을 만들거나 참가해요', '혼자서도 · 친구와 함께', '친구와 함께 · 2명부터']
+            .includes(document.getElementById('open-online-desc').textContent.trim()),
+        무엇: `aria-busy ${온라인입구.getAttribute('aria-busy') ?? '없음'} · ${document.getElementById('open-online-desc').textContent.trim()}`,
+      });
+      const 로비터치크기 = ['online-home', 'room-filter-toggle', 'room-refresh']
+        .map((id) => [id, document.getElementById(id).getBoundingClientRect()]);
+      프레임돌리기();
+      결과.push({
+        자리: '로비', 이름: '반복 조작의 터치 목표가 44px 이상이다',
+        통과: 로비터치크기.every(([, 크기]) => 크기.width >= 44 && 크기.height >= 44),
+        무엇: 로비터치크기.map(([id, 크기]) => `${id} ${크기.width}px × ${크기.height}px`).join(' · '),
+      });
+      const 로비동작이름 = [...document.querySelectorAll('.online-action-card__body strong')];
+      결과.push({
+        자리: '로비', 이름: '세 주요 동작의 이름이 좁은 화면에서도 8px 이상 여유를 둔다',
+        통과: 로비동작이름.every((이름) => 이름.clientWidth - 글자너비(이름) >= 8),
+        무엇: 로비동작이름.map((이름) =>
+          `${이름.textContent.trim()} 여유 ${(이름.clientWidth - 글자너비(이름)).toFixed(1)}px`).join(' · '),
+      });
+      const 온라인안내 = document.getElementById('online-note');
+      const 온라인캐릭터 = document.getElementById('online-character');
+      const 겹친온라인글 = 겹친글자줄(온라인안내, 온라인캐릭터.getBoundingClientRect());
+      결과.push({
+        자리: '로비', 이름: '주차한 캐릭터가 연결 안내 글을 덮지 않는다',
+        통과: 겹친온라인글.length === 0,
+        무엇: `겹친 글자 줄 ${겹친온라인글.length}개`,
+      });
+      // ⑬ 이 브라우저 안의 방(로컬)일 때 보이는 안내다. 개발 용어로 말하지 않는다
+      결과.push({
+        자리: '로비', 이름: '연결 안내 문구에 «서버»·API 같은 개발 용어가 없다',
+        통과: !/서버|API|snapshot/i.test(온라인안내.textContent),
+        무엇: 온라인안내.textContent.trim(),
+      });
+      const 설정버튼위치 = getComputedStyle(document.querySelector('.app-bar')).position;
+      결과.push({
+        자리: '로비', 이름: '짧은 가로에서는 설정 버튼이 스크롤 동작을 덮지 않고 문서와 함께 흐른다',
+        통과: innerHeight > 480 || 설정버튼위치 === 'absolute',
+        무엇: `높이 ${innerHeight}px · position ${설정버튼위치}`,
+      });
+      잠든퀴즈를깨워본다('로비');
+
+      // ⑭ 설정은 어느 화면에서나 열린다. 로비의 Esc 는 «홈으로»라, 대화상자를 닫는 Esc 가 새면 홈으로 튕긴다
+      await 눌러('open-settings', 300);
+      포커스에서키('Escape');
+      await 잠깐(300);
+      결과.push({
+        자리: '로비', 이름: '설정 대화상자의 Esc 는 대화상자만 닫고 화면은 그대로다',
+        통과: document.getElementById('settings-dialog').hidden && 지금화면() === 'online',
+        무엇: `화면 ${지금화면()} · 설정 ${document.getElementById('settings-dialog').hidden ? '닫힘' : '!! 열림'}`,
+      });
+
+      // ⑥ 키의 임자. 넷이 함께 서야 한다 — 하나를 고치면 다른 셋이 깨지곤 했다
+      const 키를보낸다 = (키, 옵션 = {}) => {
+        const 이벤트 = new KeyboardEvent('keydown', { key: 키, bubbles: true, cancelable: true, ...옵션 });
+        document.dispatchEvent(이벤트);
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: 키, bubbles: true }));
+        return 이벤트.defaultPrevented;
+      };
+
+      // 걷기 키(s·←)와 겹치는 브라우저 단축키를 워커가 먹으면 저장·뒤로 가기가 죽는다.
+      // 짝인 «발밑이 비면 Space로 스크롤된다»는 빈자리에서 시작함이 보장된 결과 화면에서 본다
+      const 단축키를가로챘나 = 키를보낸다('s', { ctrlKey: true });
+      결과.push({
+        자리: '로비', 이름: 'Ctrl+S를 워커가 가로채지 않는다',
+        통과: !단축키를가로챘나,
+        무엇: 단축키를가로챘나 ? '!! 워커가 가로챈다' : '브라우저 것이다',
+      });
+      // ⑬ 조작법과 무대 안내가 «방향키·WASD»라고 말한다. 맨 d 는 캐릭터 몫이어야 한다
+      const 걷기키를받았나 = 키를보낸다('d');
+      결과.push({
+        자리: '로비', 이름: '조작법이 말하는 WASD도 캐릭터가 받는다',
+        통과: 걷기키를받았나,
+        무엇: 걷기키를받았나 ? '캐릭터가 받는다' : '!! 아무도 안 받는다',
+      });
+
+      // 체크박스에서 Space 는 체크박스 것이다. 워커가 가로채면 preventDefault 가
+      // 기본 동작까지 죽여 키보드만 쓰는 사람은 「비공개로 만들기」를 켤 수 없다
+      // 주요 동작은 탭처럼 본문 하나만 열므로, 검사할 입력이 있는 본문부터 연다.
+      await 눌러('open-create-room', 250);
+      const 체크박스 = document.getElementById('create-private');
+      체크박스.focus();
+      const 스페이스를가로챘나 = 키를보낸다(' ');
+      결과.push({
+        자리: '로비', 이름: '체크박스의 Space 를 워커가 가로채지 않는다',
+        통과: !스페이스를가로챘나,
+        무엇: 스페이스를가로챘나 ? '!! 워커가 가로챈다' : '체크박스 것이다',
+      });
+
+      // Tab 으로 버튼에 간 사람의 Enter 는 그 버튼 것이다
+      document.getElementById('online-home').focus();
+      결과.push({
+        자리: '로비', 이름: 'Tab 으로 간 버튼의 Enter 를 워커가 가로채지 않는다',
+        통과: !키를보낸다('Enter'), 무엇: document.activeElement.id,
+      });
+
+      // 글자를 적는 중이면 방향키는 커서 것이다. 캐릭터가 같이 걸어가면 안 된다
+      await 눌러('open-private-join', 250);
+      const 코드칸 = document.getElementById('join-code');
+      코드칸.focus();
+      코드칸.value = 'ABCD';
+      키를보낸다('ArrowDown');
+      결과.push({
+        자리: '로비', 이름: '입력칸에서는 방향키가 커서 것이다',
+        통과: document.activeElement === 코드칸 && 코드칸.value === 'ABCD',
+        무엇: `커서 ${document.activeElement.id || '(잃음)'} · 적은 값 ${코드칸.value || '(지워짐)'}`,
+      });
+
+      // 들어갔으면 나올 길이 있어야 한다. Esc 는 화면 쪽으로 새지 않는다 —
+      // 로비의 Esc 는 «홈으로»라, 새면 적던 것이 통째로 날아간다
+      키를보낸다('Escape');
+      결과.push({
+        자리: '로비', 이름: 'Esc 로 입력칸에서 나오고 화면은 그대로다',
+        통과: document.activeElement !== 코드칸 && 지금화면() === 'online' && 코드칸.value === 'ABCD',
+        무엇: `화면 ${지금화면()} · 적은 값 ${코드칸.value || '(지워짐)'}`,
+      });
+      코드칸.value = '';
+
+      await 눌러('open-create-room', 250);
+      const 이름칸 = document.getElementById('create-name');
+      // 값처럼 보이는 placeholder만 두면 비운 채 만들다 거절당했다 (U41)
+      결과.push({
+        자리: '로비', 이름: '방 이름이 «닉네임의 방»으로 채워져 있다',
+        통과: 이름칸.value.trim().endsWith('의 방'),
+        무엇: 이름칸.value || '(비어 있음)',
+      });
+      이름칸.value = '점검용 방';
+      document.getElementById('create-form').requestSubmit();
+      await 화면기다리기('waiting');
+      살펴본다('대기실', 'waiting', true);
+
+      // ⑳ 액자의 말 숨기기·내보내기. 로컬 방은 이 브라우저의 나뿐이라 점검용 손님을 잠깐 넣는다
+      const 액자버튼 = (행동) => [...document.querySelectorAll(`#lounge-players [data-portrait-action="${행동}"]`)];
+      결과.push({
+        자리: '대기실', 이름: '내 액자에는 말 숨기기·내보내기가 없다',
+        통과: 액자버튼('mute').length === 0 && 액자버튼('remove').length === 0,
+        무엇: `말 숨기기 ${액자버튼('mute').length} · 내보내기 ${액자버튼('remove').length}`,
+      });
+      const 손님방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+      const 점검방 = 손님방.find((방) => 방.name === '점검용 방');
+      if (점검방) {
+        점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
+        localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
+      }
+      // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
+      await 눌러('setting-category', 400);
+      const [숨기기] = 액자버튼('mute');
+      // 화면 밖이면 elementFromPoint 가 null 이다. 보이는 데로 옮겨 놓고 잰다
+      숨기기?.scrollIntoView({ block: 'center' });
+      await 잠깐(100);
+      const 숨기기상자 = 숨기기?.getBoundingClientRect();
+      const 발밑 = 숨기기상자
+        ? document.elementFromPoint(숨기기상자.left + 숨기기상자.width / 2, 숨기기상자.top + 숨기기상자.height / 2)
+        : null;
+      결과.push({
+        자리: '대기실', 이름: '남의 액자에는 걸어가 밟을 수 있는 44px 말 숨기기 버튼이 있다',
+        통과: Boolean(숨기기) && 숨기기상자.width >= 44 && 숨기기상자.height >= 44
+          && Boolean(발밑?.closest('[data-portrait-action="mute"]'))
+          && 숨기기.getAttribute('aria-label') === '점검손님 님 말 숨기기',
+        무엇: 숨기기 ? `${Math.round(숨기기상자.width)}×${Math.round(숨기기상자.height)} · 발밑 ${발밑?.className || '(없음)'}` : '!! 버튼 없음',
+      });
+      숨기기?.click();
+      await 잠깐(200);
+      const 숨긴뒤 = 액자버튼('mute')[0];
+      const 로그끝 = document.getElementById('chat-log').lastElementChild?.textContent ?? '';
+      결과.push({
+        자리: '대기실', 이름: '말 숨기기는 aria-pressed 로 켜지고 조용한 한 줄을 남긴다',
+        통과: 숨긴뒤?.getAttribute('aria-pressed') === 'true' && 로그끝.includes('점검손님 님의 말을 숨겼어요'),
+        무엇: `${숨긴뒤?.getAttribute('aria-pressed')} · ${로그끝 || '(로그 없음)'}`,
+      });
+      숨긴뒤?.click();
+      // 방장은 접속 중인 사람도 확인창을 거쳐 내보낸다(소유자 결정). 확인창만 열어 보고 «그대로 두기»로 닫는다
+      const [내보내기] = 액자버튼('remove');
+      const 내보내기상자 = 내보내기?.getBoundingClientRect();
+      결과.push({
+        자리: '대기실', 이름: '방장 화면의 남의 액자에는 44px 내보내기 버튼이 있다',
+        통과: Boolean(내보내기) && 내보내기상자.height >= 44
+          && 내보내기.getAttribute('aria-label') === '점검손님 님 내보내기',
+        무엇: 내보내기 ? `${Math.round(내보내기상자.width)}×${Math.round(내보내기상자.height)}` : '!! 버튼 없음',
+      });
+      내보내기?.click();
+      await 잠깐(100);
+      const 확인창 = document.getElementById('remove-member-dialog');
+      const 확인설명 = document.getElementById('remove-member-body').textContent ?? '';
+      결과.push({
+        자리: '대기실', 이름: '접속 중인 사람의 내보내기는 «잠시 다시 들어올 수 없어요» 확인창을 거친다',
+        통과: !확인창.hidden
+          && document.getElementById('remove-member-title').textContent === '점검손님 님을 방에서 내보낼까요?'
+          && 확인설명.startsWith('잠시 다시 들어올 수 없어요')
+          && document.activeElement === document.getElementById('remove-member-cancel'),
+        무엇: `${확인창.hidden ? '닫힘' : '열림'} · ${확인설명 || '(설명 없음)'} · 포커스 ${document.activeElement?.id || document.activeElement?.tagName}`,
+      });
+      document.getElementById('remove-member-cancel').click();
+      await 잠깐(100);
+      결과.push({
+        자리: '대기실', 이름: '그대로 두기는 확인창을 닫고 연 내보내기 버튼으로 포커스를 돌려준다',
+        통과: 확인창.hidden && document.activeElement === 액자버튼('remove')[0],
+        무엇: `${확인창.hidden ? '닫힘' : '열림'} · 포커스 ${document.activeElement?.getAttribute?.('aria-label') || document.activeElement?.tagName}`,
+      });
+      if (점검방) {
+        const 되돌린방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+        for (const 방 of 되돌린방) 방.players = (방.players ?? []).filter((사람) => 사람.id !== 'check-guest');
+        localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
+        await 눌러('setting-category', 400);
+      }
+      살펴본곳.push('대기실 액자 버튼');
+
+      // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
+      // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
+      // 방장 혼자서도 판이 열린다(혼자 여는 온라인 방). 네트워크 방에서 누르면 서버에 진짜 판이 생기고 나가기가
+      // «게임이 끝나면»으로 거절되므로, 시작은 이 브라우저 안의 방(점검방)에서만 실제로 누른다
+      if (점검방) document.getElementById('waiting-start').click();
+      document.getElementById('waiting-leave').click();
+      await 화면기다리기('online');
+      살펴본다('시작하자마자 나간 뒤', 'online', true);
+      잠든퀴즈를깨워본다('시작하자마자 나간 뒤');
+      // 한 번 더. 세션이 살아 있으면 다음 문항으로 넘어가 또 뜬다
+      잠든퀴즈를깨워본다('시작하자마자 나간 뒤 (한 번 더)', 50000);
+      살펴본곳.push('게임 시작 직후 나가기');
+
+      await 눌러('online-home', 700);
+      살펴본다('돌아온 홈', 'home', true);
+    }
   } catch (error) {
     결과.push({ 자리: '(검사 중단)', 이름: String(error && error.message), 통과: false, 무엇: '' });
   } finally {

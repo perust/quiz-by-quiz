@@ -44,6 +44,23 @@ const SCOPE_NOTES: Readonly<Record<RankingScope, string>> = {
 };
 
 /**
+ * 혼자 하기가 온라인으로 옮긴 뒤(FR-7.13 3단계)의 이 브라우저 기록. 새 기록은 더 생기지 않아 «예전 기록»이고 읽기만
+ * 한다 — 지우기·내보내기는 그대로 둔다. 혼자 푼 판도 온라인 랭킹에 남는다
+ */
+export const LEGACY_LOCAL_SCOPE_LABEL = '이 브라우저의 예전 기록';
+export const LEGACY_LOCAL_SCOPE_NOTE = '이 브라우저에 남은 예전 기록이에요. 이제 새 기록은 온라인 랭킹에 남아요.';
+const ONLINE_ONLY_SCOPE_NOTE = '혼자 푼 판도, 온라인 방에서 끝까지 푼 판도 모두 남아요. 같은 점수면 먼저 남긴 기록이 위예요.';
+const LOCAL_SCOPE_LABEL = '이 브라우저의 기록';
+
+/** 연습(기록 안 남음)만 열 때 빈 탭이 덧붙이는 말 (FR-7.13 3단계) — 시작하면 기록이 생길 것처럼 말하지 않는다 */
+export const PRACTICE_EMPTY_NOTE = '지금은 연습만 할 수 있어 풀어도 기록이 남지 않아요.';
+
+/** 기록 내보내기 안내 (N02). 범위마다 무엇을 담는지 말한다 */
+const LOCAL_EXPORT_NOTE = '이 브라우저에 남은 기록을 파일로 내보내요. 랭킹 탭마다 상위 10개까지만 남아 있어요.';
+export const ONLINE_EXPORT_NOTE =
+  '내 온라인 기록을 파일로 내보내요. 남아 있는 기록(최근 8주와 판마다 상위 100) 가운데 최근 500개까지예요.';
+
+/**
  * 온라인 랭킹을 읽은 결과. app.ts가 저장소의 답과 오류를 이 모양으로 옮긴다 — 이 화면은 오류의 종류를
  * 모르고 보일 말만 받는다
  */
@@ -64,6 +81,14 @@ export interface OnlineRankingDeps {
   load: (target: RankingTarget, period: OnlineRankingPeriod) => Promise<OnlineRankingLoad>;
   /** 빈 온라인 랭킹의 다음 행동: 온라인 로비를 연다 */
   onOpenOnline: () => void;
+  /**
+   * 혼자 하기가 온라인으로 옮겼는가 (FR-7.13 3단계, 세션의 `soloPlay`). 그러면 이 브라우저의 기록은 «예전 기록»(읽기만)
+   * 이고, 빈 온라인 랭킹은 그 탭의 판을 곧바로 열며(`onStart` — 홈의 분야 칸과 같은 혼자 온라인 판), 기록 내보내기는
+   * 온라인 범위에서 내 서버 기록을 담는다. 없으면(이전 API) 예전 화면 그대로다
+   */
+  onlineOnly?: () => boolean;
+  /** 내 서버 기록을 내보낼 파일 (N02의 서버 기록 이전). null이면 내보낼 기록이 아직 없다 */
+  exportRecords?: () => Promise<RecordsExportFile | null>;
 }
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -76,6 +101,12 @@ export interface RankingScreenDeps {
    * 문제를 불러오지 못한 분야에 「… 시작하기」를 권하면 눌렀을 때 홈으로 튕겨 나간다
    */
   canStart: (target: RankingTarget) => boolean;
+  /**
+   * 지금 분야 칸이 연습(기록 안 남음)을 여는가 (FR-7.13 3단계, 서버에 닿지 않는다·서버 없이 열었다). 그러면 빈 탭의
+   * 「… 시작하기」는 기록이 남지 않는 연습이다 — «기록이 아직 없어요»에 기록이 남을 것처럼 시작을 권하지 않고
+   * 「… 연습하기」로 그렇다고 말한다. 없으면 늘 false다
+   */
+  isPractice?: () => boolean;
   loadRankings: (target: RankingTarget) => Promise<ScoreRecord[]>;
   clearRankings: () => Promise<void>;
   /**
@@ -139,7 +170,9 @@ export function onlineRankingSummary(
 }
 
 export function createRankingScreen(
-  { onHome, onStart, canStart, loadRankings, clearRankings, exportRecords, online }: RankingScreenDeps,
+  {
+    onHome, onStart, canStart, isPractice = () => false, loadRankings, clearRankings, exportRecords, online,
+  }: RankingScreenDeps,
 ): RankingScreen {
   const el = {
     tabs: need('ranking-tabs'),
@@ -165,6 +198,7 @@ export function createRankingScreen(
     dialogCancel: need<HTMLButtonElement>('clear-cancel'),
     dialogConfirm: need<HTMLButtonElement>('clear-confirm'),
     exportBlock: need('ranking-export'),
+    exportNote: need('ranking-export-note'),
     exportFile: need<HTMLButtonElement>('ranking-export-file'),
     exportCopy: need<HTMLButtonElement>('ranking-export-copy'),
     exportText: need<HTMLTextAreaElement>('ranking-export-text'),
@@ -194,8 +228,8 @@ export function createRankingScreen(
   let period: OnlineRankingPeriod = 'week';
   /** 늦게 온 온라인 응답이 그 뒤에 고른 탭·기간을 덮지 않게 한다 */
   let onlineRequest = 0;
-  /** 빈 칸의 버튼이 하는 일. 글자를 그린 때와 같은 판정으로 누른다 */
-  let emptyAction: 'start' | 'home' | 'online' | 'retry' = 'start';
+  /** 빈 칸의 버튼이 하는 일. 글자를 그린 때와 같은 판정으로 누른다. `scope-online`은 온라인 랭킹으로 옮긴다 */
+  let emptyAction: 'start' | 'home' | 'online' | 'retry' | 'scope-online' = 'start';
   /** 읽어 보니 이 API에는 서버 랭킹이 없었다. 이 페이지에서는 다시 권하지 않는다 */
   let onlineMissing = false;
 
@@ -218,6 +252,30 @@ export function createRankingScreen(
 
   function activeScope(): RankingScope {
     return (scope ?? defaultScope()) === 'online' && onlineOffered() ? 'online' : 'local';
+  }
+
+  /** 혼자 하기가 온라인으로 옮겼는가 (FR-7.13 3단계). 그러면 이 브라우저의 기록은 «예전 기록»이다 */
+  function onlineOnly(): boolean {
+    return onlineOffered() && online?.onlineOnly?.() === true;
+  }
+
+  /**
+   * 빈 칸의 시작 버튼 글 (`emptyAction`이 start·home일 때). 연습이면 «… 연습하기»이고 이름 끝에 «기록 안 남음»을 단다 —
+   * 홈의 분야 칸 이름과 같은 말이다
+   */
+  function setEmptyStart(label: string): void {
+    if (emptyAction !== 'start') {
+      el.emptyStartButton.removeAttribute('aria-label');
+      el.emptyStartButton.textContent = '홈으로';
+      return;
+    }
+    if (isPractice()) {
+      el.emptyStartButton.textContent = `${label} 연습하기`;
+      el.emptyStartButton.setAttribute('aria-label', `${label} 연습하기, 기록 안 남음`);
+      return;
+    }
+    el.emptyStartButton.removeAttribute('aria-label');
+    el.emptyStartButton.textContent = `${label} 시작하기`;
   }
 
   // ── 탭 ─────────────────────────────────────────────────────────
@@ -259,7 +317,12 @@ export function createRankingScreen(
     el.scopeTabs.hidden = !onlineOffered();
     syncOption(el.scopeOnline, current === 'online');
     syncOption(el.scopeLocal, current === 'local');
-    el.scopeNote.textContent = SCOPE_NOTES[current];
+    const legacy = onlineOnly();
+    el.scopeLocal.textContent = legacy ? LEGACY_LOCAL_SCOPE_LABEL : LOCAL_SCOPE_LABEL;
+    el.scopeNote.textContent = legacy
+      ? (current === 'local' ? LEGACY_LOCAL_SCOPE_NOTE : ONLINE_ONLY_SCOPE_NOTE)
+      : SCOPE_NOTES[current];
+    el.exportNote.textContent = current === 'online' ? ONLINE_EXPORT_NOTE : LOCAL_EXPORT_NOTE;
     el.periods.hidden = current !== 'online';
     syncOption(el.periodWeek, period === 'week');
     syncOption(el.periodAll, period === 'all');
@@ -408,12 +471,25 @@ export function createRankingScreen(
     el.list.replaceChildren();
 
     if (records.length === 0) {
+      // 혼자 하기가 온라인으로 옮긴 뒤(FR-7.13 3단계)의 이 브라우저 기록은 읽기만 한다 — 새 판은 여기에 남지 않으므로
+      // 시작을 권하지 않고 기록이 남는 온라인 랭킹으로 잇는다
+      if (onlineOnly()) {
+        emptyAction = 'scope-online';
+        el.emptyMessage.textContent = `이 브라우저에 남은 예전 ${tab.label} 기록이 없어요.`;
+        el.emptyStartButton.removeAttribute('aria-label');
+        el.emptyStartButton.textContent = '온라인 랭킹 보기';
+        el.empty.hidden = false;
+        el.list.hidden = true;
+        return;
+      }
       // 가상 기록을 심지 않고 빈 상태를 그대로 안내한다 (FR-6.12).
       // 첫 판은 이 탭의 판이다 — 홈으로 보내 분야를 다시 고르게 하지 않는다.
       // 다만 그 판을 열 수 없으면(문제를 불러오지 못했다) 시작을 권하지 않고 홈으로 돌려보낸다
       emptyAction = canStart(tab.target) ? 'start' : 'home';
-      el.emptyMessage.textContent = `${tab.label} 기록이 아직 없어요.`;
-      el.emptyStartButton.textContent = emptyAction === 'start' ? `${tab.label} 시작하기` : '홈으로';
+      el.emptyMessage.textContent = isPractice()
+        ? `${tab.label} 기록이 아직 없어요. ${PRACTICE_EMPTY_NOTE}`
+        : `${tab.label} 기록이 아직 없어요.`;
+      setEmptyStart(tab.label);
       el.empty.hidden = false;
       el.list.hidden = true;
       return;
@@ -434,7 +510,8 @@ export function createRankingScreen(
     const shown = period;
     const request = ++onlineRequest;
     el.footer.hidden = true;
-    el.exportBlock.hidden = true;
+    // 혼자 하기가 온라인으로 옮겼으면(FR-7.13 3단계) 기록 내보내기는 이 범위에서 내 서버 기록을 담는다
+    el.exportBlock.hidden = !(onlineOnly() && online.exportRecords);
     el.list.replaceChildren();
     el.list.hidden = true;
     el.empty.hidden = true;
@@ -476,6 +553,7 @@ export function createRankingScreen(
       setOnlineStatus('온라인 랭킹을 불러오지 못했어요.');
       emptyAction = toHome ? 'home' : 'retry';
       el.emptyMessage.textContent = result.message;
+      el.emptyStartButton.removeAttribute('aria-label');
       el.emptyStartButton.textContent = toHome ? '홈으로' : '다시 시도';
       el.empty.hidden = false;
       return;
@@ -487,12 +565,23 @@ export function createRankingScreen(
       el.window.hidden = false;
     }
     setOnlineStatus(onlineRankingSummary(tab.label, shown, board.entries));
+    if (board.entries.length === 0 && onlineOnly()) {
+      // 혼자 푼 판도 여기에 남는다(FR-7.13 3단계). 첫 판은 이 탭의 판이다 — 홈의 분야 칸처럼 곧바로 연다 (FR-6.12)
+      emptyAction = canStart(tab.target) ? 'start' : 'home';
+      el.emptyMessage.textContent = isPractice()
+        ? `아직 ${tab.label} 온라인 기록이 없어요. ${PRACTICE_EMPTY_NOTE}`
+        : `아직 ${tab.label} 온라인 기록이 없어요. 끝까지 풀면 점수가 여기에 남아요.`;
+      setEmptyStart(tab.label);
+      el.empty.hidden = false;
+      return;
+    }
     if (board.entries.length === 0) {
       // 가상 기록을 심지 않는다 (FR-6.12). 기록은 온라인 방에서 끝까지 푼 판에서만 생긴다
       emptyAction = 'online';
       el.emptyMessage.textContent = tab.target.mode === 'all'
         ? '온라인 방에서 전체 도전 판을 끝까지 풀면 점수가 여기에 남아요.'
         : `온라인 방에서 ${tab.label} 판을 끝까지 풀면 점수가 여기에 남아요.`;
+      el.emptyStartButton.removeAttribute('aria-label');
       el.emptyStartButton.textContent = '온라인 방 열기';
       el.empty.hidden = false;
       return;
@@ -588,7 +677,13 @@ export function createRankingScreen(
     if (exporting) return;
     exporting = true;
     try {
-      const file = await exportRecords();
+      // 온라인 범위면 내 서버 기록(FR-7.13 3단계), 아니면 이 브라우저의 기록이다. 어느 쪽이든 같은 파일 모양이다
+      const fromServer = activeScope() === 'online' && online?.exportRecords;
+      const file = fromServer ? await fromServer() : await exportRecords();
+      if (file === null) {
+        setExportStatus('내보낼 온라인 기록이 아직 없어요. 판을 끝까지 풀면 기록이 남아요.');
+        return;
+      }
       const text = JSON.stringify(file.data, null, 2);
       const count = file.data.records.length;
       if (how === 'copy') {
@@ -621,6 +716,11 @@ export function createRankingScreen(
       void render().then(() => keepFocus(hadFocus, () => el.empty.hidden));
     } else if (emptyAction === 'online') {
       online?.onOpenOnline();
+    } else if (emptyAction === 'scope-online') {
+      const hadFocus = document.activeElement === el.emptyStartButton;
+      chooseScope('online');
+      // 누른 버튼은 온라인 랭킹을 그리는 동안 사라진다. 포커스는 범위 칸의 «온라인 랭킹»으로 옮긴다
+      if (hadFocus) el.scopeOnline.focus();
     } else if (emptyAction === 'start' && canStart(target)) {
       onStart(target);
     } else {
@@ -632,6 +732,8 @@ export function createRankingScreen(
     if (activeScope() === next) return;
     scope = next;
     highlightId = null;
+    // 내보내기는 범위마다 다른 기록이다. 앞 범위의 안내와 펼친 글을 남기지 않는다
+    resetExport();
     void render();
   }
   el.scopeOnline.addEventListener('click', () => chooseScope('online'));

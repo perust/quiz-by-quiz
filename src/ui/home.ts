@@ -1,6 +1,10 @@
 // 홈 화면 렌더링
 // 카테고리 카드(FR-2.1), 최고 점수(FR-2.3), 전체 도전(FR-2.2), 내 캐릭터, 랭킹 입구.
 //
+// 분야 칸·전체 도전이 무엇을 여는지는 app.ts 가 정해 알린다(`setPlayMode`, FR-7.13 3단계) — 혼자 푸는 온라인
+// 판, 이 기능을 모르는 이전 API의 혼자 하기(로컬), 서버에 닿지 않을 때의 연습(기록 안 남음). 이 화면은 그 말과
+// 별 점수만 바꾸고 칸을 다시 만들지 않는다 — 캐릭터가 밟고 있는 칸·포커스가 그대로 남는다.
+//
 // 캐릭터가 이 화면을 걸어 다니며 메뉴를 고른다. 버튼은 그대로 눌러도 되므로
 // 걷기와 직접 누르기는 항상 함께 제공되는 두 입력 경로다.
 
@@ -11,7 +15,8 @@ import { shortHomeStartPoint } from './walker-geometry.js';
 import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
-import { onlineEntryCopy } from '../online/rules.js';
+import { onlineEntryCopy, SOLO_ONLINE_ENTRY } from '../online/rules.js';
+import { soloRoomNoteText } from '../online/solo-play.js';
 import { NICKNAME_PROBLEM_MESSAGES, nicknameProblem } from '../online/nickname-rules.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
@@ -22,8 +27,13 @@ export interface HomeScreenDeps {
   onOpenRanking: () => void;
   onOpenCharacters: () => void;
   onOpenOnline: () => void;
-  /** 「아직 방에 있어요」 줄을 눌렀을 때. 그 방의 대기실로 간다 (U35) */
-  onReturnToRoom: (code: string) => void;
+  /**
+   * 「아직 방에 있어요」 줄을 눌렀을 때. 그 방의 대기실로 간다 (U35). 혼자 푸는 온라인 판의 방(`solo`)이면
+   * 대기실이 아니라 그 판으로 돌아간다
+   */
+  onReturnToRoom: (code: string, solo: boolean) => void;
+  /** 연습 안내 줄(서버에 닿지 않는다)의 «다시 연결». 온라인을 다시 묻는다 (FR-7.13 3단계) */
+  onRetryOnline: () => void;
   /** 닉네임을 바꿨을 때 */
   onNickname: (nickname: string) => void;
   /** 문제 은행 알림의 「다시 불러오기」 (U06). 페이지를 새로 읽어 문제를 다시 받는다 */
@@ -34,6 +44,23 @@ export interface HomeScreenDeps {
 export interface HomeRoomNote {
   code: string;
   name: string;
+  /** 혼자 푸는 온라인 판의 방이면 «풀던 «과학» 판이 아직 진행 중이에요 · 이어 풀기»다 (FR-7.13 3단계) */
+  solo?: boolean;
+  /** 혼자 판의 이름(분야·전체 도전). 없으면 «풀던 혼자 판이 있어요»다 */
+  label?: string;
+}
+
+/**
+ * 분야 칸·전체 도전이 여는 것 (FR-7.13 3단계). `practice`면 연습(기록 안 남음)이라 별 점수가 없고 칸의 이름이
+ * «연습하기»이며, `note`가 있으면 dock 맨 위 안내 줄이 까닭과 다시 할 일을 말한다(복귀 줄 자리를 쓴다). 연습이 아닌데
+ * `note`가 있으면 잠시 띄우는 알림이다(요청 한도에 걸린 혼자 판·사라진 혼자 판, `data-kind="notice"`).
+ * `online`·`local`·`checking`은 이름이 같다 — 기록이 어디에 남는지는 「게임 방법」과 결과 화면이 말한다
+ */
+export interface HomePlayView {
+  practice: boolean;
+  note: { text: string; action: string } | null;
+  /** 홈의 분야 칸이 혼자 온라인 판을 여는가. 그러면 온라인 입구는 «친구와 함께»만 말한다 */
+  soloOnline: boolean;
 }
 
 /**
@@ -79,6 +106,18 @@ export interface HomeScreen {
   /** 아직 들어가 있는 방이 있으면 dock 맨 위에 복귀 줄을 띄운다. null 이면 거둔다 (U35) */
   setRoomNote(room: HomeRoomNote | null): void;
 
+  /** 분야 칸이 여는 것과 연습 안내 줄 (FR-7.13 3단계). 칸을 다시 만들지 않고 이름·캡션·줄만 고친다 */
+  setPlayMode(view: HomePlayView): void;
+
+  /**
+   * 별 점수만 바꾼다 (FR-2.3). 서버의 내 최고 기록은 홈을 그린 뒤에 오므로 칸을 다시 만들지 않는다 —
+   * 캐릭터가 밟고 있는 칸·포커스가 그대로다
+   */
+  setBestScores(bestScores: HomeView['bestScores']): void;
+
+  /** 혼자 판을 여는 중 (FR-7.13 3단계). 캡션이 «연결 중…»이고 그동안 누른 칸은 겹쳐 보내지 않는다 */
+  setPlayBusy(busy: boolean): void;
+
   /** 「혼자 연습하기」로 왔을 때. 분야 dock의 첫 칸에 포커스를 둔다 (U29) */
   focusPractice(): void;
 }
@@ -89,9 +128,26 @@ const COMPACT_CATEGORY_NAMES: Partial<Record<CategoryId, string>> = {
   art: '예술',
 };
 
+/** 분야 칸의 이름. 문제를 못 받은 칸은 왜 잠겼는지, 연습이면 기록이 남지 않는다는 것을 이름이 말한다 */
+export function categoryCardLabel(
+  category: Pick<Category, 'name'>,
+  { count, bestScore, practice }: { count: number; bestScore: number | null | undefined; practice: boolean },
+): string {
+  if (count === 0) return `${category.name} 문제 풀기, 불러오지 못함`;
+  if (practice) return `${category.name} 연습하기, 기록 안 남음`;
+  return bestScore === null || bestScore === undefined
+    ? `${category.name} 문제 풀기`
+    : `${category.name} 문제 풀기, 최고 ${bestScore}점`;
+}
+
+/** 분야 dock 캡션. 연습이면 그렇다고 앞에서 말한다 */
+export function homeDockCaption(practice: boolean): string {
+  return practice ? `연습 · ${categoryDockCaption()} · 기록 안 남음` : categoryDockCaption();
+}
+
 export function createHomeScreen({
   onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onReturnToRoom,
-  onNickname, onReload,
+  onRetryOnline, onNickname, onReload,
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
@@ -106,6 +162,7 @@ export function createHomeScreen({
     openOnlineDesc: need('open-online-desc'),
     roomNote: need<HTMLButtonElement>('home-room-note'),
     roomNoteText: need('home-room-note-text'),
+    roomNoteAction: need('home-room-note-action'),
     nicknameCard: need<HTMLButtonElement>('open-nickname'),
     nicknameValue: need('nickname-value'),
     dialog: need('nickname-dialog'),
@@ -121,7 +178,8 @@ export function createHomeScreen({
     noteClose: need<HTMLButtonElement>('home-note-close'),
   };
 
-  // 한 판의 길이를 시작 전에 말한다 (U04). 상수에서 오는 글이라 한 번만 쓴다 — 은행 크기는 쓰지 않는다
+  // 한 판의 길이를 시작 전에 말한다 (U04). 상수에서 오는 글이다 — 은행 크기는 쓰지 않는다. 연습이면
+  // `setPlayMode`가 앞에 말을 붙인다(`homeDockCaption`)
   el.caption.textContent = categoryDockCaption();
 
   // 하단 dock은 최고 기록 유무·번역 길이에 따라 높이가 달라진다. 고정 조작부가 그 높이를
@@ -185,10 +243,35 @@ export function createHomeScreen({
   // 쉬는 상태의 이름과 보조 줄. HTML 은 서버에 묻기 전의 말이고, 세션이 알려 준 시작 인원으로 바뀐다.
   // 바쁨 표시를 거둘 때 이것으로 되돌린다
   let onlineEntry = onlineEntryCopy(null);
-  /** 복귀 줄이 가리키는 방 코드 */
-  let roomNoteCode: string | null = null;
+  /** 복귀 줄이 가리키는 방. 혼자 판의 방이면 대기실이 아니라 그 판으로 돌아간다 */
+  let roomNote: HomeRoomNote | null = null;
+  /** 분야 칸이 여는 것 (FR-7.13 3단계). 처음에는 아직 모른다 — 이름은 온라인·로컬과 같다 */
+  let play: HomePlayView = { practice: false, note: null, soloOnline: false };
+  /** 혼자 판을 여는 중이다. 그동안 누른 칸은 겹쳐 보내지 않는다 */
+  let playBusy = false;
+  /** 마지막으로 그린 칸들과 그 점수. 별 점수·이름은 이것을 제자리에서 고친다 */
+  const cards = new Map<CategoryId, { card: HTMLButtonElement; category: Category; count: number }>();
+  let bestScores: HomeView['bestScores'] = {};
+  let allCount = 0;
 
-  el.startAll.addEventListener('click', () => onStartAll());
+  el.startAll.addEventListener('click', () => {
+    if (playBusy) return;
+    onStartAll();
+  });
+
+  /**
+   * 온라인 입구가 지금 말할 것. 분야 칸이 혼자 온라인 판을 열면(FR-7.13 3단계) 입구는 친구와 함께 푸는 곳이라
+   * 시작 인원을 말하지 않는다. 아니면 세션이 알려 준 시작 인원의 말이다(`onlineEntryCopy`)
+   */
+  function shownOnlineEntry(): { desc: string; label: string } {
+    return play.soloOnline ? SOLO_ONLINE_ENTRY : onlineEntry;
+  }
+
+  function showOnlineEntry(): void {
+    const entry = shownOnlineEntry();
+    el.openOnlineDesc.textContent = entry.desc;
+    el.openOnline.setAttribute('aria-label', entry.label);
+  }
   el.openRanking.addEventListener('click', () => onOpenRanking());
   el.openCharacters.addEventListener('click', () => onOpenCharacters());
   el.openOnline.addEventListener('click', () => {
@@ -196,8 +279,50 @@ export function createHomeScreen({
     onOpenOnline();
   });
   el.roomNote.addEventListener('click', () => {
-    if (roomNoteCode) onReturnToRoom(roomNoteCode);
+    // 다시 묻는 중이면 겹쳐 보내지 않는다 (줄이 «연결 중…»을 말하고 있다)
+    if (playBusy) return;
+    // 연습 안내·알림이 그 자리를 쓰는 동안은 «다시 연결»·«다시 시도»·«확인»이다 — 무엇을 할지는 app.ts가 안다
+    if (play.note) {
+      onRetryOnline();
+      return;
+    }
+    if (roomNote) onReturnToRoom(roomNote.code, roomNote.solo === true);
   });
+
+  /** 분야 dock에서 처음 누를 수 있는 칸 (없으면 전체 도전) */
+  function focusFirstPlayable(): void {
+    const first = el.grid.querySelector<HTMLButtonElement>('.category-card:not(:disabled)');
+    (first ?? el.startAll).focus({ preventScroll: true });
+  }
+
+  /**
+   * dock 맨 위 한 줄 (U35·FR-7.13 3단계). 연습 안내·알림이 있으면 그것이 먼저다 — 서버에 닿지 않는 동안에는 돌아갈 방을
+   * 물을 수도 없다. 한 자리를 나눠 써서 짧은 화면의 dock 높이 계약(복귀 줄 자리)이 그대로다.
+   *
+   * 다시 묻는 동안(`playBusy`)은 그 줄의 행동 글이 «연결 중…»이고 `aria-busy`다 — 누른 줄 자신이 상태를 말한다.
+   * **누른 줄이 사라지면 포커스를 분야 dock으로 옮긴다** — «다시 연결»이 통하거나 «확인»으로 거두면 그 버튼이 숨어
+   * 포커스가 <body>로 떨어졌다. 캐릭터가 밟아 누른 것이면 포커스가 줄에 없으니 옮기지 않는다(다음 Enter는 발밑이다)
+   */
+  function renderDockNote(): void {
+    const hadFocus = document.activeElement === el.roomNote;
+    const note = play.note;
+    el.roomNote.dataset.kind = note ? (play.practice ? 'practice' : 'notice') : 'room';
+    if (note) {
+      el.roomNoteText.textContent = note.text;
+      el.roomNoteAction.textContent = playBusy ? '연결 중…' : note.action;
+      if (playBusy) el.roomNote.setAttribute('aria-busy', 'true');
+      else el.roomNote.removeAttribute('aria-busy');
+      el.roomNote.hidden = false;
+      return;
+    }
+    el.roomNote.removeAttribute('aria-busy');
+    el.roomNoteText.textContent = roomNote
+      ? (roomNote.solo ? soloRoomNoteText(roomNote.label) : `「${roomNote.name}」 방에 아직 있어요`)
+      : '';
+    el.roomNoteAction.textContent = roomNote?.solo ? '이어 풀기' : '돌아가기';
+    el.roomNote.hidden = !roomNote;
+    if (hadFocus && el.roomNote.hidden) focusFirstPlayable();
+  }
 
   // ── 문제 은행 알림 (U06) ───────────────────────────────────────
   // 보이는 동안은 캐릭터와 조작부가 꺼져 있다(알림을 덮지 않게). 예전에는 닫을 길이 없어 분야
@@ -294,13 +419,14 @@ export function createHomeScreen({
     if (walker.handleKey(event)) event.preventDefault();
   });
 
-  /** 기록이 있는 카드에만 최고 점수를 붙인다. */
+  /** 기록이 있는 카드에만 최고 점수를 붙인다. 연습이면 별 점수를 두지 않는다 — 기록이 남지 않는다 */
   function appendBestScore(
     card: HTMLElement,
     bestScore: number | null | undefined,
   ): void {
+    card.querySelector('.category-card__best')?.remove();
     // 기록이 없으면 아무것도 붙이지 않는다. 0점으로 보이면 오해를 부른다
-    if (bestScore === null || bestScore === undefined) return;
+    if (bestScore === null || bestScore === undefined || play.practice) return;
 
     const best = document.createElement('span');
     best.className = 'category-card__best';
@@ -329,11 +455,7 @@ export function createHomeScreen({
       // 문제를 못 받은 칸은 흐리게 잠긴다. 알림을 닫은 뒤에도 왜 잠겼는지 이름이 말한다 (U06)
       card.setAttribute(
         'aria-label',
-        count === 0
-          ? `${category.name} 문제 풀기, 불러오지 못함`
-          : bestScore === null || bestScore === undefined
-            ? `${category.name} 문제 풀기`
-            : `${category.name} 문제 풀기, 최고 ${bestScore}점`,
+        categoryCardLabel(category, { count, bestScore, practice: play.practice }),
       );
       card.disabled = count === 0;
 
@@ -360,20 +482,53 @@ export function createHomeScreen({
       card.append(icon, name, compactName, description);
       appendBestScore(card, bestScore);
 
-      card.addEventListener('click', () => onSelect(category.id));
+      card.addEventListener('click', () => {
+        if (playBusy) return;
+        onSelect(category.id);
+      });
+      cards.set(category.id, { card, category, count });
       el.grid.append(card);
     }
   }
 
+  /** 전체 도전의 표식과 이름 (U04). 연습이면 «연습»이고, 기록이 있으면 최고 점수, 없으면 한 판의 길이다 */
+  function renderStartAll(): void {
+    const best = bestScores.all;
+    const length = allRoundLength(allCount);
+    if (play.practice) {
+      el.startAllMeta.hidden = allCount === 0;
+      el.startAllMeta.textContent = '연습';
+      el.startAll.setAttribute('aria-label', `전체 도전 연습하기, ${length}, 기록 안 남음`);
+      return;
+    }
+    const hasBest = best !== null && best !== undefined;
+    el.startAllMeta.hidden = !hasBest && allCount === 0;
+    el.startAllMeta.textContent = hasBest ? `최고 ${best}점` : length;
+    el.startAll.setAttribute('aria-label', hasBest ? `전체 도전, 최고 ${best}점` : `전체 도전, ${length}`);
+  }
+
+  /** 그려 둔 칸의 이름·별 점수를 제자리에서 고친다 */
+  function refreshCards(): void {
+    for (const [id, { card, category, count }] of cards) {
+      const bestScore = bestScores[id];
+      card.setAttribute('aria-label', categoryCardLabel(category, { count, bestScore, practice: play.practice }));
+      appendBestScore(card, bestScore);
+    }
+    renderStartAll();
+  }
+
   return {
     render({
-      categories, banks, bestScores, allCount, characterId,
+      categories, banks, bestScores: scores, allCount: nextAllCount, characterId,
       nickname: currentNickname,
     }) {
       nickname = currentNickname;
       el.nicknameValue.textContent = nickname;
+      bestScores = scores;
+      allCount = nextAllCount;
+      cards.clear();
       renderCategories({
-        categories, banks, bestScores, onSelect: onSelectCategory,
+        categories, banks, bestScores: scores, onSelect: onSelectCategory,
       });
 
       // 정적 버튼은 HTML에서 disabled로 시작한다. 리스너가 달린 지금 열어준다
@@ -383,12 +538,7 @@ export function createHomeScreen({
 
       // 기록이 없으면 한 판의 길이(«25문제»)를, 있으면 최고 점수를 보인다 (U04). 길이는 은행 크기가
       // 아니라 실제로 나갈 문항 수다. 짧은 화면에서 표식이 접혀도 접근 가능한 이름에는 남는다
-      const best = bestScores.all;
-      const hasBest = best !== null && best !== undefined;
-      const length = allRoundLength(allCount);
-      el.startAllMeta.hidden = !hasBest && allCount === 0;
-      el.startAllMeta.textContent = hasBest ? `최고 ${best}점` : length;
-      el.startAll.setAttribute('aria-label', hasBest ? `전체 도전, 최고 ${best}점` : `전체 도전, ${length}`);
+      renderStartAll();
 
       // 선택한 모습은 홈을 직접 걷는 캐릭터 하나로 보여 준다.
       // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.
@@ -408,8 +558,9 @@ export function createHomeScreen({
     setOnlineBusy(busy) {
       onlineBusy = busy;
       // 색이 아니라 글자로 알린다. 버튼 이름도 함께 바꿔 스크린리더에도 같은 말이 간다
-      el.openOnlineDesc.textContent = busy ? '연결 중…' : onlineEntry.desc;
-      el.openOnline.setAttribute('aria-label', busy ? '온라인, 연결 중' : onlineEntry.label);
+      const entry = shownOnlineEntry();
+      el.openOnlineDesc.textContent = busy ? '연결 중…' : entry.desc;
+      el.openOnline.setAttribute('aria-label', busy ? '온라인, 연결 중' : entry.label);
       if (busy) el.openOnline.setAttribute('aria-busy', 'true');
       else el.openOnline.removeAttribute('aria-busy');
     },
@@ -417,19 +568,43 @@ export function createHomeScreen({
     setOnlineMinPlayers(minPlayers) {
       onlineEntry = onlineEntryCopy(minPlayers);
       if (onlineBusy) return;
-      el.openOnlineDesc.textContent = onlineEntry.desc;
-      el.openOnline.setAttribute('aria-label', onlineEntry.label);
+      showOnlineEntry();
     },
 
     setRoomNote(room) {
-      roomNoteCode = room?.code ?? null;
-      el.roomNoteText.textContent = room ? `「${room.name}」 방에 아직 있어요` : '';
-      el.roomNote.hidden = !room;
+      roomNote = room;
+      renderDockNote();
     },
 
-    focusPractice() {
-      const first = el.grid.querySelector<HTMLButtonElement>('.category-card:not(:disabled)');
-      (first ?? el.startAll).focus({ preventScroll: true });
+    setPlayMode(view) {
+      const was = play;
+      play = view;
+      el.caption.textContent = homeDockCaption(view.practice);
+      // 랭킹 입구는 혼자 판도 남는 온라인 랭킹부터 연다. 이 기능을 모르는 API면 예전 이름(정적 HTML) 그대로다
+      el.openRanking.setAttribute(
+        'aria-label',
+        view.soloOnline ? '랭킹: 온라인 랭킹과 내 최고 기록 보기' : '랭킹: 이 브라우저의 최고 기록 보기',
+      );
+      if (was.practice !== view.practice) refreshCards();
+      // 온라인 입구의 말도 바뀐다 — 분야 칸이 혼자 판을 열면 입구는 친구와 함께 푸는 곳이다
+      if (was.soloOnline !== view.soloOnline && !onlineBusy) showOnlineEntry();
+      renderDockNote();
     },
+
+    setBestScores(scores) {
+      bestScores = scores;
+      refreshCards();
+    },
+
+    setPlayBusy(busy) {
+      playBusy = busy;
+      el.caption.textContent = busy ? '연결 중…' : homeDockCaption(play.practice);
+      if (busy) el.quests.setAttribute('aria-busy', 'true');
+      else el.quests.removeAttribute('aria-busy');
+      // 안내 줄의 «다시 연결»을 눌렀으면 그 줄이 «연결 중…»을 말한다
+      renderDockNote();
+    },
+
+    focusPractice: focusFirstPlayable,
   };
 }

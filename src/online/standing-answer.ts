@@ -29,8 +29,9 @@ const BROWSER_TIMERS: StandingAnswerTimers = {
 };
 
 /**
- * 지금 보낼 초안의 자리. 초안을 쓰지 않는 때면 null이다 — 이전 API의 판, 문항이 돌지 않을 때,
- * 이미 답을 냈거나 내는 중일 때. `standingIndex`는 arena가 실제로 움직인 뒤에만 준 발밑 칸이다.
+ * 지금 보낼 초안의 자리. 초안을 쓰지 않는 때면 null이다 — 이전 API의 판, 마감 없는 혼자 판(«제한 없음»,
+ * PRD 10.1 #9 — 시간이 끝나는 일이 없어 선 칸이 답이 되지 않는다), 문항이 돌지 않을 때, 이미 답을 냈거나
+ * 내는 중일 때. `standingIndex`는 arena가 실제로 움직인 뒤에만 준 발밑 칸이다.
  */
 export function onlineStandingDraft(
   snapshot: OnlineMatchSnapshot | null,
@@ -41,6 +42,7 @@ export function onlineStandingDraft(
     snapshot === null
     || snapshot.state !== 'running'
     || snapshot.standingAnswers !== true
+    || snapshot.untimed === true
     || snapshot.ownSubmission !== null
     || submitPending
   ) return null;

@@ -11,8 +11,8 @@
 //
 // DOM 도 저장소도 모른다. 기록은 `app.ts` 가 랭킹 어댑터로 읽어 넘긴다.
 
-import { RANKING_TOP_N } from '../constants.js';
-import type { RecordsExport, ScoreRecord } from '../types.js';
+import { RANKING_TOP_N, TIME_LIMIT_MS } from '../constants.js';
+import type { OnlineExportRecord, RecordsExport, ScoreRecord } from '../types.js';
 
 /** 내보낸 파일 모양의 판 */
 export const RECORDS_EXPORT_VERSION = 1;
@@ -63,4 +63,64 @@ export function recordsExportFileName(nickname: string, now: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return `quiz-by-quiz-기록-${name}-${day}.json`;
+}
+
+/**
+ * 온라인 기록 파일이 담은 범위 (FR-7.13 3단계). 서버는 최근 8주와 판마다 전체 상위 100을 남기고, 내보내기는 그
+ * 가운데 최근 기록부터 한도까지 싣는다. 한도에 닿았으면 그렇다고 덧붙인다
+ */
+export function onlineRecordsExportScope(limit: number, truncated: boolean): string {
+  const base = '온라인에서 끝까지 푼 판의 기록이에요. 최근 8주의 기록과 판마다 상위 100개가 남아 있어요.';
+  return truncated ? `${base} 그 가운데 최근 ${limit}개만 담았어요.` : base;
+}
+
+/** 내보낼 온라인 기록 한 줄의 입력. 서버의 내 기록 응답을 화면 쪽 모양으로 옮긴 것이다 */
+export interface OnlineRecordInput {
+  mode: ScoreRecord['mode'];
+  category: ScoreRecord['category'];
+  score: number;
+  correctCount: number;
+  totalCount: number;
+  /** null은 «제한 없음»으로 푼 혼자 판이다 (PRD 10.1 #9) */
+  questionTimeMs: number | null;
+  nickname: string;
+  recordedAt: string;
+}
+
+/**
+ * 내 온라인 기록을 이 브라우저의 기록과 **같은 모양의 파일**로 묶는다 (N02의 서버 기록 이전). 선생님 모드 로더가 읽는
+ * 칸은 그대로이고, 기록마다 `source: 'online'`이 붙으며 소요 시간·문항별 정오는 없다 — 서버 기록에 없는 값을 지어내지
+ * 않는다. 브라우저 신분은 서버가 보내지 않으므로 실을 수도 없다. `id`는 이 파일 안에서만 쓰는 번호다.
+ */
+export function buildOnlineRecordsExport({
+  records, nickname, now, limit, truncated,
+}: {
+  records: readonly OnlineRecordInput[];
+  nickname: string;
+  now: Date;
+  limit: number;
+  truncated: boolean;
+}): RecordsExport {
+  // 오래된 판부터 (이 브라우저의 기록 파일과 같다)
+  const ordered = [...records].sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  return {
+    app: 'quiz-by-quiz',
+    kind: 'records',
+    schemaVersion: RECORDS_EXPORT_VERSION,
+    exportedAt: now.toISOString(),
+    nickname,
+    scope: onlineRecordsExportScope(limit, truncated),
+    records: ordered.map((record, index): OnlineExportRecord => ({
+      id: `online-${index + 1}`,
+      source: 'online',
+      nickname: record.nickname,
+      mode: record.mode,
+      category: record.category,
+      score: record.score,
+      correctCount: record.correctCount,
+      totalCount: record.totalCount,
+      playedAt: record.recordedAt,
+      ...(record.questionTimeMs === TIME_LIMIT_MS ? {} : { timeLimitMs: record.questionTimeMs }),
+    })),
+  };
 }

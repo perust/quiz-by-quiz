@@ -132,7 +132,8 @@ test('a delayed local started event rechecks its immutable entry before opening 
   const startRound = between(app, '  async function startRound(', '  function labelFor(');
 
   assert.match(startHandler, /const ownsStartedEntry = \(\) => isCurrentWaitingRoomEntry\(/);
-  assert.match(startHandler, /void startRound\([\s\S]*?,\s*ownsStartedEntry,?\s*\);/);
+  // 셋째 인자는 연습 여부다 (서버 없이 연 화면의 로컬 방 판, FR-7.13 3단계)
+  assert.match(startHandler, /void startRound\([\s\S]*?,\s*ownsStartedEntry,[\s\S]*?\{ practice: playMode === 'practice' \},?\s*\);/);
   assert.match(startRound, /ownsEntry\?: \(\) => boolean/);
   assert.match(startRound, /if \(ownsEntry && !ownsEntry\(\)\) return;/);
   assert.match(startRound, /const navigationGeneration = invalidateWaitingRoomEntry\(\);/);

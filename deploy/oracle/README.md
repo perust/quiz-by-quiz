@@ -128,7 +128,9 @@ Persistent growth is bounded by a two-hour player lifetime, an independent
 12-player room is never returned partially. At the process-wide ceilings, the
 unreferenced player bound is at most `300/minute × 120 minutes = 36,000` live
 rows, and newly created rooms are at most `100/hour × 24 hours = 2,400` before
-activity extensions and periodic cleanup. Active room or match references may
+activity extensions and periodic cleanup. Solo rooms (FR-7.13 step 3, "Solo
+online play" below) do not take the room-create bucket; they have their own
+hard ceiling of 1,200 at once. Active room or match references may
 outlive the base player TTL only while protected by their own bounded lifecycle.
 Cleanup failures are logged and retried on the next tick.
 
@@ -255,7 +257,9 @@ owner decision). In the same transaction that turns the last reveal into
 `quiz_online.online_rankings`: the server-graded score and correct count (the
 final standings' own aggregate over `match_answers`; no browser-reported score
 is accepted anywhere), total questions, mode (`category` or `all`) and category,
-the match's question time, the nickname as shown in that room, the character id,
+the match's question time (`NULL` for an untimed solo match, migration 013 —
+"Solo online play" below; rankings are not split by question time), the
+nickname as shown in that room, the character id,
 the browser player id (`players.id`, kept in the browser's localStorage), the
 owner key and the close time (`matches.finished_at`). The owner key is
 `sha256("qbb-ranking-owner:" || players.token_hash)` (32 bytes, `NULL` only if
@@ -301,6 +305,24 @@ for all time, `online_rankings_board_week_order_idx` on the stored generated
 `board`/`week_start` columns for the week; about 0.05 ms measured on 100,000
 rows).
 
+Own reads (FR-7.13 step 3): `GET /v1/rankings/mine` returns the caller's best
+record per board as `{boards: {all, history, science, geography, general, art}}`,
+each `{score, correctCount, totalCount, recordedAt}` or `null` (score
+descending, then the earlier record — the board order). `?excludeMatch=<match
+uuid>` leaves that match out, so the result screen compares a just-closed solo
+match with the best **before** it (FR-5.7). `GET /v1/rankings/mine/records`
+returns the caller's records for the records export, newest first, at most 500
+(`{records, limit, truncated}`; each `{mode, categoryId, score, correctCount,
+totalCount, questionTimeMs, nickname, recordedAt}`, `questionTimeMs` `null` for
+an untimed solo match). Both require a session
+(`require_actor`) and match the same id **and** the owner key derived from the
+bearer token, like `isMine`; neither returns a player id. They read through
+`online_rankings_player_board_order_idx` (`player_id, board, score DESC,
+recorded_at, id`, added by migration 013 — "Solo online play" below) and take
+their own bucket in front of the authenticated one
+(best: 30 per player, records: 6 per player, 600 per address and 1,200 per
+process per minute; the home asks for the best once per visit).
+
 Grants: the runtime role may only `INSERT` and `SELECT` the table (no `UPDATE`,
 `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER`, table or column grant) and still
 has nothing on the ledger. Retention runs through
@@ -312,20 +334,232 @@ top 100; above 250,000 rows it trims the oldest rows even inside the 8 weeks
 (each board's top 100 always stay). It deletes at most 10,000 rows per call, and
 the `cleanup` log line counts them (`rankingsPruned`).
 
-Resource envelope: a row with its three indexes takes about 445 bytes (100,000
-synthetic rows with owner keys: 17 MB heap, 25 MB indexes). A class of 30
+Resource envelope: a row with its three board indexes takes about 445 bytes (100,000
+synthetic rows with owner keys: 17 MB heap, 25 MB indexes). The per-player index
+of FR-7.13 step 3 (migration 013) is one more btree of the same width; the
+planning figure is about one third more index space once it grows row by row
+like the others. Measured once on a development PC at 250,000 synthetic rows,
+migration 013 builds it in 0.5 s at 16 MB, next to 79 MB for the three 012
+indexes maintained row by row; the target VM was not measured. A class of 30
 playing ten matches a day writes 300 rows a day, about 16,800 (7.5 MB) in 8
-weeks. The 250,000-row ceiling bounds the table at roughly 110 MB plus 600
-retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
+weeks. The 250,000-row ceiling bounds the table at roughly 110 MB (about 140 MB
+with the per-player index) plus 600 retained top rows, whatever the traffic. Rows are written only when a match closes; a match takes at least
 ten 8-second reveals (80 s, 200 s for the all-categories round), a room holds one
-match at a time with at most 12 players, and match starts share the
-600/process/minute room-mutation bucket, so ingest cannot exceed 7,200 rows a
-minute even in theory, below the 10,000 rows the prune may delete each minute
+match at a time with at most 12 players, match starts share the
+600/process/minute room-mutation bucket (12 rows each) and solo starts have
+their own 600/process/minute bucket (1 row each, "Solo online play" below), so
+ingest cannot exceed 7,800 rows a minute even in theory, below the 10,000 rows
+the prune may delete each minute
 (a 5,000-row batch took 0.12–0.19 s on 100,000 rows). Reads are bounded by the
 1,200/process/minute ranking bucket (at most 20 index scans a second); the API
 keeps nothing about rankings in memory. Changing the retention, the ceiling,
 the batch or the read limits is a resource-envelope review boundary like the
 others above.
+
+### Solo online play (FR-7.13 step 3, migration 013)
+
+The owner direction removes the local solo mode: the home's category cards and
+"all categories" button start a **solo online match** directly, without a
+waiting room, and the 온라인 button keeps opening the lobby for playing with
+others. `POST /v1/solo` with `{categoryId (null for all), questionTimeMs
+(20000|40000|null), restart?}` reuses the caller's solo room or creates one and
+starts a match in the same transaction (`start_solo`, through the same
+`_start_locked_match` as the host's start: question selection avoiding that
+room's recent questions, deadlines, closing and recording are identical). If a
+match is already running in that room it returns `{room, match: null, resumed:
+true}` instead of starting another — unless `restart: true` and the running
+match is for a different board (another category, or all categories): then it
+ends that match without a record and starts the requested one in the same
+transaction, answering `{room, match, resumed: false, ended: {matchId,
+categoryId, recorded}}` (owner decision, PRD 10.1 #11; a running match of the
+same board still resumes). The response is `{room, match, resumed}`;
+`room.solo` is `true`. The session response announces the feature additively
+with `soloPlay: true` and the two owner decisions with `soloUntimed: true` and
+`soloRestart: true`; a client that does not see `soloPlay` keeps the old local
+solo mode, and one that does not see the other two never sends
+`questionTimeMs: null` (it opens 20 seconds instead) or `restart`.
+
+No time limit (owner decision, PRD 10.1 #9): `questionTimeMs: null` opens an
+**untimed** solo match. The room's and the match's `question_time_ms` are
+`NULL`, so a running question's deadline (`now() + NULL`) is `NULL`: the
+deadline sweep (`deadline_at <= now()`) never selects it, the absent-player
+shortcut, the timeout fill and the standing-answer drafts are skipped, and the
+question is revealed when the player submits (the 8-second reveal keeps its
+deadline). Time used is measured, not clipped, up to the 2-hour match lifetime
+(`elapsed_ms` 0..7,200,000, `UNTIMED_ELAPSED_MS_CAP`). Snapshots say so
+additively: the match snapshot has `questionTimeMs: null` with `untimed: true`,
+and `deadlineAt: null`, `remainingMs: null` and `standingAnswers: false` while a
+question runs; the match-start payload has `questionTimeMs: null` with `untimed:
+true`; the **room** payload (lobby list, room reads, the solo start's `room`)
+leaves the `questionTimeMs` key out and carries `untimed: true`. The Pages
+client of this branch trusts "no question time" only next to that mark. The key
+is left out for the Pages clients before #109 (#106–#108): they read a missing
+room question time as 20 seconds but reject `null`, and one rejected room fails
+their whole lobby list — a tab opened before the step-6 Pages publish, sharing
+its browser identity (localStorage) with a new-client tab that opened an
+untimed solo match, would otherwise lose its 온라인 lobby until reloaded. Such a
+tab now lists that room like a timed solo room (a «혼자 하기» room of its own,
+shown as 20 seconds); it cannot play the untimed match — its match read refuses
+a running question without a deadline, so entering the room leaves it in the
+waiting room on «진행 중인 판에 내 자리가 있어요…» without opening the match
+(checked with the #108 client against this API) — and a reload fixes it.
+A record of an untimed
+match keeps `question_time_ms NULL`. Friend rooms keep 20/40 seconds (an
+earlier owner decision): `POST /v1/rooms` refuses `null` (422), `PATCH` refuses
+it (400 `invalid-question-time`), and the database refuses a `NULL` outside solo
+rooms ("Storage" below).
+
+Ending a solo match early: a match ended by `restart`, or by `DELETE /v1/solo`
+(it ends the caller's running solo match and deletes their solo room, answering
+`{ended, left}`; the Pages client does not call it, the smoke test uses it to
+clean up), becomes `abandoned` with its deadline cleared and no ranking record —
+an unfinished round is never ranked (FR-6, the local N04 rule). A match whose
+last question is already answered and only waits for its final reveal is a
+finished round, so it is closed and recorded instead (`recorded: true`).
+Standing-answer drafts of the ended match are dropped, and other tabs re-read
+through `game-started`/`match-invalidated`. `DELETE /v1/solo` takes the same
+solo buckets as a start. An `abandoned` match reads as "no match" (`GET
+…/match` 404); it stays in the room until the room is deleted or its own 2-hour
+lifetime ends (`cleanup_expired_matches()`), and its questions still count as
+that room's recent questions. The recent-question read of a start
+(`_RECENT_ROOM_QUESTIONS_SQL`, N08) looks at the room's latest
+`RECENT_MATCH_MEMORY` = 24 matches only (120 questions fill in 12 category
+rounds, so twice that), because restarts can pile matches up in one room
+("Limits and envelope" below).
+
+Abandoned untimed matches: an untimed match has no deadline that would end it,
+so the 60-second cleanup ends (as `abandoned`, unrecorded) every running untimed
+match none of whose players was seen in its room for 30 minutes — the window of
+the stale-member cleanup, which then removes that member and the empty room
+(and its mark) in the same transaction. A player with the match open stays
+fresh: the match socket touches `last_seen_at` at most every 15 seconds while
+the browser's movement heartbeat runs. Bound: an abandoned untimed solo room and
+match last at most 30 minutes after the player was last seen plus one cleanup
+tick, never beyond the 2-hour match lifetime. The `cleanup` log line counts them
+(`soloMatchesAbandoned`).
+
+Storage: migration 013 creates `quiz_online.solo_rooms (room_id PRIMARY
+KEY REFERENCES rooms ON DELETE CASCADE, player_id, created_at,
+UNIQUE (player_id) solo_rooms_one_per_player)` — one mark per room and one solo
+room per player — and the own reads' `online_rankings_player_board_order_idx` on
+the ranking table. For untimed solo play it replaces five checks under their own
+names: `rooms_question_time_check`, `matches_question_time_check` and
+`online_rankings_question_time_check` also allow `NULL` (the three
+`question_time_ms` columns drop `NOT NULL`; the default stays 20000),
+`matches_active_deadline_check` lets only a running untimed question go without
+a deadline (`(deadline_at IS NULL) = (question_time_ms IS NULL)` while running),
+and `match_answers_elapsed_ms_range_check` is 0..7,200,000. A CHECK cannot look
+at another table, so stored generated columns and foreign keys tie every `NULL`
+to solo rooms: `rooms.untimed_solo_room_id` and `matches.untimed_solo_room_id`
+(the room id when the question time is `NULL`, referencing `solo_rooms(room_id)`,
+checked at `COMMIT` because a solo room is inserted before its mark),
+`matches.untimed_match_id` (`UNIQUE`) and `match_answers.long_elapsed_match_id`
+(the match id when `elapsed_ms > 40000`, referencing `matches(untimed_match_id)`,
+checked at `COMMIT`). A non-solo room or match with a `NULL` question time, or an
+answer above 40 seconds in a timed match, fails at `COMMIT`; deleting the solo
+rooms therefore leaves none of them. The runtime role may only `SELECT` and
+`INSERT` the mark table; a mark disappears with its room through the cascade
+(leaving the last member deletes the room, the 30-minute stale-member cleanup
+and the 24-hour expiry delete it as for any room). A solo room is a normal room
+(capacity 2, public, no password, the creator as its only member and host) that
+`_ROOM_ROWS_SQL` shows **only to its members**: other players' lobby lists and
+code lookups never contain it, `POST /v1/rooms/{code}/join` answers 404
+`not-found` for a non-member (the repository's `join_room` refuses it again),
+and the Pages client also leaves it out of its own lobby list (the home's
+"풀던 혼자 판 · 이어 풀기" line returns to it). Leaving mid-match, browser Back,
+tab close and reconnect follow the existing online rules: the match continues
+on the server and is recorded when it closes.
+
+Limits and envelope: `POST /v1/solo` takes 12 per player, 120 per address and
+600 per process per minute, and a player owns at most one solo room. Without
+`restart` a start that finds a running match resumes it, and a match takes at
+least ten 8-second reveals, so a player starts about one match a minute; with
+`restart: true` (every start of the Pages client of this branch) each pick of
+another board ends the running match and opens a new one, so **one player can
+open and end up to 12 solo matches a minute** in the same room (still within
+the 120 per address and 600 per process). Every ended match stays `abandoned`
+in that room for at most its 2-hour lifetime, so one room can hold about 1,440
+matches (up to 36,000 `match_questions` rows on 25-question boards); a start
+reads only the latest 24 of them for its recent questions (above), so the
+per-start read stays bounded. The service-wide number of retained matches is
+bounded by the process bucket as before (600 starts a minute for the 2-hour
+lifetime, about 72,000 matches; restarts add no new bound — before restart the
+same bucket was the binding one). Solo rooms do **not** take
+the room-create bucket (100/process/hour), and the client's 홈으로 deletes the
+solo room, so every round started from home creates a room. Because session
+identities are cheap (60 per address, 300 per process a minute), the per-player
+bound alone does not bound rooms or concurrent matches, so a **new** solo room
+is admitted only when both of these hold (reusing a player's live solo room —
+다시 하기, a resumed match — pays neither):
+
+- Hard ceiling: fewer than `SOLO_ROOM_CEILING` = 1,200 solo rooms exist
+  (`SELECT count(*) FROM quiz_online.solo_rooms` inside the creating
+  transaction; concurrent creators can overshoot by at most their own number).
+  At the ceiling `POST /v1/solo` answers 503 `solo-busy` and the Pages client
+  falls back to practice ("not recorded") like any 5xx.
+- Creation budget: `solo-create:client` 720 per address and
+  `solo-create:process` 2,400 per process per hour (429 with an hourly
+  `Retry-After`). 720 lets 36 players behind one address start a new round from
+  home every 3 minutes; an abandoned solo room lives until the 30-minute
+  stale-member cleanup, so one address can hold at most about half its hourly
+  budget (about 360 rooms, 30% of the ceiling) at once.
+
+Concurrent matches are therefore at most 1,200 solo (one per solo room) plus the
+2,400-room bound of the other rooms. Untimed solo matches cost the deadline
+sweep nothing while a question runs (no deadline) and, abandoned, end with the
+30-minute stale-member window above, so one address still holds at most about
+half its hourly creation budget at once. 1,200 idle solo matches at 20-second
+questions need two deadline transitions per 28 seconds each, about 86 per
+second, within the deadline sweep's 100 matches a second; the combined
+theoretical maximum (3,600 idle matches, about 257 transitions a second) would
+exceed one sweep's pace, so deadlines and reveals would lag rather than fail —
+the same theoretical state the 2,400-room bound already allowed before solo
+play. Solo rooms add at most 1,200 room, member and mark rows. Rows written to
+the ranking table stay within the ingest bound of "Online rankings" above.
+Changing the ceiling, the creation budget or the start bucket is a
+resource-envelope review boundary like the others. The ops log writes one
+`solo_started` line per started solo match instead of `room_created` and
+`match_started` (`questionTimeMs: null` when untimed). A solo match ends in
+exactly one of `match_finished` (closed and recorded; `via: restart` or `left`
+when ended early at its final reveal), `solo_abandoned` (`via: restart` or
+`left`, unrecorded), the cleanup's `soloMatchesAbandoned` count (an untimed
+match nobody was seen in for 30 minutes), or — for an untimed match whose player
+stays connected for its whole 2-hour lifetime — its deletion by
+`cleanup_expired_matches()`, counted only in the cleanup's `matchesDeleted`;
+a finished or abandoned match is later deleted with its room or at that expiry
+without another event.
+
+Rollback: migration 013 stays applied; the API goes back to the migration-012
+API of #108, which keeps working on a migration-013 database (below) once no
+solo room is left. That API does not know the marks and would list every
+leftover solo room as an ordinary public, joinable room named «혼자 하기» — first
+in its member's list, taking lobby slots (the 100-room lobby cap) and joinable by
+strangers once its match ended. Worse, it reads every room's and match's
+`question_time_ms` as an integer (`int(row["question_time_ms"])`): one leftover
+untimed solo room makes every lobby list it serves fail with 500, and a leftover
+untimed match makes its reads of that match fail and, once in its final reveal,
+makes its deadline sweep raise on every pass (the error is not one the sweep
+isolates per match), stalling every match's deadlines. So stop the candidate API
+and, before the older API serves again, run as the migrator:
+
+```sql
+DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s WHERE s.room_id = r.id;
+```
+
+The delete cascades to members, matches (abandoned ones included) and marks;
+solo matches still running are lost unrecorded, which is acceptable on rollback.
+Because every `NULL` question time and every answer above 40 seconds belongs to
+a solo room (the generated-column foreign keys under "Storage"), nothing the 012
+API cannot read remains. Then require `release_check db --expect 13
+--require-empty-solo-rooms` to pass: 0 solo rooms (`solo-rooms-records`) and no
+untimed room or match (`question-time-values`). Finished solo matches are already
+in the ranking table, which has no foreign key and stays; records of untimed
+matches keep `question_time_ms NULL`, a column the 012 API never reads (its
+ranking reads select nickname, character, score, counts, record time and the
+owner columns). The 012 API's readiness answers 503 `migration-required` on the migration-013
+database, so the uptime monitor reports the rollback and no Pages publish passes
+its gate until the candidate serves again. The client of this branch only creates
+solo rooms against an API that announced `soloPlay`.
 
 ### Production load check (2026-10-28, migration-011 API)
 
@@ -386,30 +620,49 @@ rate-limit contract.
 
 ## Fail-closed staging order
 
-The current compatibility boundary is **migration 012 → API → Pages**.
-Production runs the migration-010 API until #106 (migration 011, below) is
-deployed; #107 follows it without a migration, so this boundary starts from the
-migration-011 API (readiness `schemaVersion: 11`). Migration 012 adds the online
-ranking table, its indexes and the retention function ("Online rankings"
-above). It only adds: the migration-011 API never reads or writes the table, so
-it keeps serving while 012 runs and remains a valid rollback target afterwards
-(matches it closes in that window are simply not recorded). Its public
-readiness then answers 503 `migration-required`, because it requires exactly
-schema version 11 — the expected fail-closed state, not an outage. The
-candidate API records every match it closes inside the closing transaction, so
-it must not replace the 011 API before ledger version 012 exists: on a
-migration-011 database no match could close (each closing transaction fails;
-the deadline sweep isolates every match in its own savepoint, so it keeps
-advancing the other matches and retries the closing ones every second), every
-read of a finished match fails, and its readiness answers 503
-`migration-required` there too. The candidate Pages client asks for a session
-before it offers the online ranking: it shows the online ranking only when the
-session response carries `rankings: true`, hides the online ranking UI when the
-API lacks that field, and opens on the browser's own records when the session
-cannot be opened at all (API unreachable, or a saved nickname the new filter
-refuses); the "online ranking" tab stays there to retry. The Pages workflow
-still waits for `schemaVersion: 12`, so the published client's "recorded to the
-online ranking" line is always backed by a recording API.
+The current compatibility boundary is **migration 013 → API → Pages**.
+Production runs the migration-010 API until #106 (migration 011) and #108
+(migration 012, both below) are deployed; #107 follows #106 without a migration,
+so this boundary starts from the migration-012 API of #108 (readiness
+`schemaVersion: 12`). Migration 013 adds the solo online play of FR-7.13 step 3
+("Solo online play" above): the `quiz_online.solo_rooms` table with its runtime
+grant and `online_rankings_player_board_order_idx` on the ranking table, and for
+the owner's untimed solo matches (PRD 10.1 #9) it replaces five checks under
+their own names and adds four stored generated columns with their keys (the
+`NULL` question time lives only in solo rooms and their matches). The
+migration-012 API keeps working on that schema: it never reads or writes the
+table and never reads through the index (recording a match merely maintains one
+more index entry), every value it writes (20000/40000, `elapsed_ms` up to 40000)
+satisfies the replaced checks with every generated column `NULL` (so no foreign
+key is looked at), and the extra columns only appear in its `SELECT match.*`
+rows, which it reads by name (test_character_only_migration_integration.py runs
+its statements with the runtime role on a 013 database). So it keeps serving
+while 013 runs — waiting for the lock window of step 3 below — and remains a
+valid rollback target afterwards (after the solo-room cleanup under "Solo online
+play", which also removes every row it could not read). Its
+public readiness then answers 503 `migration-required`, because it requires exactly schema
+version 12 — the expected fail-closed state, not an outage. The candidate API
+reads `quiz_online.solo_rooms` in every lobby, room and join query, so it must
+not replace the 012 API before ledger version 013 exists: on a migration-012
+database its lobby list, room reads, room creation, joins, socket tickets and
+`POST /v1/solo` fail with 500 (the table does not exist), and its readiness
+answers 503 `migration-required` there too, because it requires exactly schema
+version 13. The candidate Pages client asks for a session before it decides what
+the home's category cards open: it starts solo online matches only when the
+session response carries `soloPlay: true` and keeps the old local solo mode when
+the API lacks that field, so it also works on the migration-012 API. The Pages
+workflow waits for `schemaVersion: 13` all the same, so the published client's
+solo online play is always backed by an API and a database that have it.
+
+Migration 013 is its own migration on purpose. An earlier revision of the
+solo-play branch folded these objects into the not yet applied 012; ledger
+version 12 would then have meant two schemas, and because the migrator compares
+version numbers only (no checksums), a database where #108's 012 ran would never
+have received them. Migration 012 stays #108's text, so #108 deploys on its own
+through its boundary below and this one follows it. A database that ran the
+folded 012 (only disposable test databases ever did) fails `release_check db
+--expect 12` before the migration (`solo-rooms-table`, `rankings-indexes`), and
+013 would stop on the existing table; rebuild such a database instead.
 
 1. Recompute and verify the source and private-bank hashes against the approved
    candidate; stop on any mismatch. The source is a fresh clone checked out at
@@ -421,29 +674,85 @@ online ranking" line is always backed by a recording API.
    bank.
 2. Render the overlay with the platform base and inspect the result. Do not
    `up`, restart, reload, migrate, or expose anything at this step.
-3. With the migration-011 API still serving, build and run only the explicit
+3. With the migration-012 API still serving, build and run only the explicit
    `quiz-by-quiz-migrate` service from the candidate source. Require ledger
-   versions 001–012, the `online_rankings` table with its six checks and
-   `online_rankings_match_player_key`, its three indexes,
-   `quiz_online.prune_online_rankings()` as `SECURITY DEFINER`, the runtime
-   role's `SELECT`/`INSERT`-only access to the table and `EXECUTE` on the
-   function, and no ranking record yet. The 011 API's public
+   versions 001–013, the `solo_rooms` table cascading from `rooms` with
+   `solo_rooms_one_per_player`, the runtime role's `SELECT`/`INSERT`-only access
+   to it, `online_rankings_player_board_order_idx` valid next to the three 012
+   indexes, the untimed-solo checks, generated columns and keys, and no solo
+   room and no untimed room or match yet. The 012 API's public
    `/v1/release-readiness` now answers 503 `migration-required`; that is the
    expected fail-closed state, not an outage.
+
+   Migration 013 is one transaction that briefly blocks the 012 API. It starts
+   with `LOCK TABLE rooms, matches, match_answers, online_rankings IN ACCESS
+   EXCLUSIVE MODE` — one lock point, so its later `ALTER TABLE`s never upgrade a
+   weaker lock while 012 API transactions queue behind it — and holds those
+   locks until `COMMIT`. Until then every 012 API statement on those four tables
+   waits, reads included: lobby, room and match reads and writes, joins and
+   leaves, the closing transaction and the deadline sweep, ranking reads and
+   `prune_online_rankings()`, the cleanup sweeps. Session and player statements
+   proceed. The 012 API sets no lock or statement timeout, so those requests
+   wait rather than fail; only a request that cannot get one of its five pooled
+   connections within 10 seconds fails (500). The window is the time to obtain
+   the locks (requests queue behind a waiting `app.migrate`; it gives up after
+   its `lock_timeout = '15s'` and rolls back, leaving ledger version 12) plus the
+   work: rewriting `rooms`, `matches` and `match_answers` for the stored
+   generated columns (bounded by their lifetimes), validating the replaced
+   checks, and the index build. The whole migration took about 0.7 s on a
+   development PC with PostgreSQL 16 for 250,000 synthetic ranking rows (the
+   ranking table's ceiling) and 2,400 rooms with a running match each (24,000
+   questions, 12,000 answers); the index alone took 0.5 s. The target VM was not
+   measured. So migrate in a quiet window: rerun the before-migration check with
+   `--require-idle` (below) immediately before `quiz-by-quiz-migrate`, and do
+   not migrate while it fails.
 4. Build and replace only `quiz-by-quiz-api` with the candidate. Require
-   internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`
-   and refuses an e-mail-shaped nickname with 400 `nickname-personal-info`,
-   that `GET /v1/rankings?mode=all&period=week` answers 200 with at most 10
-   entries and an Asia/Seoul window, and require the exact public
-   `/v1/release-readiness` response
-   `{status: ready, contract: character-only-v1, schemaVersion: 12}`.
+   internal `/readyz`, verify that `PUT /v1/session` answers `rankings: true`,
+   `soloPlay: true`, `soloUntimed: true` and `soloRestart: true` and refuses an
+   e-mail-shaped nickname with 400
+   `nickname-personal-info`, that `GET /v1/rankings?mode=all&period=week`
+   answers 200 with at most 10 entries and an Asia/Seoul window, and require
+   the exact public `/v1/release-readiness` response
+   `{status: ready, contract: character-only-v1, schemaVersion: 13}`.
 5. Verify HTTPS and WSS through the existing Caddy route without changing any
    unrelated platform service or host-port exposure.
 6. Only after the production readiness response passes may the independent
    public Pages source be merged and published. The Pages workflow repeats this
    gate and fails closed before `deploy-pages`.
 
-The preceding boundary was **migration 011 → API → Pages** (#106). Migration
+The preceding boundary was **migration 012 → API → Pages** (#108). Migration
+012 adds the online ranking table, its three indexes and the retention function
+("Online rankings" above). It only adds: the migration-011 API never reads or
+writes the table, so it keeps serving while 012 runs and remains a valid
+rollback target afterwards (matches it closes in that window are simply not
+recorded), its readiness at 503 `migration-required`. The migration-012 API
+records every match it closes inside the closing transaction, so it must not
+replace the 011 API before ledger version 012 exists: on a migration-011
+database no match could close (each closing transaction fails; the deadline
+sweep isolates every match in its own savepoint, so it keeps advancing the
+other matches and retries the closing ones every second), every read of a
+finished match fails, and its readiness answers 503 `migration-required` there
+too. Its Pages client shows the online ranking only when the session response
+carries `rankings: true` and opens on the browser's own records when the session
+cannot be opened, and its Pages workflow waited for `schemaVersion: 12`. Its
+steps were the ones above with ledger versions 001–012, the `online_rankings`
+table with its six checks and `online_rankings_match_player_key`, its three
+indexes, `quiz_online.prune_online_rankings()` as `SECURITY DEFINER`, the
+runtime role's `SELECT`/`INSERT`-only access to the table and `EXECUTE` on the
+function, and no ranking record yet after step 3; a session answering
+`rankings: true` that refuses an e-mail-shaped nickname and the ranking reads
+after step 4; and the exact readiness `{status: ready, contract:
+character-only-v1, schemaVersion: 12}`. A database still at migration 011 must
+complete that order with the migration-012 API before step 3 above — and run
+that whole boundary from the #108 source checkout (`QUIZ_BY_QUIZ_SOURCE_DIR` at
+the approved #108 commit, its `app.release_check` and its `smoke.py` with
+`baseline` = the migration-011 API and `candidate` = the migration-012 API).
+This candidate's `quiz-by-quiz-migrate` cannot stop at 012: on a migration-011
+database it applies 012 and 013 together (`pending-migrations` names `12, 13`),
+which would leave the 011 API serving on a migration-013 database, a state no
+step here covers; and this candidate's `smoke.py` has no migration-011 baseline.
+
+The boundary before that was **migration 011 → API → Pages** (#106). Migration
 011 stores the host-chosen online question time (20 or 40 seconds, default 20)
 on rooms, copies it onto each match, and widens the answer `elapsed_ms` range to
 40 seconds. It only adds defaulted, constrained columns: the migration-010 API
@@ -459,18 +768,18 @@ waited for that API. Its steps were the ones above with ledger versions
 without `questionTimeMs` reporting `questionTimeMs: 20000` after step 4, and the
 exact readiness `{status: ready, contract: character-only-v1, schemaVersion:
 11}`. A database still at migration 010 (production today) must complete that
-order with a migration-011 API before step 3 above — and run that whole boundary
-from the #107 source checkout (`QUIZ_BY_QUIZ_SOURCE_DIR` at the approved #107
-commit, its `app.release_check` and its `smoke.py` with `baseline` = the
-migration-010 API and `candidate` = the migration-011 API). This candidate's
-`quiz-by-quiz-migrate` cannot stop at 011: on a migration-010 database it
-applies 011 and 012 together (`pending-migrations` names `11, 12`), which would
-leave the 010 API serving on a migration-012 database, a state no step here
-covers; and this candidate's `smoke.py` has no migration-010 baseline. The
-current candidate API does not run on a migration-010 or migration-011
-database.
+order with a migration-011 API before the 012 boundary — and run that whole
+boundary from the #107 source checkout (`QUIZ_BY_QUIZ_SOURCE_DIR` at the
+approved #107 commit, its `app.release_check` and its `smoke.py` with
+`baseline` = the migration-010 API and `candidate` = the migration-011 API).
+This candidate's `quiz-by-quiz-migrate` cannot stop at 011: on a migration-010
+database it applies 011, 012 and 013 together (`pending-migrations` names `11,
+12, 13`), which would leave the 010 API serving on a migration-013 database, a
+state no step here covers; and this candidate's `smoke.py` has no migration-010
+baseline. The current candidate API does not run on a migration-010, 011 or
+012 database.
 
-The boundary before that was **API → migration 010 → Pages**: never run the 010
+The boundary before 011 was **API → migration 010 → Pages**: never run the 010
 constraint migration while a legacy API process can still write `false` or
 `NULL` values. A database still at migration 009 must first complete that
 order with a migration-010 API (all five character-only constraints and
@@ -496,55 +805,89 @@ the exit status is 0 only when no line is `FAIL`. Stop on a non-zero exit. In
 the commands below, `docker compose …` is the platform base rendered with this
 overlay.
 
-- **Step 3, before the migration** (candidate image, migration-011 API still
+- **Step 3, before the migration** (candidate image, migration-012 API still
   serving):
-  `docker compose … --profile migration run --rm --no-deps quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check db --expect 11`.
-  It requires ledger 1–11 and `character_only_schema_version() = 11`, the five
+  `docker compose … --profile migration run --rm --no-deps quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check db --expect 12`.
+  It requires ledger 1–12 and `character_only_schema_version() = 12`, the five
   010 character-only constraints, both 011 `question_time_ms` columns as
   `integer NOT NULL DEFAULT 20000` with their validated checks, exactly one
-  `elapsed_ms` check of 0..40000, no 012 table (`rankings-table`), a safe
-  `quiz_by_quiz_app` (the attributes `app.migrate` demands, `EXECUTE` on the
-  schema-version function, effective `SELECT`/`INSERT`/`UPDATE` on
-  `question_time_ms`, no access to the ledger), and the statement-logging
-  preflight above: `log_statement`, `log_min_duration_statement`,
-  `log_duration` and statement sampling must be off (`FAIL`);
-  `log_min_error_statement` and any per-database or per-role logging setting are
-  `WARN`, because a failed `ALTER ROLE … PASSWORD` could be logged with the
-  password. `question-time-values` counts the stored values (`INFO`; the 011
-  API writes `40000` rooms) and fails on anything but `20000`/`40000`.
-  `pending-migrations` names what this image's `app.migrate` would apply
-  (`12`), `migration-lock` warns while another migrator holds the advisory
-  lock, and `active-matches`/`recent-members` report activity as `INFO`; add
-  `--require-idle` to fail while a match is running or revealing.
-- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 12 --require-empty-rankings`.
-  It requires ledger 1–12, the ranking table's 15 columns (`board` and
-  `week_start` stored generated, `id` an identity, `owner_key` a nullable
+  `elapsed_ms` check of 0..40000, the 012 ranking table as described for
+  `--expect 12` at the 012 boundary below (its 15 columns, six validated checks,
+  `online_rankings_match_player_key`, three valid indexes, the retention
+  function and the runtime role's access to both), none of 013 — no `solo_rooms`
+  table (`solo-rooms-table`), no `online_rankings_player_board_order_idx`
+  (`rankings-indexes`), no untimed-solo generated column (`untimed-solo-play`)
+  and no question-time check that already allows `NULL` — a safe `quiz_by_quiz_app` (the attributes `app.migrate`
+  demands, `EXECUTE` on the schema-version function, effective
+  `SELECT`/`INSERT`/`UPDATE` on `question_time_ms`, no access to the ledger), and
+  the statement-logging preflight above: `log_statement`,
+  `log_min_duration_statement`, `log_duration` and statement sampling must be off
+  (`FAIL`); `log_min_error_statement` and any per-database or per-role logging
+  setting are `WARN`, because a failed `ALTER ROLE … PASSWORD` could be logged
+  with the password. `question-time-values` counts the stored values (`INFO`;
+  the 011 and 012 APIs write `40000` rooms) and fails on anything but
+  `20000`/`40000`; `rankings-records` counts the ranking records (`INFO`; the
+  012 API writes them). `pending-migrations` names what this image's
+  `app.migrate` would apply (`13`), `migration-lock` warns while another migrator
+  holds the advisory lock, and `active-matches`/`recent-members` report activity
+  as `INFO`; add `--require-idle` to fail while a match is running or revealing.
+- **Step 3, after `quiz-by-quiz-migrate`**: the same command with `--expect 13 --require-empty-solo-rooms`.
+  It requires ledger 1–13, everything above for 010–012 except what 013
+  replaced for untimed solo play — both `question_time_ms` columns now
+  `integer` nullable with `DEFAULT 20000` and their checks allowing `NULL`
+  besides 20000/40000 (`question-time-columns`, `question-time-constraints`),
+  the `elapsed_ms` check at 0..7,200,000 (`elapsed-ms-check`), the ranking
+  table's `question_time_ms` nullable and its check allowing `NULL`
+  (`rankings-table`, `rankings-constraints`) — plus
+  `online_rankings_player_board_order_idx` valid as the fourth ranking index
+  (`rankings-indexes`), `solo_rooms` with its three columns
+  (`solo-rooms-table`), `room_id` referencing `rooms` `ON DELETE CASCADE` and
+  `solo_rooms_one_per_player` (`solo-rooms-constraints`), the four stored
+  generated columns with their exact expressions, the three foreign keys
+  `DEFERRABLE INITIALLY DEFERRED` and `matches_untimed_match_key`, all
+  validated, and `matches_active_deadline_check` tying a running question's
+  deadline to its question time (`untimed-solo-play`), and the runtime role's
+  effective `SELECT`/`INSERT` on `solo_rooms` without `UPDATE`, `DELETE`,
+  `TRUNCATE`, `REFERENCES` or `TRIGGER` (`runtime-solo-rooms-access`).
+  `solo-rooms-records` counts the solo rooms and `question-time-values` the
+  untimed rooms and matches; `--require-empty-solo-rooms` fails on any of
+  either, because until step 4 only the migration-012 API serves and it writes
+  neither, so one means the candidate API ran too early. The same command is the
+  gate of the rollback cleanup ("Solo online play"). After step 4 run
+  `--expect 13` without it: solo rooms and untimed matches are then expected and
+  only counted (`INFO`).
+- At the preceding 012 boundary the same commands ran with `--expect 11` before
+  the migration and `--expect 12 --require-empty-rankings` after it. `--expect
+  11` requires no 012 table (`rankings-table`) and no 013 table;
+  `--expect 12` requires ledger 1–12, the ranking table's 15 columns (`board`
+  and `week_start` stored generated, `id` an identity, `owner_key` a nullable
   `bytea`), its six validated checks (`online_rankings_owner_key_length` must
-  require 32-byte keys) and `online_rankings_match_player_key`, its three indexes valid,
-  `prune_online_rankings()` `SECURITY DEFINER` with a fixed `search_path`, and
-  the runtime role's effective `SELECT`/`INSERT` on the table without `UPDATE`,
-  `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` (table or column grants),
-  `EXECUTE` on the prune function, still without ledger access.
-  `rankings-records` counts the records; `--require-empty-rankings` fails on
-  any, because until step 4 only the migration-011 API serves and it never
-  writes the table, so a record means the candidate API ran too early. After
-  step 4 run `--expect 12` without it: records are then expected and only
-  counted (`INFO`).
-- At the preceding 011 boundary the same commands ran with `--expect 10` before
-  the migration and `--expect 11 --require-default-question-time` after it
-  (every room and match still at `20000`, because only the migration-010 API
+  require 32-byte keys) and `online_rankings_match_player_key`, its three
+  indexes valid, `prune_online_rankings()` `SECURITY DEFINER` with a fixed
+  `search_path`, and the runtime role's effective `SELECT`/`INSERT` on the table
+  without `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` (table or
+  column grants), `EXECUTE` on the prune function, still without ledger access.
+  `rankings-records` counts the records; `--require-empty-rankings` failed on
+  any, because until that step 4 only the migration-011 API served and it never
+  writes the table. Run them from the #108 image for a database still at
+  migration 011: this image's migrate service cannot stop at 012 (it applies 12
+  and 13 together), so its `--expect 12` check after migrating would fail with
+  "latest version is 13".
+- At the 011 boundary before that the same commands ran with `--expect 10`
+  before the migration and `--expect 11 --require-default-question-time` after
+  it (every room and match still at `20000`, because only the migration-010 API
   served until its step 4). Run them from the #107 image for a database still at
-  migration 010: this image's migrate service cannot stop at 011 (it applies 11
-  and 12 together), so its `--expect 11` check after migrating would fail with
-  "latest version is 12".
+  migration 010: this image's migrate service cannot stop at 011 (it applies 11,
+  12 and 13 together), so its `--expect 11` check after migrating would fail
+  with "latest version is 13".
 - **Step 3, first — the private bank** (before the `db` checks, while the
-  migration-011 API still serves):
+  migration-012 API still serves):
   `docker compose … --profile migration run --build --rm --no-deps -e QUESTION_BANK_DIR=/run/quiz-by-quiz/online-bank --volume "<QUIZ_ONLINE_BANK_DIR>:/run/quiz-by-quiz/online-bank:ro" quiz-by-quiz-migrate /app/.venv/bin/python -m app.release_check bank`.
   It builds the candidate migrate image, mounts only the bank read-only and
   loads it exactly as the candidate API will at startup, so a bank the candidate
-  would refuse stops the release while the database is still at 11. Do not build
+  would refuse stops the release while the database is still at 12. Do not build
   the `quiz-by-quiz-api` image for this: once that image changes, the next
-  `docker compose up` could replace the 011 API before migration 012. It prints
+  `docker compose up` could replace the 012 API before migration 013. It prints
   counts only: questions per category (`FAIL` below the 10 a category round
   needs), ids longer than 64 characters (`FAIL` — `match_questions.question_id`
   is `varchar(64)`, so the API would start but a match that draws one could
@@ -571,23 +914,41 @@ the answers, and always leaves the room again (also on Ctrl-C, SIGTERM and
 SIGHUP). It never prints tokens, tickets or response bodies, and exits 0 only
 when every step is `ok`.
 
-- Before step 3: `python3 deploy/oracle/smoke.py baseline` (the migration-011
-  API, readiness `schemaVersion: 11`; a room created without `questionTimeMs`
-  reports 20000 and its players carry `connected`; 40000 is accepted and 30000
-  refused). Its websocket result is the baseline for step 5: a later websocket
-  failure then points at the candidate, not at the host's route.
+- Before step 3: `python3 deploy/oracle/smoke.py baseline` (the migration-012
+  API of #108, readiness `schemaVersion: 12`; the session answers
+  `rankings: true` and no `soloPlay`; an e-mail-shaped nickname is refused with
+  400 `nickname-personal-info` without changing the profile; an anonymous
+  `GET /v1/rankings?mode=all&period=week` and an identified all-time history
+  read answer 200 with exactly the public fields, at most 10 entries, an
+  Asia/Seoul week window and no anonymous `isMine`, and an unknown board is 400
+  `invalid-ranking`; a room created without `questionTimeMs` reports 20000 and
+  its players carry `connected`; 40000 is accepted and 30000 refused; the socket
+  answers 101 `qbb.v1` and echoes one movement message). Its websocket result is
+  the baseline for step 5: a later websocket failure then points at the
+  candidate, not at the host's route.
 - After step 3: `python3 deploy/oracle/smoke.py baseline-migrated` (the same
-  API on a migration-12 database; readiness must be 503 `migration-required`).
+  API on a migration-13 database; readiness must be 503 `migration-required`,
+  every other check as for `baseline` — the 012 API keeps serving rooms, sockets
+  and rankings while 013 is applied).
 - After step 4: `python3 deploy/oracle/smoke.py candidate` (readiness
-  `schemaVersion: 12`; the session answers `rankings: true`; an e-mail-shaped
-  nickname is refused with 400 `nickname-personal-info` without changing the
-  profile; an anonymous `GET /v1/rankings?mode=all&period=week` and an
-  identified all-time history read answer 200 with exactly the public fields,
-  at most 10 entries, an Asia/Seoul week window and no anonymous `isMine`, and
-  an unknown board is 400 `invalid-ranking`; then the same room, settings and
-  socket checks as the baseline — the socket answers 101 `qbb.v1` and echoes
-  one movement message). It opens no match, so it records nothing in the
-  ranking.
+  `schemaVersion: 13`; the session answers `rankings: true`, `soloPlay: true`,
+  `soloUntimed: true` and `soloRestart: true` — the 012 API fails here; then the
+  same nickname, ranking, room, settings and socket checks as the baseline, and
+  a `solo` step: `POST /v1/solo` with `{categoryId: null, questionTimeMs: null}`
+  must answer 201 with a solo room and match marked `untimed: true` (the room
+  without a `questionTimeMs` key, the match with `null`), `GET …/match` a
+  running question with `deadlineAt`,
+  `remainingMs` and `questionTimeMs` `null` and `standingAnswers: false`, and
+  `DELETE /v1/solo` `{left: true, ended: {recorded: false}}` with the solo room
+  gone (404)). It opens no friend-room match and ends its one untimed solo
+  match unanswered and unrecorded, so it records nothing in the ranking and
+  leaves no solo room; cleanup ends that solo match too if the step stopped
+  half-way (also when the start's answer was lost, and counts a `DELETE` that
+  finds no solo room as already ended when the room reads 404). Cleanup always
+  leaves the smoke's public two-seat room as well, even when ending the solo
+  match fails (a timeout, 429 or 5xx); both failures are reported on its one
+  `FAIL cleanup` line. The ops log shows one `solo_started` and one
+  `solo_abandoned` (`via: left`) line for it.
 
 If the host cannot reach its own public address, add `--resolve-to 127.0.0.1`;
 the URL host still names the Host header and the TLS certificate.
@@ -626,7 +987,7 @@ for line in sys.stdin:
 Sample lines:
 
 ```json
-{"event":"api_started","ts":"2026-10-27T03:00:01.214Z","schemaVersion":12}
+{"event":"api_started","ts":"2026-10-27T03:00:01.214Z","schemaVersion":13}
 {"event":"room_created","ts":"2026-10-27T03:02:12.342Z","room":"K7PQ2M","capacity":6,"category":"all","questionTimeMs":20000,"locked":false}
 {"event":"member_joined","ts":"2026-10-27T03:02:40.118Z","room":"K7PQ2M","players":2}
 {"event":"match_started","ts":"2026-10-27T03:04:03.977Z","room":"K7PQ2M","players":4,"category":"science","questionTimeMs":40000,"questions":10}
@@ -645,8 +1006,10 @@ Sample lines:
 | `member_removed` | `room`, `players`, `blocked` | The host removed someone; `blocked` is the 10-minute kick of a connected member. |
 | `host_transferred` | `room`, `reason` (`host-left`, `host-absent`) | The host left, or the presence sweep moved the seat from a disconnected host. Cleanup handovers are counted in `cleanup`. |
 | `match_started` | `room`, `players`, `category`, `questionTimeMs`, `questions` | The host started a match. |
-| `match_finished` | `room`, `via` (`sweep`, `request`) | The last reveal ended, closed by the deadline sweep or by a player's read. |
-| `cleanup` | `roomsDeleted`, `membersRemoved`, `hostsTransferred`, `matchesDeleted`, `playersDeleted`, `rankingsPruned` | A 60-second cleanup tick that changed anything (no line otherwise); `rankingsPruned` counts ranking records past their retention ("Online rankings"). |
+| `match_finished` | `room`, `via` (`sweep`, `request`, `restart`, `left`) | The last reveal ended, closed by the deadline sweep or by a player's read — or a solo match whose last question was answered was closed (and recorded) early because its player picked another board (`restart`) or ended solo play (`left`). |
+| `solo_started` | `room`, `created` (the solo room was created by this request), `category`, `questionTimeMs` (`null` when untimed), `questions` | A solo online match started from the home (FR-7.13 step 3). Solo starts write this line instead of `room_created` and `match_started`; `match_finished` is the same. |
+| `solo_abandoned` | `room`, `via` (`restart`, `left`), `position`, `questions` | A solo match ended unfinished and unrecorded (PRD 10.1 #11): its player picked another board (`restart`) or ended solo play with `DELETE /v1/solo` (`left`, then also `member_left` and `room_deleted`). `position` is the question that was open. |
+| `cleanup` | `roomsDeleted`, `membersRemoved`, `hostsTransferred`, `matchesDeleted`, `playersDeleted`, `rankingsPruned`, `soloMatchesAbandoned` | A 60-second cleanup tick that changed anything (no line otherwise); `rankingsPruned` counts ranking records past their retention ("Online rankings"), `soloMatchesAbandoned` untimed solo matches nobody was seen in for 30 minutes ("Solo online play"). |
 | `server_error` | `method`, `route` (the route template, e.g. `/v1/rooms/{raw_code}`), `error` (exception class) | An exception no handler turned into a response; the client gets 500 and Uvicorn still logs the traceback as before. |
 | `summary` | see below | Every 5 minutes. |
 
@@ -711,8 +1074,8 @@ codes, error codes and the checked values:
 quiz-by-quiz uptime check 2026-10-27T13:04:44Z
 api: https://quiz-by-quiz-api.150.230.222.142.sslip.io
 pages: https://perust.github.io/quiz-by-quiz/
-expected schemaVersion >= 12 (pages.yml backend-ready)
-ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12 (want >= 12), CORS ok, 0.28s
+expected schemaVersion >= 13 (pages.yml backend-ready)
+ok readiness: HTTP 200 ready character-only-v1 schemaVersion 13 (want >= 13), CORS ok, 0.28s
 ok pages: HTTP 200, quiz-api-base "https://quiz-by-quiz-api.150.230.222.142.sslip.io", 0.27s
 verdict: ok
 ```

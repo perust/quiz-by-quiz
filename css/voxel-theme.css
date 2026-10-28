@@ -3224,7 +3224,8 @@ select.room-form__input {
   border-radius: var(--radius-md);
 }
 
-.online-match-status::before {
+.online-match-status::before,
+.online-solo-notice::before {
   content: '';
   flex: none;
   width: var(--icon-sm);
@@ -3234,8 +3235,17 @@ select.room-form__input {
   mask: var(--i-info) center / contain no-repeat;
 }
 
+/* 혼자 판의 한 줄 알림 (PRD 10.1 #11). 상태 줄과 같은 유리 한 줄이되 본문 글자색이다 — 앞 판을 끝냈다는 말이다 */
+.online-solo-notice {
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  border-radius: var(--radius-md);
+}
+
 .online-quiz-chat,
-.online-match-status {
+.online-match-status,
+.online-solo-notice {
   border: var(--border-1) solid var(--world-floor-line);
   background: var(--world-glass);
   box-shadow: var(--elevation-1);
@@ -3951,6 +3961,7 @@ select.is-standing {
   .setting-card::after,
   .waiting-ready::before,
   .online-match-status::before,
+  .online-solo-notice::before,
   .lounge__host,
   .lounge__ready--on::before,
   .lounge__ready--offline::before,

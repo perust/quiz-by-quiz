@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
@@ -38,17 +38,23 @@ class RoomView:
     # 묻는 사람이 그 진행 중인 판의 참가자인가. playing인데 false면 판에서 빠진 멤버다(U24) —
     # 그 사람은 판이 도는 동안에도 나가거나 다음 판을 준비할 수 있다.
     in_match: bool = False
-    # 방장이 고른 문항 시간(ms, 20초·40초). 판을 열 때 그 판에 옮겨 적는다.
-    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 방장이 고른 문항 시간(ms, 20초·40초). 판을 열 때 그 판에 옮겨 적는다. 혼자 방만 None(«제한
+    # 없음», migration 013)일 수 있다 — payload는 `questionTimeMs: null`과 `untimed: true`다.
+    question_time_ms: int | None = DEFAULT_QUESTION_TIME_MS
     # 이 요청(나가기)이 방장 자리를 넘겼는가. 운영 기록(`ops_log.host_transferred`)만 읽는다 —
     # 방 payload에는 싣지 않는다.
     host_transferred: bool = False
+    # 혼자 푸는 온라인 판의 방인가 (FR-7.13 3단계, migration 013의 solo_rooms). 그 사람에게만
+    # 보이고 남이 들어오지 못한다. payload는 true일 때만 `solo`를 싣는다.
+    solo: bool = False
 
 
 @dataclass(frozen=True)
 class AccessInfo:
     is_public: bool
     password_hash: str | None
+    # 혼자 방이면 멤버가 아닌 사람에게는 «없는 방»이다 (FR-7.13 3단계)
+    solo: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,10 +63,87 @@ class MatchSetup:
     category_id: str | None
     game_mode: bool
     total_questions: int
-    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # None이면 마감 없는 혼자 판이다(«제한 없음», migration 013)
+    question_time_ms: int | None = DEFAULT_QUESTION_TIME_MS
     # 판에 든 사람 수. 운영 기록(`ops_log.match_started`)만 읽는다 — 시작 payload에는 싣지 않는다.
     # 모르는 저장소(테스트의 가짜)는 None이다.
     player_count: int | None = None
+
+
+@dataclass(frozen=True)
+class EndedSoloMatch:
+    """끝까지 풀지 않고 끝낸 혼자 판 하나 (PRD 10.1 #11, 소유자 결정).
+
+    다른 판(분야·전체 도전)을 골라 새 판을 열었거나(`restart`) 혼자 판을 그만뒀다(DELETE /v1/solo).
+    끝까지 풀지 않은 판은 기록하지 않는다(FR-6, 로컬 N04) — 판은 `abandoned`가 되고 랭킹에 남지
+    않는다. 다만 마지막 문항까지 답해 마지막 공개만 남은 판은 끝까지 푼 판이라(N04의 «결과 보기») 그
+    자리에서 닫아 기록한다(`recorded`).
+    """
+
+    match_id: UUID
+    category_id: str | None
+    # 끝낼 때 열려 있던 문항 순서와 판의 문항 수 (운영 기록만 읽는다)
+    position: int
+    total_questions: int
+    recorded: bool = False
+
+
+@dataclass(frozen=True)
+class SoloStart:
+    """혼자 푸는 온라인 판을 열거나 이은 결과 (FR-7.13 3단계, POST /v1/solo).
+
+    `match`가 None이면 그 사람의 혼자 방에 이미 판이 돌고 있어 새 판을 열지 않았다(`resumed`) —
+    화면은 그 판을 이어 그린다. `created`는 이번에 혼자 방을 새로 만들었는가다(운영 기록만 읽는다).
+    `ended`는 다른 판을 골라(`restart`) 끝낸 판이다 — 그 뒤에 이 판(`match`)을 열었다.
+    """
+
+    room: RoomView
+    match: MatchSetup | None
+    created: bool = False
+    ended: EndedSoloMatch | None = None
+
+    @property
+    def resumed(self) -> bool:
+        return self.match is None
+
+
+@dataclass(frozen=True)
+class SoloEnd:
+    """혼자 판을 그만둔 결과 (DELETE /v1/solo). 혼자 방이 있었으면 `code`이고 그 방은 지워졌다."""
+
+    code: str | None
+    ended: EndedSoloMatch | None = None
+
+
+@dataclass(frozen=True)
+class OwnBestView:
+    """한 판(board)의 내 최고 기록. 같은 점수면 먼저 남긴 기록이다 (랭킹 순서와 같다)."""
+
+    score: int
+    correct_count: int
+    total_count: int
+    recorded_at: str
+
+
+@dataclass(frozen=True)
+class OwnRecordView:
+    """내 온라인 기록 한 줄 (기록 내보내기, FR-7.13 2단계 N02). 브라우저 신분은 싣지 않는다."""
+
+    board: str
+    score: int
+    correct_count: int
+    total_count: int
+    # None이면 «제한 없음»으로 푼 혼자 판이다 (migration 013)
+    question_time_ms: int | None
+    nickname: str
+    recorded_at: str
+
+
+@dataclass(frozen=True)
+class OwnRecordsView:
+    records: tuple[OwnRecordView, ...]
+    # 한도보다 많아 오래된 기록을 덜어 냈는가
+    truncated: bool
 
 
 @dataclass(frozen=True)
@@ -134,8 +217,9 @@ class MatchView:
     scores: tuple[MatchScoreView, ...]
     review: tuple[MatchReviewView, ...] = ()
     # 이 판의 문항 시간(ms). 시작할 때 방 설정에서 옮겨 와 판 내내 같다 —
-    # 모든 문항 마감이 이 값이다.
-    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
+    # 모든 문항 마감이 이 값이다. None이면 마감 없는 혼자 판이다(«제한 없음», migration 013) —
+    # 도는 문항의 deadline_at도 None이고 시간 초과가 없다.
+    question_time_ms: int | None = DEFAULT_QUESTION_TIME_MS
     # 끝난 판에서만: 묻는 사람의 이 판 결과가 온라인 랭킹에 남았는가 (FR-7.13 2단계). 판을 닫은
     # transaction이 남기므로 012 API가 닫은 판이면 언제나 true다(011 API가 닫은 판은 false).
     ranking_recorded: bool = False
@@ -213,6 +297,9 @@ class CleanupCounts:
     # 보존 기간(최근 8주 + 판마다 전체 상위 100, 저장 한도 250,000줄)을 넘겨 지운 랭킹 기록
     # (migration 012)
     rankings_pruned: int = 0
+    # 30분 넘게 아무도 보이지 않아 기록 없이 끝낸 «제한 없음» 혼자 판 (migration 013). 마감이 없어
+    # 스스로 끝나지 않는 판을 30분 멤버 정리가 함께 거둔다
+    solo_matches_abandoned: int = 0
 
     @property
     def changed(self) -> bool:
@@ -224,6 +311,7 @@ class CleanupCounts:
                 self.matches_deleted,
                 self.players_deleted,
                 self.rankings_pruned,
+                self.solo_matches_abandoned,
             )
         )
 
@@ -233,6 +321,16 @@ RANKING_BOARDS = ("all", "history", "science", "geography", "general", "art")
 RankingPeriod = Literal["week", "all"]
 # 한 번에 내보내는 순위 수 (FR-6.4의 상위 10과 같다)
 RANKING_LIMIT = 10
+# 기록 내보내기가 한 번에 싣는 내 기록 수. 최근 것부터 고른다 — 보존(최근 8주 + 판마다 전체 상위
+# 100)이 남긴 것 가운데서다
+OWN_RECORDS_LIMIT = 500
+# 동시에 있을 수 있는 혼자 방의 수 (FR-7.13 3단계). 혼자 방 하나에 도는 판은 많아야 하나라 이것이
+# 혼자 판의 동시 수도 묶는다 — 아무도 답하지 않는 혼자 판 1,200개는 20초 문항이면 28초마다 마감
+# 넘김이 두 번이라 초당 약 86번이고, 마감 sweep(1초마다 판 100개)이 따라간다. 이미 있는 혼자 방을
+# 다시 쓰는 판은 세지 않는다 — 새로 만들 때만 본다. 찬 동안 새 판은 503 `solo-busy`이고 화면은
+# 연습(기록 안 남음)을 연다. 이 값을 바꾸는 것은 자원 envelope 검토다
+# (deploy/oracle/README.md «Solo online play»)
+SOLO_ROOM_CEILING = 1_200
 
 # «내 기록»(isMine)을 가리는 열쇠의 앞말. 열쇠는 브라우저 비밀(토큰)의 해시에서 나온다.
 _RANKING_OWNER_PREFIX = b"qbb-ranking-owner:"
@@ -321,6 +419,22 @@ class MatchNotFound(RepositoryFailure):
 
 class MatchPositionMismatch(RepositoryFailure):
     pass
+
+
+class SoloRoomsFull(RepositoryFailure):
+    """혼자 방이 한도(`SOLO_ROOM_CEILING`)까지 찼다 (FR-7.13 3단계). 새 혼자 방을 만들지 않는다.
+
+    이미 있는 혼자 방을 다시 쓰는 판은 막지 않는다 — 만들 때만 센다. API는 503 `solo-busy`로 알리고
+    화면은 결정 #1처럼 연습(기록 안 남음)을 연다.
+    """
+
+
+class SoloCreateLimited(RepositoryFailure):
+    """새 혼자 방을 만드는 몫(주소·프로세스, 한 시간)이 찼다. `retry_after`초 뒤에 자리가 난다."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__("solo room creation budget exhausted")
+        self.retry_after = retry_after
 
 
 class MemberConnected(RepositoryFailure):
@@ -466,6 +580,44 @@ class RoomsRepository(Protocol):
         at: datetime | None = None,
         limit: int = RANKING_LIMIT,
     ) -> RankingBoardView: ...
+
+    # 내 판마다 최고 기록 (FR-7.13 3단계, GET /v1/rankings/mine). actor_id와 owner_key가 모두 같은
+    # 기록만 센다. exclude_match_id를 주면 그 판의 기록은 빼고 센다 — 결과 화면이 «이 판 전의 최고
+    # 기록»과 견준다(FR-5.7). 기록이 없는 판은 None이다.
+    async def own_best_scores(
+        self,
+        *,
+        actor_id: UUID,
+        owner_key: bytes,
+        exclude_match_id: UUID | None = None,
+    ) -> Mapping[str, OwnBestView | None]: ...
+
+    # 내 온라인 기록 (기록 내보내기, GET /v1/rankings/mine/records). 최근 것부터 limit개.
+    async def own_records(
+        self,
+        *,
+        actor_id: UUID,
+        owner_key: bytes,
+        limit: int = OWN_RECORDS_LIMIT,
+    ) -> OwnRecordsView: ...
+
+    # 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo). 그 사람의 혼자 방을 다시 쓰고(없으면
+    # 만든다) 곧바로 판을 연다. 혼자 방에 판이 돌고 있으면 새 판을 열지 않고 그 방을 돌려준다.
+    # 새 혼자 방은 한도(`SOLO_ROOM_CEILING`) 안에서만 만들고(넘으면 SoloRoomsFull), 만들 때만
+    # `may_create`(만드는 몫, 남은 대기 초 또는 None)를 먹는다 — 넘으면 SoloCreateLimited.
+    # restart면 다른 판(분야·전체 도전)이 도는 혼자 방에서 그 판을 기록 없이 끝내고 새 판을 연다
+    # (PRD 10.1 #11). 같은 판이 돌면 restart여도 그 판을 잇는다(resumed).
+    async def start_solo(
+        self,
+        actor_id: UUID,
+        spec: ValidatedRoom,
+        *,
+        may_create: Callable[[], float | None] | None = None,
+        restart: bool = False,
+    ) -> SoloStart: ...
+
+    # 혼자 판을 그만둔다(DELETE /v1/solo): 도는 판을 기록 없이 끝내고 혼자 방을 지운다
+    async def end_solo(self, actor_id: UUID) -> SoloEnd: ...
 
     async def advance_expired_matches(
         self,

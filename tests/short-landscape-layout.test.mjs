@@ -132,6 +132,28 @@ test('짧은 가로 touch 퀴즈(U15): 온라인의 공개·상태 줄·채팅�
   }
 });
 
+test('짧은 가로 touch 퀴즈(U15): 혼자 판의 앞 판 알림은 왼쪽 열이 아니라 두 열 아래, 공개·상태 줄 위다', () => {
+  // 끝내고 새로 연 판(PRD 10.1 #11)의 첫 문항 동안 알림이 HUD 아래(왼쪽 열)에 서면 그 높이(38–57px + 12px)가
+  // 왼쪽 열에 더해져 740×360에서 아래 줄 보기가 화면 밖으로 7–13px 나갔다. 실측은 tools/check-screens.js ㉓다
+  const notice = nodeFromHtml(html, 'online-solo-notice');
+  assert.ok(notice.parent.classes.includes('quiz--character'), '알림은 온라인 퀴즈 grid의 자식이다');
+  for (const env of [...LANDSCAPE_PHONES, OLD_LANDSCAPE]) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(valueOf(rules, notice, 'grid-column', env), '1 / -1', at);
+    // 넷째 줄(1fr)까지가 두 열이다. 다섯째 줄로 정해 두면 공개 카드·상태 줄·채팅은 그 뒤로 놓인다
+    assert.equal(valueOf(rules, notice, 'grid-row', env), '5', at);
+    assert.equal(valueOf(rules, notice, 'width', env), '100%', at);
+    assert.equal(valueOf(rules, notice, 'margin', env), 'var(--space-3) 0', at);
+    const position = valueOf(rules, notice, 'position', env);
+    assert.ok(position === null || position === 'static', `${at}: position ${position}`);
+  }
+  // 다른 화면에서는 그대로 HUD 바로 아래 흐름이다
+  for (const env of [MOBILE, DESKTOP, touch(1024, 768)]) {
+    assert.equal(valueOf(rules, notice, 'grid-row', env), null, `${env.width}×${env.height}`);
+    assert.equal(valueOf(rules, notice, 'margin', env), '0 auto var(--space-3)', `${env.width}×${env.height}`);
+  }
+});
+
 test('짧은 가로 배치는 touch 가로 화면에만 걸린다 — 세로 휴대폰·마우스 기기·높은 태블릿은 그대로다', () => {
   const tablet = touch(1024, 768);
   const mouseShort = { ...DESKTOP, width: 740, height: 360 };

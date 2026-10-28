@@ -103,7 +103,7 @@ class FakeApi:
     def __init__(
         self,
         *,
-        schema_version: int = 12,
+        schema_version: int = 13,
         readiness_error: tuple[int, str] | None = None,
         readiness_extra: dict | None = None,
         readiness_429: int = 0,
@@ -119,10 +119,13 @@ class FakeApi:
         terminate: tuple[str, str] | None = None,
         question_time: bool = True,
         rankings: bool = True,
+        solo_play: bool | None = None,
         nickname_filter: bool = True,
         ranking_extra: dict | None = None,
         ranking_entry_extra: dict | None = None,
         anonymous_mine: bool = False,
+        solo_end_recorded: bool = False,
+        solo_end_failures: int = 0,
     ) -> None:
         self.schema_version = schema_version
         self.readiness_error = readiness_error
@@ -139,8 +142,11 @@ class FakeApi:
         self.interrupt = interrupt
         self.terminate = terminate
         self.question_time = question_time
-        # migration 012 API의 것: 세션의 rankings, 닉네임 금칙 규칙, GET /v1/rankings
+        # migration 012 API(#108)부터의 것: 세션의 rankings, 닉네임 금칙 규칙, GET /v1/rankings
         self.rankings = rankings
+        # migration 013 API(이 후보, FR-7.13 3단계)의 것: 세션의 soloPlay. 기본은 랭킹과 같다 — 012
+        # API(이 경계의 baseline)는 solo_play=False로 흉내 낸다
+        self.solo_play = rankings if solo_play is None else solo_play
         self.nickname_filter = nickname_filter
         self.ranking_extra = dict(ranking_extra or {})
         self.ranking_entry_extra = dict(ranking_entry_extra or {})
@@ -152,6 +158,13 @@ class FakeApi:
         self.tickets: dict[str, str] = {}
         self.players: set[str] = set()
         self.rooms: dict[str, dict] = {}
+        # 혼자 판 (FR-7.13 3단계): 연 혼자 방과 그 판이 «제한 없음»인가, 끝냈는가
+        self.solo_rooms: dict[str, dict] = {}
+        self.solo_ended: list[str] = []
+        # DELETE /v1/solo가 방을 지우고도 «기록했다»고 답한다(점검이 잡아야 할 서버 잘못)
+        self.solo_end_recorded = solo_end_recorded
+        # DELETE /v1/solo가 이만큼 503으로 답한다(아무것도 지우지 않는다)
+        self.solo_end_failures = solo_end_failures
 
     def _cors(self, headers: dict) -> dict:
         origin = headers.get("Origin")
@@ -269,11 +282,16 @@ class FakeApi:
             session = {"playerId": player, "minPlayers": 1, "standingAnswers": True}
             if self.rankings:
                 session["rankings"] = True
+            if self.solo_play:
+                session["soloPlay"] = True
+                # 소유자 결정 (PRD 10.1 #9·#11): «제한 없음» 혼자 판, 다른 판을 골라 끝내고 새로 열기
+                session["soloUntimed"] = True
+                session["soloRestart"] = True
             return self._ok(200, session, headers)
         if player not in self.players:
             return error(401, "unauthorized")
         if (method, path) == ("POST", "/v1/rooms"):
-            # 구버전 화면처럼 questionTimeMs를 보내지 않는다 — 011·012 API 모두 20초로 둔다.
+            # 구버전 화면처럼 questionTimeMs를 보내지 않는다 — 012·013 API 모두 20초로 둔다.
             assert set(payload) == {"name", "categoryId", "capacity", "isPublic"}
             code = "QZ7K2M"
             self.rooms[code] = {
@@ -303,6 +321,15 @@ class FakeApi:
             return self._ok(201, self._room(self.rooms[code]), headers)
         if (method, path) == ("GET", "/v1/rooms"):
             return self._ok(200, [self._room(room) for room in self.rooms.values()], headers)
+        if path == "/v1/solo":
+            return self._solo(method, player, payload, headers)
+        solo = re.fullmatch(r"/v1/rooms/(SQL234)(/match)?", path)
+        if solo is not None and method == "GET":
+            if solo.group(1) not in self.solo_rooms:
+                return error(404, "not-found")
+            if solo.group(2) is None:
+                return self._ok(200, self.solo_rooms[solo.group(1)], headers)
+            return self._ok(200, self._untimed_match(), headers)
         match = re.fullmatch(r"/v1/rooms/([A-Z0-9]{6})(/.*)?", path)
         assert match is not None, path
         code, rest = match.group(1), match.group(2) or ""
@@ -324,6 +351,88 @@ class FakeApi:
             del self.rooms[code]
             return smoke.Reply(204, self._cors(headers))
         raise AssertionError(f"unexpected request {method} {path}")
+
+    def _solo(self, method, player, payload, headers):
+        """server/app/main.py의 POST·DELETE /v1/solo. 혼자 판을 모르는 API에는 그 경로가 없다."""
+        if not self.solo_play:
+            return smoke.Reply(404, self._cors(headers), body({"detail": "Not Found"}))
+        if method == "POST":
+            # 점검은 전체 도전 «제한 없음»만 연다 — restart 없이(도는 판이 없다)
+            assert payload == {"categoryId": None, "questionTimeMs": None}, payload
+            code = "SQL234"
+            self.solo_rooms[code] = {
+                "code": code,
+                "name": "혼자 하기",
+                "categoryId": None,
+                "capacity": 2,
+                "gameMode": True,
+                # «제한 없음» 방에는 문항 시간 키가 없다(server/app/main.py의 _room_payload)
+                "untimed": True,
+                "solo": True,
+                "players": [
+                    {
+                        "id": player,
+                        "nickname": "점검",
+                        "characterId": "slime-blue",
+                        "isReady": False,
+                        "connected": True,
+                    }
+                ],
+                "isPublic": True,
+                "hasPassword": False,
+                "isMine": True,
+                "joined": True,
+                "createdAt": "2026-10-28T00:00:00Z",
+                "status": "playing",
+                "inMatch": True,
+            }
+            match = {
+                "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "categoryId": None,
+                "gameMode": True,
+                "totalQuestions": 25,
+                "questionTimeMs": None,
+                "untimed": True,
+            }
+            return self._ok(
+                201,
+                {"room": self.solo_rooms[code], "match": match, "resumed": False},
+                headers,
+            )
+        assert method == "DELETE" and payload is None
+        if self.solo_end_failures:
+            self.solo_end_failures -= 1
+            return self._ok(503, {"detail": {"code": "database-unavailable"}}, headers)
+        if not self.solo_rooms:
+            return self._ok(200, {"ended": None, "left": False}, headers)
+        (code,) = self.solo_rooms
+        del self.solo_rooms[code]
+        self.solo_ended.append(code)
+        ended = {
+            "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "categoryId": None,
+            "recorded": self.solo_end_recorded,
+        }
+        return self._ok(200, {"ended": ended, "left": True}, headers)
+
+    def _untimed_match(self) -> dict:
+        return {
+            "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "state": "running",
+            "categoryId": None,
+            "gameMode": True,
+            "currentPosition": 1,
+            "totalQuestions": 25,
+            "questionTimeMs": None,
+            "deadlineAt": None,
+            "remainingMs": None,
+            "standingAnswers": False,
+            "untimed": True,
+            "question": {"id": "online-history-001", "position": 1, "total": 25},
+            "ownSubmission": None,
+            "reveal": None,
+            "scores": [],
+        }
 
     def upgrade(self, path, headers):
         self.upgrades.append((path, dict(headers)))
@@ -465,11 +574,24 @@ class SmokeRunTests(unittest.TestCase):
                 "ok room",
                 "ok room-settings",
                 "ok websocket",
+                "ok solo",
                 "ok cleanup",
             ],
         )
-        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12")
-        self.assertIn("rankings true", run.lines[1])
+        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 13")
+        self.assertEqual(
+            run.lines[1],
+            "ok session: HTTP 200 playerId is this identity, rankings true, "
+            "soloPlay soloUntimed soloRestart true",
+        )
+        # «제한 없음» 혼자 판을 열어 마감이 없는지 보고 기록 없이 끝낸다 (PRD 10.1 #9·#11)
+        self.assertEqual(
+            run.lines[7],
+            "ok solo: HTTP 201 untimed solo room SQL234; GET match running with no deadline; "
+            "DELETE /v1/solo -> 200 ended unrecorded, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
         self.assertEqual(
             run.lines[2],
             "ok nickname: HTTP 400 nickname-personal-info for an e-mail-shaped nickname",
@@ -552,63 +674,121 @@ class SmokeRunTests(unittest.TestCase):
                 self.assert_left_the_room(run)
                 self.assert_no_secret(run)
 
-    def test_baseline_against_the_candidate_fails_the_gate_and_still_cleans_up(self):
-        run = Run("baseline", FakeApi(schema_version=12))
+    def test_baseline_against_the_candidate_fails_the_gate_and_the_session(self):
+        # 013 API를 baseline으로 보면: gate가 13이고 세션이 혼자 온라인 판을 알린다
+        run = Run("baseline", FakeApi(schema_version=13))
         self.assertEqual(run.code, 1)
         self.assertEqual(
             run.lines[0],
-            "FAIL readiness: schemaVersion=12 (want 11)",
+            "FAIL readiness: schemaVersion=13 (want 12)",
         )
         self.assertEqual(
-            [line.split(":")[0] for line in run.lines[1:]],
-            ["ok session", "ok room", "ok room-settings", "ok websocket", "ok cleanup"],
+            run.lines[1],
+            "FAIL session: soloPlay=true (want missing); soloUntimed=true (want missing); "
+            "soloRestart=true (want missing)",
+        )
+        # baseline은 혼자 판을 열지 않는다
+        self.assertFalse(any(path == "/v1/solo" for _, path, _, _ in run.api.requests))
+        self.assertEqual(
+            [line.split(":")[0] for line in run.lines[2:]],
+            [
+                "ok nickname",
+                "ok rankings",
+                "ok room",
+                "ok room-settings",
+                "ok websocket",
+                "ok cleanup",
+            ],
         )
         self.assert_left_the_room(run)
         self.assert_no_secret(run)
 
-    def test_baseline_neither_reads_nor_requires_the_rankings(self):
-        # 이 경계의 baseline은 011 API다: 문항 시간은 있고 랭킹·닉네임 규칙은 없다
-        run = Run("baseline", FakeApi(schema_version=11, rankings=False, nickname_filter=False))
+    def test_baseline_is_the_rankings_api_without_solo_play(self):
+        # 이 경계의 baseline은 012 API(#108)다: 문항 시간·랭킹·닉네임 규칙은 있고 혼자 온라인 판은 없다
+        run = Run("baseline", FakeApi(schema_version=12, solo_play=False))
         self.assertEqual(run.code, 0, run.lines)
-        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 11")
-        self.assertEqual(run.lines[1], "ok session: HTTP 200 playerId is this identity")
-        self.assertFalse(
-            any(path.startswith("/v1/rankings") for _, path, _, _ in run.api.requests)
+        self.assertEqual(
+            [line.split(":")[0] for line in run.lines],
+            [
+                "ok readiness",
+                "ok session",
+                "ok nickname",
+                "ok rankings",
+                "ok room",
+                "ok room-settings",
+                "ok websocket",
+                "ok cleanup",
+            ],
         )
-        sessions = [payload for method, path, _, payload in run.api.requests if path == "/v1/session"]
-        self.assertEqual(sessions, [{"nickname": "점검", "characterId": "slime-blue"}])
-        # 011 API의 방 설정(문항 시간)은 baseline도 본다
+        self.assertEqual(run.lines[0], "ok readiness: HTTP 200 ready character-only-v1 schemaVersion 12")
+        self.assertEqual(
+            run.lines[1], "ok session: HTTP 200 playerId is this identity, rankings true, no soloPlay"
+        )
+        self.assertTrue(run.lines[3].startswith("ok rankings: anonymous week HTTP 200"), run.lines[3])
+        # 랭킹은 읽기만 하고 판도 혼자 판도 열지 않는다
+        self.assertFalse(
+            any(
+                path == "/v1/solo" or path.endswith("/start") or (
+                    path.startswith("/v1/rankings") and method != "GET"
+                )
+                for method, path, _, _ in run.api.requests
+            )
+        )
+        # 012 API의 방 설정(문항 시간)도 baseline이 본다
         self.assertTrue(
             any(
                 path.endswith("QZ7K2M") and method == "PATCH"
                 for method, path, _, _ in run.api.requests
             )
         )
+        self.assert_left_the_room(run)
+
+    def test_baseline_against_the_011_api_fails_session_nickname_and_rankings(self):
+        # 011 API는 이 경계의 baseline이 아니다 — #108의 migration 012 경계를 먼저 마친다
+        run = Run("baseline", FakeApi(schema_version=11, rankings=False, nickname_filter=False))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(run.lines[0], "FAIL readiness: schemaVersion=11 (want 12)")
+        self.assertEqual(run.lines[1], "FAIL session: rankings=missing (want true)")
+        self.assertEqual(
+            run.lines[2], "FAIL nickname: HTTP 200, expected HTTP 400 nickname-personal-info"
+        )
+        self.assertEqual(run.lines[3], "FAIL rankings: anonymous week: HTTP 404, expected 200")
+        self.assertEqual(run.lines[6], WEBSOCKET_OK)
+        self.assert_left_the_room(run)
 
     def test_baseline_against_an_api_without_question_time_fails_the_room(self):
-        # 010 API는 이 경계의 baseline이 아니다 — #106의 migration 011 경계를 먼저 마친다
-        run = Run("baseline", FakeApi(schema_version=11, question_time=False, rankings=False))
+        run = Run("baseline", FakeApi(schema_version=12, question_time=False, solo_play=False))
         self.assertEqual(run.code, 1)
         self.assertIn("FAIL room: room QZ7K2M: questionTimeMs=missing (want 20000)", run.lines)
         self.assert_left_the_room(run)
 
     def test_migrated_baseline_passes_only_on_the_expected_migration_required_gate(self):
-        # README 단계 3: DB는 012인데 011 API가 아직 돈다. gate는 닫히고 방과 소켓은 돈다.
-        api = FakeApi(readiness_error=(503, "migration-required"), rankings=False)
+        # README 단계 3: DB는 013인데 012 API가 아직 돈다. gate는 닫히고 세션·랭킹·방·소켓은 돈다.
+        api = FakeApi(readiness_error=(503, "migration-required"), solo_play=False)
         run = Run("baseline-migrated", api)
         self.assertEqual(run.code, 0, run.lines)
         self.assertEqual(
             run.lines[0],
-            "ok readiness: HTTP 503 migration-required (closed as expected after migration 012)",
+            "ok readiness: HTTP 503 migration-required (closed as expected after migration 013)",
         )
         self.assertEqual(
-            [line.split(":")[0] for line in run.lines[1:]],
-            ["ok session", "ok room", "ok room-settings", "ok websocket", "ok cleanup"],
+            run.lines[1], "ok session: HTTP 200 playerId is this identity, rankings true, no soloPlay"
+        )
+        self.assertEqual(
+            [line.split(":")[0] for line in run.lines[2:]],
+            [
+                "ok nickname",
+                "ok rankings",
+                "ok room",
+                "ok room-settings",
+                "ok websocket",
+                "ok cleanup",
+            ],
         )
         self.assert_no_secret(run)
 
         for options, reason in (
-            ({"schema_version": 11}, "HTTP 200, expected HTTP 503 migration-required"),
+            ({"schema_version": 12}, "HTTP 200, expected HTTP 503 migration-required"),
             (
                 {"readiness_error": (503, "database-unavailable")},
                 "HTTP 503 database-unavailable, expected HTTP 503 migration-required",
@@ -619,18 +799,18 @@ class SmokeRunTests(unittest.TestCase):
             ),
         ):
             with self.subTest(options=options):
-                run = Run("baseline-migrated", FakeApi(rankings=False, **options))
+                run = Run("baseline-migrated", FakeApi(solo_play=False, **options))
                 self.assertEqual(run.code, 1)
                 self.assertEqual(run.lines[0], f"FAIL readiness: {reason}")
                 self.assert_left_the_room(run)
 
     def test_baseline_after_migration_points_at_the_migrated_mode(self):
-        run = Run("baseline", FakeApi(readiness_error=(503, "migration-required")))
+        run = Run("baseline", FakeApi(readiness_error=(503, "migration-required"), solo_play=False))
         self.assertEqual(run.code, 1)
         self.assertEqual(
             run.lines[0],
             "FAIL readiness: HTTP 503 migration-required, expected 200 "
-            "(after migration 012 run baseline-migrated instead)",
+            "(after migration 013 run baseline-migrated instead)",
         )
         candidate = Run("candidate", FakeApi(readiness_error=(503, "migration-required")))
         self.assertEqual(
@@ -667,13 +847,46 @@ class SmokeRunTests(unittest.TestCase):
         # 011 API를 candidate로 보면: 세션이 랭킹을 알리지 않고, 닉네임을 거절하지 않고, 경로가 없다
         run = Run("candidate", FakeApi(rankings=False, nickname_filter=False))
         self.assertEqual(run.code, 1)
-        self.assertEqual(run.lines[1], "FAIL session: rankings=missing (want true)")
+        self.assertEqual(
+            run.lines[1],
+            "FAIL session: rankings=missing (want true); soloPlay=missing (want true); "
+            "soloUntimed=missing (want true); soloRestart=missing (want true)",
+        )
         self.assertEqual(
             run.lines[2], "FAIL nickname: HTTP 200, expected HTTP 400 nickname-personal-info"
         )
         self.assertEqual(run.lines[3], "FAIL rankings: anonymous week: HTTP 404, expected 200")
         self.assertEqual(run.lines[6], WEBSOCKET_OK)
+        self.assertEqual(run.lines[7], "FAIL solo: POST /v1/solo: HTTP 404, expected 201")
         self.assert_left_the_room(run)
+
+    def test_candidate_against_the_012_api_fails_the_gate_and_the_session(self):
+        # 012 API(#108)를 candidate로 보면: gate가 12이고 세션이 혼자 온라인 판을 알리지 않는다.
+        # 랭킹은 같은 것이라 통한다
+        run = Run("candidate", FakeApi(schema_version=12, solo_play=False))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(run.lines[0], "FAIL readiness: schemaVersion=12 (want 13)")
+        self.assertEqual(
+            run.lines[1],
+            "FAIL session: soloPlay=missing (want true); soloUntimed=missing (want true); "
+            "soloRestart=missing (want true)",
+        )
+        self.assertTrue(run.lines[3].startswith("ok rankings"), run.lines[3])
+        # 그 API에는 혼자 판이 없다 — 연 것이 없으니 cleanup은 혼자 판을 끝내러 가지 않는다
+        self.assertEqual(
+            run.lines[7], "FAIL solo: POST /v1/solo: HTTP 404, expected 201"
+        )
+        self.assertEqual(
+            [(method, path) for method, path, _, _ in run.api.requests if path == "/v1/solo"],
+            [("POST", "/v1/solo")],
+        )
+        self.assert_left_the_room(run)
+
+    def test_candidate_on_a_migration_12_database_fails_the_gate(self):
+        # 013 API는 012 DB 위에서 돌지 않는다 — 그 gate는 503 migration-required로 닫힌다
+        run = Run("candidate", FakeApi(readiness_error=(503, "migration-required")))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(run.lines[0], "FAIL readiness: HTTP 503 migration-required, expected 200")
 
     def test_rankings_must_carry_exactly_the_public_fields(self):
         for options, reason in (
@@ -728,6 +941,115 @@ class SmokeRunTests(unittest.TestCase):
         self.assertEqual(run.code, 130)
         self.assertEqual(run.lines[-2], "FAIL websocket: interrupted (Ctrl-C)")
         self.assert_left_the_room(run)
+
+    def test_ctrl_c_in_the_solo_step_still_ends_the_solo_match(self):
+        # 혼자 판을 연 뒤에 멈췄다 — cleanup이 그 판을 기록 없이 끝내고 혼자 방을 지운다
+        run = Run("candidate", FakeApi(interrupt=("GET", "/v1/rooms/SQL234/match")))
+        self.assertEqual(run.code, 130)
+        self.assertEqual(run.lines[-2], "FAIL solo: interrupted (Ctrl-C)")
+        self.assertEqual(
+            run.lines[-1],
+            "ok cleanup: left room QZ7K2M, GET -> 404; "
+            "DELETE /v1/solo -> 200 ended unrecorded, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+
+    def test_lost_solo_response_is_ended_anyway(self):
+        # 서버는 혼자 판을 열었는데 답을 받기 전에 SIGTERM이 왔다 — 방 코드를 몰라도 DELETE /v1/solo가 끝낸다
+        previous = smoke.trap_termination()
+        try:
+            run = Run("candidate", FakeApi(terminate=("POST", "/v1/solo")))
+        finally:
+            smoke.restore_signals(previous)
+        self.assertEqual(run.code, 143)
+        self.assertEqual(run.lines[-2], "FAIL solo: interrupted (SIGTERM)")
+        self.assertEqual(
+            run.lines[-1], "ok cleanup: left room QZ7K2M, GET -> 404; DELETE /v1/solo -> 200"
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
+
+    def test_an_untimed_solo_room_that_carries_a_null_question_time_fails(self):
+        # 방의 null은 #109 전 화면의 로비 목록 전체를 깨뜨린다 — 점검이 그 모양을 막는다
+        api = FakeApi()
+        original = api._solo
+
+        def null_room(method, player, payload, headers):
+            reply = original(method, player, payload, headers)
+            if method == "POST":
+                for room in api.solo_rooms.values():
+                    room["questionTimeMs"] = None
+                value = json.loads(reply.body)
+                value["room"]["questionTimeMs"] = None
+                return smoke.Reply(reply.status, reply.headers, body(value))
+            return reply
+
+        api._solo = null_room
+        run = Run("candidate", api)
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: POST /v1/solo: room questionTimeMs=null (want missing)"
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.rooms, {})
+
+    def test_solo_step_failing_after_its_delete_still_leaves_the_public_room(self):
+        # solo 단계의 DELETE가 혼자 방을 지웠는데 답이 틀렸다(기록했다고 한다) — 그 단계는 FAIL이고,
+        # cleanup의 두 번째 DELETE는 방이 없다는 답({left: false, ended: null})을 GET 404로 확인해 이미
+        # 끝난 것으로 본다. 공개 방은 그대로 나간다(한때 그 DELETE가 던져 공개 방이 운영 로비에 남았다)
+        run = Run("candidate", FakeApi(solo_end_recorded=True))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: DELETE /v1/solo: ended recorded=true (want false)"
+        )
+        self.assertEqual(
+            run.lines[-1],
+            "ok cleanup: left room QZ7K2M, GET -> 404; "
+            "DELETE /v1/solo -> 200 already ended, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.rooms, {})
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
+
+    def test_failed_solo_cleanup_still_leaves_the_public_room(self):
+        # solo 단계의 DELETE도, cleanup의 DELETE도 503이다 — 혼자 판은 남았다고 FAIL로 알리되 공개 방은 나간다
+        run = Run("candidate", FakeApi(solo_end_failures=2))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200"
+        )
+        self.assertEqual(
+            run.lines[-1],
+            "FAIL cleanup: solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200",
+        )
+        self.assertEqual(run.api.rooms, {})
+        self.assertEqual(list(run.api.solo_rooms), ["SQL234"])
+        leaves = [
+            (method, path)
+            for method, path, _, _ in run.api.requests
+            if path == "/v1/rooms/QZ7K2M/members/me"
+        ]
+        self.assertEqual(leaves, [("DELETE", "/v1/rooms/QZ7K2M/members/me")])
+
+    def test_cleanup_reports_both_failures_on_one_line(self):
+        # 혼자 판 끝내기와 공개 방 나가기가 모두 실패하면 둘 다 적는다 — 하나가 다른 하나를 가리지 않는다
+        api = FakeApi(solo_end_failures=2)
+        original = api.request
+
+        def refuse_leave(method, path, headers, data=None):
+            if (method, path) == ("DELETE", "/v1/rooms/QZ7K2M/members/me"):
+                api.requests.append((method, path, dict(headers), None))
+                return smoke.Reply(500, api._cors(headers), body({"detail": {"code": "server-error"}}))
+            return original(method, path, headers, data)
+
+        api.request = refuse_leave
+        run = Run("candidate", api)
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[-1],
+            "FAIL cleanup: leave room QZ7K2M: HTTP 500 server-error, expected 204 or 404; "
+            "solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200",
+        )
 
     def test_sigterm_through_the_installed_handler_still_leaves_the_room(self):
         previous = smoke.trap_termination()

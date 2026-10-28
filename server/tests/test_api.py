@@ -94,7 +94,7 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 12
+        self.current_schema_version = 13
         self.schema_version_calls = 0
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
@@ -324,7 +324,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_12() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_13() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -332,12 +332,14 @@ def test_release_readiness_requires_character_only_contract_and_migration_12() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 12,
+            "schemaVersion": 13,
         }
 
-        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가 없다. 이 API는
-        # 그 위에서 방을 읽거나 판을 닫지 못한다(닫는 transaction이 랭킹을 남긴다)
-        for older in (9, 10, 11):
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이, 011까지의 DB에는 랭킹 표가, 012(#108)의
+        # DB에는 혼자 방 표가 없다. 이 API는 그 위에서 방을 읽거나(방 SQL이 solo_rooms를 본다) 판을
+        # 닫지 못한다(닫는 transaction이 랭킹을 남긴다). 번호만 보면 된다 — 013이 따로 있어 12는
+        # 언제나 #108의 스키마다
+        for older in (9, 10, 11, 12):
             repository.current_schema_version = older
             blocked = client.get("/v1/release-readiness")
             assert blocked.status_code == 503
@@ -377,12 +379,17 @@ def test_session_hashes_browser_token_and_never_echoes_it() -> None:
     assert response.status_code == 200
     # 방 snapshot이 없는 화면(홈·빈 로비·「게임 방법」)도 이 API의 규칙을 말하도록 함께 알린다 —
     # 방장 혼자서도 열고(minPlayers), 시간이 끝나면 발밑 칸이 답이며(standingAnswers, U13), 끝난
-    # 판은 서버 랭킹에 남는다(rankings, FR-7.13 2단계)
+    # 판은 서버 랭킹에 남고(rankings, FR-7.13 2단계), 홈이 혼자 푸는 온라인 판을 곧바로 연다
+    # (soloPlay, FR-7.13 3단계). 그 판은 «제한 없음»도 고르고(soloUntimed, PRD 10.1 #9) 다른 판을
+    # 고르면 도는 판을 끝내고 새로 연다(soloRestart, #4)
     assert response.json() == {
         "playerId": str(PLAYER_ID),
         "minPlayers": 1,
         "standingAnswers": True,
         "rankings": True,
+        "soloPlay": True,
+        "soloUntimed": True,
+        "soloRestart": True,
     }
     assert repository.session_token_hash == hashlib.sha256(PLAYER_TOKEN.encode()).digest()
     assert PLAYER_TOKEN not in response.text

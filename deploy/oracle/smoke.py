@@ -4,24 +4,26 @@
 운영 호스트의 시스템 python3(3.8 이상) 하나로 돈다. 표준 라이브러리만 쓴다 — curl·jq·openssl·
 requests·websockets가 없어도 된다::
 
-    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-011 API
-    python3 deploy/oracle/smoke.py baseline-migrated   # migration 012 뒤에도 아직 도는 그 API
-    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-012 API
+    python3 deploy/oracle/smoke.py baseline            # 지금 도는 migration-012 API(#108)
+    python3 deploy/oracle/smoke.py baseline-migrated   # migration 013 뒤에도 아직 도는 그 API
+    python3 deploy/oracle/smoke.py candidate           # 그 자리를 이어받는 migration-013 API
     python3 deploy/oracle/smoke.py candidate --resolve-to 127.0.0.1
     python3 deploy/oracle/smoke.py candidate --api http://127.0.0.1:18083
 
-한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션, 닉네임 금칙 규칙과 온라인 랭킹 읽기
-(candidate만), 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로 지나고, 끝에는 언제나 방을
-나간다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
+한 번 쓰고 버리는 브라우저 신분 하나가 release gate, 세션(혼자 온라인 판 soloPlay·soloUntimed·soloRestart는
+candidate에만), 닉네임 금칙 규칙과 온라인 랭킹 읽기, 공개 2인 방, 방의 문항 시간, 이벤트 WebSocket을 차례로
+지나고, candidate는 «제한 없음» 혼자 판 하나를 열어 마감이 없는지 본 뒤 기록 없이 끝낸다(DELETE /v1/solo,
+PRD 10.1 #9·#11). 끝에는 언제나 방을 나가고 열린 혼자 판을 끝낸다 — 실패했거나 Ctrl-C·SIGTERM·SIGHUP으로
 멈췄어도 그렇다. 단계마다 ``ok <step>: ...`` 또는 ``FAIL <step>: <reason>`` 한 줄이고, 다시 묻는
 것은 stderr에 적는다. 종료 코드는 모든 줄이 ``ok``일 때만 0이다(그 밖에는 1, Ctrl-C 뒤 130,
 SIGTERM 뒤 143, SIGHUP 뒤 129, 잘못된 인자 2). bearer 토큰·소켓 티켓·응답 본문은 출력하지 않고
 상태 코드·오류 코드·확인한 필드만 적는다.
 
-``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 012인데 011 API가
+``baseline-migrated``는 deploy/oracle/README.md 단계 3의 상태다 — DB는 이미 013인데 012 API가
 아직 돈다. 그 API의 gate는 503 ``migration-required``로 닫혀 있는 것이 정상이므로 이 모드는 그
-답만 ok로 보고, 방과 소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지 않는다 — 이
-점검은 판을 열지 않으므로 랭킹 기록도 남기지 않는다.
+답만 ok로 보고, 세션·닉네임·랭킹·방·소켓은 baseline과 같이 돌아야 한다. 랭킹은 읽기만 하고 쓰지
+않는다 — 이 점검은 친구와 푸는 판을 열지 않고, candidate가 여는 혼자 판은 끝까지 풀지 않고 끝내므로
+(``abandoned``) 랭킹 기록도 혼자 방도 남기지 않는다.
 
 ``--resolve-to IP``는 TCP만 그 IP로 붙고 Host 헤더와 TLS SNI·인증서 검증은 URL 호스트로 한다
 (제 공인 주소로 돌아오지 못하는 호스트의 hairpin NAT). ``http://``는 브라우저 화면처럼 루프백
@@ -58,7 +60,7 @@ CANDIDATE = "candidate"
 MODES = (BASELINE, MIGRATED_BASELINE, CANDIDATE)
 # 모드마다 공개 release gate가 답해야 하는 migration 판
 # (server/app/main.py의 RELEASE_SCHEMA_VERSION)
-SCHEMA_VERSIONS = {BASELINE: 11, CANDIDATE: 12}
+SCHEMA_VERSIONS = {BASELINE: 12, CANDIDATE: 13}
 # DB가 그 API의 판이 아니면 gate가 이 오류 코드의 503으로 닫힌다. baseline-migrated는 이것만 받는다.
 MIGRATION_REQUIRED_CODE = "migration-required"
 WEBSOCKET_PROTOCOL = "qbb.v1"
@@ -68,7 +70,7 @@ OPCODE_TEXT = 0x1
 OPCODE_CLOSE = 0x8
 CLOSE_NORMAL = 1000
 # 브라우저가 소켓을 열자마자 보내는 움직임과 같은 모양이다(src/online/network-rooms.ts의
-# movementPayload). viewport 없는 옛 모양이라 011·012 API가 모두 받는다.
+# movementPayload). viewport 없는 옛 모양이라 012·013 API가 모두 받는다.
 PROBE_MOVEMENT = {"type": "movement", "x": 0.5, "y": 0.5, "moving": False}
 # 소켓에서 움직임이 되돌아오고 close에 답이 오기를 각각 이만큼까지 기다린다.
 WEBSOCKET_REPLY_SECONDS = 3.0
@@ -101,6 +103,9 @@ RANKING_ENTRY_FIELDS = frozenset(
     }
 )
 REJECTED_RANKING_CODE = "invalid-ranking"
+# candidate의 혼자 판 (FR-7.13 3단계): 전체 도전 «제한 없음»(questionTimeMs null, PRD 10.1 #9)을 열고, 마감이
+# 없는지 본 뒤 DELETE /v1/solo로 기록 없이 끝낸다(#4의 끝내기). 혼자 방 하나·판 하나를 잠깐 쓴다
+SOLO_START = {"categoryId": None, "questionTimeMs": None}
 CHARACTER_ID = "slime-blue"
 ROOM_NAME = "배포 점검"
 USER_AGENT = "quiz-by-quiz-smoke/1"
@@ -601,6 +606,12 @@ class Smoke:
         # 만들기 요청이 HTTP 답을 받았는가. 받지 못했으면 방이 생겼는지 모른다(cleanup이 찾아본다).
         self.room_answered = False
         self.room_code: str | None = None
+        # 혼자 판을 열려고 했는가, 연 혼자 방과 그것을 끝냈는가. 끝내지 못했으면 cleanup이 끝낸다
+        self.solo_requested = False
+        # 혼자 판 열기가 HTTP 답을 받았는가. 받지 못했으면 혼자 방이 생겼는지 모른다(cleanup이 끝내 본다)
+        self.solo_answered = False
+        self.solo_code: str | None = None
+        self.solo_ended = False
         self.current: str | None = None
 
     def call(
@@ -625,15 +636,16 @@ class Smoke:
         interrupted: KeyboardInterrupt | None = None
         try:
             # release gate가 틀려도 나머지를 본다 — 무엇이 더 깨졌는지 한 번에 보이게 한다.
-            # migration 012 직후의 011 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
+            # migration 013 직후의 012 API(gate 503)는 baseline-migrated로 보면 gate도 ok다.
             self._step("readiness", self.readiness)
             self._step("session", self.session)
-            # 닉네임 금칙 규칙과 공개 랭킹 읽기는 migration 012 API의 것이다. 판을 열지 않으므로
-            # 랭킹을 쓰지 않고, 거절된 닉네임은 프로필을 바꾸지 않는다
-            needs_session = [("nickname", self.nickname), ("rankings", self.rankings)]
-            if not self.candidate:
-                needs_session = []
-            needs_session.append(("room", self.create_room))
+            # 닉네임 금칙 규칙과 공개 랭킹 읽기는 migration 012 API부터의 것이라 이 경계의 세 모드가
+            # 모두 본다. 판을 열지 않으므로 랭킹을 쓰지 않고, 거절된 닉네임은 프로필을 바꾸지 않는다
+            needs_session = [
+                ("nickname", self.nickname),
+                ("rankings", self.rankings),
+                ("room", self.create_room),
+            ]
             for name, action in needs_session:
                 if not self.session_ready:
                     self.report.fail(name, "not run (no session)")
@@ -645,6 +657,12 @@ class Smoke:
                     self.report.fail(name, "not run (no room)")
                 else:
                     self._step(name, action)
+            # 혼자 온라인 판은 migration 013 API(이 후보)의 것이다 — 012 API(baseline)에는 없다
+            if self.candidate:
+                if not self.session_ready:
+                    self.report.fail("solo", "not run (no session)")
+                else:
+                    self._step("solo", self.solo)
         except KeyboardInterrupt as error:
             interrupted = error
             self.report.fail(self.current or "run", f"interrupted ({interruption_name(error)})")
@@ -706,11 +724,11 @@ class Smoke:
             problems = cors_problems(reply)
             if problems:
                 raise Failure("; ".join(problems))
-            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 012)"
+            return f"HTTP 503 {MIGRATION_REQUIRED_CODE} (closed as expected after migration 013)"
         if migration_required and self.mode == BASELINE:
             raise Failure(
                 f"{status_text(reply)}, expected 200 "
-                f"(after migration 012 run {MIGRATED_BASELINE} instead)"
+                f"(after migration 013 run {MIGRATED_BASELINE} instead)"
             )
         expect_status(reply, 200)
         version = SCHEMA_VERSIONS[self.mode]
@@ -732,14 +750,22 @@ class Smoke:
             raise Failure("playerId is not this identity")
         self.session_ready = True
         problems = cors_problems(reply)
-        # migration 012 API는 끝난 판을 서버 랭킹에 남긴다고 알린다. 화면은 이것으로 랭킹을 보인다
-        if self.candidate:
-            problems += field_problems(session, {"rankings": True})
+        # migration 012 API부터 끝난 판을 서버 랭킹에 남긴다고(rankings) 알리고, 013 API는 홈의 혼자
+        # 온라인 판도 연다고(soloPlay, FR-7.13 3단계), 그 판이 «제한 없음»(soloUntimed)과 다른 판을 골라
+        # 끝내고 새로 열기(soloRestart, PRD 10.1 #9·#11)를 안다고 알린다. 012 API(#108)에는 셋 다 없다
+        solo: object = True if self.candidate else _MISSING
+        problems += field_problems(
+            session,
+            {"rankings": True, "soloPlay": solo, "soloUntimed": solo, "soloRestart": solo},
+        )
         if problems:
             raise Failure("; ".join(problems))
         if self.candidate:
-            return "HTTP 200 playerId is this identity, rankings true"
-        return "HTTP 200 playerId is this identity"
+            return (
+                "HTTP 200 playerId is this identity, rankings true, "
+                "soloPlay soloUntimed soloRestart true"
+            )
+        return "HTTP 200 playerId is this identity, rankings true, no soloPlay"
 
     def nickname(self) -> str:
         reply = self.call(
@@ -830,7 +856,7 @@ class Smoke:
 
     def create_room(self) -> str:
         self.room_requested = True
-        # questionTimeMs를 보내지 않는다 — 구버전 화면처럼 보내지 않은 방은 011·012 API 모두 20초다.
+        # questionTimeMs를 보내지 않는다 — 구버전 화면처럼 보내지 않은 방은 012·013 API 모두 20초다.
         reply = self.call(
             "POST",
             "/v1/rooms",
@@ -843,7 +869,7 @@ class Smoke:
         if not isinstance(code, str) or not _ROOM_CODE.fullmatch(code):
             raise Failure("room code is missing or malformed")
         self.room_code = code
-        # 011 API부터의 방 모양이다. 이 경계(012)의 baseline도 그 API라 모든 모드가 본다
+        # 011 API부터의 방 모양이다. 이 경계(013)의 baseline(012 API)도 갖고 있어 모든 모드가 본다
         want: dict[str, object] = {
             "capacity": 2,
             "isPublic": True,
@@ -959,6 +985,100 @@ class Smoke:
             f"closed {CLOSE_NORMAL}"
         )
 
+    def solo(self) -> str:
+        """«제한 없음» 혼자 판 하나를 열고(마감이 없다) 기록 없이 끝낸다 (PRD 10.1 #9·#11)."""
+        self.solo_requested = True
+        reply = self.call("POST", "/v1/solo", SOLO_START)
+        self.solo_answered = True
+        expect_status(reply, 201, what="POST /v1/solo")
+        started = reply.json_object()
+        room = started.get("room")
+        match = started.get("match")
+        code = room.get("code") if isinstance(room, dict) else None
+        if not isinstance(code, str) or not _ROOM_CODE.fullmatch(code):
+            raise Failure("POST /v1/solo: room code is missing or malformed")
+        self.solo_code = code
+        problems = field_problems(started, {"resumed": False})
+        # «제한 없음» 방은 문항 시간 키 없이 표시만 싣는다 — #109 전의 화면은 방의 null을 거절하고 한 방이
+        # 틀리면 로비 목록 전체를 버린다(키가 없으면 20초 방으로 읽는다). 판은 null을 그대로 싣는다
+        problems += [
+            f"room {problem}"
+            for problem in field_problems(
+                room, {"solo": True, "untimed": True, "questionTimeMs": _MISSING}
+            )
+        ]
+        problems += [
+            f"match {problem}"
+            for problem in field_problems(match, {"untimed": True, "questionTimeMs": None})
+        ]
+        if self._only_me(room.get("players") if isinstance(room, dict) else None) is None:
+            problems.append("room players is not exactly this identity")
+        if problems:
+            raise Failure("POST /v1/solo: " + "; ".join(problems))
+
+        reply = self.call("GET", f"/v1/rooms/{code}/match")
+        expect_status(reply, 200, what="GET match")
+        # 마감 없는 도는 문항이다 — 마감·남은 시간이 없고 서 있는 칸은 답이 되지 않는다
+        problems = field_problems(
+            reply.json_object(),
+            {
+                "state": "running",
+                "untimed": True,
+                "questionTimeMs": None,
+                "deadlineAt": None,
+                "remainingMs": None,
+                "standingAnswers": False,
+            },
+        )
+        if problems:
+            raise Failure("GET match: " + "; ".join(problems))
+
+        ended = self._end_solo()
+        return (
+            f"HTTP 201 untimed solo room {code}; GET match running with no deadline; "
+            f"{ended}"
+        )
+
+    def _end_solo(self, *, cleanup: bool = False) -> str:
+        """DELETE /v1/solo — 도는 판을 기록 없이 끝내고 혼자 방을 지운다. 그 방은 다시 읽히지 않는다.
+
+        ``cleanup``이면 앞선 DELETE가 이미 닿았을 수 있다(``solo`` 단계가 그 DELETE의 답을 보고 실패했거나
+        답을 받지 못했다). 그때 서버는 혼자 방이 없어 ``{left: false, ended: null}``로 답하므로, 그 방이
+        정말 읽히지 않으면(404) 이미 끝난 것으로 본다.
+        """
+        reply = self.call("DELETE", "/v1/solo")
+        if self.solo_code is None:
+            # 열기의 답을 받지 못했다 — 혼자 방이 있으면 끝내고, 없으면(404는 그 길이 없는 API) 할 일이 없다
+            expect_status(reply, 200, 404, what="DELETE /v1/solo")
+            self.solo_ended = True
+            return f"DELETE /v1/solo -> {reply.status}"
+        expect_status(reply, 200, what="DELETE /v1/solo")
+        body_value = reply.json_object()
+        already_gone = cleanup and not field_problems(body_value, {"left": False, "ended": None})
+        if not already_gone:
+            problems = field_problems(body_value, {"left": True})
+            problems += [
+                f"ended {problem}"
+                for problem in field_problems(body_value.get("ended"), {"recorded": False})
+            ]
+            if problems:
+                raise Failure("DELETE /v1/solo: " + "; ".join(problems))
+        reply = self.call("GET", f"/v1/rooms/{self.solo_code}")
+        if reply.status != 404:
+            if already_gone:
+                raise Failure(
+                    f"DELETE /v1/solo: left=false but solo room {self.solo_code} is still "
+                    f"readable ({status_text(reply)})"
+                )
+            raise Failure(
+                f"solo room {self.solo_code} is still readable after ending "
+                f"({status_text(reply)})"
+            )
+        self.solo_ended = True
+        if already_gone:
+            return f"DELETE /v1/solo -> 200 already ended, GET {self.solo_code} -> 404"
+        return f"DELETE /v1/solo -> 200 ended unrecorded, GET {self.solo_code} -> 404"
+
     def _is_my_movement(self, frame: Frame) -> bool:
         if frame.opcode != OPCODE_TEXT:
             return False
@@ -1019,6 +1139,27 @@ class Smoke:
     def cleanup(self) -> str:
         if not self.session_ready:
             return "nothing to leave (no session)"
+        # 열려고 한 혼자 판을 끝내지 못했으면(실패·중단) 여기서 끝낸다. 혼자 방이 없으면 아무 일도 없다.
+        # 그것이 실패해도(시간 초과·429·5xx) 공개 방은 나간다 — 공개 2인 방이 운영 로비에 남으면 30분
+        # 정리까지 누구나 들어올 수 있다. 두 실패는 한 줄에 함께 적는다
+        solo = ""
+        problems: list[str] = []
+        unknown = not self.solo_answered
+        if self.solo_requested and not self.solo_ended and (self.solo_code or unknown):
+            try:
+                solo = "; " + self._end_solo(cleanup=True)
+            except Exception as error:  # 네트워크·HTTP 오류도 방 나가기를 막지 않는다
+                problems.append(f"solo: {_failure_text(error)}")
+        try:
+            left = self._leave_rooms()
+        except Exception as error:
+            problems.insert(0, _failure_text(error))
+            left = None
+        if problems:
+            raise Failure("; ".join(problems))
+        return f"{left}{solo}"
+
+    def _leave_rooms(self) -> str:
         codes = [self.room_code] if self.room_code else []
         if not codes and self.room_requested:
             codes = self._created_room_codes()
@@ -1036,6 +1177,11 @@ class Smoke:
         return f"left room {', '.join(codes)}, GET -> 404"
 
 
+def _failure_text(error: Exception) -> str:
+    # Failure는 이미 사람이 읽을 이유다. 그 밖의 오류(네트워크·TLS·HTTP)는 클래스 이름을 붙인다
+    return str(error) if isinstance(error, Failure) else _describe(error)
+
+
 def _is_close(frame: Frame) -> bool:
     return frame.opcode == OPCODE_CLOSE
 
@@ -1049,9 +1195,9 @@ def main(argv: list[str] | None = None) -> int:
         "mode",
         choices=MODES,
         help=(
-            "baseline: the serving migration-011 API; "
-            "baseline-migrated: that API after migration 012 ran (gate 503 migration-required); "
-            "candidate: the migration-012 API"
+            "baseline: the serving migration-012 API; "
+            "baseline-migrated: that API after migration 013 ran (gate 503 migration-required); "
+            "candidate: the migration-013 API"
         ),
     )
     parser.add_argument("--api", default=DEFAULT_API, help=f"API base URL (default {DEFAULT_API})")

@@ -39,7 +39,23 @@ export interface SettingsDialog {
    * 대기실에서 열어 둔 채 매치가 시작되면 새 화면 위에 남아 포커스를 가두면 안 된다.
    */
   dismiss(): void;
+
+  /**
+   * 홈의 분야 칸이 혼자 푸는 온라인 판을 여는가 (FR-7.13 3단계). 그러면 문항 시간 도움말이 온라인 판에서 어떻게
+   * 쓰이는지 말한다 — 20초·40초·«제한 없음» 모두 그대로다(PRD 10.1 #9). `untimed`는 그 API가 «제한 없음» 혼자 판을
+   * 아는가(세션의 `soloUntimed`)다 — 모르면 «제한 없음»은 20초로 푼다고 말한다. 모르는 동안(이전 API·아직 묻지
+   * 않음)은 정적 HTML의 예전 말이다
+   */
+  setOnlineSolo(soloOnline: boolean, untimed?: boolean): void;
 }
+
+/** 혼자 푸는 온라인 판의 문항 시간 도움말 (FR-7.13 3단계, PRD 10.1 #9 — `online/solo-play.ts`의 `soloQuestionTime`) */
+export const SOLO_TIME_NOTE =
+  '기본은 20초예요. 새로 시작하는 판부터 적용돼요. 혼자 푸는 온라인 판도 이 시간을 쓰고, «제한 없음»이면 시간 제한 없이 풀어요. 친구와 푸는 방은 방장이 방마다 20초나 40초로 정해요.';
+
+/** «제한 없음» 혼자 판을 모르는 API의 도움말 — 그때 «제한 없음»은 20초로 연다(`soloQuestionTime`) */
+export const SOLO_TIMED_TIME_NOTE =
+  '기본은 20초예요. 새로 시작하는 판부터 적용돼요. 혼자 푸는 온라인 판도 이 시간을 쓰지만 지금은 «제한 없음»이면 20초로 풀어요. 친구와 푸는 방은 방장이 방마다 20초나 40초로 정해요.';
 
 /** `data-time-limit` 의 글. 제한 없음은 'none' 이다 */
 function attrOf(choice: TimeLimitChoice): string {
@@ -74,7 +90,10 @@ export function createSettingsDialog({ onChange, onClose }: SettingsDialogDeps):
     motion: need<HTMLButtonElement>('setting-motion'),
     motionState: need('setting-motion-state'),
     times: all<HTMLButtonElement>('#settings-dialog [data-time-limit]'),
+    timeNote: need('settings-time-note'),
   };
+  // 이 기능을 모르는 API의 말(정적 HTML). 혼자 온라인 판을 알게 되면 바꾸고, 다시 모르게 되면 되돌린다
+  const legacyTimeNote = el.timeNote.textContent ?? '';
 
   let values: DialogSettings = { soundEnabled: true, timeLimitMs: TIME_LIMIT_MS, reduceMotion: false };
   /** 대화상자를 연 자리. 닫을 때 포커스를 돌려준다 */
@@ -165,6 +184,11 @@ export function createSettingsDialog({ onChange, onClose }: SettingsDialogDeps):
     dismiss() {
       el.dialog.hidden = true;
       opener = null;
+    },
+
+    setOnlineSolo(soloOnline, untimed = true) {
+      const text = !soloOnline ? legacyTimeNote : untimed ? SOLO_TIME_NOTE : SOLO_TIMED_TIME_NOTE;
+      if (el.timeNote.textContent !== text) el.timeNote.textContent = text;
     },
   };
 }

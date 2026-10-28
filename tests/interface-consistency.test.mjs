@@ -64,7 +64,10 @@ test('결과의 다음 행동은 긴 오답 풀이보다 먼저 온다', async (
 test('첫 결과 상태는 아직 저장하지 않은 기록을 저장됐다고 말하지 않는다', async () => {
   const result = await source('../src/ui/result.ts');
 
-  assert.match(result, /el\.best\.textContent = '첫 기록이에요\.'/);
+  // 비교 글은 로컬 결과와 혼자 푼 온라인 판의 결과가 함께 쓰는 순수 함수다 (FR-7.13 3단계)
+  const bestScore = await readFile(new URL('../src/ui/best-score.ts', import.meta.url), 'utf8');
+  assert.match(bestScore, /if \(previous === null\) return \{ text: '첫 기록이에요\.', isNew: true \};/);
+  assert.match(result, /const \{ text, isNew \} = bestComparisonText\(summary\.score, bestScore\);\s*el\.best\.classList\.toggle\('result-best--new', isNew\);\s*el\.best\.textContent = text;/);
   assert.doesNotMatch(result, /첫 기록을 남겼어요/);
 });
 
@@ -81,11 +84,13 @@ test('빈 랭킹은 설명으로 막지 않고 그 탭의 판을 곧바로 여�
   // 예전에는 홈으로만 돌려보내 분야를 다시 골라야 했다 (U23). 이제 그 탭의 판을 연다. 같은 버튼이 온라인
   // 랭킹(FR-7.13 2단계)에서는 «온라인 방 열기»·«다시 시도»가 되므로, 하는 일은 그린 때 정한 emptyAction이다
   assert.match(ranking, /emptyAction = canStart\(tab\.target\) \? 'start' : 'home';/);
-  assert.match(ranking, /el\.emptyStartButton\.textContent = emptyAction === 'start' \? `\$\{tab\.label\} 시작하기` : '홈으로';/);
+  // 글은 `setEmptyStart`가 그 판정 그대로 쓴다 — 연습(기록 안 남음)만 열 때는 «… 연습하기» (FR-7.13 3단계)
+  assert.match(ranking, /function setEmptyStart\(label: string\): void \{\s*if \(emptyAction !== 'start'\) \{[\s\S]*?el\.emptyStartButton\.textContent = '홈으로';[\s\S]*?el\.emptyStartButton\.textContent = `\$\{label\} 연습하기`;[\s\S]*?el\.emptyStartButton\.textContent = `\$\{label\} 시작하기`;\s*\}/);
   assert.match(ranking, /el\.emptyStartButton\.addEventListener\('click', \(\) => \{\s*const \{ target \} = currentTab\(\);/);
   assert.match(ranking, /\} else if \(emptyAction === 'start' && canStart\(target\)\) \{\s*onStart\(target\);\s*\} else \{\s*onHome\(\);/);
   assert.doesNotMatch(ranking, /emptyHomeButton|ranking-empty-home/);
-  assert.match(app, /onStart: \(target\) => startRound\(/);
+  // 홈의 분야 칸과 같은 판이다 (FR-7.13 3단계 — 혼자 온라인 판·예전 혼자 하기·연습 가운데 지금의 것)
+  assert.match(app, /onStart: \(target\) => playRound\(/);
   // 열 수 없는 판(문제를 불러오지 못한 분야)은 권하지 않는다. 홈의 분야 칸·전체 도전과 같은 규칙이다
   assert.match(app, /canStart: \(target\) => \(target\.mode === 'all'\s*\? allModeCount\(\) > 0\s*: \(target\.category \? banks\[target\.category\]\?\.length \?\? 0 : 0\) > 0\),/);
   assert.match(ranking, /startPoint: \(\) => pointBelowRightEdge\(el\.header, el\.character\)/);

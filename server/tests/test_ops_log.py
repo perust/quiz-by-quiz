@@ -149,7 +149,15 @@ def _emit_every_event() -> None:
         "ABC234", players=2, category_id="science", question_time_ms=40_000, questions=10
     )
     ops_log.match_finished("ABC234", via="sweep")
-    ops_log.cleanup(CleanupCounts(rooms_deleted=1, members_removed=2, rankings_pruned=3))
+    ops_log.solo_started(
+        "ABC234", created=True, category_id=None, question_time_ms=20_000, questions=25
+    )
+    ops_log.solo_abandoned("ABC234", via="restart", position=3, questions=10)
+    ops_log.cleanup(
+        CleanupCounts(
+            rooms_deleted=1, members_removed=2, rankings_pruned=3, solo_matches_abandoned=4
+        )
+    )
     ops_log.server_error("GET", "/v1/rooms/{raw_code}", RuntimeError("boom"))
     ops_log.summary(
         window_seconds=300.2,
@@ -198,11 +206,32 @@ def test_events_carry_the_expected_values(ops_lines: list[str]) -> None:
     assert by_name["match_started"]["category"] == "science"
     assert by_name["match_started"]["questionTimeMs"] == 40_000
     assert by_name["match_started"]["players"] == 2
+    # 혼자 푸는 온라인 판 (FR-7.13 3단계): 방을 새로 만들었는가와 판의 모양뿐이다
+    assert by_name["solo_started"] | {"ts": None} == {
+        "event": "solo_started",
+        "ts": None,
+        "room": "ABC234",
+        "created": True,
+        "category": "all",
+        "questionTimeMs": 20_000,
+        "questions": 25,
+    }
+    # 끝까지 풀지 않고 끝낸 혼자 판 (PRD 10.1 #11): 어떻게 끝났는가와 문항 순서·수뿐이다
+    assert by_name["solo_abandoned"] | {"ts": None} == {
+        "event": "solo_abandoned",
+        "ts": None,
+        "room": "ABC234",
+        "via": "restart",
+        "position": 3,
+        "questions": 10,
+    }
     assert by_name["cleanup"]["roomsDeleted"] == 1
     assert by_name["cleanup"]["membersRemoved"] == 2
     assert by_name["cleanup"]["hostsTransferred"] == 0
     # 보존 기간을 넘겨 지운 랭킹 기록도 수만 남긴다 (migration 012)
     assert by_name["cleanup"]["rankingsPruned"] == 3
+    # 30분 넘게 아무도 보이지 않아 끝낸 «제한 없음» 혼자 판도 수만 (migration 013)
+    assert by_name["cleanup"]["soloMatchesAbandoned"] == 4
     assert by_name["server_error"] | {"ts": None} == {
         "event": "server_error",
         "ts": None,

@@ -1,0 +1,33 @@
+{
+  "app": "quiz-by-quiz",
+  "kind": "records",
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-28T01:02:03.000Z",
+  "nickname": "김민준",
+  "scope": "온라인에서 끝까지 푼 판의 기록이에요. 최근 8주의 기록과 판마다 상위 100개가 남아 있어요. 그 가운데 최근 500개만 담았어요.",
+  "records": [
+    {
+      "id": "online-1",
+      "source": "online",
+      "nickname": "김민준",
+      "mode": "category",
+      "category": "science",
+      "score": 80,
+      "correctCount": 8,
+      "totalCount": 10,
+      "playedAt": "2026-10-26T09:00:00+00:00",
+      "timeLimitMs": 40000
+    },
+    {
+      "id": "online-2",
+      "source": "online",
+      "nickname": "익명",
+      "mode": "all",
+      "category": null,
+      "score": 200,
+      "correctCount": 20,
+      "totalCount": 25,
+      "playedAt": "2026-10-27T09:00:00+00:00"
+    }
+  ]
+}

@@ -147,22 +147,34 @@ async def _exercise_default_room() -> None:
         assert (await repository.get_match(host, room.code)).advanced is True
         assert await _elapsed_ms(setup.id, 1, guest) == 20_000
 
-        # 화면을 거치지 않아도 DB가 20초·40초 밖의 값과 제한 없음을 막는다
+        # 화면을 거치지 않아도 DB가 20초·40초 밖의 값과 친구와 푸는 방의 제한 없음을 막는다. 제한
+        # 없음(NULL)은 혼자 방과 그 판에만 있다 — CHECK는 NULL을 받고, 혼자 방이 아닌 방·판의 NULL은
+        # COMMIT의 외래 키(rooms_untimed_solo_room_fkey·matches_untimed_solo_room_fkey, migration
+        # 013)가, 도는 문항의 마감이 있는 판의 NULL은 matches_active_deadline_check가 막는다
+        rejected = (errors.CheckViolation, errors.NotNullViolation, errors.ForeignKeyViolation)
         async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
             for value in (30_000, None):
-                with pytest.raises((errors.CheckViolation, errors.NotNullViolation)):
+                with pytest.raises(rejected):
                     await connection.execute(
                         "UPDATE quiz_online.rooms SET question_time_ms = %s WHERE code = %s",
                         (value, room.code),
                     )
-                with pytest.raises((errors.CheckViolation, errors.NotNullViolation)):
+                with pytest.raises(rejected):
                     await connection.execute(
                         "UPDATE quiz_online.matches SET question_time_ms = %s WHERE id = %s",
                         (value, setup.id),
                     )
-            with pytest.raises(errors.CheckViolation):
+            # 40초를 넘는 쓴 시간은 제한 없는 판의 답뿐이다(match_answers_long_elapsed_fkey), 판의
+            # 수명(2시간)을 넘는 쓴 시간은 없다(match_answers_elapsed_ms_range_check)
+            with pytest.raises(errors.ForeignKeyViolation):
                 await connection.execute(
                     "UPDATE quiz_online.match_answers SET elapsed_ms = 40001 WHERE match_id = %s",
+                    (setup.id,),
+                )
+            with pytest.raises(errors.CheckViolation):
+                await connection.execute(
+                    "UPDATE quiz_online.match_answers SET elapsed_ms = 7200001 "
+                    "WHERE match_id = %s",
                     (setup.id,),
                 )
     finally:

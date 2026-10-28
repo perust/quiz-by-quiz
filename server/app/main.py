@@ -21,6 +21,7 @@ from fastapi import (
     FastAPI,
     Header,
     HTTPException,
+    Query,
     Request,
     Response,
     WebSocket,
@@ -43,6 +44,7 @@ from .domain import (
     validate_player,
     validate_question_time,
     validate_room,
+    validate_solo_room,
 )
 from .password_work import BoundedPasswordWork, PasswordWorkBusy
 from .question_catalog import CatalogError, QuestionCatalog
@@ -52,9 +54,11 @@ from .rate_limit import (
     RateLimitClaim,
 )
 from .repository import (
+    OWN_RECORDS_LIMIT,
     RANKING_BOARDS,
     RANKING_LIMIT,
     CleanupCounts,
+    EndedSoloMatch,
     MatchAnswerView,
     MatchInProgress,
     MatchNotFound,
@@ -67,6 +71,8 @@ from .repository import (
     MemberConnected,
     NotHost,
     NotMember,
+    OwnBestView,
+    OwnRecordView,
     PlayerView,
     RankingBoardView,
     RankingEntryView,
@@ -75,6 +81,8 @@ from .repository import (
     RoomNotFound,
     RoomsRepository,
     RoomView,
+    SoloCreateLimited,
+    SoloRoomsFull,
     StandingAnswer,
     TokenConflict,
     ranking_owner_key,
@@ -83,10 +91,11 @@ from .room_versions import RoomVersions
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
-# 이 API가 읽고 쓰는 마지막 migration. 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하고(닫는
+# 이 API가 읽고 쓰는 마지막 migration. 013(혼자 푸는 온라인 판)의 표가 없으면 로비·방·참가를 읽지
+# 못하고(방 SQL이 solo_rooms를 본다) 012(온라인 랭킹)의 표가 없으면 판을 닫지 못하며(닫는
 # transaction이 기록을 남긴다) 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지 못하므로
 # 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
-RELEASE_SCHEMA_VERSION = 12
+RELEASE_SCHEMA_VERSION = 13
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
@@ -157,6 +166,33 @@ RANKING_MODES = frozenset({"category", "all"})
 RANKING_PERIODS: frozenset[RankingPeriod] = frozenset({"week", "all"})
 # 랭킹의 «이번 주»가 쓰는 시간대. 응답이 함께 알린다.
 RANKING_TIME_ZONE = "Asia/Seoul"
+# 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo)의 몫. restart 없이는 판이 도는 동안의 요청이
+# 새 판을 열지 않고 그 판을 돌려주고(resumed) 판 하나가 빨라도 1분 남짓(공개 8초 × 문항 수)이라 한
+# 사람이 1분에 여는 판은 하나 남짓이다. 다만 화면은 늘 restart를 싣고(PRD 10.1 #11) 다른 판을 고를
+# 때마다 도는 판을 끝내고 새로 열므로, 한 사람이 1분에 판을 이 사람 칸(12)만큼 열고 끝낼 수 있다 —
+# 끝낸 판은 그 방에 2시간까지 남고, 판을 열 때 읽는 최근 출제는 최근 24판만 본다
+# (`RECENT_MATCH_MEMORY`). 사람 칸은 두 번 누르기·다른 탭·이어 풀기도 넉넉히 품는다. 한 교실(한 주소
+# 뒤 36명)이 함께 판을 열어도 1분에 30번 남짓이라 IP 칸 120에 들고, 프로세스 600은 방 변경 몫과
+# 같다 — 서비스 전체에 남는 판 수는 이 칸 × 판의 수명으로 묶인다(deploy/oracle/README.md).
+SOLO_ACTOR_LIMIT = 12
+SOLO_CLIENT_LIMIT = 120
+SOLO_PROCESS_LIMIT = 600
+SOLO_WINDOW_SECONDS = 60
+# 혼자 방을 **새로 만드는** 몫 (한 시간). 다시 쓰는 판(«다시 하기»·풀던 판)은 먹지 않는다.
+# «홈으로»가 혼자 방을 지우므로 홈에서 고른 판마다 새 방이다 — 한 주소 뒤 36명이 3분마다 홈에서
+# 새 판을 열어도(시간당 720번) 든다. 버리는 신분을 마구 만들어도 한 주소가 한 시간에 만드는 혼자
+# 방은 이만큼이고, 버려진 방은 30분 정리까지 남으므로 한 주소가 함께 쥐는 혼자 방은 많아야 이것의
+# 절반 남짓이다(동시 한도 `SOLO_ROOM_CEILING` 1,200의 30%). 프로세스 칸은 서비스 전체의 새 혼자
+# 방이다 — 방 만들기의 100/시간과 같은 결의 상한이다.
+SOLO_CREATE_CLIENT_LIMIT = 720
+SOLO_CREATE_PROCESS_LIMIT = 2_400
+SOLO_CREATE_WINDOW_SECONDS = 3_600
+# 내 최고 기록(홈을 열 때마다 한 번)과 기록 내보내기의 몫. 인증 몫도 함께 먹는다
+OWN_BEST_ACTOR_LIMIT = 30
+OWN_RECORDS_ACTOR_LIMIT = 6
+OWN_CLIENT_LIMIT = 600
+OWN_PROCESS_LIMIT = 1_200
+OWN_WINDOW_SECONDS = 60
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -381,6 +417,18 @@ class UpdateRoomBody(StrictBody):
 
 class ChatBody(StrictBody):
     text: str
+
+
+class SoloBody(StrictBody):
+    # 「전체 도전」이면 None. 문항 시간은 20초·40초이거나 null(«제한 없음», PRD 10.1 #9) — 보내지
+    # 않으면 20초다. 화면은 세션의 `soloUntimed`를 본 뒤에만 null을 보낸다
+    category_id: str | None = Field(default=None, alias="categoryId")
+    question_time_ms: StrictInt | None = Field(
+        default=DEFAULT_QUESTION_TIME_MS, alias="questionTimeMs"
+    )
+    # 혼자 방에 다른 판(분야·전체 도전)이 돌고 있으면 그 판을 기록 없이 끝내고 이 판을 연다 (PRD
+    # 10.1 #11). 같은 판이 돌면 그 판을 잇는다. 화면은 세션의 `soloRestart`를 본 뒤에만 보낸다
+    restart: StrictBool = False
 
 
 class ReadyBody(StrictBody):
@@ -1075,7 +1123,7 @@ def _player_payload(player: PlayerView) -> dict[str, object]:
 
 
 def _room_payload(room: RoomView) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "code": room.code,
         "name": room.name,
         "categoryId": room.category_id,
@@ -1093,6 +1141,21 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         # 판을 여는 데 필요한 세는 사람 수. 방장 혼자서도 연다 — 이 필드가 없는 이전 API는 둘이었다
         "minPlayers": MIN_MATCH_PLAYERS,
     }
+    # 혼자 푸는 온라인 판의 방 (FR-7.13 3단계). 그 사람에게만 보이는 방이라 true일 때만 싣는다 —
+    # 화면은 로비 목록에서 빼고 홈의 «풀던 혼자 판»으로만 잇는다. 이전 화면은 이 키를 모른다
+    if room.solo:
+        payload["solo"] = True
+    # «제한 없음» 혼자 방 (PRD 10.1 #9, migration 013)은 `questionTimeMs` 키를 싣지 않고
+    # `untimed: true`만 싣는다. #109 전의 Pages 화면(#106–#108)은 방마다 null을 거절하고 한 방이
+    # 틀리면 로비 목록 전체를 버린다 — 같은 브라우저의 새 화면 탭이 연 «제한 없음» 혼자 방
+    # 하나가 Pages 발행 전부터 열려 있던 탭의 로비를 통째로 막았다. 키가 없으면 그 화면은 20초
+    # 방으로 읽어 목록을 그린다(그 방의 도는 판은 마감이 null이라 그 화면의 판 읽기가 거절한다
+    # — 판 snapshot은 null을 그대로 싣는다). 지금 화면은 이 표시를 보고 문항 시간이 없는 방으로
+    # 읽는다. 친구와 푸는 방은 언제나 20초·40초를 싣는다
+    if room.question_time_ms is None:
+        del payload["questionTimeMs"]
+        payload["untimed"] = True
+    return payload
 
 
 def _match_answer_payload(answer: MatchAnswerView) -> dict[str, object]:
@@ -1171,6 +1234,7 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
             "position": match.question.position,
             "total": match.question.total,
         }
+    untimed = match.question_time_ms is None
     payload: dict[str, object] = {
         "matchId": str(match.id),
         "state": match.state,
@@ -1178,14 +1242,15 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
         "gameMode": match.game_mode,
         "currentPosition": match.current_position,
         "totalQuestions": match.total_questions,
-        # 이 판의 문항 시간. 화면의 남은 시간 막대가 «가득»으로 쓴다 (마감 판정은 여전히 서버다)
+        # 이 판의 문항 시간. 화면의 남은 시간 막대가 «가득»으로 쓴다 (마감 판정은 여전히 서버다).
+        # «제한 없음» 혼자 판이면 null이고 도는 문항의 deadlineAt·remainingMs도 null이다
         "questionTimeMs": match.question_time_ms,
         "deadlineAt": match.deadline_at,
         "remainingMs": _remaining_ms(match, now or datetime.now(UTC)),
         # 시간이 끝나면 발밑 칸이 답이다(U13, 혼자 하기와 같다). 화면이 초안을 보내고 규칙을
         # 그렇게 말한다. 이 필드가 없는 이전 API에서는 직접 낸 답만 세고, 화면은 초안을
-        # 보내지 않는다.
-        "standingAnswers": True,
+        # 보내지 않는다. 마감이 없는 판에는 싣지 않는다 — 직접 낸 답만 답이다
+        "standingAnswers": not untimed,
         "question": question,
         "ownSubmission": (
             _own_submission_payload(match.own_answer)
@@ -1204,6 +1269,11 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
         if match.state != "running"
         else [],
     }
+    # 마감 없는 혼자 판 (PRD 10.1 #9). 더하기만 한 표시다 — 이것이 있을 때만 화면이 null 문항 시간과
+    # 도는 문항의 null 마감을 믿는다. 이 표시를 모르는 화면은 그런 판을 열지 않는다(null을 보내지
+    # 않는다)
+    if untimed:
+        payload["untimed"] = True
     # «문제 다시 보기»(U38)는 끝난 판에만 있다. 진행 중인 판의 응답에는 키조차 없다.
     if match.state == "finished":
         payload["review"] = [_review_payload(item) for item in match.review]
@@ -1250,13 +1320,53 @@ def _ranking_payload(
     }
 
 
-def _match_start_payload(match: MatchSetup) -> dict[str, object]:
+def _own_best_payload(best: OwnBestView | None) -> dict[str, object] | None:
+    if best is None:
+        return None
     return {
+        "score": best.score,
+        "correctCount": best.correct_count,
+        "totalCount": best.total_count,
+        "recordedAt": best.recorded_at,
+    }
+
+
+def _own_record_payload(record: OwnRecordView) -> dict[str, object]:
+    # 브라우저 신분(player id)·주인 열쇠는 싣지 않는다. 판(board)은 랭킹과 같은
+    # mode·categoryId로 옮긴다
+    return {
+        "mode": "all" if record.board == "all" else "category",
+        "categoryId": None if record.board == "all" else record.board,
+        "score": record.score,
+        "correctCount": record.correct_count,
+        "totalCount": record.total_count,
+        "questionTimeMs": record.question_time_ms,
+        "nickname": record.nickname,
+        "recordedAt": record.recorded_at,
+    }
+
+
+def _match_start_payload(match: MatchSetup) -> dict[str, object]:
+    payload: dict[str, object] = {
         "matchId": str(match.id),
         "categoryId": match.category_id,
         "gameMode": match.game_mode,
         "totalQuestions": match.total_questions,
         "questionTimeMs": match.question_time_ms,
+    }
+    if match.question_time_ms is None:
+        payload["untimed"] = True
+    return payload
+
+
+def _ended_solo_payload(ended: EndedSoloMatch) -> dict[str, object]:
+    """끝내고 새로 연 혼자 판의 앞 판 (PRD 10.1 #11). 화면은 이것으로 «기록 없이 끝냈어요»를
+    말한다."""
+    return {
+        "matchId": str(ended.match_id),
+        "categoryId": ended.category_id,
+        # 마지막 공개만 남은 판(끝까지 푼 판)이면 닫아 기록했다
+        "recorded": ended.recorded,
     }
 
 
@@ -1740,6 +1850,16 @@ def create_app(
             # 끝난 온라인 판을 서버 랭킹에 남기고 GET /v1/rankings로 보인다 (FR-7.13 2단계).
             # 이 필드가 없는 이전 API면 화면은 온라인 랭킹을 숨긴다.
             "rankings": True,
+            # 혼자 푸는 온라인 판 (FR-7.13 3단계): POST /v1/solo, 내 최고 기록
+            # (GET /v1/rankings/mine)과 내 기록 내보내기(GET /v1/rankings/mine/records). 이
+            # 필드가 없는 이전 API면 화면은 홈의 분야 칸으로 예전처럼 혼자 하기(로컬)를 연다.
+            "soloPlay": True,
+            # 혼자 판의 «제한 없음»(`questionTimeMs: null`, PRD 10.1 #9)과 다른 판을 골라 도는 판을
+            # 끝내고 새로 열기(`restart: true`, #4). 더하기만 한 표시다 — 없으면 화면은 null도
+            # restart도 보내지 않는다(«제한 없음»이면 20초, 다른 판이 돌면 그 판으로 돌아갈 줄을
+            # 보인다)
+            "soloUntimed": True,
+            "soloRestart": True,
         }
 
     @app.get("/v1/rankings")
@@ -1802,6 +1922,262 @@ def create_app(
             mode=mode,
             category_id=category if mode == "category" else None,
         )
+
+    def own_wait(
+        request: Request,
+        actor_id: UUID,
+        *,
+        prefix: str,
+        actor_limit: int,
+    ) -> None:
+        """내 최고 기록·기록 내보내기의 몫 (FR-7.13 3단계). 인증 몫은 먼저 먹었다."""
+        wait = ranking_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"{prefix}:actor:{actor_id}",
+                    limit=actor_limit,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:client:{_client_key(request)}",
+                    limit=OWN_CLIENT_LIMIT,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:process",
+                    limit=OWN_PROCESS_LIMIT,
+                    window_seconds=OWN_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("기록은 잠시 뒤 다시 볼 수 있어요.", wait)
+
+    @app.get("/v1/rankings/mine")
+    async def own_best_scores(
+        request: Request,
+        identity: Identity = Depends(_identity),
+        exclude_match: str | None = Query(default=None, alias="excludeMatch"),
+    ) -> dict[str, object]:
+        """내 판마다 최고 기록 (FR-7.13 3단계 — 홈의 별 점수 FR-2.3, 결과의 최고 기록 비교 FR-5.7).
+
+        인증된 신분의 기록만 센다 — player id와 그 토큰에서 나온 주인 열쇠가 모두 같아야 한다
+        (`ranking_owner_key`, GET /v1/rankings의 isMine과 같다). 응답에는 신분이 없다. 결과 화면은
+        방금 닫힌 판을 빼고(`excludeMatch`) «이 판 전의 최고 기록»과 견준다.
+        """
+        actor_id = await authenticate_actor(request, identity)
+        own_wait(request, actor_id, prefix="rankings-mine", actor_limit=OWN_BEST_ACTOR_LIMIT)
+        excluded: UUID | None = None
+        if exclude_match is not None:
+            try:
+                excluded = UUID(exclude_match)
+            except ValueError as error:
+                raise _error(400, "invalid-match", "판 식별자가 올바르지 않아요.") from error
+        best = await repo.own_best_scores(
+            actor_id=actor_id,
+            owner_key=ranking_owner_key(identity.token_hash),
+            exclude_match_id=excluded,
+        )
+        return {"boards": {board: _own_best_payload(best.get(board)) for board in RANKING_BOARDS}}
+
+    @app.get("/v1/rankings/mine/records")
+    async def own_records(
+        request: Request,
+        identity: Identity = Depends(_identity),
+    ) -> dict[str, object]:
+        """내 온라인 기록 (서버 기록의 기록 내보내기 N02, FR-7.13 2단계). 최근 것부터 한도까지."""
+        actor_id = await authenticate_actor(request, identity)
+        own_wait(request, actor_id, prefix="rankings-records", actor_limit=OWN_RECORDS_ACTOR_LIMIT)
+        view = await repo.own_records(
+            actor_id=actor_id,
+            owner_key=ranking_owner_key(identity.token_hash),
+        )
+        return {
+            "records": [_own_record_payload(record) for record in view.records],
+            "limit": OWN_RECORDS_LIMIT,
+            "truncated": view.truncated,
+        }
+
+    @app.post("/v1/solo", status_code=201)
+    async def start_solo(
+        request: Request,
+        body: SoloBody,
+        actor_id: UUID = Depends(require_actor),
+    ) -> dict[str, object]:
+        """혼자 푸는 온라인 판을 곧바로 연다 (FR-7.13 3단계). 대기실을 거치지 않는다.
+
+        그 사람의 혼자 방(남의 목록에 없고 남이 들어오지 못한다)을 다시 쓰거나 만들고 판을 연다.
+        혼자 방에 판이 이미 돌고 있으면 새 판을 열지 않고 그 방을 `resumed`로 돌려준다 — 화면은 그
+        판을 이어 그린다. `restart`면 도는 판이 다른 판(분야·전체 도전)일 때 그 판을 기록 없이
+        끝내고 같은 transaction에서 이 판을 연다(PRD 10.1 #11) — 응답의 `ended`가 끝낸 판이다. 판의
+        출제·채점·마감·기록(FR-7.13 2단계)은 친구와 푸는 방과 같다. 문항 시간 null(«제한 없음»,
+        #2)은 마감이 없다.
+        """
+        wait = ingress_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"solo:actor:{actor_id}",
+                    limit=SOLO_ACTOR_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"solo:client:{_client_key(request)}",
+                    limit=SOLO_CLIENT_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key="solo:process",
+                    limit=SOLO_PROCESS_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("판은 잠시 뒤 다시 열 수 있어요.", wait)
+        try:
+            spec = validate_solo_room(
+                category_id=body.category_id,
+                question_time_ms=body.question_time_ms,
+            )
+        except DomainError as error:
+            raise _error(400, error.code, str(error)) from error
+        client_key = _client_key(request)
+
+        def may_create() -> float | None:
+            # 새 혼자 방을 만들 때만 먹는다 — 다시 쓰는 판은 이 몫과 무관하다
+            return ingress_limiter.try_acquire(
+                (
+                    RateLimitClaim(
+                        key=f"solo-create:client:{client_key}",
+                        limit=SOLO_CREATE_CLIENT_LIMIT,
+                        window_seconds=SOLO_CREATE_WINDOW_SECONDS,
+                    ),
+                    RateLimitClaim(
+                        key="solo-create:process",
+                        limit=SOLO_CREATE_PROCESS_LIMIT,
+                        window_seconds=SOLO_CREATE_WINDOW_SECONDS,
+                    ),
+                )
+            )
+
+        # 번호는 DB를 읽기 전에 읽는다 — 이 번호까지 알린 변화는 이미 commit됐다
+        label = versions.label()
+        try:
+            started = await repo.start_solo(
+                actor_id, spec, may_create=may_create, restart=body.restart
+            )
+        except NotMember as error:
+            raise _error(401, "unauthorized", "온라인 세션이 만료됐어요.") from error
+        except MatchInProgress as error:
+            raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
+        except SoloRoomsFull as error:
+            # 혼자 방이 동시 한도까지 찼다. 5xx라 화면은 결정 #1처럼 연습(기록 안 남음)을 연다
+            raise _error(
+                503,
+                "solo-busy",
+                "지금은 혼자 판 자리가 모두 찼어요. 잠시 뒤 다시 시도해 주세요.",
+            ) from error
+        except SoloCreateLimited as error:
+            raise _rate_limited("판은 잠시 뒤 다시 열 수 있어요.", error.retry_after) from error
+        room = started.room
+        if started.ended is not None:
+            # 다른 판을 골라 도는 판을 끝냈다. 그 판의 발밑 칸 초안은 쓸 데가 없다(마감 없는 판에는
+            # 애초에 없다). 끝까지 풀지 않은 판은 기록 없이 끝났고, 마지막 공개만 남았던 판은 닫혀
+            # 기록됐다
+            ended = started.ended
+            standing.settle(room.code, ended.match_id, through_position=None)
+            log_solo_end(room.code, ended, via="restart")
+        if started.match is not None:
+            # 판 시작은 준비를 되돌린다 — 번호를 올려 둔다(«게임 시작»과 같다). 혼자 방에는 그
+            # 사람뿐이라 방송할 상대가 없지만 다른 탭의 소켓이 있으면 판을 연다
+            versions.bump(room.code)
+            ops_log.solo_started(
+                room.code,
+                created=started.created,
+                category_id=started.match.category_id,
+                question_time_ms=started.match.question_time_ms,
+                questions=started.match.total_questions,
+            )
+            await hub.broadcast(
+                room.code, {"type": "game-started", **_match_start_payload(started.match)}
+            )
+        payload: dict[str, object] = {
+            "room": room_payload(room, label),
+            "match": None if started.match is None else _match_start_payload(started.match),
+            "resumed": started.resumed,
+        }
+        if started.ended is not None:
+            payload["ended"] = _ended_solo_payload(started.ended)
+        return payload
+
+    def log_solo_end(code: str, ended: EndedSoloMatch, *, via: str) -> None:
+        # 혼자 판 하나는 solo_started 한 줄로 시작해 match_finished(닫혀 기록됨)나
+        # solo_abandoned(기록 없이 끝남) 한 줄로 끝난다 — 마감 없는 판을 30분 정리가 끝내면
+        # cleanup의 soloMatchesAbandoned다
+        if ended.recorded:
+            ops_log.match_finished(code, via=via)
+        else:
+            ops_log.solo_abandoned(
+                code,
+                via=via,
+                position=ended.position,
+                questions=ended.total_questions,
+            )
+
+    @app.delete("/v1/solo")
+    async def end_solo(
+        request: Request,
+        actor_id: UUID = Depends(require_actor),
+    ) -> dict[str, object]:
+        """혼자 판을 그만둔다: 도는 판을 기록 없이 끝내고 혼자 방을 지운다 (PRD 10.1 #11의 끝내기).
+
+        혼자 방이 없으면 아무것도 하지 않는다(`ended: null`, `left: false`). 몫은 혼자 판 열기와
+        같은 칸을 먹는다. 화면은 쓰지 않고(«홈으로»는 끝난 판의 방을 나간다) 배포 점검이 제가 연
+        판을 치운다(`deploy/oracle/smoke.py candidate`).
+        """
+        wait = ingress_limiter.try_acquire(
+            (
+                RateLimitClaim(
+                    key=f"solo:actor:{actor_id}",
+                    limit=SOLO_ACTOR_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key=f"solo:client:{_client_key(request)}",
+                    limit=SOLO_CLIENT_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+                RateLimitClaim(
+                    key="solo:process",
+                    limit=SOLO_PROCESS_LIMIT,
+                    window_seconds=SOLO_WINDOW_SECONDS,
+                ),
+            )
+        )
+        if wait is not None:
+            raise _rate_limited("잠시 뒤 다시 시도해 주세요.", wait)
+        result = await repo.end_solo(actor_id)
+        code = result.code
+        if code is None:
+            return {"ended": None, "left": False}
+        if result.ended is not None:
+            log_solo_end(code, result.ended, via="left")
+            await hub.broadcast(
+                code, {"type": "match-invalidated", "matchId": str(result.ended.match_id)}
+            )
+        # 마지막(유일한) 사람이 나가 방이 사라졌다 — 나가기와 같이 정리한다
+        ops_log.member_left(code, players=0)
+        ops_log.room_deleted(code, reason="empty")
+        await hub.disconnect_actor(code, actor_id)
+        hub.forget_presence(code, actor_id)
+        versions.bump(code)
+        hub.retain_presence(code, None)
+        removed.forget_room(code)
+        standing.forget_room(code)
+        return {
+            "ended": None if result.ended is None else _ended_solo_payload(result.ended),
+            "left": True,
+        }
 
     @app.get("/v1/rooms")
     async def list_rooms(
@@ -1923,7 +2299,9 @@ def create_app(
         already_joined = await repo.is_member(actor_id, code)
         if not already_joined:
             access = await repo.get_access(code)
-            if access is None:
+            # 혼자 푸는 온라인 판의 방(FR-7.13 3단계)은 그 사람 말고는 들어오지 못한다.
+            # «가득 찼다»가 아니라 «없는 방»으로 답한다 — 남의 혼자 방이 있다는 것도 알리지 않는다
+            if access is None or access.solo:
                 raise _error(404, "not-found", "그런 코드의 방이 없어요.")
             if not access.is_public:
                 client_key = _client_key(request)

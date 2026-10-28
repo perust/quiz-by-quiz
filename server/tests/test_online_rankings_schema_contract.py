@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.main import RELEASE_SCHEMA_VERSION
+from test_released_migrations_contract import RELEASED_MIGRATION_SHA256, migration_sha256
+
 from app.migrate import discover_migrations
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations"
@@ -18,13 +19,12 @@ def _sql() -> str:
     return " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
 
 
-def test_rankings_are_the_twelfth_contiguous_migration_and_the_release_gate() -> None:
+def test_rankings_are_the_twelfth_contiguous_migration() -> None:
     migrations = discover_migrations(MIGRATIONS)
 
-    assert [migration.version for migration in migrations] == list(range(1, 13))
-    assert migrations[-1].path.name == "012_online_rankings.sql"
-    # 공개 release gate가 기다리는 판이 이 migration이다 (deploy/oracle/README.md)
-    assert RELEASE_SCHEMA_VERSION == 12
+    # 013(혼자 푸는 온라인 판)이 뒤를 잇는다 — 012는 열두 번째 자리에 그대로 있다
+    assert [migration.version for migration in migrations][:12] == list(range(1, 13))
+    assert migrations[11].path.name == "012_online_rankings.sql"
     sql = _sql()
     assert sql.startswith("-- ") and "begin;" in sql and sql.rstrip().endswith("commit;")
     assert "insert into quiz_online.schema_migrations (version) values (12)" in sql
@@ -44,6 +44,24 @@ def test_migration_only_adds_and_never_touches_existing_tables() -> None:
         assert forbidden not in sql, forbidden
     assert sql.count("create table") == 1
     assert "create table quiz_online.online_rankings" in sql
+
+
+def test_migration_stays_the_rankings_only_text_of_108() -> None:
+    """012는 #108의 글 그대로다 — 한 글자도. 혼자 판(FR-7.13 3단계)의 표·색인은 013에 있다.
+
+    한때 아직 올리지 않은 012에 접어 넣었다. migrator는 번호만 보고 checksum이 없으므로 #108의
+    012가 먼저 올라간 DB에서는 고친 012가 영영 돌지 않는다 — 같은 번호가 두 스키마를 뜻하게
+    하지 않는다. 혼자 판의 것이 없는지만 보면 권한·열·제약·주석을 고친 012가 지나간다. 그래서
+    #108이 낸 글의 sha256을 잠근다(test_released_migrations_contract.py). 고칠 것이 생기면 012가
+    아니라 다음 번호에 더한다.
+    """
+    assert migration_sha256(MIGRATION) == RELEASED_MIGRATION_SHA256[12]
+
+    # 값이 어긋났을 때 무엇이 섞였는지 바로 보이게 — 혼자 판의 것은 013에만 있다
+    sql = _sql()
+    assert "solo_rooms" not in sql
+    assert "online_rankings_player_board_order_idx" not in sql
+    assert sql.count("create index") == 3
 
 
 def test_record_shape_is_the_server_graded_result_of_one_match_player() -> None:

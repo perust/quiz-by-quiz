@@ -377,7 +377,7 @@ def test_db_requires_the_migrator_url_and_never_reads_the_runtime_password(
 ) -> None:
     environment = _RecordingEnvironment({"QUIZ_DB_PASSWORD": "runtime-secret"})
 
-    status = release_check.main(["db", "--expect", "12"], environment)
+    status = release_check.main(["db", "--expect", "13"], environment)
 
     output = capsys.readouterr().out
     assert status == 1
@@ -411,16 +411,20 @@ def test_db_connection_failure_prints_neither_the_url_nor_the_driver_message(
     [
         ["db"],
         ["db", "--expect", "9"],
-        ["db", "--expect", "13"],
+        ["db", "--expect", "14"],
         # 011 전에는 question_time_ms가 없고, 012 단계에서는 011 API가 40000을 쓴다. 그 요구는
         # --expect 11에만 뜻이 있다
         ["db", "--expect", "10", "--require-default-question-time"],
         ["db", "--expect", "12", "--require-default-question-time"],
-        # 랭킹 표는 012부터다. 비어 있어야 한다는 요구는 --expect 12에만 뜻이 있다
+        # 랭킹 표는 012부터다. 비어 있어야 한다는 요구는 --expect 12에만 뜻이 있다 — 013 단계에서는
+        # 012의 API(#108)가 기록을 남긴다
         ["db", "--expect", "11", "--require-empty-rankings"],
+        ["db", "--expect", "13", "--require-empty-rankings"],
+        # 혼자 방 표는 013부터다. 비어 있어야 한다는 요구는 --expect 13에만 뜻이 있다
+        ["db", "--expect", "12", "--require-empty-solo-rooms"],
     ],
 )
-def test_db_accepts_only_an_explicit_expect_of_10_11_or_12(argv: list[str]) -> None:
+def test_db_accepts_only_an_explicit_expect_of_10_through_13(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         release_check.main(argv, {})
     assert raised.value.code == 2
@@ -683,11 +687,12 @@ def test_deploy_guide_runs_each_check_in_the_service_that_has_its_input() -> Non
     def documented(fragment: str) -> str:
         return next(line for line in lines if fragment in line)
 
-    database = documented(f"{command} db --expect 11")
+    database = documented(f"{command} db --expect 12")
     assert "run --rm --no-deps quiz-by-quiz-migrate" in database
-    # 3단계의 012 뒤 점검은 후보 API가 아직 돌지 않았음(랭킹 표가 빔)까지 exit status로 요구한다
-    assert "the same command with `--expect 12 --require-empty-rankings`" in guide
-    # 앞선 011 경계의 점검(모두 20000)도 기록으로 남는다
+    # 3단계의 013 뒤 점검은 후보 API가 아직 돌지 않았음(혼자 방이 없음)까지 exit status로 요구한다
+    assert "the same command with `--expect 13 --require-empty-solo-rooms`" in guide
+    # 앞선 012 경계(랭킹 표가 빔)와 011 경계(모두 20000)의 점검도 기록으로 남는다
+    assert "`--expect 12 --require-empty-rankings`" in guide
     assert "`--expect 11 --require-default-question-time`" in guide
     assert "--require-idle" in guide
     # bank는 migration 011 전에 후보 migrate 이미지로 돈다. API 이미지를 미리 빌드하면
@@ -762,7 +767,7 @@ def recorded_statements(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
 
 @pytest.mark.integration
 @needs_database
-def test_latest_database_passes_expect_12_with_only_read_statements(
+def test_latest_database_passes_expect_13_with_only_read_statements(
     recorded_statements: list[str],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -778,7 +783,7 @@ def test_latest_database_passes_expect_12_with_only_read_statements(
 
     monkeypatch.setattr(release_check, "_run", counting_run)
 
-    status = release_check.main(["db", "--expect", "12"], environment)
+    status = release_check.main(["db", "--expect", "13"], environment)
 
     output = capsys.readouterr().out
     lines = _lines(output)
@@ -787,18 +792,43 @@ def test_latest_database_passes_expect_12_with_only_read_statements(
     assert output.startswith("OK session read-only as ")
     latest = discover_migrations()[-1].version
     assert f"OK ledger versions 1..{latest} contiguous, latest {latest}" in output
-    assert "OK question-time-columns" in output
-    assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..40000" in output
+    # 013부터 문항 시간은 NULL(«제한 없음» 혼자 판, PRD 10.1 #9)을 받고 쓴 시간은 판의
+    # 수명(2시간)까지다
+    assert (
+        "OK question-time-columns rooms.question_time_ms, matches.question_time_ms integer "
+        "DEFAULT 20000, nullable only for untimed solo play"
+    ) in output
+    assert "OK elapsed-ms-check match_answers_elapsed_ms_range_check allows 0..7200000" in output
+    assert (
+        "OK untimed-solo-play 4 generated columns, 4 keys validated; NULL question time only "
+        "for solo rooms and their matches"
+    ) in output
     assert "OK runtime-question-time-access" in output
     assert "OK runtime-ledger-access" in output
     assert "OK rankings-table quiz_online.online_rankings has 15 columns" in output
     assert "OK rankings-constraints 6 checks validated" in output
-    assert "OK rankings-indexes" in output
+    # 012의 색인 셋에 013이 더한 한 사람의 색인
+    assert (
+        "OK rankings-indexes online_rankings_board_order_idx, "
+        "online_rankings_board_week_order_idx, online_rankings_recorded_at_idx, "
+        "online_rankings_player_board_order_idx valid"
+    ) in output
     assert "OK rankings-retention quiz_online.prune_online_rankings() SECURITY DEFINER" in output
     assert "INFO rankings-records" in output
     assert (
         "OK runtime-rankings-access quiz_by_quiz_app can only SELECT/INSERT "
         "quiz_online.online_rankings"
+    ) in output
+    # 혼자 푸는 온라인 판의 방 표시 (FR-7.13 3단계, migration 013)
+    assert "OK solo-rooms-table quiz_online.solo_rooms has 3 columns" in output
+    assert (
+        "OK solo-rooms-constraints room_id cascades from quiz_online.rooms, "
+        "solo_rooms_one_per_player present"
+    ) in output
+    assert "INFO solo-rooms-records" in output
+    assert (
+        "OK runtime-solo-rooms-access quiz_by_quiz_app can only SELECT/INSERT "
+        "quiz_online.solo_rooms"
     ) in output
     assert "OK log_statement none" in output
     assert "INFO active-matches" in output and "INFO recent-members" in output
@@ -832,19 +862,25 @@ def test_latest_database_fails_expect_10(capsys: pytest.CaptureFixture[str]) -> 
 
     output = capsys.readouterr().out
     assert status == 1
-    assert "FAIL ledger latest version is 12, expected 10" in output
+    assert "FAIL ledger latest version is 13, expected 10" in output
     assert "FAIL schema-version" in output
     assert "FAIL question-time-columns migration 011 columns already exist" in output
     assert "FAIL question-time-constraints migration 011 constraints already exist" in output
-    assert "allows 0..40000, expected 0..20000" in output
+    assert "allows 0..7200000, expected 0..20000" in output
+    assert (
+        "FAIL untimed-solo-play migration 013 columns already exist: "
+        "match_answers.long_elapsed_match_id, matches.untimed_match_id, "
+        "matches.untimed_solo_room_id, rooms.untimed_solo_room_id"
+    ) in output
     assert "FAIL rankings-table migration 012 table already exists" in output
+    assert "FAIL solo-rooms-table migration 013 table already exists" in output
     assert output.splitlines()[-1].startswith("FAIL result ")
 
 
 @pytest.mark.integration
 @needs_database
 def test_latest_database_fails_expect_11(capsys: pytest.CaptureFixture[str]) -> None:
-    """012 뒤의 DB를 012 전 점검(3단계의 첫 명령)으로 보면 랭킹 표가 있어 멈춘다."""
+    """012 뒤의 DB를 012 전 점검(012 경계 3단계의 첫 명령)으로 보면 랭킹 표가 있어 멈춘다."""
     assert TEST_MIGRATOR_URL is not None
 
     status = release_check.main(
@@ -854,12 +890,56 @@ def test_latest_database_fails_expect_11(capsys: pytest.CaptureFixture[str]) -> 
     output = capsys.readouterr().out
     lines = _lines(output)
     assert status == 1
-    assert "FAIL ledger latest version is 12, expected 11" in output
+    assert "FAIL ledger latest version is 13, expected 11" in output
     assert "FAIL rankings-table migration 012 table already exists" in output
-    # 011이 더한 것은 그대로 맞다
-    assert lines["question-time-columns"] == ["OK"]
-    assert lines["elapsed-ms-check"] == ["OK"]
+    assert "FAIL solo-rooms-table migration 013 table already exists" in output
+    # 011이 더한 열·제약은 있지만 013이 «제한 없음»으로 바꿨다 — 011 점검으로는 맞지 않는다
+    assert (
+        "FAIL question-time-columns rooms.question_time_ms is nullable; "
+        "matches.question_time_ms is nullable"
+    ) in output
+    assert "allows 0..7200000, expected 0..40000" in output
+    assert lines["untimed-solo-play"] == ["FAIL"]
     assert "rankings-constraints" not in lines and "runtime-rankings-access" not in lines
+    assert "solo-rooms-constraints" not in lines and "runtime-solo-rooms-access" not in lines
+
+
+@pytest.mark.integration
+@needs_database
+def test_latest_database_fails_expect_12(capsys: pytest.CaptureFixture[str]) -> None:
+    """013 뒤의 DB를 013 전 점검(3단계의 첫 명령)으로 보면 혼자 방 표와 색인이 있어 멈춘다."""
+    assert TEST_MIGRATOR_URL is not None
+
+    status = release_check.main(
+        ["db", "--expect", "12"], {"MIGRATOR_DATABASE_URL": TEST_MIGRATOR_URL}
+    )
+
+    output = capsys.readouterr().out
+    lines = _lines(output)
+    assert status == 1
+    assert "FAIL ledger latest version is 13, expected 12" in output
+    assert "FAIL schema-version" in output
+    assert "FAIL solo-rooms-table migration 013 table already exists" in output
+    assert (
+        "FAIL rankings-indexes migration 013 index already exists: "
+        "online_rankings_player_board_order_idx"
+    ) in output
+    # 013이 바꾼 것(«제한 없음» 혼자 판의 NULL·쓴 시간·생성 열)은 012 점검으로는 맞지 않는다
+    assert (
+        "FAIL rankings-constraints online_rankings_question_time_check already allows NULL "
+        "(migration 013)"
+    ) in output
+    assert "FAIL rankings-table question_time_ms is nullable" in output
+    assert "allows 0..7200000, expected 0..40000" in output
+    assert lines["untimed-solo-play"] == ["FAIL"]
+    # 012가 더한 나머지는 그대로 맞다
+    for name in (
+        "rankings-retention",
+        "runtime-rankings-access",
+    ):
+        assert lines[name] == ["OK"], name
+    assert "solo-rooms-constraints" not in lines and "solo-rooms-records" not in lines
+    assert "runtime-solo-rooms-access" not in lines
 
 
 @pytest.mark.integration
@@ -891,14 +971,14 @@ def test_a_running_migrator_is_reported_without_failing(
     with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as migrator:
         migrator.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
         try:
-            held = release_check.main(["db", "--expect", "12"], environment)
+            held = release_check.main(["db", "--expect", "13"], environment)
             held_output = capsys.readouterr().out
         finally:
             migrator.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
 
     assert held == 0
     assert "WARN migration-lock held by another session: app.migrate is running" in held_output
-    release_check.main(["db", "--expect", "12"], environment)
+    release_check.main(["db", "--expect", "13"], environment)
     assert "OK migration-lock not held" in capsys.readouterr().out
 
 
@@ -958,7 +1038,7 @@ def test_a_column_grant_on_the_ledger_fails_runtime_ledger_access() -> None:
                 (_RUNTIME_ROLE_NAME, _RUNTIME_ROLE_NAME),
             ).fetchone()
             assert privileges == (False, True)
-            checks = check_database(connection, expect=12)
+            checks = check_database(connection, expect=13)
 
     assert [check.render() for check in checks if check.status == "FAIL"] == [
         f"FAIL runtime-ledger-access {_RUNTIME_ROLE_NAME} holds SELECT on "
@@ -995,10 +1075,13 @@ def test_migration_10_database_passes_expect_10_and_fails_expect_11() -> None:
     rendered_10 = [check.render() for check in at_10]
     assert [line for line in rendered_10 if line.startswith("FAIL")] == []
     assert "OK ledger versions 1..10 contiguous, latest 10" in rendered_10
-    assert "INFO pending-migrations app.migrate from this image would apply 11, 12" in rendered_10
+    assert (
+        "INFO pending-migrations app.migrate from this image would apply 11, 12, 13" in rendered_10
+    )
     assert (
         "OK rankings-table quiz_online.online_rankings absent, as at migration 10" in rendered_10
     )
+    assert "OK solo-rooms-table quiz_online.solo_rooms absent, as at migration 10" in rendered_10
     assert "OK schema-version quiz_online.character_only_schema_version() = 10" in rendered_10
     assert any(line.startswith("OK character-only 5 constraints") for line in rendered_10)
     assert any(
@@ -1053,10 +1136,11 @@ def test_migration_11_database_passes_expect_11_and_fails_expect_12() -> None:
     rendered_11 = [check.render() for check in at_11]
     assert [line for line in rendered_11 if line.startswith("FAIL")] == []
     assert "OK ledger versions 1..11 contiguous, latest 11" in rendered_11
-    assert "INFO pending-migrations app.migrate from this image would apply 12" in rendered_11
+    assert "INFO pending-migrations app.migrate from this image would apply 12, 13" in rendered_11
     assert (
         "OK rankings-table quiz_online.online_rankings absent, as at migration 11" in rendered_11
     )
+    assert "OK solo-rooms-table quiz_online.solo_rooms absent, as at migration 11" in rendered_11
     assert _statuses(at_11)["question-time-values"] == "INFO"
 
     failed_12 = {check.name for check in at_12 if check.status == "FAIL"}
@@ -1075,20 +1159,105 @@ def test_migration_11_database_passes_expect_11_and_fails_expect_12() -> None:
 
 @pytest.mark.integration
 @needs_database
-def test_rankings_must_stay_empty_until_the_candidate_api_runs() -> None:
-    """012 뒤 후보 API로 바꾸기 전(README 3단계)에는 011 API만 돈다. 그 API는 랭킹을 모른다.
+def test_migration_12_database_passes_expect_12_and_fails_expect_13() -> None:
+    """001..012만 깐 DB(#108, 013 전 3단계의 첫 점검)를 한 transaction에서 만들고 점검한다.
 
-    기록이 있으면 후보 API가 너무 일찍 돌았다는 뜻이다. 4단계 뒤에는 기록이 정상이다.
+    012는 #108의 랭킹만이다 — 혼자 방 표와 한 사람의 색인은 013에 있다. 점검 뒤 되돌린다.
     """
     assert TEST_MIGRATOR_URL is not None
+    migrations = discover_migrations()
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            _install(connection, migrations[:12])
+            # 012의 API(#108)는 40초 방을 열고 끝난 판을 기록한다 — 013 단계에서는 정상이다
+            _seed_room(connection, question_time_ms=40_000)
+            _seed_ranking(connection)
+            connection.execute("SET TRANSACTION READ ONLY")
+
+            at_12 = check_database(connection, expect=12)
+            at_13 = check_database(connection, expect=13)
+            empty_13 = check_database(connection, expect=13, require_empty_solo_rooms=True)
+
+        # 되돌렸다 — 이 DB는 다시 최신이다
+        versions = connection.execute(
+            "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
+        ).fetchone()
+        assert versions is not None
+        assert versions[0] == [migration.version for migration in migrations]
+
+    rendered_12 = [check.render() for check in at_12]
+    assert [line for line in rendered_12 if line.startswith("FAIL")] == []
+    assert "OK ledger versions 1..12 contiguous, latest 12" in rendered_12
+    assert "INFO pending-migrations app.migrate from this image would apply 13" in rendered_12
+    assert "OK schema-version quiz_online.character_only_schema_version() = 12" in rendered_12
+    assert any(line.startswith("OK rankings-table") for line in rendered_12)
+    assert (
+        "OK rankings-indexes online_rankings_board_order_idx, "
+        "online_rankings_board_week_order_idx, online_rankings_recorded_at_idx valid; "
+        "online_rankings_player_board_order_idx absent, as at migration 12"
+    ) in rendered_12
+    assert "INFO rankings-records 1 records in 1 boards" in rendered_12
+    assert "OK solo-rooms-table quiz_online.solo_rooms absent, as at migration 12" in rendered_12
+    assert (
+        "OK untimed-solo-play no untimed solo play columns, as at migration 12" in rendered_12
+    )
+    assert (
+        "OK question-time-columns rooms.question_time_ms, matches.question_time_ms integer "
+        "NOT NULL DEFAULT 20000"
+    ) in rendered_12
+    names_12 = {check.name for check in at_12}
+    assert not names_12 & {"solo-rooms-constraints", "solo-rooms-records"}
+    assert "runtime-solo-rooms-access" not in names_12
+
+    failed_13 = {check.name for check in at_13 if check.status == "FAIL"}
+    assert failed_13 == {
+        "ledger",
+        "schema-version",
+        "rankings-indexes",
+        "solo-rooms-table",
+        "solo-rooms-constraints",
+        "solo-rooms-records",
+        "runtime-solo-rooms-access",
+        # 013의 «제한 없음» 혼자 판 (PRD 10.1 #9): NULL을 받는 열·CHECK, 판의 수명까지의 쓴 시간,
+        # 그 NULL을 혼자 방과 그 판에 묶는 생성 열·외래 키
+        "question-time-columns",
+        "question-time-constraints",
+        "elapsed-ms-check",
+        "untimed-solo-play",
+        "rankings-table",
+        "rankings-constraints",
+    }
+    untimed = next(check for check in at_13 if check.name == "untimed-solo-play")
+    assert untimed.detail.startswith("rooms.untimed_solo_room_id is missing; ")
+    assert "matches_active_deadline_check does not tie a running question's deadline" in (
+        untimed.detail
+    )
+    indexes = next(check for check in at_13 if check.name == "rankings-indexes")
+    assert indexes.render() == (
+        "FAIL rankings-indexes online_rankings_player_board_order_idx is missing"
+    )
+    assert {check.name for check in empty_13 if check.status == "FAIL"} == failed_13
+
+
+@pytest.mark.integration
+@needs_database
+def test_rankings_must_stay_empty_until_the_candidate_api_runs() -> None:
+    """012 뒤 그 후보 API로 바꾸기 전(012 경계의 3단계)에는 011 API만 돈다. 그 API는 랭킹을 모른다.
+
+    기록이 있으면 후보 API가 너무 일찍 돌았다는 뜻이다. 4단계 뒤에는 기록이 정상이다. 001..012만
+    깐 DB를 한 transaction에서 만들고 되돌린다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    migrations = discover_migrations()
     with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
         connection.execute("SET lock_timeout = '10s'")
         # 점검의 transaction은 READ ONLY가 되어 바깥 transaction에 남는다 — 쓰기는 점검 앞에 둔다
         with connection.transaction(force_rollback=True):
-            connection.execute("DELETE FROM quiz_online.online_rankings")
+            _install(connection, migrations[:12])
             empty = check_database(connection, expect=12, require_empty_rankings=True)
         with connection.transaction(force_rollback=True):
-            connection.execute("DELETE FROM quiz_online.online_rankings")
+            _install(connection, migrations[:12])
             _seed_ranking(connection)
             too_early = check_database(connection, expect=12, require_empty_rankings=True)
             after_step_4 = check_database(connection, expect=12)
@@ -1121,14 +1290,14 @@ def test_runtime_rankings_access_allows_only_insert_and_select(grant: str, held:
         connection.execute("SET lock_timeout = '10s'")
         with connection.transaction(force_rollback=True):
             connection.execute(sql.SQL(grant).format(sql.Identifier(_RUNTIME_ROLE_NAME)))
-            granted = check_database(connection, expect=12)
+            granted = check_database(connection, expect=13)
         with connection.transaction(force_rollback=True):
             connection.execute(
                 sql.SQL("REVOKE INSERT ON quiz_online.online_rankings FROM {}").format(
                     sql.Identifier(_RUNTIME_ROLE_NAME)
                 )
             )
-            revoked = check_database(connection, expect=12)
+            revoked = check_database(connection, expect=13)
 
     assert [check.render() for check in granted if check.status == "FAIL"] == [
         f"FAIL runtime-rankings-access {_RUNTIME_ROLE_NAME} on quiz_online.online_rankings: "
@@ -1152,7 +1321,7 @@ def test_rankings_owner_key_must_stay_a_32_byte_secret_derived_key() -> None:
                 "ALTER TABLE quiz_online.online_rankings "
                 "DROP CONSTRAINT online_rankings_owner_key_length"
             )
-            dropped = check_database(connection, expect=12)
+            dropped = check_database(connection, expect=13)
         with connection.transaction(force_rollback=True):
             connection.execute(
                 "ALTER TABLE quiz_online.online_rankings "
@@ -1160,10 +1329,10 @@ def test_rankings_owner_key_must_stay_a_32_byte_secret_derived_key() -> None:
                 "ADD CONSTRAINT online_rankings_owner_key_length "
                 "CHECK (owner_key IS NULL OR octet_length(owner_key) > 0)"
             )
-            loosened = check_database(connection, expect=12)
+            loosened = check_database(connection, expect=13)
         with connection.transaction(force_rollback=True):
             connection.execute("ALTER TABLE quiz_online.online_rankings DROP COLUMN owner_key")
-            missing = check_database(connection, expect=12)
+            missing = check_database(connection, expect=13)
 
     assert [check.render() for check in dropped if check.status == "FAIL"] == [
         "FAIL rankings-constraints online_rankings_owner_key_length on online_rankings is missing"
@@ -1258,3 +1427,214 @@ def _seed_active_match(connection: psycopg.Connection[Any]) -> None:
         """,
         (room_id,),
     )
+
+
+@pytest.mark.integration
+@needs_database
+@pytest.mark.parametrize(
+    ("grant", "held"),
+    [
+        ("GRANT DELETE ON quiz_online.solo_rooms TO {}", "DELETE"),
+        ("GRANT UPDATE (player_id) ON quiz_online.solo_rooms TO {}", "UPDATE"),
+    ],
+)
+def test_runtime_solo_rooms_access_allows_only_insert_and_select(grant: str, held: str) -> None:
+    """혼자 방 표시(FR-7.13 3단계, 013)는 남기고 읽기만 한다. 지우는 것은 방의 CASCADE뿐이다."""
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(sql.SQL(grant).format(sql.Identifier(_RUNTIME_ROLE_NAME)))
+            held_checks = check_database(connection, expect=13)
+            connection.execute(
+                sql.SQL("REVOKE {} ON quiz_online.solo_rooms FROM {}").format(
+                    sql.SQL(held), sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            connection.execute(
+                sql.SQL("REVOKE INSERT ON quiz_online.solo_rooms FROM {}").format(
+                    sql.Identifier(_RUNTIME_ROLE_NAME)
+                )
+            )
+            lacking = check_database(connection, expect=13)
+
+    access = next(check for check in held_checks if check.name == "runtime-solo-rooms-access")
+    assert access.render() == (
+        f"FAIL runtime-solo-rooms-access {_RUNTIME_ROLE_NAME} on quiz_online.solo_rooms: "
+        f"holds {held} (table or column grant)"
+    )
+    lacking_access = next(check for check in lacking if check.name == "runtime-solo-rooms-access")
+    assert lacking_access.render() == (
+        f"FAIL runtime-solo-rooms-access {_RUNTIME_ROLE_NAME} on quiz_online.solo_rooms: "
+        "lacks INSERT"
+    )
+
+
+@pytest.mark.integration
+@needs_database
+def test_solo_rooms_must_cascade_from_rooms_and_stay_one_per_player() -> None:
+    """방이 지워져도 표시가 남거나 한 사람이 혼자 방을 둘 가질 수 있으면 실패한다."""
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms DROP CONSTRAINT solo_rooms_room_id_fkey"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms ADD CONSTRAINT solo_rooms_room_id_fkey "
+                "FOREIGN KEY (room_id) REFERENCES quiz_online.rooms(id)"
+            )
+            no_cascade = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.solo_rooms DROP CONSTRAINT solo_rooms_one_per_player"
+            )
+            not_unique = check_database(connection, expect=13)
+
+    cascade = next(check for check in no_cascade if check.name == "solo-rooms-constraints")
+    assert cascade.render() == (
+        "FAIL solo-rooms-constraints room_id does not reference quiz_online.rooms "
+        "ON DELETE CASCADE"
+    )
+    unique = next(check for check in not_unique if check.name == "solo-rooms-constraints")
+    assert unique.render() == (
+        "FAIL solo-rooms-constraints solo_rooms_one_per_player (one solo room per player) "
+        "is missing"
+    )
+
+
+@pytest.mark.integration
+@needs_database
+def test_solo_rooms_must_stay_empty_until_the_candidate_api_runs() -> None:
+    """013 뒤 후보 API로 바꾸기 전(README 3단계)에는 012의 API(#108)만 돈다. 그 API는 혼자 방을
+    모른다.
+
+    혼자 방이 있으면 후보 API가 너무 일찍 돌았다는 뜻이다. 4단계 뒤에는 혼자 방이 정상이다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        # 점검의 transaction은 READ ONLY가 되어 바깥 transaction에 남는다 — 쓰기는 점검 앞에 둔다
+        with connection.transaction(force_rollback=True):
+            connection.execute("DELETE FROM quiz_online.solo_rooms")
+            empty = check_database(connection, expect=13, require_empty_solo_rooms=True)
+        with connection.transaction(force_rollback=True):
+            connection.execute("DELETE FROM quiz_online.solo_rooms")
+            player_id, room_id = _seed_room(connection, question_time_ms=20_000)
+            connection.execute(
+                "INSERT INTO quiz_online.solo_rooms (room_id, player_id) VALUES (%s, %s)",
+                (room_id, player_id),
+            )
+            too_early = check_database(connection, expect=13, require_empty_solo_rooms=True)
+            after_step_4 = check_database(connection, expect=13)
+
+    assert [check.render() for check in empty if check.status == "FAIL"] == []
+    records = next(check for check in empty if check.name == "solo-rooms-records")
+    assert records.render() == "OK solo-rooms-records 0 solo rooms; empty"
+
+    assert [check.render() for check in too_early if check.status == "FAIL"] == [
+        "FAIL solo-rooms-records 1 solo rooms; --require-empty-solo-rooms needs 0 "
+        "(only the candidate API creates them)"
+    ]
+    after = next(check for check in after_step_4 if check.name == "solo-rooms-records")
+    assert after.render() == "INFO solo-rooms-records 1 solo rooms"
+    assert [check.name for check in after_step_4 if check.status == "FAIL"] == []
+
+
+@pytest.mark.integration
+@needs_database
+def test_untimed_solo_play_must_stay_tied_to_solo_rooms() -> None:
+    """«제한 없음»(문항 시간 NULL, PRD 10.1 #9)을 혼자 방과 그 판에 묶는 울타리가 풀리면 실패한다.
+
+    외래 키를 COMMIT이 아니라 문장마다 보면 혼자 방을 만들 수 없고(방을 넣은 뒤에 표시를 넣는다),
+    외래 키가 없으면 혼자 방이 아닌 방·판에도 NULL이 들어가 012 API로 되돌릴 때 정리가 그것을
+    놓친다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.rooms DROP CONSTRAINT rooms_untimed_solo_room_fkey"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.rooms ADD CONSTRAINT rooms_untimed_solo_room_fkey "
+                "FOREIGN KEY (untimed_solo_room_id) REFERENCES quiz_online.solo_rooms(room_id)"
+            )
+            immediate = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.match_answers "
+                "DROP CONSTRAINT match_answers_long_elapsed_fkey"
+            )
+            unbounded = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "ALTER TABLE quiz_online.matches DROP CONSTRAINT matches_active_deadline_check"
+            )
+            connection.execute(
+                "ALTER TABLE quiz_online.matches ADD CONSTRAINT matches_active_deadline_check "
+                "CHECK ((state IN ('running', 'revealing') AND deadline_at IS NOT NULL) "
+                "OR (state = 'finished' AND deadline_at IS NULL) OR state = 'abandoned')"
+            )
+            old_deadline = check_database(connection, expect=13)
+
+    def detail(checks: list[Check]) -> str:
+        found = next(check for check in checks if check.name == "untimed-solo-play")
+        assert found.status == "FAIL", found.render()
+        return found.detail
+
+    assert detail(immediate) == (
+        "rooms_untimed_solo_room_fkey on rooms is 'FOREIGN KEY (untimed_solo_room_id) "
+        "REFERENCES solo_rooms(room_id)', expected 'FOREIGN KEY (untimed_solo_room_id) "
+        "REFERENCES solo_rooms(room_id) DEFERRABLE INITIALLY DEFERRED'"
+    )
+    assert detail(unbounded) == "match_answers_long_elapsed_fkey on match_answers is missing"
+    assert detail(old_deadline) == (
+        "matches_active_deadline_check does not tie a running question's deadline to its "
+        "question time"
+    )
+
+
+@pytest.mark.integration
+@needs_database
+def test_untimed_rows_fail_the_empty_solo_rooms_check_until_the_rollback_cleanup() -> None:
+    """후보 API 전(3단계)과 012 API로 되돌리기 전에는 문항 시간 NULL인 방·판이 없어야 한다.
+
+    012 API는 방·판의 문항 시간을 정수로 읽는다 — NULL인 방 하나가 남으면 그 API의 로비 목록이
+    실패한다. 혼자 방을 지우는 정리(README «Solo online play»의 Rollback)가 그 줄까지 지운다.
+    """
+    assert TEST_MIGRATOR_URL is not None
+    with psycopg.connect(TEST_MIGRATOR_URL, autocommit=True) as connection:
+        connection.execute("SET lock_timeout = '10s'")
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+                "WHERE s.room_id = r.id"
+            )
+            player_id, room_id = _seed_room(connection, question_time_ms=20_000)
+            connection.execute(
+                "INSERT INTO quiz_online.solo_rooms (room_id, player_id) VALUES (%s, %s)",
+                (room_id, player_id),
+            )
+            connection.execute(
+                "UPDATE quiz_online.rooms SET question_time_ms = NULL WHERE id = %s", (room_id,)
+            )
+            dirty = check_database(connection, expect=13, require_empty_solo_rooms=True)
+            after_step_4 = check_database(connection, expect=13)
+        with connection.transaction(force_rollback=True):
+            connection.execute(
+                "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s "
+                "WHERE s.room_id = r.id"
+            )
+            clean = check_database(connection, expect=13, require_empty_solo_rooms=True)
+
+    values = next(check for check in dirty if check.name == "question-time-values")
+    assert values.status == "FAIL"
+    assert "rooms " in values.detail and "untimed=1" in values.detail
+    assert "--require-empty-solo-rooms needs no untimed room or match" in values.detail
+    assert _statuses(after_step_4)["question-time-values"] == "INFO"
+    assert [check.render() for check in clean if check.status == "FAIL"] == []
+    clean_values = next(check for check in clean if check.name == "question-time-values")
+    assert clean_values.render().endswith("; no untimed room or match")

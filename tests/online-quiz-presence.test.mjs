@@ -65,7 +65,8 @@ test('online quiz reuses authenticated room movement without opening a second su
   );
   assert.match(
     app,
-    /onExit: \(\) => \{\s*stopOnlineMatch\(\);\s*onlineQuizScreen\.setNotice\('온라인 로비를 불러오는 중이에요\.'\);/,
+    // 혼자 판(FR-7.13 3단계)은 로비가 아니라 홈으로 간다 — «이어 풀기» 줄이 그 판으로 돌아가는 길이다
+    /onExit: \(\) => \{\s*const code = onlineMatchRoomCode;\s*stopOnlineMatch\(\);[\s\S]*?if \(code !== null && code === soloRoomCode\) \{\s*void goHome\(\);\s*return;\s*\}\s*onlineQuizScreen\.setNotice\('온라인 로비를 불러오는 중이에요\.'\);/,
   );
   assert.doesNotMatch(app, /onlineQuizScreen[\s\S]{0,200}roomStore\.subscribe/);
 });

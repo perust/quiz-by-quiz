@@ -67,6 +67,8 @@ class ProgressConnection:
 def _advance(
     connection: ProgressConnection,
     absent: frozenset[UUID] = frozenset(),
+    *,
+    question_time_ms: int | None = 20_000,
 ) -> bool:
     repository = PostgresRoomsRepository("postgresql://unused.invalid/quiz")
     match = {
@@ -74,6 +76,8 @@ def _advance(
         "state": "running",
         "current_position": 3,
         "total_questions": 10,
+        # 실제 판 줄(`SELECT match.*`)에는 늘 있다. None이면 «제한 없음» 혼자 판이다 (migration 013)
+        "question_time_ms": question_time_ms,
     }
     return asyncio.run(
         repository._advance_locked_match(  # noqa: SLF001 - 진행 규칙만 떼어 본다
@@ -172,3 +176,43 @@ def test_every_progress_entry_point_carries_the_absent_players() -> None:
     presence = inspect.getsource(PostgresRoomsRepository.advance_past_absent_players)
     assert "match.state = 'running'" in presence
     assert "FOR UPDATE OF match" in presence
+
+
+# ── «제한 없음» 혼자 판 (PRD 10.1 #9, migration 013) ───────────────────────────
+# 문항 시간이 NULL이면 마감도 NULL이다. 시간 초과·끊긴 사람을 빼고 앞당기기·빈 답 채우기·발밑 칸이
+# 모두 없고, 판의 모두가 직접 답했을 때만 공개한다.
+
+
+def test_an_untimed_question_waits_for_its_player_without_a_deadline() -> None:
+    connection = ProgressConnection(expired=False, answered={HOST: False})
+
+    assert _advance(connection, question_time_ms=None) is False
+    assert not connection.revealed
+    assert not connection.filled_timeouts
+
+
+def test_an_untimed_question_never_times_out_an_absent_player() -> None:
+    # 판의 유일한 사람이 오래 끊겨도 답을 채우지 않고 기다린다 — 끝내는 것은 30분 정리다
+    connection = ProgressConnection(expired=False, answered={HOST: False})
+
+    assert _advance(connection, frozenset({HOST}), question_time_ms=None) is False
+    assert not connection.revealed
+    assert not connection.filled_timeouts
+
+
+def test_an_untimed_question_is_revealed_once_its_player_answered() -> None:
+    connection = ProgressConnection(expired=False, answered={HOST: True})
+
+    assert _advance(connection, frozenset({GONE}), question_time_ms=None) is True
+    assert connection.revealed
+    # 발밑 칸 초안도 시간 초과도 남기지 않는다 — 직접 낸 답만 답이다
+    assert not connection.filled_timeouts
+
+
+def test_an_untimed_question_does_not_reveal_while_an_absent_player_has_not_answered() -> None:
+    # 판에 끊긴 사람이 있어도 «모두»에서 빼지 않는다 (마감이 없어 채울 시간 초과가 없다)
+    connection = ProgressConnection(expired=False, answered={HOST: True, GONE: False})
+
+    assert _advance(connection, frozenset({GONE}), question_time_ms=None) is False
+    assert not connection.revealed
+    assert not connection.filled_timeouts

@@ -167,11 +167,18 @@ const { createRulesDialog } = await import('../js/ui/rules-dialog.js');
 const { CATEGORIES } = await import('../js/constants.js');
 
 const reloads = [];
+/** dock 안내 줄(연습 안내·알림)을 누른 횟수 (FR-7.13 3단계) */
+const retries = [];
 const home = createHomeScreen({
   onSelectCategory() {}, onStartAll() {}, onOpenRanking() {}, onOpenCharacters() {}, onOpenOnline() {},
   onReturnToRoom() {}, onNickname() {},
+  onRetryOnline: () => retries.push('retry'),
   onReload: () => reloads.push('reload'),
 });
+// 분야 dock 의 «처음 누를 수 있는 칸» — 홈이 그린 칸 가운데 잠기지 않은 첫 칸이다
+byId('category-grid').querySelector = (selector) => (selector === '.category-card:not(:disabled)'
+  ? byId('category-grid').children.find((card) => !card.disabled) ?? null
+  : null);
 let timeLimitMs = 20_000;
 createRulesDialog({ getTimeLimit: () => timeLimitMs });
 
@@ -358,7 +365,8 @@ test('「게임 방법」: Tab 은 대화상자 안에서 맴돈다', () => {
 test('app: 「게임 방법」은 지금 고른 문항 시간을 읽고, 화면을 옮길 때 접는다', async () => {
   const app = await source('src/app.ts');
   // 온라인 한 줄은 세션을 열 때 서버가 알려 준 규칙을 따른다 (U13·혼자 여는 방)
-  assert.match(app, /const rulesDialog = createRulesDialog\(\{\s*getTimeLimit: \(\) => timeLimitMs,\s*getOnlineRules: \(\) => roomStore\.onlineRules\(\),\s*\}\);/);
+  // 「혼자 하기」 줄은 분야 칸이 지금 여는 판의 규칙이다 (FR-7.13 3단계 — 혼자 온라인 판·연습·예전 혼자 하기)
+  assert.match(app, /const rulesDialog = createRulesDialog\(\{\s*getTimeLimit: \(\) => timeLimitMs,\s*getOnlineRules: \(\) => roomStore\.onlineRules\(\),[\s\S]*?getPlayMode: \(\) => \(playMode === 'online' \? 'online' : playMode === 'practice' \? 'practice' : 'local'\),\s*\}\);/);
   assert.match(app, /settingsDialog\.dismiss\(\);\s*rulesDialog\.dismiss\(\);/);
 });
 
@@ -425,4 +433,74 @@ test('홈 온라인 입구: 세션이 알려 준 시작 인원으로 보조 줄�
   home.setOnlineMinPlayers(null);
   assert.equal(desc.textContent, '방을 만들거나 참가해요', '아직 모르면 어느 API든 맞는 말');
   assert.equal(button.getAttribute('aria-label'), '온라인, 방을 만들거나 참가해요');
+});
+
+test('dock 안내 줄: 다시 묻는 동안 그 줄이 «연결 중…»을 말하고, 누른 줄이 사라지면 포커스가 분야 dock으로 간다 (FR-7.13 3단계)', () => {
+  renderHome();
+  const note = byId('home-room-note');
+  const action = byId('home-room-note-action');
+  const firstCard = byId('category-grid').children[0];
+  const offline = { text: '온라인에 연결할 수 없어 연습(기록 안 남음)만 할 수 있어요', action: '다시 연결' };
+  try {
+    home.setPlayMode({ practice: true, note: offline, soloOnline: false });
+    assert.equal(note.hidden, false);
+    assert.equal(note.dataset.kind, 'practice');
+    assert.equal(action.textContent, '다시 연결');
+
+    // «다시 연결»을 Tab·Enter 로 눌렀다 — 다시 묻는 동안 누른 줄 자신이 상태를 말하고, 겹쳐 누르지 않는다
+    note.focus();
+    note.click();
+    assert.deepEqual(retries, ['retry']);
+    home.setPlayBusy(true);
+    assert.equal(action.textContent, '연결 중…');
+    assert.equal(note.getAttribute('aria-busy'), 'true');
+    note.click();
+    assert.deepEqual(retries, ['retry'], '묻는 중에는 다시 보내지 않는다');
+
+    // 통했다: 연습 안내가 사라진다. 누른 버튼이 숨으니 포커스가 <body> 로 떨어지지 않고 첫 분야 칸으로 간다
+    home.setPlayMode({ practice: false, note: null, soloOnline: true });
+    assert.equal(note.hidden, true);
+    assert.equal(fakeDocument.activeElement, firstCard, '«지금 탭으로 옮긴다»와 같은 규칙 — 분야 dock 의 첫 칸');
+    home.setPlayBusy(false);
+    assert.equal(note.getAttribute('aria-busy'), null);
+
+    // 아직 연습이면 줄이 그대로 «다시 연결»로 돌아온다(누른 사람에게 알리는 말은 app.ts 가 낭독한다)
+    home.setPlayMode({ practice: true, note: offline, soloOnline: false });
+    note.focus();
+    home.setPlayBusy(true);
+    home.setPlayMode({ practice: true, note: offline, soloOnline: false });
+    home.setPlayBusy(false);
+    assert.equal(action.textContent, '다시 연결');
+    assert.equal(fakeDocument.activeElement, note, '줄이 남으면 포커스도 그 자리다');
+
+    // 캐릭터가 밟아 누른 줄이 사라지면 포커스를 옮기지 않는다 — 다음 Enter 는 발밑이다
+    fakeDocument.activeElement = fakeDocument.body;
+    home.setPlayMode({ practice: false, note: null, soloOnline: true });
+    assert.equal(fakeDocument.activeElement, fakeDocument.body);
+
+    // 연습이 아닌 알림(요청 한도·사라진 판)은 같은 자리의 `notice` 다
+    home.setPlayMode({ practice: false, note: { text: '요청이 많아 판을 바로 열지 못했어요', action: '다시 시도' }, soloOnline: true });
+    assert.equal(note.dataset.kind, 'notice');
+    assert.equal(action.textContent, '다시 시도');
+  } finally {
+    home.setPlayBusy(false);
+    home.setPlayMode({ practice: false, note: null, soloOnline: false });
+    retries.length = 0;
+    fakeDocument.activeElement = fakeDocument.body;
+  }
+});
+
+test('dock 복귀 줄: 풀던 혼자 판은 그 판의 이름으로 말한다 — 고른 칸과 다른 판이 도는 까닭이 보인다 (FR-7.13 3단계)', () => {
+  renderHome();
+  try {
+    home.setRoomNote({ code: 'SQL234', name: '혼자 하기', solo: true, label: '과학' });
+    assert.equal(byId('home-room-note').dataset.kind, 'room');
+    assert.equal(byId('home-room-note-text').textContent, '풀던 «과학» 판이 아직 진행 중이에요');
+    assert.equal(byId('home-room-note-action').textContent, '이어 풀기');
+    home.setRoomNote({ code: 'ABC234', name: '우리 반' });
+    assert.equal(byId('home-room-note-text').textContent, '「우리 반」 방에 아직 있어요');
+    assert.equal(byId('home-room-note-action').textContent, '돌아가기');
+  } finally {
+    home.setRoomNote(null);
+  }
 });

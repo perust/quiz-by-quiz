@@ -57,26 +57,58 @@ def test_compose_fragment_is_internal_read_only_and_bounded() -> None:
     assert "service_completed_successfully" not in api_service
     guide = (ROOT / "deploy" / "oracle" / "README.md").read_text(encoding="utf-8")
     normalized_guide = " ".join(guide.split())
-    # 012(온라인 랭킹)는 더하기만 해서 011의 API가 도는 동안 먼저 올린다. 앞선 두 경계의 기록도
-    # 그 아래에 차례로 남는다 — 지금 경계가 맨 위다
+    # 013(혼자 푸는 온라인 판)은 012의 API(#108)가 그 위에서 그대로 도는 변경이라 그 API가 도는 동안
+    # 먼저 올린다. 앞선 세 경계의 기록도 그 아래에 차례로 남는다 — 지금 경계가 맨 위다
+    assert "migration 013 → API → Pages" in normalized_guide
     assert "migration 012 → API → Pages" in normalized_guide
     assert "migration 011 → API → Pages" in normalized_guide
     assert "API → migration 010 → Pages" in normalized_guide
     assert (
-        normalized_guide.index("migration 012 → API → Pages")
+        normalized_guide.index("migration 013 → API → Pages")
+        < normalized_guide.index("migration 012 → API → Pages")
         < normalized_guide.index("migration 011 → API → Pages")
         < normalized_guide.index("API → migration 010 → Pages")
     )
+    staging = normalized_guide[normalized_guide.index("## Fail-closed staging order") :]
+    assert staging.index("schemaVersion: 13") < staging.index("migration 012 → API → Pages")
     assert "schemaVersion: 12" in normalized_guide
     assert "schemaVersion: 11" in normalized_guide
+    assert "solo_rooms_one_per_player" in normalized_guide
+    assert "online_rankings_player_board_order_idx" in normalized_guide
     assert "online_rankings_match_player_key" in normalized_guide
     assert "prune_online_rankings()" in normalized_guide
-    # 011 API는 012가 도는 동안에도 돌고, 그 API의 gate는 그때 503 migration-required로 닫힌다.
-    # 012 API는 011 DB 위에서 돌지 않는다
+    # 012 API는 013이 도는 동안에도 돌고, 그 API의 gate는 그때 503 migration-required로 닫힌다.
+    # 013 API는 012 DB 위에서 돌지 않는다. 앞선 경계도 같았다
     assert "migration-required" in normalized_guide
+    assert "must not replace the 012 API before ledger version 013 exists" in normalized_guide
     assert "must not replace the 011 API before ledger version 012 exists" in normalized_guide
+    # «013이 도는 동안에도 돈다»는 잠깐 기다리는 것까지다 — 013의 한 transaction은 «제한 없음» 혼자
+    # 판(PRD 10.1 #9)의 CHECK·생성 열 때문에 네 표를 맨 앞에서 ACCESS EXCLUSIVE로 잡아 COMMIT까지
+    # 쥔다(읽기도 기다린다). 그래서 단계 3은 판이 돌지 않는 때(--require-idle)에 migrate한다
+    window = staging[staging.index("Migration 013 is one transaction") :]
+    window = window[: window.index("4. Build and replace only `quiz-by-quiz-api`")]
+    assert (
+        "`LOCK TABLE rooms, matches, match_answers, online_rankings IN ACCESS EXCLUSIVE MODE`"
+        in window
+    )
+    assert "reads included" in window
+    assert "`lock_timeout = '15s'`" in window
+    assert "`--require-idle`" in window
+    # 012 API로 되돌리기 전 정리는 그 API가 읽지 못하는 줄(문항 시간 NULL)까지 지우고
+    # 점검으로 확인한다
+    assert "release_check db --expect 13 --require-empty-solo-rooms" in normalized_guide
+    assert "int(row[\"question_time_ms\"])" in guide
     assert "rooms_question_time_check" in normalized_guide
     assert "match_answers_elapsed_ms_range_check" in normalized_guide
+    # 013은 012를 제자리에서 고치지 않고 따로 선다. #108을 따로 내보내지 말라는 규칙도, 같은 번호의
+    # 두 스키마를 가리던 readiness의 표 검사(solo_rooms_ready)도 없다
+    assert "do not deploy #108 on its own" not in normalized_guide.lower()
+    assert "solo_rooms_ready" not in normalized_guide
+    # 혼자 방을 모르는 API로 되돌리기 전에 혼자 방을 지운다
+    assert (
+        "DELETE FROM quiz_online.rooms r USING quiz_online.solo_rooms s WHERE s.room_id = r.id;"
+        in guide
+    )
 
 
 def test_api_resource_envelope_and_single_worker_contract_are_explicit() -> None:
@@ -167,11 +199,11 @@ def test_pages_workflow_verifies_client_server_and_container_before_deploy() -> 
     assert "/v1/release-readiness" in workflow
     assert "jq -e '. == {" in workflow
     assert '"contract": "character-only-v1"' in workflow
-    # 이 client는 온라인 랭킹을 보이고 결과 화면이 «랭킹에 기록됐어요»를 말한다. 그 API(012)를
-    # 기다린다 — 012 없는 API에서는 화면이 랭킹을 숨기지만 gate는 그 API를 기다리지 않는다
-    assert '"schemaVersion": 12' in workflow
-    assert '"schemaVersion": 11' not in workflow
-    assert '"schemaVersion": 10' not in workflow
+    # 이 client는 홈의 분야 칸에서 혼자 온라인 판을 연다. 그 API(013)를 기다린다 — soloPlay를
+    # 모르는 API(012)에서는 화면이 예전 혼자 하기로 돌지만 gate는 그 API를 기다리지 않는다
+    assert '"schemaVersion": 13' in workflow
+    for older in (10, 11, 12):
+        assert f'"schemaVersion": {older}' not in workflow
 
 
 def test_pages_workflow_executes_migrations_and_postgres_integration() -> None:

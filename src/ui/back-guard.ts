@@ -98,6 +98,9 @@ const BACK_CONTROLS: Partial<Record<ScreenName, string>> = {
   result: 'result-home',
   // 중간에 나온 판의 «푼 문제» (N04): 나가기와 같은 곳(방에서 연 판이면 대기실)으로 간다. 저장하지 않는다
   'quiz-review': 'quiz-review-leave',
+  // 온라인 결과: 「홈으로」. 친구와 푼 판은 예전처럼 홈으로 가고(방에는 남는다), 혼자 푼 판(FR-7.13 3단계)은
+  // 「홈으로」처럼 혼자 방을 나가 지운 뒤 홈으로 간다
+  'online-result': 'online-final-home',
 };
 
 export function backStepFor(
