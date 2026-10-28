@@ -11,7 +11,9 @@
 // **비밀번호가 맞는지도 여기서 견주지 않는다.** 입력한 값을 그대로 넘기고 결과만
 // 받는다 — 서버 구현이 되면 그 검사가 자연히 서버에서 일어난다.
 
-import { CATEGORIES, ROOM_CAPACITY_CHOICES, ROOM_NAME_MAX_LENGTH } from '../constants.js';
+import {
+  CATEGORIES, ONLINE_QUESTION_TIME_CHOICES, ROOM_CAPACITY_CHOICES, ROOM_NAME_MAX_LENGTH, TIME_LIMIT_MS,
+} from '../constants.js';
 import { need, needOne } from '../dom.js';
 import type { PlayerInfo, PublicRoom, RoomStore } from '../online/adapter.js';
 import {
@@ -35,6 +37,8 @@ import {
   isValidCode,
   normalizeCode,
   onlineErrorText,
+  onlineQuestionTimeLabel,
+  onlineQuestionTimeOrDefault,
 } from '../online/rules.js';
 import type { CategoryId } from '../types.js';
 import { createLatestRequestGuard } from './latest-request.js';
@@ -61,8 +65,13 @@ export interface OnlineScreenDeps {
 }
 
 export interface OnlineScreen {
-  /** notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다 */
+  /**
+   * notice 가 있으면 맨 위 알림 자리에 띄운다. 대기실에서 되돌아온 이유가 들어온다. 글은 `activate`가
+   * 화면이 보인 뒤에 넣는다 — 숨은 화면의 role=status 문단은 바뀌어도 낭독되지 않는다
+   */
   show(characterId: string, notice?: string): Promise<void>;
+  /** app이 로비를 실제로 연 직후 부른다. `show`가 받아 둔 알림을 그때 넣는다(먼저 펼치고 넣는다) */
+  activate(): void;
   /**
    * 초대 링크로 들어왔을 때 (U27). `show` 다음, 화면이 보인 뒤에 부른다 — 포커스를
    * 옮겨야 하기 때문이다. 공개방이면 바로 들어가고, 잠긴 방이면 비밀번호 칸에 선다.
@@ -110,6 +119,7 @@ export function createOnlineScreen(
     createName: need<HTMLInputElement>('create-name'),
     createCategory: need<HTMLSelectElement>('create-category'),
     createCapacity: need<HTMLSelectElement>('create-capacity'),
+    createQuestionTime: need<HTMLSelectElement>('create-question-time'),
     createPrivate: need<HTMLInputElement>('create-private'),
     createPasswordRow: need('create-password-row'),
     createPassword: need<HTMLInputElement>('create-password'),
@@ -130,6 +140,8 @@ export function createOnlineScreen(
   /** 늦은 lobby fetch/action이 새 화면 navigation을 덮지 못하게 하는 화면 owner. */
   const screenGuard = createLatestRequestGuard();
   let visibleRequest: number | null = null;
+  /** show가 받아 두고 activate가 화면이 보인 뒤에 넣는 알림. 숨은 role=status는 낭독되지 않는다 */
+  let pendingNotice: string | null = null;
   /** join/create/direct-enter/home 중 가장 최근 navigation intent만 commit한다. */
   let navigationActionGeneration = 0;
   /** 겹친 목록 조회는 가장 늦게 시작한 결과만 그린다. */
@@ -159,6 +171,7 @@ export function createOnlineScreen(
     visibleRequest = null;
     navigationActionGeneration += 1;
     listRequestGeneration += 1;
+    pendingNotice = null;
   }
 
   function commitEnterRoom(code: string, owner: OnlineScreenActionOwnership): void {
@@ -255,6 +268,13 @@ export function createOnlineScreen(
     // 가장 큰 값으로 연다. 좁게 열어 두면 친구를 더 부르려 할 때 방을 다시
     // 만들어야 하지만, 넓게 열어 둔 것은 대기실에서 언제든 줄일 수 있다
     el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
+
+    // 방장이 고르는 문항 시간 (20초 기본 · 40초). 대기실 설정 칸에서도 바꿀 수 있다
+    el.createQuestionTime.replaceChildren();
+    for (const time of ONLINE_QUESTION_TIME_CHOICES) {
+      appendOption(el.createQuestionTime, String(time), onlineQuestionTimeLabel(time));
+    }
+    el.createQuestionTime.value = String(TIME_LIMIT_MS);
 
     el.categoryFilter.replaceChildren();
     appendOption(el.categoryFilter, 'any', '전체 형식');
@@ -726,6 +746,7 @@ export function createOnlineScreen(
         name: name.value,
         categoryId: selected ? selected.id : null,
         capacity: Number(el.createCapacity.value),
+        questionTimeMs: onlineQuestionTimeOrDefault(Number(el.createQuestionTime.value)),
         isPublic,
         password: el.createPassword.value,
         player: getPlayer(),
@@ -739,6 +760,7 @@ export function createOnlineScreen(
 
       el.createForm.reset();
       el.createCapacity.value = String(ROOM_CAPACITY_CHOICES[ROOM_CAPACITY_CHOICES.length - 1]);
+      el.createQuestionTime.value = String(TIME_LIMIT_MS);
       syncPrivatePassword();
       suggestRoomName();
       // 만들자마자 대기실로 들어간다. 목록으로 돌아가 다시 찾을 이유가 없다
@@ -839,7 +861,9 @@ export function createOnlineScreen(
       listRequestGeneration += 1;
       say(el.joinMessage, '');
       say(el.createMessage, '');
-      say(el.message, notice ?? '', notice ? 'bad' : undefined);
+      // 화면이 아직 숨어 있다. 지금 넣으면 낭독되지 않으므로 activate()가 보인 뒤에 넣는다
+      say(el.message, '');
+      pendingNotice = notice ?? null;
       suggestRoomName();
       // 이전 방문에서 코드 참가/공개방 찾기가 바꾼 필터를 새 진입까지 끌고 오면
       // '방 찾기'가 선택됐는데 잠긴 방만 보이는 모순이 생긴다. 로비는 매번 기본 목록으로 연다.
@@ -848,6 +872,13 @@ export function createOnlineScreen(
       await loadRooms(request);
       if (!ownsScreen(request)) return;
       walker.show(characterId);
+    },
+
+    activate() {
+      const notice = pendingNotice;
+      pendingNotice = null;
+      if (visibleRequest === null || !ownsScreen(visibleRequest) || !notice) return;
+      say(el.message, notice, 'bad');
     },
 
     acceptInvite(rawCode) {

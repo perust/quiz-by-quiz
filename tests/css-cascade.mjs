@@ -117,14 +117,42 @@ function parseBlock(text, media, rules, nextOrder) {
   }
 }
 
+/**
+ * 블록 괄호가 짝을 이루는지 본다. 위 parseBlock 은 닫히지 않은 블록을 조용히 파일 끝까지 삼켜, 그 뒤의
+ * 규칙이 모두 사라진 채로 엉뚱한 단언만 실패했다 — 병합이 `.home-subtitle {` 의 닫는 줄을 잘랐을 때
+ * 설정 버튼·규칙 줄·부제 셋이 따로따로 틀렸다. 주석은 줄 수를 지키며 지우고 따옴표 안은 세지 않는다.
+ */
+function assertBalanced(path, source) {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ''));
+  const open = [];
+  let line = 1;
+  let quote = null;
+  for (const char of text) {
+    if (char === '\n') line += 1;
+    if (quote) {
+      if (char === quote) quote = null;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === '{') {
+      open.push(line);
+    } else if (char === '}') {
+      if (open.length === 0) throw new Error(`${path}:${line} 짝 없는 } 가 있다`);
+      open.pop();
+    }
+  }
+  if (open.length > 0) {
+    throw new Error(`${path}: 닫히지 않은 { 가 ${open.length}개 있다 (마지막은 ${open.at(-1)}행)`);
+  }
+}
+
 /** 파일을 로드 순서대로 읽는다. 뒤에 오는 파일이 같은 명시도에서 이긴다 */
 export async function loadStyles(paths) {
   const rules = [];
   let order = 0;
   for (const path of paths) {
-    const text = (await readFile(new URL(`../${path}`, import.meta.url), 'utf8'))
-      .replace(/\/\*[\s\S]*?\*\//g, '');
-    parseBlock(text, [], rules, () => order++);
+    const source = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+    assertBalanced(path, source);
+    parseBlock(source.replace(/\/\*[\s\S]*?\*\//g, ''), [], rules, () => order++);
   }
   return rules;
 }
@@ -142,6 +170,8 @@ function mediaMatches(query, env) {
         case 'min-width': return env.width >= px;
         case 'max-height': return env.height <= px;
         case 'min-height': return env.height >= px;
+        // CSS 처럼 높이가 폭보다 작을 때만 가로다(정사각은 세로)
+        case 'orientation': return (env.width > env.height ? 'landscape' : 'portrait') === raw;
         case 'pointer': return env.pointer === raw;
         case 'hover': return env.hover === raw;
         case 'prefers-reduced-motion': return (env.reducedMotion ? 'reduce' : 'no-preference') === raw;

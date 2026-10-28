@@ -4,18 +4,21 @@ import os
 import re
 import sys
 from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import psycopg
-from psycopg import errors, sql
+from psycopg import errors, pq, sql
 
 _MIGRATIONS_DIR = Path(__file__).parents[1] / "migrations"
 _MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{3})_[a-z0-9_]+\.sql$")
 _ADVISORY_LOCK_KEY = 854_217_903
 _RUNTIME_ROLE_NAME = "quiz_by_quiz_app"
 _RUNTIME_ROLE_PASSWORD_ENV = "QUIZ_DB_PASSWORD"  # noqa: S105 - environment variable name only
+_OPEN_TRANSACTION_STATES = (pq.TransactionStatus.INTRANS, pq.TransactionStatus.INERROR)
+_SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 
 
 class MigrationError(RuntimeError):
@@ -151,6 +154,30 @@ def apply_pending(connection: Any, migrations: Iterable[Migration]) -> tuple[int
     return tuple(installed)
 
 
+def _in_transaction(connection: Any) -> bool:
+    return connection.info.transaction_status in _OPEN_TRANSACTION_STATES
+
+
+def _release_migration_lock(connection: Any) -> None:
+    """Release the advisory lock, first rolling back any transaction a migration left.
+
+    Migrations carry an explicit BEGIN/COMMIT on an autocommit connection, so a failing
+    statement leaves the session in an aborted transaction where every further command,
+    the unlock included, raises InFailedSqlTransaction.
+    """
+    if _in_transaction(connection):
+        connection.execute("ROLLBACK")
+    connection.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+
+
+def _failure_summary(error: BaseException) -> str:
+    """Class name and SQLSTATE only: driver and server messages may quote secrets."""
+    sqlstate = getattr(error, "sqlstate", None)
+    if isinstance(sqlstate, str) and _SQLSTATE.fullmatch(sqlstate):
+        return f"{type(error).__name__} (SQLSTATE {sqlstate})"
+    return type(error).__name__
+
+
 def main() -> int:
     try:
         migrations = discover_migrations()
@@ -162,10 +189,19 @@ def main() -> int:
             try:
                 ensure_runtime_role(connection, password)
                 installed = apply_pending(connection, migrations)
-            finally:
-                connection.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+                if _in_transaction(connection):
+                    # A migration without its COMMIT. Rolling it back below and reporting
+                    # success would hide that nothing was applied.
+                    raise MigrationError("a migration left its transaction open")
+            except BaseException:
+                # The original error is the one to report. An unlock that fails as well must
+                # not replace it; closing the session releases the session-level lock anyway.
+                with suppress(Exception):
+                    _release_migration_lock(connection)
+                raise
+            _release_migration_lock(connection)
     except Exception as error:
-        print(f"quiz-by-quiz migration failed: {type(error).__name__}", file=sys.stderr)
+        print(f"quiz-by-quiz migration failed: {_failure_summary(error)}", file=sys.stderr)
         return 1
 
     if installed:

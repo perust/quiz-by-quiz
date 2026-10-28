@@ -13,12 +13,17 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.main import EventHub, create_app
+from app.main import EventHub, RemovedMembers, create_app
 from app.password_work import PasswordWorkBusy
 from app.repository import (
     AbsentHostSweep,
     AccessInfo,
+    MatchInProgress,
+    MatchPositionMismatch,
     MatchSetup,
+    MemberConnected,
+    NotHost,
+    NotMember,
     PlayerView,
     RoomFull,
     RoomView,
@@ -71,7 +76,7 @@ class FakeRepository:
         self.member = False
         self.touch_calls = 0
         self.authenticate_calls = 0
-        self.current_schema_version = 10
+        self.current_schema_version = 11
         self.schema_version_calls = 0
         self.start_absent_player_ids: frozenset[UUID] | None = None
         self.transfer_calls: list[dict[str, frozenset[UUID]]] = []
@@ -82,6 +87,12 @@ class FakeRepository:
         # None이면 끊긴 사람도 모두 아직 참가자다. 값이 있으면 그 사람들만 참가자다.
         self.member_ids: frozenset[UUID] | None = None
         self.leave_absent_player_ids: frozenset[UUID] | None = None
+        # 방에서 빠진 사람. 이 사람에게는 방이 없고(get_room None) 소켓 티켓도 나오지 않는다.
+        self.non_member_ids: set[UUID] = set()
+        self.remove_calls: list[tuple[UUID, str, UUID, frozenset[UUID]]] = []
+        # 각 내보내기 요청이 접속 중인 사람까지 허락했는가 (remove_calls 와 같은 순서)
+        self.remove_allow_connected: list[bool] = []
+        self.remove_error: Exception | None = None
 
     async def open(self) -> None:
         return None
@@ -124,6 +135,8 @@ class FakeRepository:
         return self.room
 
     async def get_room(self, actor_id: UUID, code: str) -> RoomView | None:
+        if actor_id in self.non_member_ids:
+            return None
         return self.room if code == self.room.code else None
 
     async def get_access(self, code: str) -> AccessInfo | None:
@@ -133,6 +146,7 @@ class FakeRepository:
 
     async def join_room(self, actor_id: UUID, code: str) -> RoomView:
         self.join_calls += 1
+        self.non_member_ids.discard(actor_id)
         return self.room
 
     async def leave_room(
@@ -144,6 +158,28 @@ class FakeRepository:
     ) -> RoomView | None:
         self.leave_absent_player_ids = absent_player_ids
         return None
+
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
+    ) -> RoomView:
+        self.remove_calls.append((actor_id, code, player_id, absent_player_ids))
+        self.remove_allow_connected.append(allow_connected)
+        if self.remove_error is not None:
+            raise self.remove_error
+        if not allow_connected and player_id not in absent_player_ids:
+            raise MemberConnected
+        self.non_member_ids.add(player_id)
+        self.room = replace(
+            self.room,
+            players=tuple(player for player in self.room.players if player.id != player_id),
+        )
+        return self.room
 
     async def update_room(self, actor_id: UUID, code: str, patch: Any) -> RoomView:
         self.update_calls += 1
@@ -205,7 +241,7 @@ class FakeRepository:
         return False
 
     async def is_member(self, actor_id: UUID, code: str) -> bool:
-        return self.member and code == self.room.code
+        return self.member and code == self.room.code and actor_id not in self.non_member_ids
 
     async def touch_member(self, actor_id: UUID, code: str) -> None:
         self.touch_calls += 1
@@ -268,7 +304,7 @@ def make_client(repository: FakeRepository, *, password_hasher: Any | None = Non
     return TestClient(create_app(repository=repository, password_hasher=password_hasher))
 
 
-def test_release_readiness_requires_character_only_contract_and_migration_10() -> None:
+def test_release_readiness_requires_character_only_contract_and_migration_11() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         ready = client.get("/v1/release-readiness")
@@ -276,13 +312,15 @@ def test_release_readiness_requires_character_only_contract_and_migration_10() -
         assert ready.json() == {
             "status": "ready",
             "contract": "character-only-v1",
-            "schemaVersion": 10,
+            "schemaVersion": 11,
         }
 
-        repository.current_schema_version = 9
-        blocked = client.get("/v1/release-readiness")
-        assert blocked.status_code == 503
-        assert blocked.json()["detail"]["code"] == "migration-required"
+        # 010까지의 DB에는 방장이 고른 문항 시간 열이 없다. 이 API는 그 위에서 방을 읽지 못한다
+        for older in (9, 10):
+            repository.current_schema_version = older
+            blocked = client.get("/v1/release-readiness")
+            assert blocked.status_code == 503
+            assert blocked.json()["detail"]["code"] == "migration-required"
 
 
 def test_release_readiness_database_queries_are_rate_limited() -> None:
@@ -293,6 +331,7 @@ def test_release_readiness_database_queries_are_rate_limited() -> None:
     assert [response.status_code for response in responses[:12]] == [200] * 12
     assert responses[12].status_code == 429
     assert responses[12].json()["detail"]["code"] == "rate-limited"
+    assert 55 <= int(responses[12].headers["retry-after"]) <= 60
     assert repository.schema_version_calls == 12
 
 
@@ -375,6 +414,101 @@ def test_room_update_treats_legacy_false_as_a_character_only_noop() -> None:
     assert repository.updated_patch == {}
 
 
+def test_room_create_takes_the_hosts_question_time_and_defaults_to_20_seconds() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        chosen = client.post(
+            "/v1/rooms",
+            headers=HEADERS,
+            json={**public_room_body(0), "questionTimeMs": 40_000},
+        )
+        chosen_spec = repository.created_spec
+        legacy = client.post("/v1/rooms", headers=HEADERS, json=public_room_body(1))
+        legacy_spec = repository.created_spec
+        repository.room = room_view(question_time_ms=40_000)
+        listed = client.get("/v1/rooms", headers=HEADERS)
+
+    assert chosen.status_code == 201
+    assert chosen_spec is not None and chosen_spec.question_time_ms == 40_000
+    # 구버전 client는 이 필드를 모른다. 그 방은 예전처럼 20초다
+    assert legacy.status_code == 201
+    assert legacy_spec is not None and legacy_spec.question_time_ms == 20_000
+    # 방 모습은 저장소가 돌려준 값을 그대로 싣는다 (모두가 보는 대기실 설정 칸)
+    assert listed.json()[0]["questionTimeMs"] == 40_000
+
+
+def test_room_create_rejects_any_question_time_but_20_or_40_seconds() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        responses = {
+            value: client.post(
+                "/v1/rooms",
+                headers=HEADERS,
+                json={**public_room_body(index), "questionTimeMs": value},
+            )
+            for index, value in enumerate((30_000, 0, None, True, "40000", 40_000.5))
+        }
+
+    # 제한 없음(null)·다른 시간은 거절한다 — 한 사람이 답하지 않으면 방 전체가 멈춘다
+    assert responses[30_000].status_code == 400
+    assert responses[30_000].json()["detail"]["code"] == "invalid-question-time"
+    assert responses[0].status_code == 400
+    for value in (None, True, "40000", 40_000.5):
+        assert responses[value].status_code == 422, value
+    assert repository.create_calls == 0
+
+
+def test_room_update_passes_a_valid_question_time_and_rejects_the_rest() -> None:
+    repository = FakeRepository()
+    with make_client(repository) as client:
+        register(client)
+        changed = client.patch(
+            "/v1/rooms/ABC234",
+            headers=HEADERS,
+            json={"questionTimeMs": 40_000},
+        )
+        changed_patch = repository.updated_patch
+        rejected = [
+            client.patch("/v1/rooms/ABC234", headers=HEADERS, json={"questionTimeMs": value})
+            for value in (30_000, None, False)
+        ]
+
+    assert changed.status_code == 200
+    assert changed_patch == {"question_time_ms": 40_000}
+    assert [response.status_code for response in rejected] == [400, 400, 422]
+    assert rejected[0].json()["detail"]["code"] == "invalid-question-time"
+    assert rejected[1].json()["detail"]["code"] == "invalid-question-time"
+    assert repository.update_calls == 1
+
+
+def test_room_update_keeps_host_and_running_match_refusals_for_question_time() -> None:
+    repository = FakeRepository()
+
+    async def not_host(actor_id: UUID, code: str, patch: Any) -> RoomView:
+        raise NotHost
+
+    async def busy(actor_id: UUID, code: str, patch: Any) -> RoomView:
+        raise MatchInProgress
+
+    with make_client(repository) as client:
+        register(client)
+        repository.update_room = not_host  # type: ignore[method-assign]
+        guest = client.patch("/v1/rooms/ABC234", headers=HEADERS, json={"questionTimeMs": 40_000})
+        repository.update_room = busy  # type: ignore[method-assign]
+        playing = client.patch(
+            "/v1/rooms/ABC234",
+            headers=HEADERS,
+            json={"questionTimeMs": 40_000},
+        )
+
+    assert guest.status_code == 403
+    assert guest.json()["detail"]["code"] == "not-host"
+    assert playing.status_code == 409
+    assert playing.json()["detail"]["code"] == "game-in-progress"
+
+
 def test_session_rejects_invalid_character_as_a_client_error() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
@@ -404,18 +538,80 @@ def test_session_process_limit_survives_client_and_identity_rotation() -> None:
     assert [response.status_code for response in responses[:300]] == [200] * 300
     assert responses[300].status_code == 429
     assert responses[300].json()["detail"]["code"] == "rate-limited"
+    assert int(responses[300].headers["retry-after"]) >= 1
     assert len(repository.sessions) == 300
 
 
-def test_authenticated_client_limit_runs_before_database_authentication() -> None:
+def test_authenticated_player_limit_runs_before_database_authentication() -> None:
     repository = FakeRepository()
     with make_client(repository) as client:
         responses = [client.get("/v1/rooms", headers=HEADERS) for _ in range(121)]
 
     assert [response.status_code for response in responses[:120]] == [200] * 120
     assert responses[120].status_code == 429
-    assert responses[120].headers["retry-after"] == "1"
+    assert responses[120].json()["detail"]["code"] == "rate-limited"
+    # 120번이 한꺼번에 들어왔으니 첫 자리가 비는 것은 거의 60초 뒤다 — 정직한 Retry-After (N01)
+    assert 55 <= int(responses[120].headers["retry-after"]) <= 60
     assert repository.authenticate_calls == 120
+
+
+def test_players_behind_one_address_do_not_share_the_player_limit() -> None:
+    # 교실·집 NAT (N01): 한 사람이 제 몫을 다 써도 같은 IP의 다른 사람은 그대로 들어온다
+    repository = RotatingIdentityRepository()
+    with make_client(repository) as client:
+        busy = register_rotating_identity(client, 0, "198.51.100.40")
+        calm = register_rotating_identity(client, 1, "198.51.100.40")
+        exhausted = [client.get("/v1/rooms", headers=busy) for _ in range(121)]
+        neighbour = client.get("/v1/rooms", headers=calm)
+
+    assert [response.status_code for response in exhausted[:120]] == [200] * 120
+    assert exhausted[120].status_code == 429
+    assert neighbour.status_code == 200
+
+
+def test_forged_token_cannot_drain_another_players_limit() -> None:
+    # player id는 방 snapshot에 실린다. DB 인증 전의 몫을 id만으로 세면 남이 틀린 토큰으로
+    # 그 사람의 몫을 비울 수 있다
+    repository = FakeRepository()
+    forged = {**HEADERS, "Authorization": "Bearer " + "f" * 48}
+    with make_client(repository) as client:
+        attacks = [client.get("/v1/rooms", headers=forged) for _ in range(121)]
+        victim = client.get("/v1/rooms", headers=HEADERS)
+
+    assert [response.status_code for response in attacks[:120]] == [401] * 120
+    assert attacks[120].status_code == 429
+    assert victim.status_code == 200
+
+
+def test_authenticated_address_and_process_limits_bound_every_player(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 실제 값(IP 1,500 · 프로세스 3,000)을 다 채우면 느리다. 같은 계약을 작은 값으로 본다
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "AUTHENTICATED_PLAYER_LIMIT", 3)
+    monkeypatch.setattr(main_module, "AUTHENTICATED_CLIENT_LIMIT", 5)
+    monkeypatch.setattr(main_module, "AUTHENTICATED_PROCESS_LIMIT", 8)
+    repository = RotatingIdentityRepository()
+    with make_client(repository) as client:
+        shared = [register_rotating_identity(client, index, "198.51.100.50") for index in range(3)]
+        address = [
+            client.get("/v1/rooms", headers=shared[index % 3]).status_code for index in range(6)
+        ]
+        elsewhere = [
+            register_rotating_identity(client, 10 + index, f"192.0.2.{60 + index}")
+            for index in range(3)
+        ]
+        process = [client.get("/v1/rooms", headers=identity).status_code for identity in elsewhere]
+        process.append(client.get("/v1/rooms", headers=elsewhere[0]).status_code)
+        blocked = client.get("/v1/rooms", headers=elsewhere[1])
+
+    # 셋이 한 IP에서 다섯을 나눠 쓴다. 여섯째는 누구의 몫도 다 쓰지 않았지만 IP 몫에서 막힌다
+    assert address == [200, 200, 200, 200, 200, 429]
+    # 다른 IP의 세 사람이 나머지 셋을 쓰면 프로세스 몫(8)이 찬다
+    assert process == [200, 200, 200, 429]
+    assert blocked.status_code == 429
+    assert "retry-after" in blocked.headers
 
 
 def test_room_create_actor_limit_survives_client_rotation() -> None:
@@ -503,6 +699,162 @@ def test_private_password_process_limit_survives_client_and_identity_rotation() 
     assert [response.status_code for response in responses[:120]] == [200] * 120
     assert responses[120].status_code == 429
     assert repository.join_calls == 120
+
+
+class SharedAddressRoomsRepository(RotatingIdentityRepository):
+    """사람마다 들어가 있는 방이 정해져 있다. 그 밖의 코드는 남의 방이거나 없는 방이다."""
+
+    def __init__(self, memberships: Mapping[UUID, str]) -> None:
+        super().__init__()
+        self.memberships = dict(memberships)
+        self.member_answers = 0
+        self.foreign_answers = 0
+
+    async def is_member(self, actor_id: UUID, code: str) -> bool:
+        return self.memberships.get(actor_id) == code
+
+    async def set_ready(self, actor_id: UUID, code: str, is_ready: bool) -> RoomView:
+        return self.room
+
+    async def advance_expired_matches(self) -> list[Any]:
+        return []
+
+    async def submit_answer(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        position: int,
+        choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> Any:
+        if self.memberships.get(actor_id) != code:
+            self.foreign_answers += 1
+            raise NotMember
+        # 한도를 지나 저장소까지 왔다. 판은 이미 다음 문제로 넘어갔다고 답한다(409)
+        self.member_answers += 1
+        raise MatchPositionMismatch
+
+
+def test_one_address_cannot_fill_a_per_endpoint_process_bucket() -> None:
+    # N01 리뷰 security-1: 인증된 IP 몫이 1,500/60초가 된 뒤에는 한 주소가 값싼 세션 몇 개로
+    # 엔드포인트별 프로세스 몫(소켓 티켓 300·답 600)을 채워 서버의 모든 방을 막을 수 있었다. 그 몫은
+    # 멤버십을 보기 전에 먹고, 무작위 코드마다 새 «사람+방» 열쇠가 생기기 때문이다
+    attacker = "198.51.100.7"
+    member_index = 999
+    member_id = UUID(int=member_index + 1)
+    repository = SharedAddressRoomsRepository({member_id: "ABC234"})
+    with make_client(repository) as client:
+        sessions = [register_rotating_identity(client, index, attacker) for index in range(40)]
+        tickets = [
+            client.post(
+                f"/v1/rooms/T{index:05d}/ws-ticket",
+                headers=sessions[index % len(sessions)],
+            ).status_code
+            for index in range(360)
+        ]
+        answers = [
+            client.post(
+                f"/v1/rooms/A{index:05d}/match/answers",
+                headers=sessions[index % len(sessions)],
+                json={"position": 1, "choiceIndex": 2},
+            ).status_code
+            for index in range(720)
+        ]
+        member = register_rotating_identity(client, member_index, "203.0.113.9")
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=member)
+        answer = client.post(
+            "/v1/rooms/ABC234/match/answers",
+            headers=member,
+            json={"position": 1, "choiceIndex": 2},
+        )
+
+    # 한 주소는 엔드포인트마다 프로세스 몫의 절반에서 멈춘다(티켓 150 · 답 300)
+    assert tickets[:150] == [403] * 150
+    assert set(tickets[150:]) == {429}
+    assert answers[:300] == [403] * 300
+    assert set(answers[300:]) == {429}
+    assert repository.foreign_answers == 300
+    # 다른 주소의 참가자는 소켓 티켓도 답도 한도에 걸리지 않는다
+    assert ticket.status_code == 201
+    assert answer.status_code == 409
+    assert repository.member_answers == 1
+
+
+def test_one_identity_cannot_spray_room_codes_past_a_few_rooms() -> None:
+    # 사람+방 몫은 방 코드마다 새로 생긴다. 한 사람이 코드를 바꿔 가며 보내도 방 셋 몫까지다
+    repository = SharedAddressRoomsRepository({})
+    with make_client(repository) as client:
+        identity = register_rotating_identity(client, 0, "198.51.100.8")
+        tickets = [
+            client.post(f"/v1/rooms/S{index:05d}/ws-ticket", headers=identity).status_code
+            for index in range(19)
+        ]
+
+    assert tickets[:18] == [403] * 18
+    assert tickets[18] == 429
+
+
+def test_a_classroom_behind_one_address_fits_every_per_endpoint_share() -> None:
+    # 교실 하나(NAT 주소 하나)에 12명 방 셋. 한 판의 가장 바쁜 1분을 한꺼번에 보낸다 — 한 사람마다
+    # 입장 1 · 소켓 티켓 3(대기실 → 판 → 결과) · 준비 2 · 채팅 2 · 답 7(공개가 8초라 1분에
+    # 많아야 7.5문항). 모두 한도를 지나 저장소에 닿아야 한다
+    address = "198.51.100.30"
+    rooms = ("ABC234", "DEF567", "GHJ892")
+    players = [(index, UUID(int=index + 1), rooms[index // 12]) for index in range(36)]
+    repository = SharedAddressRoomsRepository({player_id: code for _, player_id, code in players})
+    with make_client(repository) as client:
+        headers = {
+            player_id: register_rotating_identity(client, index, address)
+            for index, player_id, _ in players
+        }
+        statuses: dict[str, list[int]] = {
+            "join": [],
+            "ticket": [],
+            "mutation": [],
+            "chat": [],
+            "answer": [],
+        }
+        for _, player_id, code in players:
+            identity = headers[player_id]
+            statuses["join"].append(
+                client.post(f"/v1/rooms/{code}/join", headers=identity, json={}).status_code
+            )
+            for _ in range(3):
+                statuses["ticket"].append(
+                    client.post(f"/v1/rooms/{code}/ws-ticket", headers=identity).status_code
+                )
+            for ready in (True, False):
+                statuses["mutation"].append(
+                    client.put(
+                        f"/v1/rooms/{code}/ready",
+                        headers=identity,
+                        json={"isReady": ready},
+                    ).status_code
+                )
+            for _ in range(2):
+                statuses["chat"].append(
+                    client.post(
+                        f"/v1/rooms/{code}/chat",
+                        headers=identity,
+                        json={"text": "안녕하세요"},
+                    ).status_code
+                )
+            for _ in range(7):
+                statuses["answer"].append(
+                    client.post(
+                        f"/v1/rooms/{code}/match/answers",
+                        headers=identity,
+                        json={"position": 1, "choiceIndex": 2},
+                    ).status_code
+                )
+
+    assert statuses["join"] == [200] * 36
+    assert statuses["ticket"] == [201] * 108
+    assert statuses["mutation"] == [200] * 72
+    assert statuses["chat"] == [202] * 72
+    assert statuses["answer"] == [409] * 252
+    assert repository.member_answers == 252
 
 
 def test_room_list_includes_private_metadata_without_password_material() -> None:
@@ -713,6 +1065,7 @@ def test_private_join_is_rate_limited_before_unbounded_password_checks() -> None
     assert [response.status_code for response in attempts[:10]] == [403] * 10
     assert attempts[10].status_code == 429
     assert attempts[10].json()["detail"]["code"] == "rate-limited"
+    assert int(attempts[10].headers["retry-after"]) >= 1
 
 
 def test_chat_and_websocket_ticket_issuance_are_rate_limited_per_actor_and_room() -> None:
@@ -739,9 +1092,12 @@ def test_chat_and_websocket_ticket_issuance_are_rate_limited_per_actor_and_room(
     assert [response.status_code for response in chats[:12]] == [202] * 12
     assert chats[12].status_code == 429
     assert chats[12].json()["detail"]["code"] == "rate-limited"
+    # 모든 요청 한도 거절은 언제 다시 해도 되는지 초로 말한다 (N01)
+    assert 55 <= int(chats[12].headers["retry-after"]) <= 60
     assert [response.status_code for response in tickets[:6]] == [201] * 6
     assert tickets[6].status_code == 429
     assert tickets[6].json()["detail"]["code"] == "rate-limited"
+    assert 55 <= int(tickets[6].headers["retry-after"]) <= 60
 
 
 def test_protected_routes_reject_unknown_browser_session() -> None:
@@ -1336,3 +1692,253 @@ def test_leave_hands_the_host_to_a_connected_member_and_forgets_a_deleted_room()
     assert repository.leave_absent_player_ids == frozenset({OTHER_ID})
     # 이 가짜 방은 마지막 사람이 나가 사라졌다. 같은 코드의 기록이 남지 않는다.
     assert hub.absent_actors("ABC234") == frozenset()
+
+
+def _two_member_room(host_id: UUID, ghost_id: UUID) -> RoomView:
+    return room_view(
+        players=(
+            PlayerView(id=host_id, nickname="방장", character_id="slime-blue"),
+            PlayerView(id=ghost_id, nickname="유령", character_id="slime-pink"),
+        ),
+    )
+
+
+def test_host_removes_a_long_disconnected_member_and_they_hear_why_when_they_return() -> None:
+    # U24: 탭을 닫고 떠난 자리를 방장이 비운다. 돌아온 사람은 «없는 방»이 아니라 이유를 듣고,
+    # 다시 들어오는 것은 막지 않는다(차단이 아니다).
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.password_hash = None
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    app = create_app(repository=repository, event_hub=hub)
+    with TestClient(app) as client:
+        host = register_rotating_identity(client, 60, "198.51.100.60")
+        ghost = register_rotating_identity(client, 61, "198.51.100.61")
+        host_id = UUID(host["X-Player-Id"])
+        ghost_id = UUID(ghost["X-Player-Id"])
+        repository.room = _two_member_room(host_id, ghost_id)
+        host_ticket, ghost_ticket = _issue_tickets(client, host, ghost)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(host_ticket),
+        ) as host_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(ghost_ticket),
+            ):
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+            wait_until(lambda: hub.connection_count == 1, "closed socket stayed admitted")
+
+            # 유예 안에서는 내보낼 수 없다 — 잠깐 끊긴 사람은 곧 돌아온다.
+            early = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
+            assert early.status_code == 409
+            assert early.json()["detail"]["code"] == "member-connected"
+
+            clock.now += 61
+            removed = client.delete(f"/v1/rooms/ABC234/members/{ghost_id}", headers=host)
+            assert removed.status_code == 200
+            assert [player["id"] for player in removed.json()["players"]] == [str(host_id)]
+            assert host_socket.receive_json() == {"type": "room-invalidated"}
+
+        assert repository.remove_calls[-1] == (host_id, "ABC234", ghost_id, frozenset({ghost_id}))
+        # 끊김 기록은 멤버십과 함께 끝난다.
+        assert hub.absent_actors("ABC234") == frozenset()
+
+        returned = client.get("/v1/rooms/ABC234", headers=ghost)
+        assert returned.status_code == 404
+        assert returned.json()["detail"]["code"] == "removed"
+        reconnect = client.post("/v1/rooms/ABC234/ws-ticket", headers=ghost)
+        assert reconnect.status_code == 403
+        assert reconnect.json()["detail"]["code"] == "removed"
+
+        # 다시 참가할 수 있고, 그 뒤에 빠지면 더는 «내보냈다»가 아니다.
+        rejoined = client.post("/v1/rooms/ABC234/join", headers=ghost, json={})
+        assert rejoined.status_code == 200
+        repository.non_member_ids.add(ghost_id)
+        later = client.get("/v1/rooms/ABC234", headers=ghost)
+        assert later.json()["detail"]["code"] == "not-found"
+
+
+def test_member_removal_rejects_self_bad_ids_and_maps_repository_refusals() -> None:
+    repository = FakeRepository()
+    repository.member = True
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    with TestClient(create_app(repository=repository, event_hub=hub)) as client:
+        register(client)
+        own = client.delete(f"/v1/rooms/ABC234/members/{PLAYER_ID}", headers=HEADERS)
+        assert own.status_code == 400
+        assert own.json()["detail"]["code"] == "invalid-target"
+        malformed = client.delete("/v1/rooms/ABC234/members/not-a-uuid", headers=HEADERS)
+        assert malformed.status_code == 404
+        assert malformed.json()["detail"]["code"] == "not-member"
+        assert repository.remove_calls == []
+
+        assert hub.is_present("ABC234", OTHER_ID)
+        clock.now += 61
+        refusals = (
+            (NotHost(), 403, "not-host"),
+            (MatchInProgress(), 409, "game-in-progress"),
+            (MemberConnected(), 409, "member-connected"),
+        )
+        for error, status, code in refusals:
+            repository.remove_error = error
+            response = client.delete(f"/v1/rooms/ABC234/members/{OTHER_ID}", headers=HEADERS)
+            assert (response.status_code, response.json()["detail"]["code"]) == (status, code)
+        # 나가기 경로는 그대로 나가기다.
+        assert client.delete("/v1/rooms/ABC234/members/me", headers=HEADERS).status_code == 204
+    assert repository.remove_calls[0][3] == frozenset({OTHER_ID})
+    assert len(repository.remove_calls) == 3
+
+
+def test_host_kicks_a_connected_member_who_is_told_at_once_and_kept_out_for_a_while() -> None:
+    # 소유자 결정: 방장은 확인창을 거쳐 접속 중인 사람도 내보낸다. 그 사람의 열린 화면은 곧바로
+    # 이유를 듣고 소켓이 닫히며, 잠시(KICK_BLOCK_SECONDS) 같은 방에 다시 들어오지 못한다.
+    repository = RotatingIdentityRepository()
+    repository.member = True
+    repository.password_hash = "stored-hash"  # noqa: S105 - 막힌 사람은 비밀번호 확인까지 가지 않는다
+    clock = FakeClock()
+    hub = EventHub(presence_grace_seconds=60, clock=clock)
+    records = RemovedMembers(record_seconds=3_600, block_seconds=600, clock=clock)
+    app = create_app(repository=repository, event_hub=hub, removed_members=records)
+    with TestClient(app) as client:
+        host = register_rotating_identity(client, 70, "198.51.100.70")
+        guest = register_rotating_identity(client, 71, "198.51.100.71")
+        host_id = UUID(host["X-Player-Id"])
+        guest_id = UUID(guest["X-Player-Id"])
+        repository.room = _two_member_room(host_id, guest_id)
+        host_ticket, guest_ticket = _issue_tickets(client, host, guest)
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(host_ticket),
+        ) as host_socket:
+            with client.websocket_connect(
+                "/v1/rooms/ABC234/events",
+                subprotocols=ws_protocols(guest_ticket),
+            ) as guest_socket:
+                wait_until(lambda: hub.connection_count == 2, "sockets were not admitted")
+
+                # 끊긴 자리를 비우는 내보내기(구버전 화면의 길)는 접속 중인 사람을 빼지 않는다.
+                seat_only = client.delete(f"/v1/rooms/ABC234/members/{guest_id}", headers=host)
+                assert seat_only.status_code == 409
+                assert seat_only.json()["detail"]["code"] == "member-connected"
+
+                # 판에 자리가 있으면 판이 끝난 뒤에 뺀다. 거절된 내보내기는 아무도 막지 않는다.
+                repository.remove_error = MatchInProgress()
+                playing = client.delete(
+                    f"/v1/rooms/ABC234/members/{guest_id}?connected=true",
+                    headers=host,
+                )
+                assert playing.status_code == 409
+                assert playing.json()["detail"]["code"] == "game-in-progress"
+                assert records.reason("ABC234", guest_id) is None
+                repository.remove_error = None
+
+                kicked = client.delete(
+                    f"/v1/rooms/ABC234/members/{guest_id}?connected=true",
+                    headers=host,
+                )
+                assert kicked.status_code == 200
+                assert [player["id"] for player in kicked.json()["players"]] == [str(host_id)]
+                # 내보내진 화면은 다시 붙기를 기다리지 않고 이유를 먼저 듣고, 소켓이 닫힌다.
+                assert guest_socket.receive_json() == {"type": "removed", "reason": "kicked"}
+                with pytest.raises(WebSocketDisconnect) as closed:
+                    guest_socket.receive_json()
+                assert closed.value.code == 4403
+            assert host_socket.receive_json() == {"type": "room-invalidated"}
+
+        assert repository.remove_allow_connected == [False, True, True]
+        assert repository.remove_calls[-1][:3] == (host_id, "ABC234", guest_id)
+        assert hub.absent_actors("ABC234") == frozenset()
+
+        returned = client.get("/v1/rooms/ABC234", headers=guest)
+        assert returned.status_code == 404
+        assert returned.json()["detail"]["code"] == "kicked"
+        reconnect = client.post("/v1/rooms/ABC234/ws-ticket", headers=guest)
+        assert reconnect.status_code == 403
+        assert reconnect.json()["detail"]["code"] == "kicked"
+        joins_before = repository.join_calls
+        refused = client.post("/v1/rooms/ABC234/join", headers=guest, json={"password": "guess"})
+        assert refused.status_code == 403
+        assert refused.json()["detail"]["code"] == "kicked"
+        assert refused.json()["detail"]["message"] == (
+            "방장이 내보낸 방이에요. 잠시 뒤에 다시 들어올 수 있어요."
+        )
+        assert repository.join_calls == joins_before, "막힌 사람의 참가는 저장소에 닿지 않는다"
+
+        # 막는 시간이 지나면 다시 들어온다. 그동안은 «내보냈다»로만 알린다.
+        clock.now += 601
+        assert client.get("/v1/rooms/ABC234", headers=guest).json()["detail"]["code"] == "removed"
+        repository.password_hash = None
+        rejoined = client.post("/v1/rooms/ABC234/join", headers=guest, json={})
+        assert rejoined.status_code == 200
+        assert records.reason("ABC234", guest_id) is None
+
+
+def test_kick_block_is_per_room_and_ends_with_the_room() -> None:
+    clock = FakeClock()
+    records = RemovedMembers(record_seconds=3_600, block_seconds=600, clock=clock)
+    records.mark("ABC234", PLAYER_ID, blocked=True)
+    assert records.is_blocked("ABC234", PLAYER_ID)
+    assert not records.is_blocked("XYZ789", PLAYER_ID), "다른 방은 막지 않는다"
+    assert not records.is_blocked("ABC234", OTHER_ID)
+    records.mark("ABC234", OTHER_ID)
+    assert records.reason("ABC234", OTHER_ID) == "removed", "끊긴 자리를 비운 것은 막지 않는다"
+    # 마지막 사람이 나가 방이 사라지면 그 코드의 기록도 버린다.
+    records.forget_room("ABC234")
+    assert records.reason("ABC234", PLAYER_ID) is None
+
+    records.mark("ABC234", PLAYER_ID, blocked=True)
+    clock.now += 599
+    assert records.reason("ABC234", PLAYER_ID) == "kicked"
+    clock.now += 1
+    assert records.reason("ABC234", PLAYER_ID) == "removed"
+    clock.now += 3_000
+    assert records.reason("ABC234", PLAYER_ID) is None
+
+    # 막는 시간은 기록보다 길 수 없다 — 기록이 사라지면 막을 근거도 없다.
+    short = RemovedMembers(record_seconds=60, block_seconds=600, clock=clock)
+    short.mark("ABC234", PLAYER_ID, blocked=True)
+    clock.now += 60
+    assert short.reason("ABC234", PLAYER_ID) is None
+    with pytest.raises(ValueError):
+        RemovedMembers(block_seconds=0)
+
+
+def test_removed_member_records_expire_and_stay_bounded() -> None:
+    clock = FakeClock()
+    records = RemovedMembers(record_seconds=60, max_records=2, clock=clock)
+    records.mark("ABC234", PLAYER_ID)
+    assert records.was_removed("ABC234", PLAYER_ID)
+    assert not records.was_removed("XYZ789", PLAYER_ID)
+    clock.now += 61
+    assert not records.was_removed("ABC234", PLAYER_ID)
+
+    for index in range(3):
+        records.mark("ABC234", UUID(int=index + 1))
+    assert not records.was_removed("ABC234", UUID(int=1))
+    assert records.was_removed("ABC234", UUID(int=3))
+    records.forget("ABC234", UUID(int=3))
+    assert not records.was_removed("ABC234", UUID(int=3))
+    records.forget_room("ABC234")
+    assert not records.was_removed("ABC234", UUID(int=2))
+
+
+def test_cross_origin_browser_can_read_retry_after_on_a_rate_limit() -> None:
+    # Retry-After는 CORS 기본 노출 헤더가 아니다. 드러내지 않으면 Pages의 브라우저는
+    # null을 읽는다 (N01)
+    repository = FakeRepository()
+    cross_origin = {**HEADERS, "Origin": "http://localhost:8765"}
+    with make_client(repository) as client:
+        responses = [client.get("/v1/rooms", headers=cross_origin) for _ in range(121)]
+
+    limited = responses[120]
+    assert limited.status_code == 429
+    assert limited.headers["access-control-allow-origin"] == "http://localhost:8765"
+    exposed = {
+        header.strip().lower()
+        for header in limited.headers["access-control-expose-headers"].split(",")
+    }
+    assert "retry-after" in exposed
+    assert int(limited.headers["retry-after"]) >= 1

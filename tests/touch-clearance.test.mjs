@@ -122,8 +122,10 @@ test('홈 오류 문구가 보이면 숨은 캐릭터의 조작부도 꺼서 문
   assert.match(homeSource, /walker\.setEnabled\(!noteVisible\)/);
   assert.match(
     homeSource,
-    /setNote\(message\)[\s\S]*?noteVisible = Boolean\(message\)[\s\S]*?if \(noteVisible\) \{\s*walker\.setEnabled\(false\)/,
+    /function setNote\(message[^)]*\): void \{[\s\S]*?noteVisible = Boolean\(message\)[\s\S]*?if \(noteVisible\) \{\s*walker\.setEnabled\(false\)/,
   );
+  // 닫으면 다시 걷는다 (U06) — 예전에는 닫을 길이 없어 세션 내내 조작부가 꺼져 있었다
+  assert.match(homeSource, /el\.noteClose\.addEventListener\('click', \(\) => \{[\s\S]*?setNote\(null\);/);
 });
 
 test('손가락 목표: 「비공개로 만들기」의 라벨은 44px 높이와 남은 폭을 채운다', () => {
@@ -208,7 +210,7 @@ test('온라인 정답 공개 카드: 자동 스크롤이 카드 끝을 고정 �
   const reveal = node('section.online-reveal#online-reveal', onlineQuiz);
   const chat = node('section.online-quiz-chat', onlineQuiz);
 
-  for (const env of [MOBILE, NARROW, SHORT_ZOOM, SHORT_LANDSCAPE]) {
+  for (const env of [MOBILE, NARROW, SHORT_ZOOM]) {
     const { root, confirm } = controlTree({ screen: 'online-quiz' });
     const controlsTop = Math.max(
       stickReserve(env, 'online-quiz'),
@@ -218,6 +220,24 @@ test('온라인 정답 공개 카드: 자동 스크롤이 카드 끝을 고정 �
     assert.ok(margin > controlsTop, `${env.width}×${env.height}: 공개 카드 아래 여백 ${margin}px ≤ 조작부 ${controlsTop}px`);
     // 화면별 숫자를 따로 두지 않고 채팅 아래 비움과 같은 공용 크기를 쓴다
     assert.equal(margin, px(valueOf(rules, chat, 'margin-bottom', env), env), `${env.width}×${env.height}`);
+  }
+  // 짧은 가로 touch 화면(U15)은 두 열 배치의 양옆 여백이 조작부 자리라 카드가 그 아래로 들어가지 않는다.
+  // 스틱 높이만큼 더 올리면 보기와 바닥만 화면 위로 더 밀려나므로 카드 끝을 아래 여백 안에만 들인다
+  {
+    const { root, stick, confirm } = controlTree({ screen: 'online-quiz' });
+    const env = SHORT_LANDSCAPE;
+    assert.equal(px(valueOf(rules, reveal, 'scroll-margin-bottom', env), env), 12);
+    assert.ok(
+      px(valueOf(rules, onlineQuiz, 'padding-left', env), env)
+        >= px(valueOf(rules, root, '--walk-stick-left', env), env) + px(valueOf(rules, stick, 'width', env), env),
+      '공개 카드는 스틱 오른쪽에서 시작한다',
+    );
+    assert.ok(
+      px(valueOf(rules, onlineQuiz, 'padding-right', env), env)
+        >= px(valueOf(rules, root, '--walk-confirm-right', env), env) + px(valueOf(rules, confirm, 'width', env), env),
+      '공개 카드는 선택 버튼 왼쪽에서 끝난다',
+    );
+    assert.equal(valueOf(rules, reveal, 'grid-column', env), '1 / -1', '공개 카드는 두 열 아래에 폭을 다 쓴다');
   }
   // 조작부가 없는 마우스 기기에서는 카드 끝에 그대로 맞춘다
   assert.equal(px(valueOf(rules, reveal, 'scroll-margin-bottom', DESKTOP), DESKTOP), 0);

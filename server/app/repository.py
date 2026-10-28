@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
 
-from .domain import ValidatedPlayer, ValidatedRoom
+from .domain import DEFAULT_QUESTION_TIME_MS, ValidatedPlayer, ValidatedRoom
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,8 @@ class RoomView:
     # 묻는 사람이 그 진행 중인 판의 참가자인가. playing인데 false면 판에서 빠진 멤버다(U24) —
     # 그 사람은 판이 도는 동안에도 나가거나 다음 판을 준비할 수 있다.
     in_match: bool = False
+    # 방장이 고른 문항 시간(ms, 20초·40초). 판을 열 때 그 판에 옮겨 적는다.
+    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,7 @@ class MatchSetup:
     category_id: str | None
     game_mode: bool
     total_questions: int
+    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,29 @@ class MatchScoreView:
     score: int
     correct_count: int
     answered_count: int
+    # 공개(revealing) 중에만 채운다: 방금 공개한 문항을 맞혔는가 (U30). 다른 phase에서는 None이라
+    # 아직 고민 중인 사람에게 남의 정오가 나가지 않는다.
+    last_answer_correct: bool | None = None
+
+
+@dataclass(frozen=True)
+class MatchReviewView:
+    """끝난 판의 문항 하나와 묻는 사람의 답 (U38 «문제 다시 보기»).
+
+    finished snapshot에만, 그 판의 참가자에게만 싣는다. 공개 단계에서 문항마다 이미 본 것
+    (문제·보기·정답·해설)을 한데 모은 것이라 판이 끝나기 전에는 존재하지 않는다.
+    """
+
+    position: int
+    question_id: str
+    category_id: str
+    question: str
+    choices: tuple[str, ...]
+    answer_index: int
+    explanation: str
+    choice_index: int | None
+    correct: bool
+    timed_out: bool
 
 
 @dataclass(frozen=True)
@@ -98,6 +124,10 @@ class MatchView:
     question: MatchQuestionView | None
     own_answer: MatchAnswerView | None
     scores: tuple[MatchScoreView, ...]
+    review: tuple[MatchReviewView, ...] = ()
+    # 이 판의 문항 시간(ms). 시작할 때 방 설정에서 옮겨 와 판 내내 같다 —
+    # 모든 문항 마감이 이 값이다.
+    question_time_ms: int = DEFAULT_QUESTION_TIME_MS
 
 
 @dataclass(frozen=True)
@@ -173,6 +203,14 @@ class MatchPositionMismatch(RepositoryFailure):
     pass
 
 
+class MemberConnected(RepositoryFailure):
+    """내보내려는 참가자가 아직 접속 중이다 (U24).
+
+    끊긴 자리를 비우는 내보내기는 유예를 넘겨 끊긴 사람만 뺀다. 접속 중인 사람은 방장이
+    그렇게 보고 확인한 내보내기(`allow_connected`)로만 뺀다.
+    """
+
+
 class RoomsRepository(Protocol):
     async def open(self) -> None: ...
 
@@ -216,6 +254,22 @@ class RoomsRepository(Protocol):
         absent_player_ids: frozenset[UUID] = frozenset(),
     ) -> RoomView | None: ...
 
+    # 방장이 다른 참가자를 방에서 뺀다 (U24). 방장 자신은 MemberConnected(나가기로 떠난다),
+    # 도는 판에 자리가 있는 사람은 MatchInProgress다. allow_connected가 false면 유예를 넘겨
+    # 끊긴 참가자(absent_player_ids 안의 사람)만 빼고 접속 중인 사람은 MemberConnected다.
+    # 다시 참가를 잠시 막는 것은 API의 메모리 기록(RemovedMembers)이 맡는다.
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
+    ) -> RoomView: ...
+
+    # patch에는 API가 검증한 category_id·capacity·question_time_ms 가운데 바꿀 것만 온다.
+    # 방장만(NotHost), 판이 도는 동안에는 바꿀 수 없다(MatchInProgress).
     async def update_room(
         self,
         actor_id: UUID,

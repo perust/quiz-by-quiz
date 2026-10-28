@@ -128,22 +128,39 @@ function subjects(players: readonly PublicPlayer[]): string {
 }
 
 /**
+ * 이전 snapshot에 없던 다른 참가자 (U37·N03). 입장 안내 줄과 입장 차임이 같은 판정을 쓴다 —
+ * 방이 바뀌었거나(다른 방의 첫 snapshot) 내가 들어온 것은 «누가 들어왔다»가 아니다.
+ */
+export function waitingRoomJoinedOthers(
+  previous: PublicRoom,
+  next: PublicRoom,
+  playerId: string,
+): PublicRoom['players'] {
+  if (previous.code !== next.code) return [];
+  const before = new Set(previous.players.map((player) => player.id));
+  return next.players.filter((player) => !before.has(player.id) && player.id !== playerId);
+}
+
+/**
  * 이전 snapshot과 견줘 대화 로그에 한 줄씩 남길 드문 사건(FR 밖, 온라인 대기실).
  *
  * 입장·퇴장·방장 승계만 알린다. 준비 토글은 잦아서 여기 넣으면 CHAT_LINES 몇 줄짜리
  * 대화가 금방 밀려난다 — 그건 시작 상태 줄이 맡는다. 한 snapshot의 같은 종류 사건은
- * 한 줄로 합친다.
+ * 한 줄로 합친다. `quiet`의 사람은 퇴장을 알리지 않는다 — 내가 방금 내보낸 사람이라
+ * 부르는 쪽이 «내보냈어요»로 따로 말한다(같은 일을 두 줄로 쓰지 않는다, U24).
  */
 export function waitingRoomChangeNotices(
   previous: PublicRoom,
   next: PublicRoom,
   playerId: string,
+  quiet: readonly string[] = [],
 ): string[] {
   if (previous.code !== next.code) return [];
-  const before = new Set(previous.players.map((player) => player.id));
   const after = new Set(next.players.map((player) => player.id));
-  const joined = next.players.filter((player) => !before.has(player.id) && player.id !== playerId);
-  const left = previous.players.filter((player) => !after.has(player.id) && player.id !== playerId);
+  const joined = waitingRoomJoinedOthers(previous, next, playerId);
+  const left = previous.players.filter((player) => !after.has(player.id)
+    && player.id !== playerId
+    && !quiet.includes(player.id));
 
   const notices: string[] = [];
   if (joined.length > 0) notices.push(`${subjects(joined)} 들어왔어요.`);

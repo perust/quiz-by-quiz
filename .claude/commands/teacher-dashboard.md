@@ -226,7 +226,7 @@ for p in problems:
 if not records:
     print('\n!! 쓸 수 있는 기록이 없습니다. 여기서 중단합니다.')
     print('   학생 내보내기 안내는 /quiz-teacher-collect 를 참고하세요.')
-    print('   콘솔을 못 여는 학생은 /quiz-teacher-register <이름> <분야> <맞은개수> 로 받아 적으세요.')
+    print('   내보내기 버튼을 쓸 수 없는 학생은 /quiz-teacher-register <이름> <분야> <맞은개수> 로 받아 적으세요.')
     sys.exit(1)
 
 students = by_student(records)

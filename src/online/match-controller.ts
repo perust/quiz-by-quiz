@@ -4,8 +4,16 @@
 // or question progression. A WebSocket only says “invalidate”; the next visible
 // state always comes from an authenticated REST snapshot.
 //
-// 무효화는 몰려 온다(답 하나마다 방 전체에 방송된다). 그래서 GET은 한 번에 하나만 보내고,
-// 그동안 온 무효화는 끝난 뒤의 후속 GET 한 번으로 합친다 — N명 방의 재조회가 N²로 불어나지 않는다.
+// 무효화는 몰려 올 수 있다(phase가 바뀌면 방 전체에 방송된다). 그래서 GET은 한 번에 하나만 보내고,
+// 그동안 온 무효화는 끝난 뒤의 후속 GET 한 번으로 합친다.
+//
+// 같은 IP(교실·집 NAT) 뒤의 여럿이 요청 한도를 나눠 쓰므로 요청을 아낀다 (N01).
+// - 답을 낸 뒤에는 따로 GET을 보내지 않는다. 제출 응답의 snapshot이 곧 서버가 그 답을 받은 뒤의
+//   상태이고, 넘어가지 않은 답은 서버가 방송하지도 않는다(남의 running 화면에는 바뀌는 것이 없다).
+//   다만 그 응답을 못 받았거나(시간 초과·연결 끊김·5xx) 받은 응답을 guard가 버렸으면 한 번 다시 읽는다.
+// - 요청 한도(429)에 걸린 GET은 Retry-After(상한 약 3초)와 jitter를 두고 한 번만 다시 보낸다.
+// - 남은 시간이 지나고 2초가 더 지나도 phase가 그대로면 한 번 다시 읽는다. 놓친 방송 하나가
+//   사람을 공개 화면에 가두지 않게 하는 안전망이다. 답을 대신 내지 않는다 — 판정은 서버가 한다.
 
 import type {
   OnlineMatchAnswerResult,
@@ -13,7 +21,7 @@ import type {
   RoomEventHandler,
   Unsubscribe,
 } from './adapter.js';
-import { onlineErrorText } from './rules.js';
+import { ApiFailure, onlineErrorText, rateLimitRetryDelayMs } from './rules.js';
 
 export interface OnlineMatchGateway {
   getMatch(code: string): Promise<OnlineMatchSnapshot | null>;
@@ -35,6 +43,24 @@ export type OnlineMatchErrorContext =
   | Readonly<{ source: 'refresh' }>
   | (Readonly<{ source: 'submit' }> & OnlineMatchSubmissionOwner);
 
+/** 표시용 마감이 지나고 이만큼 더 기다려도 phase가 그대로면 한 번 다시 읽는다 (N01) */
+export const SAFETY_REREAD_GRACE_MS = 2_000;
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+/** 다시 읽기의 기다림과 jitter. 테스트가 가짜 시계를 넣는다 */
+export interface OnlineMatchTimers {
+  setTimeout(callback: () => void, delayMs: number): TimerHandle;
+  clearTimeout(handle: TimerHandle): void;
+  random(): number;
+}
+
+const BROWSER_TIMERS: OnlineMatchTimers = {
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle),
+  random: () => Math.random(),
+};
+
 export interface OnlineMatchControllerDeps {
   gateway: OnlineMatchGateway;
   /** A snapshot has already passed the adapter’s phase/redaction validation. */
@@ -47,12 +73,13 @@ export interface OnlineMatchControllerDeps {
   onPresenceEvent?: (
     event: Extract<Parameters<RoomEventHandler>[0], { type: 'room' | 'movement' | 'chat' }>,
   ) => void;
+  timers?: OnlineMatchTimers;
 }
 
 export interface OnlineMatchController {
   /** Subscribe before the first fetch so a start/advance event cannot race the initial read. */
   open(code: string): Promise<void>;
-  /** Sends only the selected server question position and choice; then rereads authority. */
+  /** Sends only the selected server question position and choice; draws the server's answer snapshot. */
   submit(spec: OnlineMatchSubmissionOwner & { choiceIndex: number }): Promise<void>;
   /** Ignore any later completion from this controller generation and release its socket. */
   close(): void;
@@ -128,6 +155,7 @@ export function createOnlineMatchController(
     onMissing,
     onError,
     onPresenceEvent = () => undefined,
+    timers = BROWSER_TIMERS,
   }: OnlineMatchControllerDeps,
 ): OnlineMatchController {
   let code: string | null = null;
@@ -143,13 +171,80 @@ export function createOnlineMatchController(
   let awaitingUnknownIdentity = false;
   let matchIdentityVersion = 0;
   /**
-   * 지금 날아가는 GET의 표식. 한 번에 하나만 보낸다 — 답 하나마다 방 전체에 무효화가
-   * 방송되므로, 오는 대로 GET을 보내면 같은 와이파이의 여럿이 IP당 요청 한도를 넘긴다.
+   * 지금 날아가는 GET의 표식. 한 번에 하나만 보낸다 — 무효화가 몰려 올 때(재연결 복구와 phase
+   * 방송이 겹치거나, 답 하나마다 방송하던 N01 이전 서버) 오는 대로 GET을 보내면 같은 와이파이의
+   * 여럿이 요청 한도를 먼저 먹는다.
    * close()가 비우므로 늦게 끝난 이전 lifecycle의 GET이 새 매치의 첫 읽기를 막지 않는다.
    */
   let refreshInFlight: object | null = null;
   /** 날아가는 동안 들어온 요청은 모두 이 하나의 후속 GET으로 합친다. */
   let queuedRefresh: RefreshRequest | null = null;
+  /** 마감 뒤 다시 읽기의 타이머와, 그것을 이미 건 phase. phase마다 한 번뿐이다 */
+  let safetyTimer: TimerHandle | null = null;
+  let safetyPhase: string | null = null;
+
+  function clearSafetyReread(): void {
+    if (safetyTimer !== null) timers.clearTimeout(safetyTimer);
+    safetyTimer = null;
+  }
+
+  /**
+   * 마감 뒤 다시 읽기 (N01). phase가 바뀌면 서버가 방송하지만, 그 방송이나 뒤따른 GET을 놓치면
+   * (요청 한도·끊긴 소켓) 다음 방송이 오지 않는 곳 — 특히 마지막 공개 — 에서 화면이 멈춘다. 그래서
+   * 받은 snapshot의 남은 시간이 지나고 `SAFETY_REREAD_GRACE_MS`가 더 지나도 phase가 그대로면 GET을
+   * 한 번 보낸다. 마감이 지난 판을 읽는 GET은 서버가 그 자리에서 넘기므로 남은 사람들도 함께 풀린다.
+   * 같은 phase의 snapshot이 또 와도 다시 걸지 않는다 — phase마다 한 번이라 되풀이 GET이 생기지 않는다.
+   */
+  function armSafetyReread(snapshot: OnlineMatchSnapshot): void {
+    if (snapshot.state === 'finished' || snapshot.remainingMs === undefined) {
+      clearSafetyReread();
+      safetyPhase = null;
+      return;
+    }
+    const phase = `${snapshot.matchId}:${snapshot.currentPosition}:${snapshot.state}`;
+    if (phase === safetyPhase) return;
+    clearSafetyReread();
+    safetyPhase = phase;
+    const armedGeneration = generation;
+    safetyTimer = timers.setTimeout(() => {
+      safetyTimer = null;
+      if (armedGeneration !== generation || code === null) return;
+      void refresh(armedGeneration);
+    }, Math.max(snapshot.remainingMs, 0) + SAFETY_REREAD_GRACE_MS);
+  }
+
+  function deliver(snapshot: OnlineMatchSnapshot): void {
+    lastSnapshot = snapshot;
+    progressSnapshot = snapshot;
+    armSafetyReread(snapshot);
+    onSnapshot(snapshot);
+  }
+
+  /**
+   * GET /match 하나. 요청 한도(429)에 걸리면 Retry-After(상한 약 3초)와 jitter를 두고 **한 번만** 다시
+   * 보낸다 (N01). 조용히 버리면 phase가 바뀌는 순간의 429 하나가 문항 하나를 통째로 가렸다. 기다리는
+   * 동안에도 이 GET이 자리를 쥐고 있어 그사이 온 무효화는 후속 GET 하나로 합쳐진다.
+   */
+  async function readMatch(
+    activeCode: string,
+    expectedGeneration: number,
+  ): Promise<OnlineMatchSnapshot | null> {
+    try {
+      return await gateway.getMatch(activeCode);
+    } catch (error) {
+      const delayMs = rateLimitRetryDelayMs(error, timers.random);
+      if (delayMs === null) throw error;
+      await new Promise<void>((resolve) => {
+        timers.setTimeout(resolve, delayMs);
+      });
+      // 그사이 닫혔거나 다른 방을 열었으면 보내지 않는다. 그사이 온 무효화가 후속 GET을 예약했어도
+      // 보내지 않는다 — 그 GET도 이 기다림 뒤에 나가 같은 일을 하므로, 둘을 잇달아 보내면 방금 429를 준
+      // 몫에 하나를 더 밀어 넣을 뿐이다(방 재조회와 같다). 처음 거절은 아래 guard가 버린다 — 예약된
+      // 후속 GET이 더 최신이라 이 오류는 화면에 알리지 않는다
+      if (expectedGeneration !== generation || activeCode !== code || queuedRefresh !== null) throw error;
+      return gateway.getMatch(activeCode);
+    }
+  }
 
   /**
    * 요청을 합쳐 보낸다. 날아가는 GET이 없으면 바로 보내고, 있으면 끝난 뒤 **정확히 한 번** 더 읽는다.
@@ -207,7 +302,7 @@ export function createOnlineMatchController(
     }: RefreshRequest,
   ): Promise<RefreshOutcome> {
     try {
-      const snapshot = await gateway.getMatch(activeCode);
+      const snapshot = await readMatch(activeCode, expectedGeneration);
       if (
         expectedGeneration !== generation
         || activeCode !== code
@@ -227,6 +322,8 @@ export function createOnlineMatchController(
       if (snapshot === null) {
         refreshDeliveryWatermark = Math.max(refreshDeliveryWatermark, refreshId);
         awaitingUnknownIdentity = false;
+        clearSafetyReread();
+        safetyPhase = null;
         onMissing();
         return { delivered: true, error: null };
       }
@@ -239,9 +336,7 @@ export function createOnlineMatchController(
         && progress !== 1
       ) return { delivered: false, error: null };
       refreshDeliveryWatermark = Math.max(refreshDeliveryWatermark, refreshId);
-      lastSnapshot = snapshot;
-      progressSnapshot = snapshot;
-      onSnapshot(snapshot);
+      deliver(snapshot);
       return { delivered: true, error: null };
     } catch (error) {
       const ownsError = (
@@ -262,6 +357,21 @@ export function createOnlineMatchController(
     }
   }
 
+  /**
+   * 낸 답이 화면에 오지 않았을 때 한 번 다시 읽는다 (N01 리뷰 server-broadcast-2·client-retry-4).
+   * 넘어가지 않은 답은 방송하지 않으므로, 서버가 그 답을 받았는데 응답을 못 받았거나(시간 초과·연결
+   * 끊김·5xx) 받은 응답을 guard가 버렸으면(그사이 재연결 무효화로 identity가 바뀌었다) 화면은 그 답을
+   * 모른 채 보기를 다시 연다 — 다른 보기를 누르면 서버는 첫 답을 지켜 화면이 누르지 않은 보기로 튄다.
+   * 답을 대신 내지 않고 서버 snapshot을 읽기만 한다. 날아가는 GET이 있으면 그 뒤의 후속 GET 하나로
+   * 합쳐지고, 그 GET은 이 응답(또는 실패)을 받은 뒤에 출발하므로 서버가 받은 답을 본다.
+   * 매치가 바뀌었으면(새 판의 started) 그 판의 읽기가 따로 있어 보내지 않는다.
+   */
+  function rereadAfterUnseenAnswer(activeCode: string, matchId: string): void {
+    if (code !== activeCode) return;
+    if (requiredMatchId !== null && requiredMatchId !== matchId) return;
+    void refresh(generation, false);
+  }
+
   function close(): void {
     generation += 1;
     newestRefresh += 1;
@@ -270,6 +380,8 @@ export function createOnlineMatchController(
     queuedRefresh = null;
     refreshInFlight = null;
     for (const resolve of dropped?.waiters ?? []) resolve(NOT_DELIVERED);
+    clearSafetyReread();
+    safetyPhase = null;
     unsubscribe?.();
     unsubscribe = null;
     code = null;
@@ -348,35 +460,30 @@ export function createOnlineMatchController(
           throw new Error('서버 답안 응답의 매치가 요청한 매치와 다릅니다.');
         }
         if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
-          const mutationProgress = compareSnapshotProgress(result.match, progressSnapshot);
-          if (mutationProgress === 0 || mutationProgress === 1) progressSnapshot = result.match;
-          const outcome = await refresh(
-            expectedGeneration,
-            false,
-            matchId,
-            expectedIdentityVersion,
-          );
-          if (
-            !outcome.delivered
-            && expectedGeneration === generation
-            && activeCode === code
-            && ownsActiveIdentity()
-            && isSnapshotAhead(result.match, lastSnapshot)
-          ) {
-            lastSnapshot = result.match;
-            progressSnapshot = result.match;
-            onSnapshot(result.match);
-          }
-          if (
-            outcome.error !== null
-            && expectedGeneration === generation
-            && activeCode === code
-            && ownsActiveIdentity()
-          ) onError(outcome.error, { source: 'refresh' });
+          // 제출 응답의 snapshot이 곧 서버가 이 답을 받은 뒤의 상태다. 따로 GET을 보내지 않는다 (N01).
+          // 이미 더 앞선 화면(먼저 온 공개·다음 문항)이나 같은 진행의 화면이 있으면 되돌리지 않는다
+          // (isSnapshotAhead). 이 응답 전에 출발한 GET은 같은 진행의 더 낡은 snapshot으로 덮지
+          // 못한다(watermark).
+          if (!isSnapshotAhead(result.match, progressSnapshot)) return;
+          if (requiredMatchId === null) requiredMatchId = result.match.matchId;
+          awaitingUnknownIdentity = false;
+          refreshDeliveryWatermark = Math.max(refreshDeliveryWatermark, newestRefresh);
+          deliver(result.match);
+          return;
         }
+        // 응답이 오는 사이 lifecycle이나 identity가 바뀌어(재연결 무효화·다시 연 controller) 이 응답을
+        // 그대로 그릴 수 없다. 그사이 출발한 GET은 이 답이 들어가기 전을 읽었을 수 있다. 응답을 직접
+        // 그리지 않는 것은 새 identity의 watermark를 이 응답으로 올리면 바뀐 판의 첫 snapshot을 막을 수
+        // 있기 때문이다 — 대신 한 번 다시 읽는다
+        rereadAfterUnseenAnswer(activeCode, matchId);
       } catch (error) {
         if (expectedGeneration === generation && activeCode === code && ownsActiveIdentity()) {
           onError(onlineErrorText(error, SUBMIT_FAILED_MESSAGE), { source: 'submit', token, matchId, position });
+        }
+        // 서버가 4xx로 거절했으면(요청 한도·이미 넘어간 문제·참가자 아님) 답은 저장되지 않았다. 그 밖의
+        // 실패(시간 초과·연결 끊김·5xx·읽을 수 없는 응답)는 서버가 답을 받았는지 모른다 — 한 번 다시 읽는다
+        if (!(error instanceof ApiFailure && error.status >= 400 && error.status < 500)) {
+          rereadAfterUnseenAnswer(activeCode, matchId);
         }
       }
     },

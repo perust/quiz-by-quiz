@@ -65,7 +65,7 @@ test('소리·움직임 줄이기: 이름은 고정이고 켜짐/꺼짐은 aria-
   assert.match(dialogMarkup, /id="settings-motion-note">[^<]*기기의 움직임 줄이기 설정도 그대로 따라요/);
 });
 
-test('문항 시간: 세 칸 가운데 하나만 눌려 있고, 온라인은 20초로 고정이라고 말한다 (FR-3.7)', async () => {
+test('문항 시간: 세 칸 가운데 하나만 눌려 있고, 온라인은 방장이 방마다 20초·40초를 고른다고 말한다 (FR-3.7)', async () => {
   const group = dialogMarkup.match(/<div class="settings-choices" role="group" aria-labelledby="settings-time-title" aria-describedby="settings-time-note">([\s\S]*?)<\/div>/);
   assert.ok(group);
   const buttons = [...group[1].matchAll(/<button type="button" class="settings-choice" data-time-limit="([^"]+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)]
@@ -76,7 +76,8 @@ test('문항 시간: 세 칸 가운데 하나만 눌려 있고, 온라인은 20�
     { value: 'none', pressed: 'false', label: '제한 없음' },
   ]);
   assert.match(dialogMarkup, /<h3 class="settings__heading" id="settings-time-title">문항 시간<\/h3>/);
-  assert.match(dialogMarkup, /id="settings-time-note">[^<]*온라인 매치는 20초로 고정돼요\.<\/p>/);
+  assert.match(dialogMarkup, /id="settings-time-note">[^<]*온라인 매치는 방장이 방마다 20초나 40초로 정해요\.<\/p>/);
+  assert.doesNotMatch(dialogMarkup, /20초로 고정/);
   assert.match(dialogMarkup, /새로 시작하는 판부터 적용돼요/);
 });
 
@@ -349,7 +350,8 @@ test('워커는 대화상자가 열려 있으면 키를 받지 않는다 — 설
   assert.match(dialogMarkup, /^<div class="dialog-backdrop"/);
   // 화면을 옮기면 접는다 — 새 화면 위에 남아 포커스를 가두지 않는다
   const app = await source('src/app.ts');
-  assert.match(app, /function goTo\(name: ScreenName\): void \{[\s\S]*?settingsDialog\.dismiss\(\);\s*showScreen\(name\);/);
+  // 홈의 「게임 방법」(U01)도 같은 자리에서 접는다
+  assert.match(app, /function goTo\(name: ScreenName\): void \{[\s\S]*?settingsDialog\.dismiss\(\);\s*rulesDialog\.dismiss\(\);\s*showScreen\(name\);/);
   assert.match(app, /onClose: \(\) => quizScreen\.resumeAfterDialog\(\)/);
 });
 

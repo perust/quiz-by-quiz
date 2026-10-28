@@ -120,7 +120,9 @@ def test_long_absent_players_leave_the_denominator_and_time_out() -> None:
         for statement in connection.statements
         if statement.startswith("INSERT INTO quiz_online.match_answers")
     )
-    assert "SELECT %s, %s, player.player_id, NULL, false, true, 20000" in fill
+    # 시간 초과는 그 판의 문항 시간(20초·40초)을 다 쓴 것으로 남는다
+    assert "SELECT %s, %s, player.player_id, NULL, false, true, match.question_time_ms" in fill
+    assert "JOIN quiz_online.matches match ON match.id = player.match_id" in fill
     assert connection.statements.index(fill) < next(
         index
         for index, statement in enumerate(connection.statements)

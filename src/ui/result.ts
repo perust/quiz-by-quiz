@@ -3,12 +3,39 @@
 // 이 파일은 값을 그리고 닉네임 입력을 검사하는 일, 그리고 **화면을 떠날 때 아직 남기지 않은
 // 기록을 남기는 일**(FR-6.1)을 한다.
 
-import { DEFAULT_NICKNAME, NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
+import { CATEGORIES, DEFAULT_NICKNAME, NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker } from './screen-walker.js';
 import { formatDuration, formatPercent } from './format.js';
 import { announce } from './screens.js';
-import type { RoundSummary } from '../types.js';
+import {
+  createQuestionReportLink,
+  localQuestionReportUrl,
+  questionReportLabel,
+  questionReportSubject,
+} from './report-link.js';
+import type { CategoryId, ReviewItem, RoundSummary } from '../types.js';
+
+/** 전체 도전 오답 풀이의 한 묶음 (N04) */
+export interface ReviewGroup {
+  id: CategoryId;
+  name: string;
+  items: ReviewItem[];
+}
+
+/**
+ * 틀린 문제를 분야별로 묶는다 (N04). 묶음 순서는 분야 정의 순서(결과의 «카테고리별 정답»과 같다)이고
+ * 틀린 문제가 없는 분야는 뺀다. 한 묶음 안은 푼 순서 그대로다.
+ */
+export function groupReviewByCategory(review: ReviewItem[]): ReviewGroup[] {
+  return CATEGORIES
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      items: review.filter((item) => item.category === category.id),
+    }))
+    .filter((group) => group.items.length > 0);
+}
 
 /** 랭킹에 등록한 결과. app.ts의 어댑터 호출이 이 모양으로 답한다 */
 export interface RegisterOutcome {
@@ -264,6 +291,72 @@ export function createResultScreen(
     return row;
   }
 
+  /** 틀린 문제 하나: 질문 · 내 답 · 정답 · 해설 · «이 문제 이상해요» */
+  function createReviewItem(item: ReviewItem): HTMLLIElement {
+    const entry = document.createElement('li');
+    entry.className = 'review__item';
+
+    const question = document.createElement('p');
+    question.className = 'review__question';
+    question.textContent = item.question;
+
+    const explanation = document.createElement('p');
+    explanation.className = 'review__explanation';
+    explanation.textContent = item.explanation;
+
+    entry.append(
+      question,
+      // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
+      createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
+      createReviewRow('정답', item.correctChoice, 'answer'),
+      explanation,
+      // 공개 은행의 문제라 질문·보기·저장된 정답까지 싣는다 (FR-5.8). 내 답·점수·닉네임은 싣지 않는다
+      createQuestionReportLink(
+        localQuestionReportUrl({
+          id: item.id,
+          category: item.category,
+          question: item.question,
+          choices: item.choices,
+          answer: item.correctChoice,
+        }),
+        questionReportLabel(questionReportSubject(item.question)),
+      ),
+    );
+    return entry;
+  }
+
+  /**
+   * 분야 하나의 오답 묶음 (N04). 펼침은 네이티브 `<details>`/`<summary>` 다 — `summary` 는 워커의
+   * «밟을 수 있는 것»에 들어 있어 걸어가 Enter·선택으로 누르면 진짜 `click()` 이 여닫고, Tab·Enter·Space
+   * 와 «펼침/접힘» 낭독도 브라우저가 맡는다. 펼침 표식은 디자인 층이 아이콘으로 그린다(글리프 없음).
+   */
+  function createReviewGroup(group: ReviewGroup, open: boolean): HTMLLIElement {
+    const entry = document.createElement('li');
+    entry.className = 'review-group';
+
+    const details = document.createElement('details');
+    details.className = 'review-group__details';
+    details.open = open;
+
+    const head = document.createElement('summary');
+    head.className = 'review-group__summary';
+    const name = document.createElement('span');
+    name.className = 'review-group__name';
+    name.textContent = group.name;
+    const count = document.createElement('span');
+    count.className = 'review-group__count';
+    count.textContent = `틀린 문제 ${group.items.length}개`;
+    head.append(name, count);
+
+    const list = document.createElement('ol');
+    list.className = 'review review-group__list';
+    for (const item of group.items) list.append(createReviewItem(item));
+
+    details.append(head, list);
+    entry.append(details);
+    return entry;
+  }
+
   /** 틀린 문제를 정답·해설과 함께 (FR-5.4) */
   function renderReview(summary: RoundSummary): void {
     el.reviewBlock.hidden = summary.review.length === 0;
@@ -275,28 +368,17 @@ export function createResultScreen(
 
     el.review.replaceChildren();
 
-    for (const item of summary.review) {
-      const entry = document.createElement('li');
-      entry.className = 'review__item';
-
-      const question = document.createElement('p');
-      question.className = 'review__question';
-      question.textContent = item.question;
-
-      const explanation = document.createElement('p');
-      explanation.className = 'review__explanation';
-      explanation.textContent = item.explanation;
-
-      entry.append(
-        question,
-        // 시간 초과는 고른 보기가 없다. ✓ ✗ 표식은 디자인 층이 줄의 종류를 보고 그린다
-        createReviewRow('내 답', item.timedOut ? '시간 초과' : item.chosenChoice, 'mine'),
-        createReviewRow('정답', item.correctChoice, 'answer'),
-        explanation
-      );
-
-      el.review.append(entry);
+    // 전체 도전(25문제)은 분야별로 묶어 접어 둔다 (N04). 한 목록으로 펼치면 최대 25개가 한 벽이 되어
+    // 결과 화면이 끝없이 길어졌다. 분야 이름·개수를 먼저 보고 고른 분야만 펼친다 — 묶음이 하나뿐이면
+    // 펼쳐 둔다. 분야 판(10문제)은 지금처럼 한 목록이다
+    const grouped = summary.mode === 'all';
+    el.review.classList.toggle('review--grouped', grouped);
+    if (!grouped) {
+      for (const item of summary.review) el.review.append(createReviewItem(item));
+      return;
     }
+    const groups = groupReviewByCategory(summary.review);
+    for (const group of groups) el.review.append(createReviewGroup(group, groups.length === 1));
   }
 
   // ── 랭킹 등록 (FR-6.1) ─────────────────────────────────────────

@@ -1,0 +1,45 @@
+{
+  "app": "quiz-by-quiz",
+  "kind": "records",
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-27T01:02:03.000Z",
+  "nickname": "김민준",
+  "scope": "이 브라우저에 남은 기록이에요. 랭킹 탭마다 상위 10개까지만 남아 있어 그보다 아래로 밀린 판은 없어요.",
+  "records": [
+    {
+      "id": "r-1",
+      "nickname": "김민준",
+      "mode": "category",
+      "category": "history",
+      "score": 80,
+      "correctCount": 8,
+      "totalCount": 10,
+      "durationMs": 96400,
+      "playedAt": "2026-10-25T09:30:00.000Z",
+      "questionResults": [
+        {
+          "id": "history-001",
+          "correct": true,
+          "timedOut": false
+        },
+        {
+          "id": "history-002",
+          "correct": false,
+          "timedOut": true
+        }
+      ]
+    },
+    {
+      "id": "r-2",
+      "nickname": "김민준",
+      "mode": "all",
+      "category": null,
+      "score": 210,
+      "correctCount": 21,
+      "totalCount": 25,
+      "durationMs": 301000,
+      "playedAt": "2026-10-26T09:40:00.000Z",
+      "timeLimitMs": 40000
+    }
+  ]
+}

@@ -169,7 +169,7 @@ test('an empty local room round restores an actionable home screen before return
   );
 
   assert.doesNotMatch(emptyRound, /gameMode|restoreMyGameMode/);
-  assert.match(emptyRound, /homeScreen\.setNote\('이 카테고리에는 출제할 문제가 없습니다\.'\);/);
+  assert.match(emptyRound, /homeScreen\.setNote\('이 카테고리에는 출제할 문제가 없어요\.'\);/);
   assert.match(emptyRound, /goTo\('home'\);/);
   assert.ok(emptyRound.indexOf("goTo('home');") < emptyRound.indexOf('return;'));
 });

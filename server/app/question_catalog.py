@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
+import re
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +14,24 @@ CATEGORY_IDS = ("history", "science", "geography", "general", "art")
 QUESTIONS_PER_CATEGORY_ROUND = 10
 QUESTIONS_PER_CATEGORY_IN_ALL = 5
 CHOICE_COUNT = 4
+# 한 방이 기억하는 최근 출제 문항 수 (N08). 로컬 FR-1.4의 `RECENT_QUESTION_MEMORY`처럼 한 판이
+# 아니라 여러 판을 기억한다 — 분야 판 12번, 전체 판 4~5번 분량이다. 기억이 은행을 다 덮어도
+# 깨지지 않는다: 안 본 문제가 모자라면 오래전에 본 것부터 채운다.
+RECENT_QUESTION_MEMORY = 120
+# 공개 Pages `data/`의 문항 번호 모양이다 (`tools/check_bank.py`가 `<분야>-NNN`으로
+# 잠근다). 그 문제는 정답·해설까지 Pages와 공개 Git에 있으므로, 온라인 은행에 이 모양의
+# 번호가 하나라도 있으면 싣지 않는다 — 호스트가 `data/`의 사본을 mount 자리에 두면
+# `config.py`의 경로 비교로는 알 수 없다. 분야는 파일과 상관없이 다섯 모두를 보고,
+# 자릿수는 묶지 않아 공개 은행이 세 자리를 넘겨도 그대로 잡는다.
+_PUBLIC_QUESTION_ID = re.compile(rf"(?:{'|'.join(map(re.escape, CATEGORY_IDS))})-[0-9]+")
+# 온라인 문항 번호 (`deploy/oracle/ONLINE_QUESTION_BANK.md`). «이 문제 이상해요»가 이
+# 번호를 공개 GitHub 이슈로 보내므로 번호만 담는다. 이 모양이 아니어도 싣되(번호에 내용이
+# 담겼는지는 서버가 판정할 수 없다) 운영자가 docker logs에서 보도록 개수만 한 번 경고한다.
+_ONLINE_QUESTION_ID = {
+    category: re.compile(rf"online-{re.escape(category)}-[0-9]+") for category in CATEGORY_IDS
+}
+
+logger = logging.getLogger(__name__)
 
 
 class CatalogError(RuntimeError):
@@ -92,6 +113,9 @@ class QuestionCatalog:
     def from_directory(cls, directory: Path) -> QuestionCatalog:
         by_category: dict[str, tuple[_CatalogQuestion, ...]] = {}
         seen_ids: set[str] = set()
+        public_id_count = 0
+        public_id_files: list[str] = []
+        off_format_id_count = 0
 
         for category in CATEGORY_IDS:
             path = directory / f"{category}.json"
@@ -108,6 +132,7 @@ class QuestionCatalog:
                 raise CatalogError(f"{path.name} must contain a non-empty JSON array")
 
             questions: list[_CatalogQuestion] = []
+            file_public_ids = 0
             for index, item in enumerate(raw):
                 question = _parse_question(
                     item, expected_category=category, source=f"{path.name}[{index}]"
@@ -115,9 +140,31 @@ class QuestionCatalog:
                 if question.id in seen_ids:
                     raise CatalogError(f"duplicate question id: {question.id}")
                 seen_ids.add(question.id)
+                if _PUBLIC_QUESTION_ID.fullmatch(question.id):
+                    file_public_ids += 1
+                elif not _ONLINE_QUESTION_ID[category].fullmatch(question.id):
+                    off_format_id_count += 1
                 questions.append(question)
             by_category[category] = tuple(questions)
+            if file_public_ids:
+                public_id_count += file_public_ids
+                public_id_files.append(path.name)
 
+        # Both messages carry counts and file names only. They reach the container log (the
+        # refusal through the startup traceback), so no question text, choice, answer or
+        # explanation may appear — and the off-format warning omits the ids themselves.
+        if public_id_count:
+            raise CatalogError(
+                f"{public_id_count} question ids use the public Pages bank format "
+                f"<category>-NNN ({', '.join(public_id_files)}); the online bank must be "
+                "authored independently of the public data/ directory"
+            )
+        if off_format_id_count:
+            logger.warning(
+                "online question bank: %d question ids are not in the online-<category>-<digits> "
+                "format; the in-game report link sends ids to a public GitHub issue",
+                off_format_id_count,
+            )
         return cls(by_category=by_category)
 
     def select_round(
@@ -125,8 +172,17 @@ class QuestionCatalog:
         *,
         category_id: str | None,
         random_source: random.Random | None = None,
+        recent_use: Mapping[str, float] | None = None,
     ) -> tuple[SelectedQuestion, ...]:
+        """한 판의 문제를 고른다.
+
+        ``recent_use``는 이 방에서 최근에 낸 문항 ID → 마지막으로 낸 시각(클수록 최근)이다 (N08).
+        안 본 문제를 먼저 내고, 모자랄 때만 본 문제를 **오래전에 본 것부터** 채운다 — 로컬
+        FR-1.4(`core/sampler.ts`)와 같은 규칙이다. 본 문제를 무작위로 섞어 채우면 은행이 바닥났을 때
+        방금 푼 문제가 곧바로 다음 판에 돌아온다.
+        """
         rng = random_source or secrets.SystemRandom()
+        recent = recent_use or {}
         if category_id is not None:
             if category_id not in self.by_category:
                 raise CatalogError(f"unsupported category: {category_id}")
@@ -134,13 +190,14 @@ class QuestionCatalog:
                 self.by_category[category_id],
                 QUESTIONS_PER_CATEGORY_ROUND,
                 rng,
+                recent,
             )
         else:
             selected = [
                 question
                 for category in CATEGORY_IDS
                 for question in _sample(
-                    self.by_category[category], QUESTIONS_PER_CATEGORY_IN_ALL, rng
+                    self.by_category[category], QUESTIONS_PER_CATEGORY_IN_ALL, rng, recent
                 )
             ]
             rng.shuffle(selected)
@@ -161,11 +218,23 @@ def _sample(
     questions: tuple[_CatalogQuestion, ...],
     count: int,
     random_source: random.Random,
+    recent_use: Mapping[str, float],
 ) -> list[_CatalogQuestion]:
     # A malformed or temporarily shortened checked-in bank stays usable without
     # duplicating a question in the same match. Production validation guarantees
     # sufficient entries; this also makes fixture catalogs practical.
-    return random_source.sample(list(questions), k=min(count, len(questions)))
+    unseen = [question for question in questions if question.id not in recent_use]
+    if len(unseen) >= count:
+        return random_source.sample(unseen, k=count)
+    seen = [question for question in questions if question.id in recent_use]
+    # 같은 판에서 함께 나온 문제는 시각이 같다. 그 사이의 순서는 정하지 않도록 먼저 섞고,
+    # 안정 정렬로 오래전에 본 것부터 세운다.
+    random_source.shuffle(seen)
+    seen.sort(key=lambda question: recent_use[question.id])
+    picked = unseen + seen[: count - len(unseen)]
+    # 채운 본 문제가 늘 판 끝에 몰리지 않게 섞는다.
+    random_source.shuffle(picked)
+    return picked
 
 
 def _parse_question(item: object, *, expected_category: str, source: str) -> _CatalogQuestion:

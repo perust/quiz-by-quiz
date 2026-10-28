@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -12,7 +13,12 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from .domain import DEFAULT_CHARACTER_ID, ValidatedPlayer, ValidatedRoom
-from .question_catalog import CatalogError, QuestionCatalog, SelectedQuestion
+from .question_catalog import (
+    RECENT_QUESTION_MEMORY,
+    CatalogError,
+    QuestionCatalog,
+    SelectedQuestion,
+)
 from .repository import (
     AbsentHostSweep,
     AccessInfo,
@@ -24,10 +30,12 @@ from .repository import (
     MatchPositionMismatch,
     MatchQuestionView,
     MatchRead,
+    MatchReviewView,
     MatchScoreView,
     MatchSetup,
     MatchSubmission,
     MatchView,
+    MemberConnected,
     NotHost,
     NotMember,
     PlayerView,
@@ -38,12 +46,16 @@ from .repository import (
     TokenConflict,
 )
 
+_logger = logging.getLogger(__name__)
+
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 _ROOM_LIFETIME = "24 hours"
 _MEMBER_STALE_AFTER = "30 minutes"
 _PLAYER_LIFETIME = "2 hours"
 _MATCH_LIFETIME = "2 hours"
-_QUESTION_TIMEOUT = "20 seconds"
+# 문항 마감은 고정값이 아니다. 방장이 방마다 고른 문항 시간(20초·40초, migration 011)을 판을
+# 열 때 matches.question_time_ms에 옮겨 적고, 모든 문항 마감·시간 초과 기록이 그 판의 값을 쓴다.
+
 # 정답·해설을 실제로 읽을 시간. 공개 카드는 «다음 문제까지 N초»를 보여 준다.
 _REVEAL_DURATION = "8 seconds"
 
@@ -102,6 +114,7 @@ SELECT
     r.category_id,
     r.capacity,
     r.game_mode,
+    r.question_time_ms,
     r.is_public,
     (r.password_hash IS NOT NULL) AS has_password,
     (r.host_player_id = %(actor_id)s) AS is_mine,
@@ -238,6 +251,19 @@ WHERE player.expires_at <= now()
       WHERE match_player.player_id = player.id
         AND match.expires_at > now()
   )
+"""
+
+# 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
+# 그 사이의 «한 판 더»가 이 기억을 쓴다. 프로세스 메모리가 아니라 DB에서 읽어 worker 수·재시작과
+# 무관하고, 방이 지워지면 판과 함께 사라진다. `matches_room_started_at_idx`를 탄다.
+_RECENT_ROOM_QUESTIONS_SQL = """
+SELECT question.question_id, max(match.started_at) AS last_used
+FROM quiz_online.matches match
+JOIN quiz_online.match_questions question ON question.match_id = match.id
+WHERE match.room_id = %s
+GROUP BY question.question_id
+ORDER BY last_used DESC, question.question_id ASC
+LIMIT %s
 """
 
 
@@ -378,10 +404,11 @@ class PostgresRoomsRepository:
                             """
                             INSERT INTO quiz_online.rooms (
                                 code, name, category_id, capacity, game_mode,
+                                question_time_ms,
                                 is_public, password_hash, host_player_id, expires_at
                             )
                             VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                 now() + %s::interval
                             )
                             RETURNING id
@@ -392,6 +419,7 @@ class PostgresRoomsRepository:
                                 spec.category_id,
                                 spec.capacity,
                                 spec.game_mode,
+                                spec.question_time_ms,
                                 spec.is_public,
                                 password_hash,
                                 actor_id,
@@ -609,6 +637,78 @@ class PostgresRoomsRepository:
                     require_member=False,
                 )
 
+    async def remove_member(
+        self,
+        actor_id: UUID,
+        code: str,
+        player_id: UUID,
+        *,
+        absent_player_ids: frozenset[UUID],
+        allow_connected: bool = False,
+    ) -> RoomView:
+        """방장이 다른 참가자를 방에서 뺀다 (U24).
+
+        방장만, 남만(방장 자신은 나가기로 떠난다), 방에 있는 사람만 뺀다. 도는 판에 자리가 있는
+        사람은 판이 끝난 뒤에 뺀다(판에서 빠진 멤버는 판이 도는 동안에도 뺄 수 있다).
+        `allow_connected` 가 없으면 탭을 닫고 떠난 자리를 비우는 일이라 유예를 넘겨 끊긴 사람만
+        뺀다. 접속 중인 사람은 방장이 그렇게 보고 확인했을 때만 뺀다 — 잠시 다시 들어오지 못하게
+        막는 것은 API의 메모리 기록이 맡고 DB는 모른다. 방을 잠그고 그 안에서 모두 다시 확인한다.
+        """
+        async with self._pool.connection() as connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """
+                    SELECT id, host_player_id
+                    FROM quiz_online.rooms
+                    WHERE code = %s AND expires_at > now()
+                    FOR UPDATE
+                    """,
+                    (code,),
+                )
+                room = await cursor.fetchone()
+                if room is None:
+                    raise RoomNotFound
+                if room["host_player_id"] != actor_id:
+                    raise NotHost
+                # 요청한 방장은 지금 여기 있다. 소켓 없이 REST만 쓰는 방장이 끊긴 사람으로
+                # 세어져 있어도 자신을 내보내지 않는다.
+                if player_id == actor_id:
+                    raise MemberConnected
+                member = await connection.execute(
+                    """
+                    SELECT 1
+                    FROM quiz_online.room_members
+                    WHERE room_id = %s AND player_id = %s
+                    """,
+                    (room["id"], player_id),
+                )
+                if await member.fetchone() is None:
+                    raise NotMember
+                if not allow_connected and player_id not in absent_player_ids:
+                    raise MemberConnected
+                playing = await connection.execute(
+                    _PLAYS_ACTIVE_MATCH_SQL,
+                    (room["id"], player_id),
+                )
+                if await playing.fetchone() is not None:
+                    raise MatchInProgress
+                await connection.execute(
+                    """
+                    DELETE FROM quiz_online.room_members
+                    WHERE room_id = %s AND player_id = %s
+                    """,
+                    (room["id"], player_id),
+                )
+                view = await self._fetch_room(
+                    connection,
+                    actor_id,
+                    code,
+                    require_member=True,
+                )
+                if view is None:
+                    raise RepositoryFailure("room could not be read after removing a member")
+                return view
+
     async def transfer_absent_hosts(
         self,
         absent_by_room: Mapping[str, frozenset[UUID]],
@@ -714,7 +814,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, capacity, category_id
+                    SELECT id, host_player_id, capacity, category_id, question_time_ms
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -726,6 +826,8 @@ class PostgresRoomsRepository:
                     raise RoomNotFound
                 if room["host_player_id"] != actor_id:
                     raise NotHost
+                # 판이 도는 동안에는 어떤 설정도 바꾸지 않는다 — 문항 시간은 그 판의 마감이
+                # 이미 쓰고 있다
                 active_match = await connection.execute(
                     """
                     SELECT 1
@@ -747,14 +849,15 @@ class PostgresRoomsRepository:
                     raise RoomFull
 
                 category = patch.get("category_id", room["category_id"])
+                question_time = patch.get("question_time_ms", room["question_time_ms"])
                 await connection.execute(
                     """
                     UPDATE quiz_online.rooms
-                    SET category_id = %s, capacity = %s,
+                    SET category_id = %s, capacity = %s, question_time_ms = %s,
                         updated_at = now(), expires_at = now() + %s::interval
                     WHERE id = %s
                     """,
-                    (category, capacity, _ROOM_LIFETIME, room["id"]),
+                    (category, capacity, question_time, _ROOM_LIFETIME, room["id"]),
                 )
                 updated = await self._fetch_room(
                     connection,
@@ -854,7 +957,7 @@ class PostgresRoomsRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    SELECT id, host_player_id, category_id, game_mode
+                    SELECT id, host_player_id, category_id, game_mode, question_time_ms
                     FROM quiz_online.rooms
                     WHERE code = %s AND expires_at > now()
                     FOR UPDATE
@@ -902,22 +1005,35 @@ class PostgresRoomsRepository:
                 ):
                     raise MatchNotReady
 
+                recent_cursor = await connection.execute(
+                    _RECENT_ROOM_QUESTIONS_SQL,
+                    (room["id"], RECENT_QUESTION_MEMORY),
+                )
+                recent_use = {
+                    str(row["question_id"]): row["last_used"].timestamp()
+                    for row in await recent_cursor.fetchall()
+                }
                 try:
+                    # 같은 방의 «한 판 더»가 방금 푼 문제를 되풀이하지 않는다 (N08)
                     selected = self._catalog_or_error().select_round(
                         category_id=room["category_id"],
+                        recent_use=recent_use,
                     )
                 except CatalogError as error:
                     raise RepositoryFailure("static question catalog is unavailable") from error
 
+                # 방장이 고른 문항 시간을 판에 옮겨 적는다. 이 판의 모든 문항 마감이 이 값이다.
+                question_time_ms = int(room["question_time_ms"])
                 created = await connection.execute(
                     """
                     INSERT INTO quiz_online.matches (
                         room_id, category_id, game_mode, total_questions,
-                        deadline_at, expires_at
+                        question_time_ms, deadline_at, expires_at
                     )
                     VALUES (
                         %s, %s, %s, %s,
-                        now() + %s::interval,
+                        %s,
+                        now() + %s::integer * interval '1 millisecond',
                         now() + %s::interval
                     )
                     RETURNING id
@@ -927,7 +1043,8 @@ class PostgresRoomsRepository:
                         room["category_id"],
                         True,
                         len(selected),
-                        _QUESTION_TIMEOUT,
+                        question_time_ms,
+                        question_time_ms,
                         _MATCH_LIFETIME,
                     ),
                 )
@@ -986,6 +1103,7 @@ class PostgresRoomsRepository:
                     category_id=room["category_id"],
                     game_mode=True,
                     total_questions=len(selected),
+                    question_time_ms=question_time_ms,
                 )
 
     async def get_match(
@@ -1052,10 +1170,11 @@ class PostgresRoomsRepository:
                 if question is None:
                     raise RepositoryFailure("current match question is missing")
 
+                # 쓴 시간은 그 판의 문항 시간을 넘지 않는다 (시간 초과 기록과 같은 상한)
                 elapsed_cursor = await connection.execute(
                     """
                     SELECT LEAST(
-                        20000,
+                        question_time_ms,
                         GREATEST(
                             0,
                             floor(extract(epoch FROM now() - question_started_at) * 1000)::integer
@@ -1284,13 +1403,13 @@ class PostgresRoomsRepository:
                     SET state = 'running',
                         current_position = current_position + 1,
                         question_started_at = now(),
-                        deadline_at = now() + %s::interval
+                        deadline_at = now() + question_time_ms * interval '1 millisecond'
                     WHERE id = %s
                       AND state = 'revealing'
                       AND deadline_at <= now()
                     RETURNING id
                     """,
-                    (_QUESTION_TIMEOUT, match_id),
+                    (match_id,),
                 )
             return await completed.fetchone() is not None
 
@@ -1330,14 +1449,16 @@ class PostgresRoomsRepository:
             return False
 
         # 마감이 지났거나 끊긴 사람을 빼고 앞당겼으면, 답이 없는 참가자는 시간 초과로 채운다.
+        # 시간 초과는 그 판의 문항 시간(20초·40초)을 다 쓴 것으로 남는다.
         if expired or absent_player_ids:
             await connection.execute(
                 """
                 INSERT INTO quiz_online.match_answers (
                     match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
                 )
-                SELECT %s, %s, player.player_id, NULL, false, true, 20000
+                SELECT %s, %s, player.player_id, NULL, false, true, match.question_time_ms
                 FROM quiz_online.match_players player
+                JOIN quiz_online.matches match ON match.id = player.match_id
                 LEFT JOIN quiz_online.match_answers answer
                   ON answer.match_id = player.match_id
                  AND answer.position = %s
@@ -1368,7 +1489,8 @@ class PostgresRoomsRepository:
         cursor = await connection.execute(
             """
             SELECT match.id, match.state, match.category_id, match.game_mode,
-                   match.current_position, match.total_questions, match.deadline_at
+                   match.current_position, match.total_questions, match.deadline_at,
+                   match.question_time_ms
             FROM quiz_online.matches match
             JOIN quiz_online.match_players player ON player.match_id = match.id
             WHERE match.id = %s AND player.player_id = %s AND match.expires_at > now()
@@ -1378,9 +1500,21 @@ class PostgresRoomsRepository:
         match = await cursor.fetchone()
         if match is None:
             return None
-        scores = await self._score_views(connection, match_id)
+        # 참가자별 «방금 문항을 맞혔나»는 공개 중에만 읽는다 (U30).
+        # 아직 답을 고르는 running에는 없다.
+        scores = await self._score_views(
+            connection,
+            match_id,
+            reveal_position=(
+                int(match["current_position"]) if match["state"] == "revealing" else None
+            ),
+        )
         question_view: MatchQuestionView | None = None
         own_answer: MatchAnswerView | None = None
+        # «문제 다시 보기»는 판이 끝난 뒤에만 만든다 (U38)
+        review: tuple[MatchReviewView, ...] = ()
+        if match["state"] == "finished":
+            review = await self._review_views(connection, actor_id, match_id)
         if match["state"] in {"running", "revealing"}:
             question_cursor = await connection.execute(
                 """
@@ -1425,13 +1559,18 @@ class PostgresRoomsRepository:
             question=question_view,
             own_answer=own_answer,
             scores=scores,
+            review=review,
+            question_time_ms=int(match["question_time_ms"]),
         )
 
     async def _score_views(
         self,
         connection: AsyncConnection[dict[str, Any]],
         match_id: UUID,
+        *,
+        reveal_position: int | None = None,
     ) -> tuple[MatchScoreView, ...]:
+        # reveal_position이 None이면 last_answer_correct 비교가 NULL이라 아무 행도 세지 않는다.
         cursor = await connection.execute(
             """
             SELECT
@@ -1440,7 +1579,10 @@ class PostgresRoomsRepository:
                 player.character_id,
                 COALESCE(sum(CASE WHEN answer.correct THEN 10 ELSE 0 END), 0)::integer AS score,
                 count(answer.player_id) FILTER (WHERE answer.correct)::integer AS correct_count,
-                count(answer.player_id)::integer AS answered_count
+                count(answer.player_id)::integer AS answered_count,
+                bool_or(answer.correct) FILTER (
+                    WHERE answer.position = %s::smallint
+                ) AS last_answer_correct
             FROM quiz_online.match_players player
             LEFT JOIN quiz_online.match_answers answer
               ON answer.match_id = player.match_id AND answer.player_id = player.player_id
@@ -1448,7 +1590,7 @@ class PostgresRoomsRepository:
             GROUP BY player.player_id, player.nickname, player.character_id
             ORDER BY score DESC, correct_count DESC, answered_count DESC, player.nickname ASC
             """,
-            (match_id,),
+            (reveal_position, match_id),
         )
         return tuple(
             MatchScoreView(
@@ -1458,9 +1600,72 @@ class PostgresRoomsRepository:
                 score=int(row["score"]),
                 correct_count=int(row["correct_count"]),
                 answered_count=int(row["answered_count"]),
+                # 공개 중에는 모든 참가자의 답(빈 답은 시간 초과)이 있다.
+                # 그래도 없으면 맞힌 것이 아니다.
+                last_answer_correct=(
+                    None if reveal_position is None else bool(row["last_answer_correct"])
+                ),
             )
             for row in await cursor.fetchall()
         )
+
+    async def _review_views(
+        self,
+        connection: AsyncConnection[dict[str, Any]],
+        actor_id: UUID,
+        match_id: UUID,
+    ) -> tuple[MatchReviewView, ...]:
+        """끝난 판의 문항과 묻는 사람의 답을 순서대로 (U38 «문제 다시 보기»).
+
+        문제 글·해설은 정적 catalog에서 다시 읽는다. 배포 사이에 catalog가 바뀌어 맞춰 볼 수 없으면
+        다시 보기만 빼고 최종 순위는 그대로 보낸다 — 지난 판의 풀이 때문에 순위까지 잃지 않는다.
+        """
+        cursor = await connection.execute(
+            """
+            SELECT
+                question.position,
+                question.question_id,
+                question.category_id,
+                question.choices,
+                question.answer_index,
+                answer.choice_index,
+                answer.correct,
+                answer.timed_out
+            FROM quiz_online.match_questions question
+            LEFT JOIN quiz_online.match_answers answer
+              ON answer.match_id = question.match_id
+             AND answer.position = question.position
+             AND answer.player_id = %s
+            WHERE question.match_id = %s
+            ORDER BY question.position ASC
+            """,
+            (actor_id, match_id),
+        )
+        views: list[MatchReviewView] = []
+        try:
+            for row in await cursor.fetchall():
+                catalog_question, answer_index, choices = self._verified_question(row)
+                answered = row["correct"] is not None
+                choice_index = row["choice_index"]
+                views.append(
+                    MatchReviewView(
+                        position=int(row["position"]),
+                        question_id=str(row["question_id"]),
+                        category_id=str(row["category_id"]),
+                        question=catalog_question.question,
+                        choices=choices,
+                        answer_index=answer_index,
+                        explanation=catalog_question.explanation,
+                        choice_index=int(choice_index) if choice_index is not None else None,
+                        # 답이 없는 문항(끝나기 전에 빠진 사람)은 시간 초과와 같다
+                        correct=bool(row["correct"]) if answered else False,
+                        timed_out=bool(row["timed_out"]) if answered else True,
+                    )
+                )
+        except RepositoryFailure:
+            _logger.warning("finished match review skipped: catalog mismatch", exc_info=True)
+            return ()
+        return tuple(views)
 
     def _question_view(
         self,
@@ -1487,11 +1692,7 @@ class PostgresRoomsRepository:
         *,
         position: int,
     ) -> MatchAnswerView:
-        catalog_question = self._catalog_question(question)
-        answer_index = int(question["answer_index"])
-        choices = _choices(question["choices"])
-        if choices[answer_index] != catalog_question.choices[catalog_question.answer_index]:
-            raise RepositoryFailure("static catalog no longer matches persisted match question")
+        catalog_question, answer_index, _ = self._verified_question(question)
         choice_index = answer["choice_index"]
         if choice_index is not None:
             choice_index = int(choice_index)
@@ -1503,6 +1704,18 @@ class PostgresRoomsRepository:
             answer_index=answer_index,
             explanation=catalog_question.explanation,
         )
+
+    def _verified_question(
+        self,
+        question: Mapping[str, Any],
+    ) -> tuple[SelectedQuestion, int, tuple[str, ...]]:
+        """저장된 판 문항을 catalog와 맞춰 본다. 정답 보기가 달라졌으면 채점·공개하지 않는다."""
+        catalog_question = self._catalog_question(question)
+        answer_index = int(question["answer_index"])
+        choices = _choices(question["choices"])
+        if choices[answer_index] != catalog_question.choices[catalog_question.answer_index]:
+            raise RepositoryFailure("static catalog no longer matches persisted match question")
+        return catalog_question, answer_index, choices
 
     def _catalog_question(self, question: Mapping[str, Any]) -> SelectedQuestion:
         try:
@@ -1626,6 +1839,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
                 # join_room 이 MatchInProgress 를 내는 조건과 같은 판정이다
                 "status": "playing" if row["is_playing"] else "waiting",
                 "in_match": bool(row["in_match"]),
+                "question_time_ms": int(row["question_time_ms"]),
             }
             grouped[room_id] = item
         if row["player_id"] is not None:
@@ -1653,6 +1867,7 @@ def _build_room_views(rows: Sequence[Mapping[str, Any]]) -> list[RoomView]:
             created_at=item["created_at"],
             status=item["status"],
             in_match=item["in_match"],
+            question_time_ms=item["question_time_ms"],
         )
         for item in grouped.values()
     ]

@@ -88,6 +88,34 @@ export interface ScoreRecord {
   timeLimitMs?: number | null;
 }
 
+/**
+ * 이 브라우저의 기록을 내보낸 파일 (N02). 랭킹 화면의 「기록 내보내기」가 만들고 선생님 모드
+ * (`.claude/commands/quiz-teacher-*.md`의 제출물 로더)가 `records` 를 읽는다.
+ *
+ * **`student` 칸을 두지 않는다.** 로더는 `student` 가 없으면 파일 이름을 학생 이름으로 쓴다 —
+ * 닉네임으로 채우면 기본값(퀴즈왕)을 그대로 쓴 학생들이 한 사람으로 합쳐진다. 선생님이 받은 파일을
+ * `<이름>.json` 으로 저장한다. 닉네임은 누구 파일인지 알아보는 실마리로만 함께 싣는다.
+ */
+export interface RecordsExport {
+  app: 'quiz-by-quiz';
+  kind: 'records';
+  /** 이 파일 모양의 판. 모양이 바뀌면 올린다 (저장소의 `quiz.schemaVersion` 과 별개다) */
+  schemaVersion: number;
+  exportedAt: string;
+  /** 내보낸 때의 닉네임. 기록마다의 이름은 각 기록의 `nickname` 이다 */
+  nickname: string;
+  /** 무엇이 들어 있는지에 대한 정직한 한 줄 — 탭마다 상위 10개뿐이다 */
+  scope: string;
+  /** 문항별 정오(`questionResults`)까지 그대로. 오래된 판부터 */
+  records: ScoreRecord[];
+}
+
+/** 내려받을 파일 하나. 이름은 app.ts 가 정해 화면에 넘긴다 */
+export interface RecordsExportFile {
+  fileName: string;
+  data: RecordsExport;
+}
+
 /** 등급 메시지 (core/scoring.ts). 점수 절댓값이 아니라 정답률로 정한다 */
 export interface Grade {
   label: string;
@@ -123,7 +151,14 @@ export interface CategoryScore {
 
 export interface ReviewItem {
   id: string;
+  /** 문항의 분야. 전체 도전 결과가 오답을 분야별로 묶을 때 쓴다 (N04) */
+  category: CategoryId;
   question: string;
+  /**
+   * 화면에 나온 순서의 보기 넷. 풀이의 «이 문제 이상해요» 신고가 함께 싣는다 (FR-5.8).
+   * 섞인 뒤라 JSON 의 순서와 다르다 — 신고를 받는 쪽은 `id` 로 은행과 맞춰 본다
+   */
+  choices: string[];
   /** 시간 초과면 고른 보기가 없다 */
   chosenChoice: string | null;
   correctChoice: string;
@@ -137,11 +172,18 @@ export interface ReviewItem {
  */
 export type TimeLimitChoice = 20000 | 40000 | null;
 
+/**
+ * 온라인 방의 문항 시간 (밀리초). 방장이 방마다 20초(기본)나 40초를 고른다.
+ * **제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
+ * 고를 수 있는 값은 constants.ts 의 ONLINE_QUESTION_TIME_CHOICES 에 있다.
+ */
+export type OnlineQuestionTime = 20000 | 40000;
+
 /** 사용자 설정 (localStorage) */
 export interface Settings {
   soundEnabled: boolean;
   characterId: string | null;
-  /** 새로 여는 로컬 판의 문항 시간. 온라인 매치는 서버가 20초로 고정한다 */
+  /** 새로 여는 로컬 판의 문항 시간. 온라인 매치는 방장이 그 방에 고른 시간(20초·40초)을 쓴다 */
   timeLimitMs: TimeLimitChoice;
   /** 앱 안의 «움직임 줄이기» (U55). 기기의 prefers-reduced-motion 은 이것과 따로 늘 따른다 */
   reduceMotion: boolean;

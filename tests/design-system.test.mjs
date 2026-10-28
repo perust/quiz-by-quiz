@@ -8,8 +8,10 @@
 //   · 상태는 색만이 아니라 모양·표식·높이로도 구분
 //   · 아이콘은 하나의 24×24 픽셀 묶음에서만, 손가락 목표 44px, 안전 영역
 //
-// «세계 장식»(복셀 마을, 대기실 픽셀 가구·액자, 캐릭터 몸통과 몸짓)은 그림이라 이 규칙에서 뺀다.
+// «세계 장식»(대기실 픽셀 가구·액자, 캐릭터 몸통과 몸짓)은 그림이라 이 규칙에서 뺀다.
 // 그 목록은 아래 DECOR 하나뿐이다 — 장식 이름을 붙여 규칙을 피해 가지 못하게 좁게 둔다.
+// 쓰지 않는 장식은 예외째 지운다 — 복셀 마을(.voxel-*·.iso-cube*)이 홈에서 사라진 뒤에도 300줄 가까이
+// 남아 이 예외의 보호를 받았다 (U49). 아래 «DECOR» 테스트가 예외 규칙의 클래스가 실제로 쓰이는지 본다.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,8 +31,6 @@ const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
 const root = tokens(rules, DESKTOP);
 
 const DECOR = [
-  /^\.voxel-/,
-  /^\.iso-cube/,
   /\.lounge__(?:chair|sofa|table|seat|portrait|furniture)/,
   /\.walker__(?:body|face|dot|shadow)/,
   /^\.walker--(?:sad|seated|walking|idle|hop)\b/,
@@ -115,6 +115,32 @@ test('토큰: 움직임은 100–180ms 의 짧은 피드백이고, 글자 크기
   assert.ok(sizes.length >= 6);
   for (const [name, value] of sizes) {
     assert.ok(px(value) >= 12, `${name} ${value} 는 12px 이상이어야 한다`);
+  }
+});
+
+test('DECOR: 토큰 규칙을 면제받는 장식 규칙은 화면이 실제로 쓰는 클래스만 그린다 (U49)', async () => {
+  // 마크업(index.html)과 화면 코드(src/**/*.ts)에 그 클래스 이름이 있어야 한다. 화면이 지운 장식이
+  // 예외 뒤에 숨어 남지 않게 한다 — 복셀 마을이 그랬다
+  const { readdir } = await import('node:fs/promises');
+  const sources = (await readdir(new URL('../src/', import.meta.url), { recursive: true }))
+    .filter((name) => name.endsWith('.ts'));
+  const used = [html, ...await Promise.all(sources.map((name) => source(`src/${name.replaceAll('\\', '/')}`)))].join('\n');
+  const decorClasses = new Set();
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      if (!isDecor(rule)) continue;
+      for (const selector of rule.selectors) {
+        for (const match of selector.matchAll(/\.([\w-]+)/g)) decorClasses.add(match[1]);
+      }
+    }
+  }
+  assert.ok(decorClasses.size > 10, `장식 규칙을 충분히 모으지 못했다: ${[...decorClasses]}`);
+  const unused = [...decorClasses].filter((name) => !used.includes(name));
+  assert.deepEqual(unused, [], '쓰지 않는 장식 규칙은 DECOR 예외와 함께 지운다');
+  // 그리고 DECOR 의 패턴마다 그것이 면제하는 규칙이 하나는 있다 — 빈 예외를 남기지 않는다
+  for (const pattern of DECOR) {
+    const covered = Object.values(files).some((list) => list.some((rule) => rule.selectors.some((selector) => pattern.test(selector))));
+    assert.ok(covered, `${pattern} 가 면제할 규칙이 없다`);
   }
 });
 
@@ -266,7 +292,6 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
     '.result-grade',
     '.ranking-item__rank',
     '.online-final-ranking__place',
-    '.voxel-building--tower .voxel-building__clock',
   ]);
   const display = [];
   for (const list of Object.values(files)) {
@@ -479,6 +504,168 @@ test('결과: 320px 요약 칩은 네 글자 라벨과 값을 위한 가로 공�
   assert.equal(valueOf(rules, chip, 'grid-template-columns', NARROW), 'var(--icon-sm) minmax(0, 1fr)');
   assert.equal(valueOf(rules, chip, 'padding', NARROW), 'var(--space-2) var(--space-1)');
   assert.equal(valueOf(rules, node('dd', chip), 'font-size', NARROW), 'var(--text-sm)');
+});
+
+test('주 행동 색: 골드 채움은 새 판을 여는 행동에만, 그 밖의 주 행동은 보라 채움이다 (U48)', () => {
+  // 골드(--primary-action*)를 칠하는 자리는 홈 「전체 도전」 카드와 결과 화면들의 행동 줄 주 행동뿐이다
+  const goldSpots = [];
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      if (isRoot(rule) || isDecor(rule)) continue;
+      const gold = rule.declarations.some((d) => /^background(?:-color)?$/.test(d.property) && /var\(--primary-action(?:-hover)?\)/.test(d.value));
+      if (gold) goldSpots.push(...rule.selectors);
+    }
+  }
+  assert.ok(goldSpots.length >= 4, `골드 규칙을 찾지 못했다: ${goldSpots}`);
+  const allowed = (selector) => (/\.challenge-card(?![\w-])/.test(selector) && !/challenge-card--online/.test(selector))
+    || /^\[data-screen='(?:result|online-result)'\] \.result-actions \.button--primary(?::|$)/.test(selector);
+  assert.deepEqual(goldSpots.filter((selector) => !allowed(selector)), [], '새 판을 여는 행동 밖에 골드 채움이 있다');
+
+  const withState = (element, ...states) => ({ ...element, states: [...element.states, ...states] });
+  // 결과 화면들의 행동 줄 주 행동을 마크업에서 찾는다 (로컬 「다시 하기」, 온라인 결과의 다음 판 행동)
+  const resultPrimaries = ['result', 'online-result'].flatMap((screen) => {
+    const start = html.indexOf(`data-screen="${screen}"`);
+    const section = html.slice(start, html.indexOf('<section', start));
+    const from = section.indexOf('class="result-actions"');
+    const actions = section.slice(from, section.indexOf('</div>', from));
+    return [...actions.matchAll(/class="button button--primary[^"]*" id="([\w-]+)"/g)].map((match) => match[1]);
+  });
+  assert.ok(resultPrimaries.includes('result-retry') && resultPrimaries.length >= 2, `결과 행동 줄 주 행동: ${resultPrimaries}`);
+  for (const env of [DESKTOP, MOBILE, NARROW]) {
+    // 새 판을 여는 행동: 골드 채움 + 진한 글자
+    for (const id of resultPrimaries) {
+      const button = nodeFromHtml(html, id);
+      assert.equal(valueOf(rules, button, 'background', env), 'var(--primary-action)', `#${id}`);
+      assert.equal(valueOf(rules, button, 'color', env), 'var(--on-primary-action)', `#${id}`);
+      assert.match(valueOf(rules, button, 'box-shadow', env), /var\(--press-edge\)/, `#${id} 두께`);
+      // 버튼 표의 눌림·꺼짐이 골드에도 있다 — 30절이 덮어 한때 눌러도 색이 그대로였고 꺼져도 채워져 있었다
+      assert.equal(valueOf(rules, withState(button, 'active'), 'background', env), 'var(--primary-action-hover)', `#${id}:active`);
+      assert.equal(valueOf(rules, withState(button, 'active'), 'box-shadow', env), 'none', `#${id}:active`);
+      assert.equal(valueOf(rules, withState(button, 'disabled'), 'background', env), 'var(--surface-subtle)', `#${id}:disabled`);
+      assert.equal(valueOf(rules, withState(button, 'disabled'), 'color', env), 'var(--text-disabled)', `#${id}:disabled`);
+    }
+    const startAll = nodeFromHtml(html, 'start-all');
+    assert.equal(valueOf(rules, startAll, 'background', env), 'var(--primary-action)');
+    assert.equal(valueOf(rules, startAll, 'color', env), 'var(--on-primary-action)');
+
+    // 온라인 진입과 판·방 안의 진행, 폼·대화상자 확정: 보라 채움 + 흰 글자
+    for (const id of ['next-button', 'waiting-start', 'create-submit', 'join-submit', 'room-empty-action', 'register-button', 'ranking-empty-start', 'help-close', 'settings-close']) {
+      const button = nodeFromHtml(html, id);
+      assert.equal(valueOf(rules, button, 'background', env), 'var(--accent)', `#${id} 는 보라 주 행동이다`);
+      assert.equal(valueOf(rules, button, 'color', env), 'var(--on-accent)', `#${id}`);
+    }
+    assert.equal(valueOf(rules, nodeFromHtml(html, 'open-online'), 'background', env), 'var(--accent)', '온라인 진입');
+    assert.equal(valueOf(rules, nodeFromHtml(html, 'walk-confirm'), 'background', env), 'var(--accent)', '손가락 「선택」');
+  }
+  // 마우스를 올리면 진한 골드다
+  for (const id of resultPrimaries) {
+    assert.equal(valueOf(rules, withState(nodeFromHtml(html, id), 'hover'), 'background', DESKTOP), 'var(--primary-action-hover)', `#${id}:hover`);
+  }
+  assert.equal(valueOf(rules, withState(nodeFromHtml(html, 'next-button'), 'hover'), 'background', DESKTOP), 'var(--accent-hover)');
+});
+
+test('월드 배경은 문서가 아니라 화면 크기로 맞춰 위에 붙이고, 흐림은 HUD 조각과 바닥 유리에만 둔다 (U50)', () => {
+  const homeBody = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  for (const [env, art] of [[MOBILE, 'mobile'], [NARROW, 'mobile'], [DESKTOP, 'desktop'], [{ ...MOBILE, width: 844, height: 390 }, 'desktop']]) {
+    const ratio = art === 'desktop' ? '1672 / 941' : '941 / 1672';
+    for (const body of [node('body'), homeBody]) {
+      const at = `${env.width}×${env.height} ${body.has.length ? '홈' : '읽기 화면'}`;
+      assert.match(valueOf(rules, body, 'background-image', env), new RegExp(`var\\(--world-art-${art}\\)`), at);
+      // cover 는 캔버스로 퍼진 body 배경에서 문서 전체 높이를 덮어, 긴 화면일수록 그림이 확대됐다
+      assert.equal(valueOf(rules, body, 'background-size', env), `100% 100%, max(100vw, calc(100lvh * ${ratio})) auto`, at);
+      assert.equal(valueOf(rules, body, 'background-position', env), 'center top', at);
+      assert.equal(valueOf(rules, body, 'background-repeat', env), 'no-repeat', at);
+      assert.equal(valueOf(rules, body, 'background-attachment', env), 'fixed', at);
+      assert.equal(valueOf(rules, body, 'background-color', env), 'var(--world-sky-2)', `${at}: 그림 아래는 하늘색으로 잇는다`);
+    }
+  }
+  // lvh 를 모르는 브라우저를 위한 vh 대체 선언이 같은 규칙에서 먼저 온다
+  for (const rule of files['css/voxel-theme.css']) {
+    const sizes = rule.declarations.filter((d) => d.property === 'background-size').map((d) => d.value);
+    if (!sizes.some((value) => value.includes('lvh'))) continue;
+    assert.equal(sizes.length, 2, rule.selectors.join(', '));
+    assert.equal(sizes[0], sizes[1].replace('100lvh', '100vh'), rule.selectors.join(', '));
+  }
+  for (const list of Object.values(files)) {
+    for (const rule of list) {
+      for (const d of rule.declarations) {
+        if (/^background(?:-size)?$/.test(d.property) && rule.selectors.some((s) => /^body\b/.test(s))) {
+          assert.doesNotMatch(d.value, /\bcover\b/, `${rule.selectors.join(', ')} 는 cover 로 문서를 덮지 않는다`);
+        }
+      }
+    }
+  }
+
+  // 흐림은 어두운 HUD 조각과 월드가 그대로 비치는 22% 바닥 유리에만 남는다. 90% 유리 표면은
+  // 아래 그림이 거의 비치지 않아 흐림이 보이지 않는데, 화면마다 여러 장이 겹쳐 스크롤을 무겁게 했다
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body')));
+  const ranking = node("section.screen[data-screen='ranking']", node('main.app', node('body')));
+  const reading = [
+    ['질문', node('h1.question#question-text', quiz)],
+    ['보기', node('button.choice', node('li', node('ul.choices#choices', quiz)))],
+    ['피드백', nodeFromHtml(html, 'feedback')],
+    ['요약 칩', nodeFromHtml(html, 'result-correct').parent],
+    ['결과 블록', nodeFromHtml(html, 'register-form').parent],
+    ['결과 저장 안내', nodeFromHtml(html, 'register-scope')],
+    ['랭킹 안내', node('p.ranking-scope', ranking)],
+    ['랭킹 탭', nodeFromHtml(html, 'ranking-tabs')],
+    ['랭킹 목록', nodeFromHtml(html, 'ranking-list')],
+    ['빈 랭킹', nodeFromHtml(html, 'ranking-empty')],
+    // 빈 상태를 본떠 만든 패널이 옛 흐림까지 옮겨 왔다 (layout-03) — 새 읽는 표면은 여기 더한다
+    ['기록 내보내기', nodeFromHtml(html, 'ranking-export')],
+    ['로비 안내', nodeFromHtml(html, 'online-note')],
+    ['방 목록', nodeFromHtml(html, 'room-browser')],
+    ['코드 참가', nodeFromHtml(html, 'private-join-block')],
+    ['대기실 설정 칸', nodeFromHtml(html, 'setting-category')],
+    ['온라인 최종 요약', nodeFromHtml(html, 'online-final-summary')],
+    ['온라인 최종 순위', nodeFromHtml(html, 'online-final-ranking')],
+  ];
+  const hud = [
+    ['설정 버튼', nodeFromHtml(html, 'open-settings')],
+    ['홈 dock', nodeFromHtml(html, 'home-quests')],
+    ['닉네임 HUD', nodeFromHtml(html, 'open-nickname')],
+    ['퀴즈 HUD', node('div.quiz-hud', quiz)],
+    ['랭킹 머리말', node('header.ranking-header', ranking)],
+    ['로비 동작 바', node('nav.online-actions', node("section.screen[data-screen='online']", node('main.app', node('body'))))],
+  ];
+  for (const env of [MOBILE, DESKTOP]) {
+    for (const [label, element] of reading) {
+      const blur = valueOf(rules, element, 'backdrop-filter', env);
+      assert.ok(blur === null || blur === 'none', `${env.width}px ${label}: 읽는 표면에 흐림이 없다 (${blur})`);
+    }
+    for (const [label, element] of hud) {
+      assert.match(valueOf(rules, element, 'backdrop-filter', env) ?? '', /^blur\(/, `${env.width}px ${label}: HUD 조각은 흐림을 남긴다`);
+    }
+    assert.match(valueOf(rules, nodeFromHtml(html, 'arena-tiles'), 'backdrop-filter', env) ?? '', /^blur\(2px\)$/, '무대 바닥 유리');
+  }
+});
+
+test('글자 크기: 판정 알약과 로비 동작 이름은 폭 420px 이하에서만 12px 이고 그보다 넓으면 14px 다 (U53)', () => {
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']", node('main.app', node('body')));
+  const mark = (layout) => node('span.choice__mark', node('button.choice.choice--correct:disabled', node('li', node(`ul.choices#choices[data-layout='${layout}']`, quiz))));
+  const bar = node('nav.online-actions', node("section.screen[data-screen='online']", node('main.app', node('body'))));
+  const card = node('button.online-action-card#open-public-rooms', bar);
+  const label = node('strong', node('span.online-action-card__body', card));
+  const glyph = node('span.online-action-card__icon::before', card);
+  const px = (element, env) => lengthOf(rules, valueOf(rules, element, 'font-size', env), env);
+
+  const wide = [DESKTOP, { ...MOBILE, width: 421 }, { ...MOBILE, width: 500 }, { ...MOBILE, width: 599 }, { ...MOBILE, width: 844, height: 390 }, { ...MOBILE, width: 600, height: 360 }];
+  const narrow = [MOBILE, NARROW, { ...MOBILE, width: 420 }, { ...MOBILE, width: 420, height: 400 }];
+  for (const env of wide) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(px(mark('grid'), env), 14, `${at} 2×2 판정 알약`);
+    assert.equal(px(mark('list'), env), 14, `${at} 한 줄 판정 알약`);
+    assert.equal(px(label, env), 14, `${at} 로비 동작 이름`);
+  }
+  for (const env of narrow) {
+    const at = `${env.width}×${env.height}`;
+    assert.equal(px(mark('list'), env), 12, `${at} 한 줄 판정 알약`);
+    assert.equal(px(label, env), 12, `${at} 로비 동작 이름`);
+  }
+  // 높이만 짧은 가로 화면도 동작 바는 짧은 배치(작은 아이콘·한 줄 이름)를 그대로 쓴다
+  const shortLandscape = { ...MOBILE, width: 844, height: 390 };
+  assert.equal(valueOf(rules, glyph, 'width', shortLandscape), 'var(--icon-sm)');
+  assert.equal(valueOf(rules, label, 'white-space', shortLandscape), 'nowrap');
 });
 
 // ── 상태 언어 ───────────────────────────────────────────────────────

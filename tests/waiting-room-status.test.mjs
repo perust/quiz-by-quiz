@@ -214,6 +214,7 @@ test('드문 사건 안내와 이름 안내도 대화 로그의 CHAT_LINES 한�
   const waiting = await source('../src/ui/waiting-room.ts');
   const notice = waiting.slice(waiting.indexOf('function notice('), waiting.indexOf('// ── 설정 바꾸기'));
   assert.match(notice, /while \(el\.chatLog\.children\.length > CHAT_LINES\)/);
-  assert.match(waiting, /for \(const line of waitingRoomChangeNotices\(previous, next, roomStore\.me\(\)\)\) notice\(line\);/);
+  // 내가 방금 내보낸 사람(quiet)은 «나갔어요» 대신 «내보냈어요» 한 줄로만 말한다 (U24)
+  assert.match(waiting, /for \(const line of waitingRoomChangeNotices\(previous, next, roomStore\.me\(\), quiet\)\) notice\(line\);/);
   assert.match(waiting, /waitingRoomNicknameNotice\(me\.nickname, getPlayer\(\)\.nickname\)/);
 });

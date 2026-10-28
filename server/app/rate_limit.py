@@ -23,6 +23,13 @@ class RateLimitClaim:
             raise ValueError("rate limit window must be positive and finite")
 
 
+# 남은 열쇠를 모두 훑는 정리는 많아야 이만큼에 한 번이다 (N01 리뷰 security-3). 한 호출은 제가
+# 묻는 claim만 정리한다 — 사람마다의 열쇠는 공격자가 수천 개로 늘릴 수 있어, 거절까지 모든 호출이
+# 다 훑으면 호출 한 번의 값이 열쇠 수에 비례했다(3,000개에서 약 150배). 메모리는 그대로 묶인다:
+# 다시 묻지 않는 열쇠도 제 창 + 이 간격 안에 사라진다.
+FULL_SWEEP_INTERVAL_SECONDS = 1.0
+
+
 class AtomicMultiWindowLimiter:
     """Consume several sliding-window claims as one all-or-none operation."""
 
@@ -30,6 +37,7 @@ class AtomicMultiWindowLimiter:
         self._clock = clock
         self._attempts: dict[RateLimitClaim, deque[float]] = {}
         self._lock = threading.Lock()
+        self._last_sweep = float("-inf")
 
     def _prune(self, now: float) -> None:
         for claim, attempts in tuple(self._attempts.items()):
@@ -38,20 +46,52 @@ class AtomicMultiWindowLimiter:
                 attempts.popleft()
             if not attempts:
                 del self._attempts[claim]
+        self._last_sweep = now
 
-    def allow(self, claims: tuple[RateLimitClaim, ...]) -> bool:
+    def _live_attempts(self, claim: RateLimitClaim, now: float) -> deque[float] | None:
+        """이 claim의 창 안에 남은 시도. 창을 지난 것은 지금 버린다(없으면 열쇠째)."""
+        attempts = self._attempts.get(claim)
+        if attempts is None:
+            return None
+        cutoff = now - claim.window_seconds
+        while attempts and attempts[0] <= cutoff:
+            attempts.popleft()
+        if not attempts:
+            del self._attempts[claim]
+            return None
+        return attempts
+
+    def try_acquire(self, claims: tuple[RateLimitClaim, ...]) -> float | None:
+        """Consume every claim or none of them.
+
+        Returns ``None`` when admitted. Otherwise nothing is consumed and the result is the
+        number of seconds until every exhausted claim frees a slot — the honest value for an
+        HTTP ``Retry-After`` hint (a sliding window frees the slot of its oldest live attempt).
+        """
         unique_claims = tuple(dict.fromkeys(claims))
         now = self._clock()
         with self._lock:
-            self._prune(now)
-            if any(
-                len(self._attempts.get(claim, ())) >= claim.limit
-                for claim in unique_claims
-            ):
-                return False
+            if now - self._last_sweep >= FULL_SWEEP_INTERVAL_SECONDS:
+                self._prune(now)
+            blocked = False
+            wait = 0.0
+            for claim in unique_claims:
+                attempts = self._live_attempts(claim, now)
+                if attempts is None or len(attempts) < claim.limit:
+                    continue
+                blocked = True
+                # Rejections never append, so a full bucket holds exactly `limit` attempts and
+                # frees a slot once the oldest of them leaves the window.
+                oldest = attempts[len(attempts) - claim.limit]
+                wait = max(wait, oldest + claim.window_seconds - now)
+            if blocked:
+                return wait
             for claim in unique_claims:
                 self._attempts.setdefault(claim, deque()).append(now)
-            return True
+            return None
+
+    def allow(self, claims: tuple[RateLimitClaim, ...]) -> bool:
+        return self.try_acquire(claims) is None
 
     @property
     def retained_key_count(self) -> int:

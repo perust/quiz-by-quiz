@@ -154,6 +154,64 @@ class GuidanceConsistencyTests(unittest.TestCase):
             self.assertEqual(config.all_round_questions, record["totalCount"])
             self.assertEqual(200, record["score"])
 
+    def test_teacher_collect_reads_the_in_app_records_export(self):
+        # N02: 랭킹 화면의 「기록 내보내기」 파일(tests/fixtures/records-export.json 과 같은 모양)을
+        # 선생님 모드 로더가 그대로 읽는다. student 칸이 없으므로 파일 이름이 학생 이름이다.
+        snippets = python_snippets("quiz-teacher-collect.md")
+        self.assertEqual(1, len(snippets))
+        fixture = ROOT / "tests" / "fixtures" / "records-export.json"
+        exported = json.loads(fixture.read_text(encoding="utf-8"))
+        self.assertNotIn("student", exported)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "src").mkdir()
+            shutil.copy2(ROOT / "src" / "constants.ts", root / "src" / "constants.ts")
+            submissions = root / "teacher" / "submissions"
+            submissions.mkdir(parents=True)
+            shutil.copy2(fixture, submissions / "김민준.json")
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(ROOT)
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+            proc = subprocess.run(
+                [sys.executable, "-c", snippets[0]],
+                cwd=root,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
+            self.assertIn("명단 — 1명 / 응시 2건", proc.stdout)
+            self.assertIn("김민준", proc.stdout)
+            self.assertNotIn("형식이 맞지 않는 기록", proc.stdout)
+
+    def test_teacher_collect_example_matches_the_in_app_export(self):
+        # contracts-teacher-doc-stale-scope: 안내의 «감싼 형태» 예시는 앱이 실제로 쓰는 파일을 옮긴 것이다.
+        # 한때 앱의 scope 는 해요체(N10)로 바뀌었는데 예시만 «…기록입니다»로 남아, 받은 파일과 견주면 달랐다.
+        collect = (COMMANDS / "quiz-teacher-collect.md").read_text(encoding="utf-8")
+        block = re.search(r"\*\*감싼 형태\*\*.*?```json\n(?P<body>.*?)\n```", collect, re.DOTALL)
+        self.assertIsNotNone(block, "감싼 형태의 JSON 예시가 있다")
+        assert block is not None
+        example = json.loads(block.group("body"))
+        fixture = json.loads(
+            (ROOT / "tests" / "fixtures" / "records-export.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(list(fixture), list(example), "예시의 칸이 앱 파일의 칸과 같다")
+        self.assertEqual(fixture["scope"], example["scope"], "scope 는 앱이 쓰는 글 그대로다")
+        self.assertEqual(fixture["schemaVersion"], example["schemaVersion"])
+        self.assertNotIn("student", example)
+
+    def test_teacher_guidance_points_students_to_the_in_app_export(self):
+        # N02: 휴대폰·태블릿·관리형 크롬북에서는 F12 콘솔을 열 수 없다. 안내는 앱의 버튼을 가리킨다.
+        collect = (COMMANDS / "quiz-teacher-collect.md").read_text(encoding="utf-8")
+        readme = (ROOT / "teacher" / "README.md").read_text(encoding="utf-8")
+        for text in (collect, readme):
+            self.assertIn("기록 내보내기", text)
+            self.assertNotIn("F12", text)
+            self.assertNotIn("copy(JSON.stringify", text)
+
     def test_leaderboard_command_checks_current_source_and_passes(self):
         snippets = python_snippets("quiz-leaderboard.md")
         self.assertEqual(1, len(snippets))

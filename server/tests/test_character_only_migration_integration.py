@@ -1,9 +1,21 @@
+"""빈 DB에서 v9 데이터를 만든 뒤 migration 010 → 011을 차례로 올리고 후보 API를 돌려 본다.
+
+CI가 `app.migrate`보다 먼저, 빈 DB 위에서 이 파일만 돌린다(.github/workflows/pages.yml).
+
+- 010(캐릭터 전용)은 v9 writer가 남긴 false·NULL을 고친 뒤에 제약을 건다. 그 API 교체는 이미
+  끝난 단계라(API → migration 010 → Pages), 지금 후보 API는 v9 위에서 돌지 않는다.
+- 011(방장이 고르는 문항 시간)은 더하기만 한다: 010의 API가 도는 동안 먼저 적용하고, 열 이름을
+  적어 쓰던 그 API의 문장이 그대로 통하며, 이미 있는 방·도는 판은 예전의 20초를 받는다
+  (migration 011 → API → Pages). 후보 API는 011 위에서 그 판을 20초로 이어 간다.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
@@ -11,6 +23,7 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from psycopg import AsyncConnection, errors
+from psycopg.types.json import Jsonb
 
 from app.domain import DEFAULT_CHARACTER_ID, validate_player, validate_room
 from app.migrate import (
@@ -32,56 +45,27 @@ pytestmark = [
     ),
 ]
 
+# v9 writer가 낸 판의 두 문항. 정답 보기는 아래 catalog와 같아야 공개·다시 보기가 맞춰 본다.
+_SEEDED_QUESTIONS = (("upgrade-science-000", 0), ("upgrade-science-001", 1))
 
-def test_v9_writers_are_replaced_before_character_only_constraints_land() -> None:
+
+def test_v9_data_upgrades_through_010_and_011_and_the_candidate_continues_it() -> None:
     assert MIGRATOR_URL is not None
     assert RUNTIME_URL is not None
     host_id, guest_id = uuid4(), uuid4()
     room_code = uuid4().hex[:6].upper()
+    later_code = uuid4().hex[:6].upper()
 
     with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
         ensure_runtime_role(connection, runtime_role_password())
         migrations = discover_migrations()
         assert apply_pending(connection, migrations[:9]) == tuple(range(1, 10))
-        _seed_v9_room(connection, host_id, guest_id, room_code)
+        room_id = _seed_v9_room(connection, host_id, guest_id, room_code)
+        match_id = _seed_v9_running_match(connection, room_id, host_id, guest_id)
+        assert asyncio.run(_runtime_schema_version()) == 0
 
-    asyncio.run(_exercise_candidate_against_v9(host_id, guest_id, room_code))
-
-    with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
-        room_id, match_id = connection.execute(
-            """
-            SELECT room.id, match.id
-            FROM quiz_online.rooms AS room
-            JOIN quiz_online.matches AS match ON match.room_id = room.id
-            WHERE room.code = %s
-            """,
-            (room_code,),
-        ).fetchone()
-        connection.execute(
-            "UPDATE quiz_online.players SET character_id = NULL WHERE id = %s",
-            (host_id,),
-        )
-        connection.execute(
-            "UPDATE quiz_online.room_members SET character_id = NULL WHERE room_id = %s",
-            (room_id,),
-        )
-        connection.execute(
-            "UPDATE quiz_online.match_players SET character_id = NULL WHERE match_id = %s",
-            (match_id,),
-        )
-        connection.execute(
-            "UPDATE quiz_online.rooms SET game_mode = false WHERE id = %s",
-            (room_id,),
-        )
-        connection.execute(
-            "UPDATE quiz_online.matches SET game_mode = false WHERE id = %s",
-            (match_id,),
-        )
-
-        assert apply_pending(connection, migrations) == (10,)
-        assert connection.execute(
-            "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
-        ).fetchone()[0] == list(range(1, 11))
+        # ── 010: 고친 뒤에 막는다 ──
+        assert apply_pending(connection, migrations[:10]) == (10,)
         assert connection.execute(
             "SELECT game_mode FROM quiz_online.rooms WHERE id = %s", (room_id,)
         ).fetchone()[0] is True
@@ -103,6 +87,35 @@ def test_v9_writers_are_replaced_before_character_only_constraints_land() -> Non
         ).fetchone()[0] >= 1
         assert asyncio.run(_runtime_schema_version()) == 10
 
+        # ── 011: 010의 API가 도는 동안 더한다 ──
+        assert apply_pending(connection, migrations) == (11,)
+        assert connection.execute(
+            "SELECT array_agg(version ORDER BY version) FROM quiz_online.schema_migrations"
+        ).fetchone()[0] == list(range(1, 12))
+        # 이미 있는 방과 도는 판은 예전의 고정 20초를 받는다
+        assert connection.execute(
+            "SELECT question_time_ms FROM quiz_online.rooms WHERE id = %s", (room_id,)
+        ).fetchone()[0] == 20_000
+        assert connection.execute(
+            "SELECT question_time_ms FROM quiz_online.matches WHERE id = %s", (match_id,)
+        ).fetchone()[0] == 20_000
+        # 010의 API는 새 열을 모른다. 열 이름을 적은 그 문장이 그대로 통하고 기본값을 받는다
+        later_room_id = connection.execute(
+            """
+            INSERT INTO quiz_online.rooms (
+                code, name, category_id, capacity, game_mode,
+                is_public, password_hash, host_player_id, expires_at
+            )
+            VALUES (%s, '010 방', NULL, 4, true, true, NULL, %s, now() + interval '24 hours')
+            RETURNING id
+            """,
+            (later_code, host_id),
+        ).fetchone()[0]
+        assert connection.execute(
+            "SELECT question_time_ms FROM quiz_online.rooms WHERE id = %s", (later_room_id,)
+        ).fetchone()[0] == 20_000
+        assert asyncio.run(_runtime_schema_version()) == 11
+
         with pytest.raises(errors.CheckViolation):
             connection.execute(
                 "UPDATE quiz_online.rooms SET game_mode = false WHERE id = %s", (room_id,)
@@ -117,14 +130,31 @@ def test_v9_writers_are_replaced_before_character_only_constraints_land() -> Non
                 "WHERE match_id = %s",
                 (match_id,),
             )
+        with pytest.raises(errors.CheckViolation):
+            connection.execute(
+                "UPDATE quiz_online.rooms SET question_time_ms = 30000 WHERE id = %s",
+                (room_id,),
+            )
 
-        connection.execute("DELETE FROM quiz_online.rooms WHERE id = %s", (room_id,))
-        connection.execute(
-            "DELETE FROM quiz_online.players WHERE id IN (%s, %s)", (host_id, guest_id)
-        )
+    try:
+        asyncio.run(_exercise_candidate_against_v11(host_id, guest_id, room_code, match_id))
+    finally:
+        with psycopg.connect(MIGRATOR_URL, autocommit=True) as connection:
+            connection.execute(
+                "DELETE FROM quiz_online.rooms WHERE code = ANY(%s)",
+                ([room_code, later_code],),
+            )
+            connection.execute(
+                "DELETE FROM quiz_online.players WHERE id IN (%s, %s)", (host_id, guest_id)
+            )
 
 
-async def _exercise_candidate_against_v9(host_id: UUID, guest_id: UUID, room_code: str) -> None:
+async def _exercise_candidate_against_v11(
+    host_id: UUID,
+    guest_id: UUID,
+    room_code: str,
+    match_id: UUID,
+) -> None:
     assert RUNTIME_URL is not None
     repository = PostgresRoomsRepository(
         RUNTIME_URL,
@@ -132,8 +162,11 @@ async def _exercise_candidate_against_v9(host_id: UUID, guest_id: UUID, room_cod
         max_pool_size=2,
     )
     await repository.open()
+    compatibility_code: str | None = None
     try:
-        assert await repository.schema_version() == 0
+        assert await repository.schema_version() == 11
+
+        # 구버전 client의 gameMode:false·문항 시간 없는 방은 캐릭터 전용 20초 방이 된다
         compatibility_room = await repository.create_room(
             host_id,
             validate_room(
@@ -146,35 +179,13 @@ async def _exercise_candidate_against_v9(host_id: UUID, guest_id: UUID, room_cod
             ),
             None,
         )
-        async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
-            member_character = await connection.execute(
-                """
-                SELECT member.character_id
-                FROM quiz_online.room_members AS member
-                JOIN quiz_online.rooms AS room ON room.id = member.room_id
-                WHERE room.code = %s AND member.player_id = %s
-                """,
-                (compatibility_room.code, host_id),
-            )
-            assert (await member_character.fetchone())[0] == DEFAULT_CHARACTER_ID
-            await connection.execute(
-                "UPDATE quiz_online.players SET character_id = NULL WHERE id = %s",
-                (guest_id,),
-            )
+        compatibility_code = compatibility_room.code
+        assert compatibility_room.game_mode is True
+        assert compatibility_room.question_time_ms == 20_000
         await repository.join_room(guest_id, compatibility_room.code)
-        async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
-            joined_character = await connection.execute(
-                """
-                SELECT member.character_id
-                FROM quiz_online.room_members AS member
-                JOIN quiz_online.rooms AS room ON room.id = member.room_id
-                WHERE room.code = %s AND member.player_id = %s
-                """,
-                (compatibility_room.code, guest_id),
-            )
-            assert (await joined_character.fetchone())[0] == DEFAULT_CHARACTER_ID
         assert await repository.leave_room(guest_id, compatibility_room.code) is not None
         assert await repository.leave_room(host_id, compatibility_room.code) is None
+        compatibility_code = None
 
         await repository.upsert_player(
             host_id,
@@ -182,38 +193,43 @@ async def _exercise_candidate_against_v9(host_id: UUID, guest_id: UUID, room_cod
             validate_player("구버전방장", None),
             update_profile=False,
         )
-        async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
-            character = await connection.execute(
-                "SELECT character_id FROM quiz_online.players WHERE id = %s", (host_id,)
-            )
-            assert (await character.fetchone())[0] == DEFAULT_CHARACTER_ID
-
         room = await repository.get_room(host_id, room_code)
         assert room is not None
         assert room.game_mode is True
+        assert room.question_time_ms == 20_000
         assert all(player.character_id for player in room.players)
+
+        # 011 전에 010의 API가 연 판을 후보 API가 이어 간다 — 마감·시간 초과 모두 그 판의 20초다
+        await _expire_phase(match_id)
+        revealed = await repository.get_match(host_id, room_code)
+        assert revealed.advanced is True
+        assert revealed.match is not None and revealed.match.state == "revealing"
+        assert revealed.match.question_time_ms == 20_000
+        assert await _elapsed_ms(match_id, 1, guest_id) == 20_000
+
+        await _expire_phase(match_id)
+        second = await repository.get_match(guest_id, room_code)
+        assert second.match is not None
+        assert (second.match.state, second.match.current_position) == ("running", 2)
+        assert await _question_span(match_id) == timedelta(seconds=20)
+
+        await _expire_phase(match_id)
+        await repository.get_match(host_id, room_code)
+        await _expire_phase(match_id)
+        finished = (await repository.get_match(host_id, room_code)).match
+        assert finished is not None and finished.state == "finished"
+
         setup = await repository.start_game(host_id, room_code)
         assert setup.game_mode is True
-
-        async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
-            persisted = await connection.execute(
-                """
-                SELECT match.id, match.game_mode,
-                       bool_and(player.character_id IS NOT NULL)
-                FROM quiz_online.matches AS match
-                JOIN quiz_online.match_players AS player ON player.match_id = match.id
-                WHERE match.room_id = (
-                    SELECT id FROM quiz_online.rooms WHERE code = %s
-                )
-                GROUP BY match.id, match.game_mode
-                """,
-                (room_code,),
-            )
-            _, game_mode, all_characters = await persisted.fetchone()
-            assert game_mode is True
-            assert all_characters is True
+        assert setup.question_time_ms == 20_000
+        assert await _question_span(setup.id) == timedelta(seconds=20)
     finally:
         await repository.close()
+        if compatibility_code is not None:
+            async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
+                await connection.execute(
+                    "DELETE FROM quiz_online.rooms WHERE code = %s", (compatibility_code,)
+                )
 
 
 async def _runtime_schema_version() -> int:
@@ -226,12 +242,55 @@ async def _runtime_schema_version() -> int:
         await repository.close()
 
 
+async def _expire_phase(match_id: UUID) -> None:
+    """지금 phase(문항 또는 공개)의 마감이 이미 지난 것처럼 만든다."""
+    assert RUNTIME_URL is not None
+    async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
+        await connection.execute(
+            """
+            UPDATE quiz_online.matches
+            SET question_started_at = now() - interval '1 minute',
+                deadline_at = now() - interval '1 minute'
+            WHERE id = %s
+            """,
+            (match_id,),
+        )
+
+
+async def _question_span(match_id: UUID) -> timedelta:
+    assert RUNTIME_URL is not None
+    async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            "SELECT deadline_at - question_started_at FROM quiz_online.matches WHERE id = %s",
+            (match_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None
+    return row[0]
+
+
+async def _elapsed_ms(match_id: UUID, position: int, player_id: UUID) -> int:
+    assert RUNTIME_URL is not None
+    async with await AsyncConnection.connect(RUNTIME_URL, autocommit=True) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT elapsed_ms
+            FROM quiz_online.match_answers
+            WHERE match_id = %s AND position = %s AND player_id = %s
+            """,
+            (match_id, position, player_id),
+        )
+        row = await cursor.fetchone()
+    assert row is not None
+    return int(row[0])
+
+
 def _seed_v9_room(
     connection: psycopg.Connection[tuple[object, ...]],
     host_id: UUID,
     guest_id: UUID,
     room_code: str,
-) -> None:
+) -> UUID:
     for player_id, nickname, character_id in (
         (host_id, "구버전방장", None),
         (guest_id, "구버전손님", "slime-pink"),
@@ -265,6 +324,53 @@ def _seed_v9_room(
         """,
         (room_id, host_id, room_id, guest_id),
     )
+    return room_id
+
+
+def _seed_v9_running_match(
+    connection: psycopg.Connection[tuple[object, ...]],
+    room_id: UUID,
+    host_id: UUID,
+    guest_id: UUID,
+) -> UUID:
+    """v9 writer가 연 판: gameMode false, 방장 캐릭터 NULL, 방장은 첫 문항에서 시간 초과(20초)."""
+    match_id = connection.execute(
+        """
+        INSERT INTO quiz_online.matches (
+            room_id, category_id, game_mode, total_questions, deadline_at, expires_at
+        )
+        VALUES (%s, 'science', false, %s, now() + interval '20 seconds', now() + interval '2 hours')
+        RETURNING id
+        """,
+        (room_id, len(_SEEDED_QUESTIONS)),
+    ).fetchone()[0]
+    connection.execute(
+        """
+        INSERT INTO quiz_online.match_players (match_id, player_id, nickname, character_id)
+        VALUES (%s, %s, '구버전방장', NULL), (%s, %s, '구버전손님', 'slime-pink')
+        """,
+        (match_id, host_id, match_id, guest_id),
+    )
+    for position, (question_id, answer_index) in enumerate(_SEEDED_QUESTIONS, start=1):
+        connection.execute(
+            """
+            INSERT INTO quiz_online.match_questions (
+                match_id, position, question_id, category_id, choices, answer_index
+            )
+            VALUES (%s, %s, %s, 'science', %s, %s)
+            """,
+            (match_id, position, question_id, Jsonb(["one", "two", "three", "four"]), answer_index),
+        )
+    connection.execute(
+        """
+        INSERT INTO quiz_online.match_answers (
+            match_id, position, player_id, choice_index, correct, timed_out, elapsed_ms
+        )
+        VALUES (%s, 1, %s, NULL, false, true, 20000)
+        """,
+        (match_id, host_id),
+    )
+    return match_id
 
 
 def _token_hash(player_id: UUID) -> bytes:

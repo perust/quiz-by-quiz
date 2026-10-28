@@ -13,8 +13,9 @@
 //   createRoom(spec)       {ok, room} | {ok:false, message}
 //   joinRoom(spec)         {ok, room} | {ok:false, reason}
 //   leaveRoom(spec)
+//   removeMember(spec)     다른 참가자 내보내기 (방장만, 확인창을 거친다, U24)
 //   getRoom(code)          방 하나
-//   updateRoom(spec)       방 설정 (방장만)
+//   updateRoom(spec)       방 설정 (방장만): 분야·인원·문항 시간(20초·40초)
 //   sendChat(spec)         한마디
 //   startGame(spec)        판 열기 (방장만)
 //   subscribe(code, fn)    방에서 일어나는 일. 그만 들으려면 되돌려 준 함수를 부른다
@@ -23,6 +24,7 @@
 //   {type: 'room',  room}                     방 설정이 바뀌었다
 //   {type: 'chat',  playerId, nickname, text} 누가 한마디 했다
 //   {type: 'match', phase: 'started', setup}  판이 열렸다
+//   {type: 'removed', kind}                   방장이 나를 내보냈다 (U24, kind는 rules.ts의 RemovalKind)
 //
 // **여는 사람이 판을 직접 시작하지 않는다.** `startGame`은 «시작됐다»는 이벤트를
 // 보낼 뿐이고 화면은 그 이벤트를 보고 움직인다. 서버 구현에서는 같은 이벤트가 방에
@@ -40,14 +42,14 @@
 // 비밀번호가 맞는지 모른 채 넘기기만 한다.
 
 import { safeStorage } from '../storage/safe-storage.js';
-import type { CategoryId } from '../types.js';
+import type { CategoryId, OnlineQuestionTime } from '../types.js';
 import { localRooms } from './local-rooms.js';
 import type {
   MovementViewport,
   WaitingRoomSeatId,
 } from './movement-contract.js';
 import { createNetworkRoomStore } from './network-rooms.js';
-import type { JoinFailReason } from './rules.js';
+import type { JoinFailReason, RemovalKind, RemoveMemberFailReason } from './rules.js';
 
 /** 방에 서 있는 사람. **밖으로 나가는 모습이라 `seenAt` 같은 속사정은 없다** */
 export interface PublicPlayer {
@@ -77,6 +79,11 @@ export interface PublicRoom {
   capacity: number;
   /** 구버전 client 호환 필드. 캐릭터 전용 게임에서는 언제나 true다. */
   gameMode: true;
+  /**
+   * 방장이 고른 문항 시간(20초·40초). 판을 열 때 그 판의 모든 문항 마감이 된다. 모두에게 보이고
+   * 방장만 바꾼다. 문항 시간을 모르는 이전 서버의 방은 20초였다.
+   */
+  questionTimeMs: OnlineQuestionTime;
   /**
    * 현재 방장이 첫 자리다. 나가거나 오래 끊기면 가장 먼저 들어온 접속 중인 참가자가 첫 자리로
    * 승계한다(나갈 때 모두 끊겼으면 가장 먼저 들어온 사람이 받고, 누가 다시 붙으면 넘긴다).
@@ -141,6 +148,8 @@ export interface CreateRoomSpec {
   /** 「전체 도전」이면 null */
   categoryId: CategoryId | null;
   capacity: number;
+  /** 방장이 고르는 문항 시간. 만들기 폼의 기본은 20초다 */
+  questionTimeMs: OnlineQuestionTime;
   isPublic: boolean;
   /** 비공개 방일 때만 본다 */
   password?: string;
@@ -153,10 +162,11 @@ export interface JoinRoomSpec {
   player: PlayerInfo;
 }
 
-/** 방장만 바꿀 수 있다. 넘긴 것만 바뀐다 */
+/** 방장만 바꿀 수 있다. 넘긴 것만 바뀐다. 판이 도는 동안에는 서버가 거절한다 */
 export interface RoomPatch {
   categoryId?: CategoryId | null;
   capacity?: number;
+  questionTimeMs?: OnlineQuestionTime;
 }
 
 export type CreateRoomResult =
@@ -176,6 +186,14 @@ export type RoomActionResult =
 export type ReadyResult =
   | { ok: true; room: PublicRoom }
   | { ok: false; reason: 'not-found' | 'not-member' | 'game-in-progress' };
+
+/**
+ * 방장의 «내보내기» (U24). 방장만, 남만, 도는 판의 참가자는 판이 끝난 뒤에 — 판정은 구현체가 한다.
+ * 화면에서만 막으면 서버 구현에서 그대로 뚫린다.
+ */
+export type RemoveMemberResult =
+  | { ok: true; room: PublicRoom }
+  | { ok: false; reason: RemoveMemberFailReason };
 
 export type StartGameResult =
   | { ok: true; setup: MatchSetup }
@@ -213,6 +231,29 @@ export interface OnlineScore {
   score: number;
   correctCount: number;
   answeredCount: number;
+  /**
+   * 방금 공개한 문항을 맞혔는가 (U30). **revealing에만 온다** — 아직 답을 고르는 사람에게 남의
+   * 정오가 가지 않는다. 구버전 서버는 보내지 않고, 그때 화면은 «정답 n/m명»을 지어내지 않는다.
+   */
+  lastAnswerCorrect?: boolean;
+}
+
+/**
+ * 끝난 판의 문항 하나와 내 답 (U38 «문제 다시 보기»). 판이 끝난 뒤 그 판의 참가자에게만 온다 —
+ * 공개 단계에서 문항마다 이미 본 것(문제·보기·정답·해설)을 한데 모은 것이다.
+ */
+export interface OnlineReviewItem {
+  position: number;
+  id: string;
+  categoryId: CategoryId;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  /** 내가 고른 보기. 시간 안에 고르지 않았으면 null */
+  choiceIndex: number | null;
+  correct: boolean;
+  timedOut: boolean;
 }
 
 interface OnlineMatchBase {
@@ -222,6 +263,11 @@ interface OnlineMatchBase {
   gameMode: true;
   currentPosition: number;
   totalQuestions: number;
+  /**
+   * 이 판의 문항 시간. 판을 열 때 방 설정에서 정해져 판 내내 같다. 남은 시간 막대의 «가득»으로만
+   * 쓴다 — 마감 판정은 서버가 한다. 구버전 서버는 보내지 않는다(그때 막대는 처음 받은 남은 시간을 가득으로 본다).
+   */
+  questionTimeMs?: OnlineQuestionTime;
 }
 
 /** 진행 중인 phase에만 서버가 활성 마감 시각을 보낸다. */
@@ -259,6 +305,8 @@ export interface OnlineFinishedMatch extends OnlineMatchBase {
   ownSubmission: null;
   reveal: null;
   scores: OnlineScore[];
+  /** 문항 순서대로. 구버전 서버이거나 맞춰 볼 수 없으면 없다 — 그때는 순위만 보인다 */
+  review?: OnlineReviewItem[];
 }
 
 /** API가 준 상태는 이 union 밖으로 넓히지 않는다. */
@@ -297,7 +345,13 @@ export type RoomEvent =
     connectionGeneration: number;
   }
   | { type: 'match'; phase: 'started'; matchId: string | null; setup: MatchSetup }
-  | { type: 'match'; phase: 'invalidated'; matchId: string | null };
+  | { type: 'match'; phase: 'invalidated'; matchId: string | null }
+  /**
+   * 방장이 나를 이 방에서 내보냈다 (U24). 열린 소켓으로 곧바로 오거나, 다시 붙으려다 서버가 알려 준다.
+   * 대기실은 로비로 돌아가며 그 말을 띄운다. `removed`(끊긴 사이 자리를 비웠다)는 같은 코드로 다시
+   * 참가할 수 있고, `kicked`(접속 중에 내보냈다)는 잠시 다시 들어갈 수 없다.
+   */
+  | { type: 'removed'; kind: RemovalKind };
 
 export type RoomEventHandler = (event: RoomEvent) => void;
 
@@ -327,7 +381,18 @@ export interface RoomStore {
   createRoom(spec: CreateRoomSpec): Promise<CreateRoomResult>;
   joinRoom(spec: JoinRoomSpec): Promise<JoinRoomResult>;
   leaveRoom(spec: { code: string }): Promise<{ ok: true }>;
-  /** 방 하나. 없으면 null */
+  /**
+   * 방장이 다른 참가자를 내보낸다 (U24). `connected`는 방장이 확인창에서 본 그 사람의 상태다.
+   * - 없거나 false: 끊긴 자리를 비운다. 그 사이 다시 붙었으면 `member-connected`로 거절하고, 내보내진
+   *   사람은 같은 코드로 다시 참가할 수 있다
+   * - true: 접속 중인 사람을 내보낸다. 그 사람의 화면은 로비로 돌아가고 잠시 그 방에 다시 들어갈 수 없다
+   * 로컬 방은 모두 `connected: true`이고 이 브라우저의 나뿐이라 다시 들어오는 것을 막을 상대가 없다.
+   */
+  removeMember(spec: { code: string; playerId: string; connected?: boolean }): Promise<RemoveMemberResult>;
+  /**
+   * 방 하나. 없으면 null. **방장이 나를 내보냈으면 `RemovedFromRoom`(내보낸 방식 `kind`)을 던진다** —
+   * «없는 방»과 다른 말을 해야 한다 (U24)
+   */
   getRoom(code: string): Promise<PublicRoom | null>;
   updateRoom(spec: { code: string; patch: RoomPatch }): Promise<RoomActionResult>;
   /** browser는 자신의 준비 여부만 요청하고, server가 돌려준 방 snapshot을 따른다 */

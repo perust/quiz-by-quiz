@@ -89,6 +89,7 @@ class FakeElement extends EventTarget {
   blur() { globalThis.document.activeElement = globalThis.document.body; }
   scrollIntoView(options) { this.scrolls.push(options); }
   click() { this.dispatchEvent(new Event('click', { cancelable: true })); }
+  reset() {}
 }
 
 const elements = new Map();
@@ -156,16 +157,19 @@ function room(code, name, changes = {}) {
 }
 
 let listRooms = async () => [];
+let createRoom = async () => ({ ok: false, message: '만들지 않는다' });
+const entered = [];
 const lobby = createOnlineScreen({
   roomStore: {
     isNetworked: true,
     isPersistent: true,
     me: () => 'me',
     listRooms: () => listRooms(),
+    createRoom: (spec) => createRoom(spec),
   },
   onHome: () => {},
   onPractice: () => {},
-  onEnterRoom: () => {},
+  onEnterRoom: (code) => entered.push(code),
   getPlayer: () => ({ nickname: '퀴즈왕', characterId: 'slime-blue' }),
 });
 
@@ -260,4 +264,66 @@ test('움직임 줄이기를 켜면(설정 또는 기기) 동작 카드의 스�
   assert.deepEqual(byId('create-room-block').scrolls.at(-1), { behavior: 'auto', block: 'nearest' }, '기기의 움직임 줄이기');
   reduceMotionQuery = false;
   lobby.hide();
+});
+
+test('방 만들기 폼의 문항 시간은 20초가 기본이고, 고른 값(40초)을 그대로 저장소에 넘긴다 (FR-3.7)', async () => {
+  listRooms = async () => [];
+  screen.hidden = false;
+  await lobby.show('slime-blue');
+  const select = byId('create-question-time');
+  // 서버와 같은 두 값뿐이다 — 온라인에는 제한 없음이 없다
+  assert.deepEqual(
+    select.children.map((option) => [option.value, option.textContent]),
+    [['20000', '20초'], ['40000', '40초']],
+  );
+  assert.equal(select.value, '20000');
+
+  const specs = [];
+  createRoom = async (spec) => {
+    specs.push(spec);
+    return { ok: true, room: room('NEW234', spec.name, { isMine: true, joined: true, questionTimeMs: spec.questionTimeMs }) };
+  };
+  byId('open-create-room').click();
+  byId('create-name').value = '느긋한 방';
+  select.value = '40000';
+  byId('create-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  await settle();
+
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0].questionTimeMs, 40_000);
+  assert.equal(typeof specs[0].questionTimeMs, 'number', '글자 «40000»이 아니라 값을 넘긴다');
+  assert.deepEqual(entered.at(-1), 'NEW234');
+  assert.equal(select.value, '20000', '다음 방은 다시 기본 20초에서 시작한다');
+  lobby.hide();
+});
+
+test('대기실에서 되돌아온 이유는 로비가 보인 뒤에 넣어 낭독되게 한다 (방장이 내보냄 등)', async () => {
+  listRooms = async () => [];
+  const message = byId('online-message');
+  // 앱은 로비를 그린 뒤에 화면을 연다. 숨은 화면의 role=status 는 바뀌어도 낭독되지 않는다
+  screen.hidden = true;
+  await lobby.show('slime-blue', '방장이 방에서 내보냈어요. 잠시 뒤에 다시 들어올 수 있어요.');
+  assert.equal(message.textContent, '', '숨은 동안에는 넣지 않는다');
+  assert.equal(message.hidden, true);
+
+  screen.hidden = false;
+  lobby.activate();
+  assert.equal(message.hidden, false, '먼저 펼치고');
+  assert.equal(message.textContent, '방장이 방에서 내보냈어요. 잠시 뒤에 다시 들어올 수 있어요.', '그다음 넣는다');
+  assert.equal(message.classList.contains('room-message--bad'), true);
+
+  // 한 번만 넣는다 — 다시 불러도 같은 말을 되풀이하지 않고, 알림 없이 연 로비는 비워 둔다
+  message.textContent = '';
+  lobby.activate();
+  assert.equal(message.textContent, '');
+  await lobby.show('slime-blue');
+  lobby.activate();
+  assert.equal(message.hidden, true);
+
+  // 화면을 떠난 뒤의 늦은 activate 는 아무것도 넣지 않는다
+  screen.hidden = true;
+  await lobby.show('slime-blue', '그 방은 이미 사라졌어요.');
+  lobby.hide();
+  lobby.activate();
+  assert.equal(message.textContent, '');
 });

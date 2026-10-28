@@ -73,10 +73,10 @@ test('로컬 조작법은 실제 동작대로 말한다: 바닥 칸·보기를 �
   const help = html.slice(start, end);
 
   // 칸 click 은 캐릭터를 옮기지 않고 곧바로 답을 낸다 (src/ui/arena.ts 의 tile click → onChoose)
-  assert.doesNotMatch(help, /걸어가서 냅니다/);
-  assert.match(help, /바닥 칸이나 위 보기를 직접 누르면 캐릭터가 걸어가지 않고 <strong>그 답을 바로 냅니다<\/strong>/);
+  assert.doesNotMatch(help, /걸어가서 (냅니다|내요)/);
+  assert.match(help, /바닥 칸이나 위 보기를 직접 누르면 캐릭터가 걸어가지 않고 <strong>그 답을 바로 내요<\/strong>/);
   assert.match(help, /<strong>시간이 다 되면 그때 밟고 있는 칸이 답<\/strong>/);
-  assert.match(help, /십자 틈에 서 있으면 아무것도 고르지 않은 것이라 시간 초과가 됩니다/);
+  assert.match(help, /십자 틈에 서 있으면 아무것도 고르지 않은 것이라 시간 초과가 돼요/);
 
   // README 도 로컬 규칙을 같은 말로 적는다 — «시간이 끝나면 오답»이 아니다
   assert.doesNotMatch(readme, /시간이 끝나면 오답으로 처리하고/);

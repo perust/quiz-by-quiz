@@ -91,7 +91,7 @@ lb = read('src/ui/ranking.ts')
 html = read('index.html')
 ok('방금 등록 기록 강조', 'ranking-item--mine' in lb and '방금 등록' in lb)
 ok('저장 범위 안내 문구', '이 브라우저에 저장된' in html)
-ok('빈 상태 안내', 'ranking-empty' in lb and '아직 없습니다' in lb)
+ok('빈 상태 안내', 'ranking-empty' in lb and '아직 없어요' in lb)
 ok('목록에 소요 시간 미표시', 'durationMs' not in lb, 'durationMs 미등장')
 modal = re.search(r'\bwindow\.(confirm|alert|prompt)\s*\(', strip_comments(joined))
 ok('브라우저 모달 미사용', not modal, modal.group(0) if modal else '없음')
@@ -149,6 +149,7 @@ PY
 ## 4. `records` — 내 브라우저 기록 다루기
 
 CLI로는 못 읽으므로 브라우저 콘솔에서 실행할 것을 준다. 게임을 연 탭에서 F12 → Console 이다.
+기록 전체를 파일로만 받으려면 콘솔 없이 랭킹 화면의 「기록 내보내기」를 쓴다 (선생님 모드와 같은 파일, N02).
 
 **기록 보기**
 

@@ -47,10 +47,34 @@
 //      WASD로도 걷는다는 것을 알 길이 없었다 (U52) — 말한 키가 정말 캐릭터 몫인지 본다
 //   ⑭ 설정의 문항 시간 «제한 없음»(FR-3.7)은 시간 초과로 가는 길이 아예 없어야 한다. 25초를 앞당겨도
 //      판이 깨어나지 않는지, 설정 대화상자가 워커와 화면의 키(로비의 Esc)를 가두는지 함께 본다
+//   ⑮ 홈 dock 의 분야 이름을 넓은 화면에서 14px 로 키우면(U53) 「예술과문화」가 폭 421–467px 칸을
+//      넘친다(tests/home-interface.test.mjs 의 셈이 먼저 잡았다). 셈은 맑은 고딕의 1em 을 가정하므로
+//      실제 글꼴로 글자 크기·다섯 칸 한 줄·이름이 잘리지 않는지를 지금 창 폭에서 본다
+//   ⑯ 짧은 가로 홈(U07)의 두 줄 dock이 화면의 절반을 먹어 두 보조 입구와 조작부가 위 가운데로 밀려
+//      올라왔다. dock 한 줄·되살린 브랜드·가장자리 조각끼리 겹치지 않음·캐릭터 시작 자리를 본다. 방 복귀 줄이
+//      dock 을 키우면 올라온 선택 원이 「게임 방법」·설정을 덮었다(layout-01) — 줄을 잠깐 펼친 자리도 본다.
+//      자리는 실제로 그려진 프레임에서 잰다(dock 높이는 ResizeObserver 가 다음 프레임 직전에 맞춘다)
+//   ⑰ 짧은 가로 touch 퀴즈(U15)에서 바닥이 접힘 아래로 밀리고 조작부가 보기를 덮었다. 두 열 배치에서
+//      답하기 전에 스크롤 없이 다 보이는지, 답한 뒤 「다음 문제」가 패널 안에 잘리지 않는지 본다.
+//      짧은 가로 검사는 그 화면 크기(touch · 높이 480px 이하 가로 / 높이 420px 이하 · 폭 640px 이상)에서만
+//      돈다 — 740×360 · 667×375 · 844×390 · 915×412 를 touch 에뮬레이션으로 열고 붙여넣는다
+//   ⑱ 처음 온 사람은 판을 열기 전에는 규칙을 읽을 길이 없었다 — 퀴즈의 `?`는 시간이 흐르는 동안
+//      열린다 (U01). 홈의 「게임 방법」이 설정 버튼 곁(아래, 높이 480px 이하는 옆)에 겹치지 않고 서는지, 지금 고른 문항 시간을
+//      말하는지, 열린 동안 캐릭터가 걷지 않고 Esc 로 닫으면 그 버튼으로 돌아오는지 본다. dock 은
+//      «분야 골라 10문제», 기록 없는 전체 도전은 «25문제»를 말한다 (U04). 처음 세 판은 짧은 화면에서도
+//      무대 아래 규칙 줄이 보인다
+//   ⑲ 전체 도전(25문제)의 오답 풀이가 한 목록으로 다 펼쳐져 결과 화면이 끝없이 길었다 (N04). 분야별
+//      접힌 묶음(details/summary, 44px)인지, 결과 행동이 여전히 먼저 오는지, 묶음을 걸어가 누르면 펼쳐지는지 본다
+//   ⑳ 대기실 액자의 «말 숨기기»(N06)는 걸어가 밟고 누를 수 있는 진짜 44px 버튼이어야 한다 — 무엇이 그
+//      위를 덮으면 elementFromPoint 가 버튼을 집지 못해 워커로는 누를 수 없다. 로컬 방에는 끊김이 없어
+//      방장의 «내보내기»(U24)가 그려지지 않는다. 로컬 방에 점검용 손님을 잠깐 넣어 본다
+//   ㉑ 랭킹의 «기록 내보내기»(N02)는 선생님 모드 로더가 읽는 파일을 만든다(student 칸 없음, 문항별 정오 포함).
+//      내려받기와 클립보드는 가로채 실제 파일·클립보드를 건드리지 않는다
 //
 // **localStorage 의 방 목록·랭킹·설정을 건드린다.** 시작할 때 백업하고 끝나면 되돌린다 —
 // ⑪을 보려고 랭킹을 잠깐 비우고 자동 저장된 기록을 센다. ⑭은 문항 시간을 잠깐 «제한 없음»으로
-// 바꿨다가 화면에서 원래 값으로 되돌린다.
+// 바꿨다가 화면에서 원래 값으로 되돌린다. 판을 여는 만큼 «규칙 줄을 보인 판 수»(⑱)가 늘어 그것도 되돌린다
+// (앱이 기억한 수는 새로고침 전까지 그대로라 규칙 줄이 다시 접혀 있을 수 있다 — 새로고침하면 맞는다).
 
 (async () => {
   const 결과 = [];
@@ -98,6 +122,16 @@
    * 앞당긴 채로 두면 그다음에 여는 판이 매 문항 즉시 시간 초과된다.
    * 그래서 `잠든퀴즈를깨워본다` 는 언제나 짝을 맞춰 되돌린다.
    */
+  /**
+   * 브라우저가 실제로 한 프레임을 그릴 때까지 기다린다(진짜 rAF 두 번). 홈 dock 높이(--home-dock-h)는
+   * ResizeObserver 가 그 프레임을 그리기 직전에 맞추므로, 화면 크기를 바꾸거나 dock 을 키운 **바로 그 틱**에
+   * 재면 사람 눈에는 한 번도 칠해지지 않는 낡은 자리를 잰다 — 자동화가 창 크기를 바꾸자마자 붙여 넣으면
+   * 조작부가 dock·「게임 방법」을 덮는 것으로 나왔다. 숨은 탭은 rAF 가 오지 않으므로 잠깐만 기다리고 넘어간다
+   */
+  const 그려질때까지 = () => new Promise((r) => {
+    const 끝 = setTimeout(r, 300);
+    진짜raf(() => 진짜raf(() => { clearTimeout(끝); r(); }));
+  });
   const 시간앞당기기 = (ms) => { 시간밀기 += ms; 프레임돌리기(); };
   const 시간되돌리기 = (ms) => { 시간밀기 -= ms; };
 
@@ -208,6 +242,9 @@
   const 방백업 = localStorage.getItem('quiz.rooms');
   const 랭킹백업 = localStorage.getItem('quiz.rankings');
   const 설정백업 = localStorage.getItem('quiz.settings');
+  const 규칙줄백업 = localStorage.getItem('quiz.ruleHintRounds');
+  // ⑱ 이 점검이 처음 여는 판에 규칙 줄이 남는가는 지금까지 보인 판 수가 정한다 (RULE_HINT_ROUNDS 3)
+  const 규칙줄본판 = Number(JSON.parse(규칙줄백업 ?? '0')) || 0;
   console.log('%c화면 점검을 시작합니다', 'font-weight:bold');
 
   try {
@@ -288,6 +325,181 @@
     전체도전기록.hidden = 원래기록숨김;
     전체도전기록.textContent = 원래기록문구;
 
+    // ⑮ 분야 이름은 폭 420px 이하에서만 12px 이고 넓으면 14px 다 (U53). 키워도 다섯 칸이 한 줄에 남고
+    // 보이는 이름이 칸 안에서 잘리지 않아야 한다 — 「예술과문화」는 14px 에서 70px 라 폭 480px 까지는
+    // 짧은 라벨(「예술」)을 보인다. 창 폭을 421·450·481·600px 로 바꿔 가며 돌려 본다
+    const 분야칸 = [...document.querySelectorAll('#category-grid .category-card')];
+    const 보이는이름 = 분야칸.map((칸) => [...칸.querySelectorAll('.category-card__name')]
+      .find((이름) => getComputedStyle(이름).display !== 'none'));
+    const 바란크기 = window.innerWidth <= 420 ? 12 : 14;
+    const 이름크기 = 보이는이름.map((이름) => (이름 ? Number.parseFloat(getComputedStyle(이름).fontSize) : NaN));
+    결과.push({
+      자리: '홈', 이름: `분야 이름이 ${바란크기}px 이다 (폭 ${window.innerWidth}px)`,
+      통과: 이름크기.length === 5 && 이름크기.every((크기) => 크기 === 바란크기),
+      무엇: 이름크기.map((크기) => `${크기}px`).join(' · '),
+    });
+    const 칸줄 = new Set(분야칸.map((칸) => Math.round(칸.getBoundingClientRect().top)));
+    결과.push({
+      자리: '홈', 이름: '다섯 분야가 dock 한 줄에 있다',
+      통과: 분야칸.length === 5 && 칸줄.size === 1,
+      무엇: `${분야칸.length}칸 · ${칸줄.size}줄`,
+    });
+    const 잘린이름 = 보이는이름.filter((이름) => 이름 && 이름.scrollWidth > 이름.clientWidth)
+      .map((이름) => `${이름.textContent} ${이름.scrollWidth}/${이름.clientWidth}px`);
+    결과.push({
+      자리: '홈', 이름: '보이는 분야 이름이 칸 안에서 잘리지 않는다',
+      통과: 보이는이름.every(Boolean) && 잘린이름.length === 0,
+      무엇: 잘린이름.join(', ') || 보이는이름.map((이름) => 이름?.textContent ?? '(없음)').join(' · '),
+    });
+    // ⑯ 짧은 가로 홈(U07). 두 줄 dock이 화면의 절반(740×360에서 171px)을 먹어 두 보조 입구와 조작부가
+    // 위 가운데까지 밀려 올라왔고 브랜드는 접혀 있었다. 가장자리 조각끼리 겹치지 않는 것은 어느 화면에서나 본다.
+    // 실제로 그려진 자리를 잰다 — dock 높이는 다음 프레임 직전에 맞춰진다(그려질때까지)
+    await 그려질때까지();
+    const 홈조각 = {
+      dock: document.getElementById('home-quests'),
+      캐릭터입구: document.getElementById('open-characters'),
+      랭킹입구: document.getElementById('open-ranking'),
+      닉네임: document.getElementById('open-nickname'),
+      설정: document.getElementById('open-settings'),
+      브랜드: document.getElementById('home-title'),
+      스틱: document.querySelector('.walk-stick'),
+      선택: document.querySelector('.walk-confirm'),
+    };
+    const 홈겹침 = (조각) => {
+      const 상자들 = Object.entries(조각)
+        .map(([이름, 요소]) => [이름, 요소.getBoundingClientRect()])
+        // 접은 브랜드(1px)·조작부가 없는 마우스 기기의 빈 상자는 뺀다
+        .filter(([, 상자]) => 상자.width > 1 && 상자.height > 1);
+      const 겹친것 = [];
+      for (let 앞 = 0; 앞 < 상자들.length; 앞 += 1) {
+        for (let 뒤 = 앞 + 1; 뒤 < 상자들.length; 뒤 += 1) {
+          const 넓이 = 겹친넓이(상자들[앞][1], 상자들[뒤][1]);
+          if (넓이 > 0) 겹친것.push(`${상자들[앞][0]}×${상자들[뒤][0]} ${Math.round(넓이)}px²`);
+        }
+      }
+      return 겹친것;
+    };
+    const 겹친홈조각 = 홈겹침(홈조각);
+    결과.push({
+      자리: '홈', 이름: '가장자리 입구·dock·브랜드·조작부가 서로 겹치지 않는다',
+      통과: 겹친홈조각.length === 0,
+      무엇: `${innerWidth}×${innerHeight} · ${겹친홈조각.join(', ') || '겹침 없음'}`,
+    });
+    // ⑯ 방 복귀 줄(U35)이 뜨면 dock 이 한 줄만큼 커지고 입구·조작부 anchor 가 따라 올라간다. 740×360 에서
+    // 선택 원이 「게임 방법」을, 높이 421–480px 에서는 설정·닉네임까지 덮었다 (layout-01). 568×320 에서는 dock 이
+    // 206px 이 되어 두 입구가 닉네임·설정을, 스틱·선택 원이 복귀 줄을 덮었다 — 그 크기에서는 줄이 분야 줄 왼쪽
+    // 칸에 들어 dock 이 커지지 않는다. 이 점검은 로컬이라 줄이 뜨지 않으므로 잠깐 펼쳐 dock 이 다시 재어진
+    // 뒤(그려질때까지)의 자리를 보고 되돌린다
+    const 복귀줄 = document.getElementById('home-room-note');
+    const 복귀줄글 = document.getElementById('home-room-note-text');
+    const 원래복귀줄 = { 숨김: 복귀줄.hidden, 글: 복귀줄글.textContent };
+    const 줄전dock = Math.round(홈조각.dock.getBoundingClientRect().height);
+    복귀줄.hidden = false;
+    복귀줄글.textContent = '「점검용 방」 방에 아직 있어요';
+    await 그려질때까지();
+    const 줄뒤dock = Math.round(홈조각.dock.getBoundingClientRect().height);
+    const 줄뒤겹침 = 홈겹침({ ...홈조각, 게임방법: document.getElementById('open-rules') });
+    const 줄이분야옆 = matchMedia('(max-height: 360px) and (min-width: 480px) and (max-width: 639px)').matches;
+    const 줄상자 = 복귀줄.getBoundingClientRect();
+    const 분야상자 = document.getElementById('category-grid').getBoundingClientRect();
+    결과.push({
+      자리: '홈', 이름: '방 복귀 줄로 dock 이 커져도 입구·조작부·「게임 방법」·HUD 가 서로 겹치지 않는다',
+      통과: (줄이분야옆
+        ? 줄뒤dock <= 줄전dock + 4 && Math.abs(줄상자.top - 분야상자.top) <= 1 && 줄상자.right <= 분야상자.left + 1
+        : 줄뒤dock > 줄전dock)
+        && 줄뒤겹침.length === 0,
+      무엇: `${innerWidth}×${innerHeight} · dock ${줄전dock} → ${줄뒤dock}px · ${줄뒤겹침.join(', ') || '겹침 없음'}`,
+    });
+    복귀줄.hidden = 원래복귀줄.숨김;
+    복귀줄글.textContent = 원래복귀줄.글;
+    await 그려질때까지();
+    if (matchMedia('(max-height: 420px) and (min-width: 640px)').matches) {
+      const 분야줄 = document.getElementById('category-grid').getBoundingClientRect();
+      const 주행동줄 = document.querySelector('.home-primary-actions').getBoundingClientRect();
+      const dock상자 = 홈조각.dock.getBoundingClientRect();
+      결과.push({
+        자리: '홈', 이름: '짧은 가로: 분야와 온라인·전체 도전이 dock 한 줄에 있다',
+        통과: Math.abs(분야줄.top - 주행동줄.top) <= 1 && 분야줄.right <= 주행동줄.left + 1
+          && dock상자.height <= innerHeight / 4,
+        무엇: `분야 top ${Math.round(분야줄.top)}px · 주 행동 top ${Math.round(주행동줄.top)}px · dock ${Math.round(dock상자.height)}px / 화면 ${innerHeight}px`,
+      });
+      const 브랜드상자 = 홈조각.브랜드.getBoundingClientRect();
+      결과.push({
+        자리: '홈', 이름: '짧은 가로: 브랜드가 위 가운데에 보인다',
+        통과: 브랜드상자.width > 40 && 브랜드상자.top >= 0 && 브랜드상자.bottom <= 홈조각.dock.getBoundingClientRect().top,
+        무엇: `브랜드 ${Math.round(브랜드상자.width)}px × ${Math.round(브랜드상자.height)}px · top ${Math.round(브랜드상자.top)}px`,
+      });
+    }
+    // ⑱ 한 판의 길이 (U04). 은행 크기가 아니라 상수에서 온 판 길이다
+    const 캡션 = document.getElementById('category-caption');
+    const 캡션보임 = getComputedStyle(캡션).position !== 'absolute';
+    결과.push({
+      자리: '홈', 이름: 'dock 이 «분야 골라 10문제»를 말한다 (짧은 가로 화면은 이름으로만)',
+      통과: 캡션.textContent.trim() === '분야 골라 10문제'
+        && (캡션보임 || innerHeight <= 480)
+        && document.getElementById('category-grid').getAttribute('aria-labelledby') === 'category-caption',
+      무엇: `${캡션.textContent.trim()} · ${캡션보임 ? '보임' : '눈에서만 접힘'} · ${innerWidth}×${innerHeight}`,
+    });
+    const 전체기록있나 = (() => {
+      try {
+        const 기록들 = JSON.parse(랭킹백업 ?? '[]');
+        return Array.isArray(기록들) && 기록들.some((기록) => 기록?.mode === 'all');
+      } catch {
+        return false; // 깨진 랭킹은 앱도 빈 랭킹으로 읽는다
+      }
+    })();
+    결과.push({
+      자리: '홈', 이름: '기록 없는 전체 도전은 «25문제», 있으면 «최고 N점»',
+      통과: 전체기록있나
+        ? /^최고 \d+점$/.test(전체도전기록.textContent.trim())
+        : 전체도전기록.textContent.trim() === '25문제' && /25문제/.test(document.getElementById('start-all').getAttribute('aria-label') ?? ''),
+      무엇: `${전체도전기록.textContent.trim()} · 이름 ${document.getElementById('start-all').getAttribute('aria-label')}`,
+    });
+
+    // ⑱ 「게임 방법」 (U01). 판을 열기 전에 읽는 자리라 시간이 흐르지 않는다
+    const 방법 = document.getElementById('open-rules');
+    const 방법상자 = 방법.getBoundingClientRect();
+    const 방법겹침 = ['open-settings', 'open-nickname', 'open-ranking', 'open-characters', 'home-quests']
+      .map((id) => [id, 겹친넓이(방법상자, document.getElementById(id).getBoundingClientRect())])
+      .filter(([, 넓이]) => 넓이 > 0);
+    const 조작부상자들 = ['.walk-stick', '.walk-confirm']
+      .map((선택자) => document.querySelector(선택자)?.getBoundingClientRect())
+      .filter((상자) => 상자 && 상자.width > 0);
+    const 방법조작부겹침 = 조작부상자들.reduce((합, 상자) => 합 + 겹친넓이(방법상자, 상자), 0);
+    결과.push({
+      자리: '홈', 이름: '「게임 방법」이 44px 이고 다른 HUD·dock·조작부와 겹치지 않는다',
+      통과: 방법상자.width >= 44 && 방법상자.height >= 44 && 방법겹침.length === 0 && 방법조작부겹침 === 0,
+      무엇: `${방법상자.width}×${방법상자.height}px · top ${Math.round(방법상자.top)}px`
+        + (방법겹침.length ? ` · !! 겹침 ${방법겹침.map(([id, 넓이]) => `${id} ${넓이}px²`).join(', ')}` : '')
+        + (방법조작부겹침 ? ` · !! 조작부 ${방법조작부겹침}px²` : ''),
+    });
+    const 방법창 = document.getElementById('rules-dialog');
+    const 고른시간 = document.querySelector('#settings-dialog [data-time-limit][aria-pressed="true"]')?.dataset.timeLimit ?? '20000';
+    방법.focus();
+    await 눌러('open-rules', 300);
+    결과.push({
+      자리: '홈', 이름: '「게임 방법」이 패널에 포커스를 두고 지금 고른 문항 시간을 말한다',
+      통과: !방법창.hidden && document.activeElement === 방법창.querySelector('[role="dialog"]')
+        && document.getElementById('rules-time').textContent.includes(고른시간 === 'none' ? '시간 제한 없음' : `${Number(고른시간) / 1000}초`)
+        && document.getElementById('rules-length').textContent.trim() === '분야 10문제 · 전체 도전 25문제',
+      무엇: `${방법창.hidden ? '!! 닫힘' : '열림'} · ${document.getElementById('rules-time').textContent.trim()}`,
+    });
+    const 방법방향키 = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    (document.activeElement ?? document.body).dispatchEvent(방법방향키);
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true }));
+    결과.push({
+      자리: '홈', 이름: '「게임 방법」이 열린 동안 캐릭터가 방향키를 받지 않는다',
+      통과: !방법방향키.defaultPrevented,
+      무엇: 방법방향키.defaultPrevented ? '!! 뒤에서 캐릭터가 걷는다' : '캐릭터는 그대로다',
+    });
+    (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await 잠깐(200);
+    결과.push({
+      자리: '홈', 이름: 'Esc 로 닫으면 「게임 방법」 버튼으로 포커스가 돌아오고 홈에 남는다',
+      통과: 방법창.hidden && document.activeElement === 방법 && 지금화면() === 'home',
+      무엇: `${방법창.hidden ? '닫힘' : '!! 열림'} · 포커스 ${document.activeElement?.id || '(없음)'} · 화면 ${지금화면()}`,
+    });
+
     // ⑤ 다이얼로그를 닫으면 포커스가 열었던 버튼으로 돌아온다 — 키보드만 쓰는
     // 사람을 위한 규칙이다. 그 뒤 **캐릭터를 움직이면 포커스를 놓아야** 한다.
     // 놓지 않으면 걸어간 자리가 아니라 포커스에 남은 버튼이 눌린다.
@@ -345,6 +557,24 @@
     });
     잠든퀴즈를깨워본다('랭킹');
     await 눌러('ranking-home');
+    // ⑯ 홈으로 돌아오면 워커가 시작 자리에 다시 선다. 버튼을 밟지 않고, 되살린 브랜드·입구·조작부를 덮지 않는다
+    프레임돌리기(3);
+    const 홈캐릭터상자 = document.getElementById('home-character').getBoundingClientRect();
+    const 홈발밑 = document.querySelector('[data-screen="home"] .is-standing, .app-bar .is-standing');
+    const 캐릭터가덮은것 = ['home-title', 'open-characters', 'open-ranking', 'open-nickname', 'home-quests']
+      .map((id) => document.getElementById(id))
+      .concat([document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')])
+      .filter((요소) => {
+        const 상자 = 요소.getBoundingClientRect();
+        return 상자.width > 1 && 상자.height > 1 && 겹친넓이(상자, 홈캐릭터상자) > 0;
+      })
+      .map((요소) => 요소.id || 요소.className);
+    결과.push({
+      자리: '홈', 이름: '캐릭터가 아무것도 밟거나 덮지 않은 자리에서 시작한다',
+      통과: !홈발밑 && 캐릭터가덮은것.length === 0,
+      무엇: 홈발밑 ? `!! ${홈발밑.id || 홈발밑.className} 위`
+        : (캐릭터가덮은것.length ? `!! 덮음: ${캐릭터가덮은것.join(', ')}` : `빈자리 (${Math.round(홈캐릭터상자.left)}, ${Math.round(홈캐릭터상자.bottom)})`),
+    });
     살펴본곳.push('랭킹');
 
     // 홈 → 내 캐릭터 → 홈
@@ -357,6 +587,18 @@
     document.querySelector('.category-card').click();
     await 잠깐(800);
     살펴본다('처음 연 퀴즈', 'quiz', true);
+    // ⑱ 처음 세 판은 짧은 touch·좁은 화면에서도 규칙 줄이 남는다. 그 뒤로는 예전처럼 접힌다
+    const 규칙줄 = document.getElementById('arena-hint');
+    const 규칙줄남기나 = 규칙줄본판 < 3;
+    결과.push({
+      자리: '퀴즈', 이름: '처음 세 판은 무대 아래 규칙 줄이 보이고 판의 문항 시간을 말한다',
+      통과: 규칙줄.dataset.pinned === String(규칙줄남기나)
+        && (!규칙줄남기나 || (getComputedStyle(규칙줄).display !== 'none'
+          && getComputedStyle(document.getElementById('arena-hint-rule')).display !== 'none'))
+        && document.getElementById('arena-hint-rule').textContent.startsWith('보기를 누르면 바로 답'),
+      무엇: `본 판 ${규칙줄본판} · data-pinned ${규칙줄.dataset.pinned} · display ${getComputedStyle(규칙줄).display}`
+        + ` · ${document.getElementById('arena-hint-rule').textContent.trim()}`,
+    });
     const 보기크기 = [...document.querySelectorAll('#choices .choice')]
       .map((보기) => 보기.getBoundingClientRect().height);
     결과.push({
@@ -370,12 +612,70 @@
       통과: 도움크기.width >= 44 && 도움크기.height >= 44,
       무엇: `${도움크기.width}px × ${도움크기.height}px`,
     });
+    // ⑰ 짧은 가로 touch 화면(U15). 세로로 쌓으면 740×360에서 문서가 642px이 되어 바닥이 거의 다 접힘 아래였고,
+    // 고정 스틱·선택이 3·4번 보기를 덮었다. 두 열(왼쪽 HUD·질문·보기, 오른쪽 바닥)에서는 답하기 전에 스크롤 없이
+    // 넷이 다 보이고, 조작부는 양옆 여백에 있다. 은행에서 가장 긴 질문과 긴 보기가 겹치면 넘칠 수 있다
+    const 짧은가로퀴즈 = matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches;
+    if (짧은가로퀴즈) {
+      // 워커는 다음 프레임에 십자 한가운데에 선다
+      프레임돌리기(3);
+      const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
+      const 보기상자 = [...document.querySelectorAll('#choices .choice')].map((보기) => 보기.getBoundingClientRect());
+      const 칸상자 = [...document.querySelectorAll('#arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
+      const 위쪽 = [document.querySelector('[data-screen="quiz"] .quiz-hud'), document.getElementById('question-text')]
+        .map((요소) => 요소.getBoundingClientRect());
+      const 문서높이 = document.documentElement.scrollHeight;
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 답하기 전에 문서가 화면 높이를 넘지 않는다',
+        통과: 문서높이 <= innerHeight + 1 && scrollY === 0,
+        무엇: `${innerWidth}×${innerHeight} · 문서 ${문서높이}px · scrollY ${scrollY} · 질문 ${document.getElementById('question-text').textContent.length}자`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: HUD·질문·네 보기·네 바닥 칸이 모두 화면 안에 있다',
+        통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안),
+        무엇: `보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 바닥은 보기 오른쪽 열에 있다',
+        통과: 칸상자.length === 4 && Math.min(...칸상자.map((상자) => 상자.left)) >= Math.max(...보기상자.map((상자) => 상자.right)),
+        무엇: `보기 오른쪽 ${Math.round(Math.max(...보기상자.map((상자) => 상자.right)))}px · 칸 왼쪽 ${Math.round(Math.min(...칸상자.map((상자) => 상자.left)))}px`,
+      });
+      const 조작부상자 = [document.querySelector('.walk-stick'), document.querySelector('.walk-confirm')]
+        .map((요소) => 요소.getBoundingClientRect());
+      const 덮인넓이 = [...보기상자, ...칸상자]
+        .reduce((합, 상자) => 합 + 조작부상자.reduce((작은합, 조작부) => 작은합 + 겹친넓이(상자, 조작부), 0), 0);
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 고정 스틱·선택이 보기와 바닥 칸을 덮지 않는다',
+        통과: 조작부상자.every((상자) => 상자.width >= 44) && 덮인넓이 === 0,
+        무엇: `조작부 ${조작부상자.map((상자) => `${Math.round(상자.width)}px`).join(' · ')} · 덮인 넓이 ${Math.round(덮인넓이)}px²`,
+      });
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 캐릭터가 바닥 십자 한가운데(아무 칸도 아닌 자리)에서 시작한다',
+        통과: !document.querySelector('[data-screen="quiz"] .is-standing'),
+        무엇: document.querySelector('[data-screen="quiz"] .is-standing')?.className ?? '중립',
+      });
+    }
     document.querySelector('.choice').click();
     await 잠깐(400);
     결과.push({
       자리: '퀴즈', 이름: '답을 내면 시트가 뜬다',
       통과: !document.getElementById('feedback').hidden, 무엇: '준비된 상태를 만든다',
     });
+    if (짧은가로퀴즈) {
+      // 결과 패널 높이 한도가 60vh(360px 화면에서 216px)이면 「다음 문제」가 패널 안 스크롤 밑에 잘렸다
+      const 화면안 = (요소) => {
+        const 상자 = 요소.getBoundingClientRect();
+        return 상자.top >= -1 && 상자.bottom <= innerHeight + 1;
+      };
+      const 정답줄 = document.getElementById('feedback-answer');
+      결과.push({
+        자리: '퀴즈', 이름: '짧은 가로: 답한 뒤 판정·정답 줄·「다음 문제」가 한 화면에 보인다',
+        통과: 화면안(document.getElementById('feedback-verdict'))
+          && (정답줄.hidden || 화면안(정답줄))
+          && 화면안(document.getElementById('next-button')),
+        무엇: `scrollY ${Math.round(scrollY)} · 다음 문제 bottom ${Math.round(document.getElementById('next-button').getBoundingClientRect().bottom)}px / ${innerHeight}px`,
+      });
+    }
     // ⑩ 질문 머리와 패널 끝 사이의 거리는 스크롤과 무관하다. 그 거리가 화면에 들면
     // 질문 머리도 패널 끝도 화면 안이어야 하고, 들지 않으면 패널 끝(「다음 문제」)에 맞춘다
     const 질문상자 = document.getElementById('question-text').getBoundingClientRect();
@@ -482,6 +782,47 @@
       통과: !document.getElementById('ranking-footer').hidden,
       무엇: document.getElementById('ranking-footer').hidden ? '!! 숨김' : '보임',
     });
+
+    // ㉑ 기록 내보내기. 실제 내려받기·클립보드는 가로챈다
+    결과.push({
+      자리: '랭킹', 이름: '기록이 있으면 「기록 내보내기」가 보인다',
+      통과: !document.getElementById('ranking-export').hidden,
+      무엇: document.getElementById('ranking-export').hidden ? '!! 숨김' : '보임',
+    });
+    const 진짜링크클릭 = HTMLAnchorElement.prototype.click;
+    let 내려받기 = null;
+    HTMLAnchorElement.prototype.click = function 가로챈클릭() {
+      내려받기 = { 이름: this.download, 주소: this.href };
+    };
+    try {
+      await 눌러('ranking-export-file', 400);
+    } finally {
+      HTMLAnchorElement.prototype.click = 진짜링크클릭;
+    }
+    const 파일 = 내려받기 ? await fetch(내려받기.주소).then((r) => r.json()).catch(() => null) : null;
+    결과.push({
+      자리: '랭킹', 이름: '내보낸 파일은 선생님 모드가 읽는 모양이다 (student 없음·문항별 정오)',
+      통과: Boolean(파일) && 파일.schemaVersion === 1 && !('student' in 파일)
+        && Array.isArray(파일.records) && 파일.records.length >= 1
+        && 파일.records.some((기록) => Array.isArray(기록.questionResults))
+        && /^quiz-by-quiz-기록-.+-\d{4}-\d{2}-\d{2}\.json$/.test(내려받기.이름),
+      무엇: 파일 ? `${내려받기.이름} · 기록 ${파일.records?.length}개` : '!! 파일을 만들지 않았다',
+    });
+    const 클립보드 = navigator.clipboard;
+    let 복사한글 = null;
+    if (클립보드) 클립보드.writeText = async (글) => { 복사한글 = 글; };
+    try {
+      await 눌러('ranking-export-copy', 400);
+    } finally {
+      if (클립보드) delete 클립보드.writeText;
+    }
+    const 펼친글 = document.getElementById('ranking-export-text');
+    const 복사본 = 복사한글 ?? (펼친글.hidden ? null : 펼친글.value);
+    결과.push({
+      자리: '랭킹', 이름: '「기록 복사」는 같은 글을 클립보드에 넣거나 펼쳐 골라 둔다',
+      통과: Boolean(복사본) && JSON.parse(복사본).records.length === 파일?.records?.length,
+      무엇: document.getElementById('ranking-export-status').textContent || '(안내 없음)',
+    });
     history.back();
     await 화면기다리기('home');
     살펴본다('랭킹에서 「뒤로」', 'home', true);
@@ -581,6 +922,51 @@
       무엇: 원래시간,
     });
     살펴본곳.push('설정 «제한 없음»');
+
+    // ⑲ 전체 도전 결과의 오답 묶음 (N04). 마지막 보기만 골라 여러 분야에서 틀리게 한다
+    await 눌러('start-all', 800);
+    살펴본다('전체 도전', 'quiz', true);
+    for (let i = 0; i < 80 && 지금화면() === 'quiz'; i += 1) {
+      const 보기들 = [...document.querySelectorAll('#choices .choice')].filter((b) => !b.disabled);
+      if (보기들.length) 보기들[보기들.length - 1].click();
+      await 잠깐(100);
+      const 다음 = document.getElementById('next-button');
+      if (다음 && !document.getElementById('feedback').hidden) 다음.click();
+      await 잠깐(120);
+    }
+    살펴본다('전체 도전 결과', 'result', true);
+    const 오답목록 = document.getElementById('result-review');
+    const 묶음들 = [...오답목록.children];
+    const 펼침줄들 = 묶음들.map((묶음) => 묶음.querySelector('details > summary.review-group__summary'));
+    결과.push({
+      자리: '전체 도전 결과', 이름: '오답 풀이가 분야별 접힌 묶음이다 — 한 목록으로 펼치지 않는다',
+      통과: document.getElementById('result-review-block').hidden
+        || (묶음들.length > 0
+          && 묶음들.every((묶음) => 묶음.classList.contains('review-group'))
+          && 펼침줄들.every((줄) => 줄 && 줄.getBoundingClientRect().height >= 44)
+          && (묶음들.length === 1 || 묶음들.every((묶음) => !묶음.querySelector('details').open))),
+      무엇: 묶음들.map((묶음) => 묶음.querySelector('summary')?.textContent.replace(/\s+/g, ' ').trim() ?? `!! ${묶음.className}`).join(' · ') || '오답 없음',
+    });
+    const 전체결과행동 = document.getElementById('result-retry').closest('.result-actions');
+    결과.push({
+      자리: '전체 도전 결과', 이름: '핵심 행동이 오답 묶음보다 먼저 온다',
+      통과: Boolean(전체결과행동.compareDocumentPosition(document.getElementById('result-review-block')) & Node.DOCUMENT_POSITION_FOLLOWING),
+      무엇: `행동 ${Math.round(전체결과행동.getBoundingClientRect().top)}px · 묶음 ${Math.round(document.getElementById('result-review-block').getBoundingClientRect().top)}px`,
+    });
+    if (펼침줄들[0]) {
+      // 걸어가 누르는 것과 같은 길 — 워커의 고르기는 발밑의 진짜 click() 이다
+      const 첫묶음 = 펼침줄들[0].parentElement;
+      const 처음열림 = 첫묶음.open;
+      펼침줄들[0].click();
+      결과.push({
+        자리: '전체 도전 결과', 이름: '펼침 줄을 누르면(걸어가 누르기와 같은 click) 묶음이 여닫힌다',
+        통과: 첫묶음.open !== 처음열림,
+        무엇: `${처음열림 ? '열림' : '닫힘'} → ${첫묶음.open ? '열림' : '닫힘'}`,
+      });
+    }
+    await 눌러('result-home', 700);
+    살펴본다('전체 도전 결과에서 온 홈', 'home', true);
+    살펴본곳.push('전체 도전 결과');
 
     // 로비와 대기실. 방을 하나 만들어 오간다
     await 눌러('open-online', 0);
@@ -720,6 +1106,82 @@
     await 화면기다리기('waiting');
     살펴본다('대기실', 'waiting', true);
 
+    // ⑳ 액자의 말 숨기기·내보내기. 로컬 방은 이 브라우저의 나뿐이라 점검용 손님을 잠깐 넣는다
+    const 액자버튼 = (행동) => [...document.querySelectorAll(`#lounge-players [data-portrait-action="${행동}"]`)];
+    결과.push({
+      자리: '대기실', 이름: '내 액자에는 말 숨기기·내보내기가 없다',
+      통과: 액자버튼('mute').length === 0 && 액자버튼('remove').length === 0,
+      무엇: `말 숨기기 ${액자버튼('mute').length} · 내보내기 ${액자버튼('remove').length}`,
+    });
+    const 손님방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+    const 점검방 = 손님방.find((방) => 방.name === '점검용 방');
+    if (점검방) {
+      점검방.players.push({ id: 'check-guest', nickname: '점검손님', characterId: 'slime-blue', isReady: false, seenAt: Date.now() });
+      localStorage.setItem('quiz.rooms', JSON.stringify(손님방));
+    }
+    // 방 snapshot 을 다시 받게 한다(분야 설정이 한 칸 돈다 — 방은 끝에 통째로 되돌린다)
+    await 눌러('setting-category', 400);
+    const [숨기기] = 액자버튼('mute');
+    // 화면 밖이면 elementFromPoint 가 null 이다. 보이는 데로 옮겨 놓고 잰다
+    숨기기?.scrollIntoView({ block: 'center' });
+    await 잠깐(100);
+    const 숨기기상자 = 숨기기?.getBoundingClientRect();
+    const 발밑 = 숨기기상자
+      ? document.elementFromPoint(숨기기상자.left + 숨기기상자.width / 2, 숨기기상자.top + 숨기기상자.height / 2)
+      : null;
+    결과.push({
+      자리: '대기실', 이름: '남의 액자에는 걸어가 밟을 수 있는 44px 말 숨기기 버튼이 있다',
+      통과: Boolean(숨기기) && 숨기기상자.width >= 44 && 숨기기상자.height >= 44
+        && Boolean(발밑?.closest('[data-portrait-action="mute"]'))
+        && 숨기기.getAttribute('aria-label') === '점검손님 님 말 숨기기',
+      무엇: 숨기기 ? `${Math.round(숨기기상자.width)}×${Math.round(숨기기상자.height)} · 발밑 ${발밑?.className || '(없음)'}` : '!! 버튼 없음',
+    });
+    숨기기?.click();
+    await 잠깐(200);
+    const 숨긴뒤 = 액자버튼('mute')[0];
+    const 로그끝 = document.getElementById('chat-log').lastElementChild?.textContent ?? '';
+    결과.push({
+      자리: '대기실', 이름: '말 숨기기는 aria-pressed 로 켜지고 조용한 한 줄을 남긴다',
+      통과: 숨긴뒤?.getAttribute('aria-pressed') === 'true' && 로그끝.includes('점검손님 님의 말을 숨겼어요'),
+      무엇: `${숨긴뒤?.getAttribute('aria-pressed')} · ${로그끝 || '(로그 없음)'}`,
+    });
+    숨긴뒤?.click();
+    // 방장은 접속 중인 사람도 확인창을 거쳐 내보낸다(소유자 결정). 확인창만 열어 보고 «그대로 두기»로 닫는다
+    const [내보내기] = 액자버튼('remove');
+    const 내보내기상자 = 내보내기?.getBoundingClientRect();
+    결과.push({
+      자리: '대기실', 이름: '방장 화면의 남의 액자에는 44px 내보내기 버튼이 있다',
+      통과: Boolean(내보내기) && 내보내기상자.height >= 44
+        && 내보내기.getAttribute('aria-label') === '점검손님 님 내보내기',
+      무엇: 내보내기 ? `${Math.round(내보내기상자.width)}×${Math.round(내보내기상자.height)}` : '!! 버튼 없음',
+    });
+    내보내기?.click();
+    await 잠깐(100);
+    const 확인창 = document.getElementById('remove-member-dialog');
+    const 확인설명 = document.getElementById('remove-member-body').textContent ?? '';
+    결과.push({
+      자리: '대기실', 이름: '접속 중인 사람의 내보내기는 «잠시 다시 들어올 수 없어요» 확인창을 거친다',
+      통과: !확인창.hidden
+        && document.getElementById('remove-member-title').textContent === '점검손님 님을 방에서 내보낼까요?'
+        && 확인설명.startsWith('잠시 다시 들어올 수 없어요')
+        && document.activeElement === document.getElementById('remove-member-cancel'),
+      무엇: `${확인창.hidden ? '닫힘' : '열림'} · ${확인설명 || '(설명 없음)'} · 포커스 ${document.activeElement?.id || document.activeElement?.tagName}`,
+    });
+    document.getElementById('remove-member-cancel').click();
+    await 잠깐(100);
+    결과.push({
+      자리: '대기실', 이름: '그대로 두기는 확인창을 닫고 연 내보내기 버튼으로 포커스를 돌려준다',
+      통과: 확인창.hidden && document.activeElement === 액자버튼('remove')[0],
+      무엇: `${확인창.hidden ? '닫힘' : '열림'} · 포커스 ${document.activeElement?.getAttribute?.('aria-label') || document.activeElement?.tagName}`,
+    });
+    if (점검방) {
+      const 되돌린방 = JSON.parse(localStorage.getItem('quiz.rooms') ?? '[]');
+      for (const 방 of 되돌린방) 방.players = (방.players ?? []).filter((사람) => 사람.id !== 'check-guest');
+      localStorage.setItem('quiz.rooms', JSON.stringify(되돌린방));
+      await 눌러('setting-category', 400);
+    }
+    살펴본곳.push('대기실 액자 버튼');
+
     // **「게임 시작」 직후에 나간다.** 판을 여는 것은 되돌아온 이벤트를 보고
     // 하는 일이라 비동기다. 그 사이에 나가면 세션만 남을 수 있다 (#64)
     document.getElementById('waiting-start').click();
@@ -743,6 +1205,8 @@
     else localStorage.setItem('quiz.rankings', 랭킹백업);
     if (설정백업 === null) localStorage.removeItem('quiz.settings');
     else localStorage.setItem('quiz.settings', 설정백업);
+    if (규칙줄백업 === null) localStorage.removeItem('quiz.ruleHintRounds');
+    else localStorage.setItem('quiz.ruleHintRounds', 규칙줄백업);
   }
 
   // ── 보고 ──────────────────────────────────────────────────────

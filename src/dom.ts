@@ -5,8 +5,8 @@
 // 그래서 `need` 는 못 찾으면 던진다 — 조용히 넘어가면 한참 뒤 엉뚱한 자리에서
 // «왜 안 눌리지»로 나타난다.
 //
-// 던지면 app.ts 가 멈추고 `markBooted()` 가 불리지 않아 **index.html 의 부팅 감지가
-// 안내 화면을 띄운다.** 손쓸 수 없는 상황을 화면으로 알리는 길이 이미 있다.
+// 던지면 app.ts 의 `main()` 이 멈추고 `showFatalError` 가 부팅 화면의 실패 카드(다시 시도)를
+// 띄운다 — 상세는 콘솔에 남는다. 손쓸 수 없는 상황을 화면으로 알리는 길이 이미 있다.
 
 /** 반드시 있어야 하는 요소. 없으면 던진다 */
 export function need<T extends HTMLElement = HTMLElement>(id: string): T {

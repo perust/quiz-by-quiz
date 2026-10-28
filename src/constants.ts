@@ -1,7 +1,7 @@
 // 게임 전반에서 쓰는 상수를 이 파일 한 곳에 모은다.
 // 값 조정이 필요하면 다른 파일을 뒤지지 않고 여기만 고친다.
 
-import type { Category, TimeLimitChoice } from './types.js';
+import type { Category, OnlineQuestionTime, TimeLimitChoice } from './types.js';
 
 /** 한 판에 출제할 문항 수. 문제 은행 크기와 분리해 관리한다 (FR-1.2) */
 export const QUESTIONS_PER_ROUND = 10;
@@ -18,7 +18,7 @@ export const QUESTIONS_PER_ROUND = 10;
  */
 export const QUESTIONS_PER_CATEGORY_IN_ALL = 5;
 
-/** 문항당 제한 시간의 기본값 (밀리초, FR-3.7). 온라인 매치는 서버가 이 값으로 고정한다 */
+/** 문항당 제한 시간의 기본값 (밀리초, FR-3.7). 온라인 방의 기본 문항 시간이기도 하다 */
 export const TIME_LIMIT_MS = 20_000;
 
 /**
@@ -29,8 +29,30 @@ export const TIME_LIMIT_MS = 20_000;
  */
 export const TIME_LIMIT_CHOICES: readonly TimeLimitChoice[] = [TIME_LIMIT_MS, 40_000, null];
 
+/**
+ * 온라인 방에서 방장이 고를 수 있는 문항 시간 (FR-3.7). 서버(`server/app/domain.py`)·DB(migration 011)와
+ * 같은 목록이다. 로컬 판과 달리 **제한 없음이 없다** — 한 사람이 답하지 않으면 방 전체가 마감까지 멈춘다.
+ * 대기실 설정 칸은 이 순서로 돈다.
+ */
+export const ONLINE_QUESTION_TIME_CHOICES: readonly OnlineQuestionTime[] = [TIME_LIMIT_MS, 40_000];
+
 /** 남은 시간이 이 값 이하로 떨어지면 경고 상태로 전환한다 (FR-3.9) */
 export const WARNING_THRESHOLD_MS = 5_000;
+
+/**
+ * 처음 몇 판 동안 무대 아래의 규칙 한 줄(«보기를 누르면 바로 답 · 시간이 끝나면 선 칸이 답»)을
+ * 짧은 touch 화면·좁은 화면에서도 접지 않을지 (U01). 로컬 판을 열 때 센다. 그 뒤로는 중복 조작
+ * 설명과 함께 예전처럼 접는다 — 규칙은 홈의 「게임 방법」에 늘 있다.
+ */
+export const RULE_HINT_ROUNDS = 3;
+
+/**
+ * 문제 JSON 하나를 기다리는 한도 (밀리초, U05). 넘기면 그 분야를 «불러오지 못함»으로 두고
+ * 나머지로 홈을 연다. 다섯을 함께 받고, 부팅 화면의 15초 실패 안내는 app.ts 가 받기 시작할 때
+ * (`window.__bootProgress()`) 다시 세므로 늘 그보다 먼저 끝난다 — 모듈이 늦게 와도 받는 도중에
+ * «불러오지 못했어요»가 뜨지 않는다 (local-ux-3).
+ */
+export const BANK_FETCH_TIMEOUT_MS = 10_000;
 
 /** 정답 1문항당 배점 (FR-5.1). 속도 보너스나 난이도 배점은 두지 않는다 */
 export const POINTS_PER_CORRECT = 10;
@@ -102,3 +124,18 @@ export const CATEGORIES: Category[] = [
   { id: 'general', name: '일반상식', icon: 'bulb', description: '알아두면 쓸모 있는 것들' },
   { id: 'art', name: '예술과문화', icon: 'music', description: '그림과 음악, 이야기의 결' },
 ];
+
+/**
+ * 이 게임의 GitHub 저장소. 풀이의 «이 문제 이상해요»가 여기에 새 이슈를 연다 (FR-5.8, `ui/report-link.ts`).
+ * 주소 끝에 `/` 를 붙이지 않는다 — 뒤에 `/issues/new` 를 잇는다.
+ */
+export const REPOSITORY_URL = 'https://github.com/perust/quiz-by-quiz';
+
+/** 신고 이슈의 템플릿 파일 이름. `.github/ISSUE_TEMPLATE/` 안에 있고, 미리 채운 본문이 그 칸을 따른다 */
+export const QUESTION_REPORT_TEMPLATE = 'question-report.md';
+
+/**
+ * 신고 주소 전체의 길이 한도(글자 수). 한글은 한 자가 `%XX%XX%XX` 아홉 자가 되어 주소가 금방 길어진다.
+ * 브라우저·GitHub 가 받는 길이에 넉넉히 못 미치게 잡고, 넘으면 질문·보기 부분만 잘라 낸다.
+ */
+export const QUESTION_REPORT_URL_MAX_LENGTH = 6000;

@@ -15,7 +15,8 @@ import { ROOM_CAPACITY_CHOICES } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import { isPersistent, safeStorage } from '../storage/safe-storage.js';
 import {
-  checkPassword, checkRoomName, makeCode, normalizeCode, uniqueNickname,
+  checkPassword, checkRoomName, isOnlineQuestionTime, makeCode, normalizeCode,
+  onlineQuestionTimeOrDefault, uniqueNickname,
 } from './rules.js';
 import {
   isWaitingRoomSeatId,
@@ -25,10 +26,10 @@ import {
 } from './movement-contract.js';
 import type {
   CreateRoomResult, CreateRoomSpec, JoinRoomResult, JoinRoomSpec, PublicRoom,
-  RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
+  RemoveMemberResult, RoomActionResult, RoomEvent, RoomEventHandler, RoomPatch, RoomStore,
   PlayerInfo, StartGameResult, Unsubscribe,
 } from './adapter.js';
-import type { CategoryId } from '../types.js';
+import type { CategoryId, OnlineQuestionTime } from '../types.js';
 
 const KEY = 'quiz.rooms';
 const ME_KEY = 'quiz.playerId';
@@ -59,6 +60,8 @@ interface Room {
   name: string;
   categoryId: CategoryId | null;
   capacity: number;
+  /** 방장이 고른 문항 시간. 이 값이 생기기 전에 저장된 방에는 없어 읽을 때 20초로 좁힌다 */
+  questionTimeMs?: OnlineQuestionTime;
   isPublic: boolean;
   gameMode: boolean;
   password: string;
@@ -160,6 +163,8 @@ function readAll(): Room[] {
     return prune(rooms).map((room) => ({
       ...room,
       gameMode: true,
+      // 저장 데이터는 믿지 않는다. 없거나 모르는 값이면 문항 시간이 생기기 전과 같은 20초다
+      questionTimeMs: onlineQuestionTimeOrDefault(room.questionTimeMs),
       players: room.players.map((player) => ({
         ...player,
         characterId: player.characterId || DEFAULT_CHARACTER_ID,
@@ -215,6 +220,7 @@ function toPublic(room: Room): PublicRoom {
     categoryId: room.categoryId,
     capacity: room.capacity,
     gameMode: true,
+    questionTimeMs: onlineQuestionTimeOrDefault(room.questionTimeMs),
     players: room.players.map(({ id, nickname, characterId, isReady }) => ({
       id,
       nickname,
@@ -271,7 +277,9 @@ export const localRooms = {
   /**
    * player는 {nickname, characterId}. 만든 사람이 곧 첫 참가자다.
    */
-  async createRoom({ name, categoryId, capacity, isPublic, password, player }: CreateRoomSpec): Promise<CreateRoomResult> {
+  async createRoom({
+    name, categoryId, capacity, questionTimeMs, isPublic, password, player,
+  }: CreateRoomSpec): Promise<CreateRoomResult> {
     const named = checkRoomName(name);
     if (!named.ok) return { ok: false, message: named.message };
 
@@ -294,6 +302,8 @@ export const localRooms = {
       name: named.value,
       categoryId: categoryId || null,
       capacity: size,
+      // 서버와 같은 목록만 받는다. 모르는 값(제한 없음 포함)은 기본 20초로 연다 — 인원과 같은 길이다
+      questionTimeMs: onlineQuestionTimeOrDefault(questionTimeMs),
       isPublic: Boolean(isPublic),
       gameMode: true,
       password: isPublic ? '' : String(password),
@@ -391,6 +401,11 @@ export const localRooms = {
       if (ROOM_CAPACITY_CHOICES.includes(size) && size >= room.players.length) {
         room.capacity = size;
       }
+    }
+
+    // 20초·40초만 받는다. 서버와 같은 목록이고 모르는 값은 그대로 둔다
+    if ('questionTimeMs' in patch && isOnlineQuestionTime(patch.questionTimeMs)) {
+      room.questionTimeMs = patch.questionTimeMs;
     }
 
     writeAll(rooms);
@@ -500,6 +515,33 @@ export const localRooms = {
       type: 'match', phase: 'started', matchId: null, setup,
     }), 0);
     return { ok: true, setup };
+  },
+
+  /**
+   * 방장의 «내보내기» (U24). 서버와 같은 규칙으로 판정한다 — 방장만, 남만, 방에 있는 사람만.
+   * 끊긴 자리를 비우는 요청(`connected` 없음)은 끊긴 사람만 빼는데, 이 브라우저 안의 방은 끊김을
+   * 알 길이 없어 모두 `connected: true`라 언제나 `member-connected`로 거절한다. 방장이 접속 중인
+   * 사람으로 보고 확인한 요청(`connected: true`)은 뺀다. 서버 권위 판이 없어 판 때문에 막을 일도 없다.
+   * **다시 들어오는 것을 막는 기록은 두지 않는다** — 이 방에 들어오는 것은 이 브라우저의 나뿐이고,
+   * 나는 나를 내보낼 수 없다(막을 상대가 없다).
+   */
+  async removeMember(
+    { code, playerId, connected = false }: { code: string; playerId: string; connected?: boolean },
+  ): Promise<RemoveMemberResult> {
+    const rooms = readAll();
+    const room = rooms.find((item) => item.code === normalizeCode(code));
+    if (!room) return { ok: false, reason: 'not-found' };
+    if (room.hostId !== meId) return { ok: false, reason: 'not-host' };
+    if (playerId === meId) return { ok: false, reason: 'member-connected' };
+    if (!room.players.some((player) => player.id === playerId)) return { ok: false, reason: 'not-member' };
+    if (!connected) return { ok: false, reason: 'member-connected' };
+
+    room.players = room.players.filter((player) => player.id !== playerId);
+    // 설정 바꾸기처럼 쓰기 실패는 넘어간다 — 화면은 돌려준 방으로 그대로 돈다
+    writeAll(rooms);
+    const publicRoom = toPublic(room);
+    emit(room.code, { type: 'room', room: publicRoom });
+    return { ok: true, room: publicRoom };
   },
 
   /** local room에는 server-authoritative match가 없으므로 snapshot을 꾸며 내지 않는다. */

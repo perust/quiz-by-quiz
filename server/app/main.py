@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from itertools import count
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -34,10 +34,12 @@ from .config import Settings, is_public_pages_question_bank
 from .domain import (
     ALLOWED_CAPACITIES,
     ALLOWED_CATEGORIES,
+    DEFAULT_QUESTION_TIME_MS,
     DomainError,
     normalize_code,
     validate_chat,
     validate_player,
+    validate_question_time,
     validate_room,
 )
 from .password_work import BoundedPasswordWork, PasswordWorkBusy
@@ -53,8 +55,11 @@ from .repository import (
     MatchNotFound,
     MatchNotReady,
     MatchPositionMismatch,
+    MatchReviewView,
+    MatchScoreView,
     MatchSetup,
     MatchView,
+    MemberConnected,
     NotHost,
     NotMember,
     PlayerView,
@@ -67,6 +72,9 @@ from .repository import (
 from .tickets import WebSocketTickets
 
 logger = logging.getLogger(__name__)
+# 이 API가 읽고 쓰는 마지막 migration. 011(방장이 고르는 문항 시간)의 열이 없으면 방과 판을 읽지
+# 못하므로 공개 release gate는 정확히 이 판만 ready로 답한다 (deploy/oracle/README.md).
+RELEASE_SCHEMA_VERSION = 11
 WEBSOCKET_PROTOCOL = "qbb.v1"
 WEBSOCKET_TICKET_PREFIX = "qbb.ticket."
 MAX_MOVEMENT_VIEWPORT_DIMENSION = 8192
@@ -82,6 +90,31 @@ PRESENCE_GRACE_SECONDS = 60.0
 # 그보다 오래된 끊김 기록은 버린다. 멤버십이 끝난 사람의 기록은 presence sweep이 방의
 # 참가자 목록을 보고 먼저 버리므로(`retain_presence`) 이것은 마지막 안전망이다.
 PRESENCE_RECORD_SECONDS = 3_600.0
+# 방장이 내보낸 참가자를 기억하는 시간과 개수 (U24). 그 사람이 돌아와 방을 읽으면 «없는 방»이 아니라
+# «방장이 내보냈다»를 듣는다. 끊긴 자리를 비운 것은 차단이 아니다 — 다시 참가하면 지운다.
+REMOVED_RECORD_SECONDS = 3_600.0
+# 접속 중에 내보낸 사람은 이만큼 그 방에 다시 들어오지 못한다. 내보내자마자 같은 코드로
+# 되돌아오면 내보내기가 아무 뜻이 없다. presence 처럼 메모리에만 있어 단일 worker 계약에 기대고,
+# 재시작하면 풀린다.
+KICK_BLOCK_SECONDS = 600.0
+MAX_REMOVED_RECORDS = 4_096
+# 인증된 REST 요청의 몫 (N01, 소유자 결정). 세 claim은 한꺼번에 먹거나 하나도 먹지 않는다.
+# 교실·집 NAT 뒤의 여럿은 IP 하나를 나눠 쓴다 — IP당 120/60초가 전부이던 때 같은 IP의 6명 방은
+# 답의 10–14%, 12명 방은 61–70%를 429로 잃었다(deploy/oracle/README.md의 측정). 그래서 한 사람
+# (브라우저 세션)의 몫을 따로 두고, IP 몫은 가장 큰 방(12명 × 120)이 다 써도 남게 올렸다.
+AUTHENTICATED_PLAYER_LIMIT = 120
+AUTHENTICATED_CLIENT_LIMIT = 1_500
+AUTHENTICATED_PROCESS_LIMIT = 3_000
+AUTHENTICATED_WINDOW_SECONDS = 60
+# 엔드포인트별 몫(입장·방 변경·채팅·답·소켓 티켓)의 IP 칸은 그 프로세스 몫을 이 수로 나눈 값이다
+# (N01 리뷰 security-1). 이 몫은 멤버십을 보기 전에 먹어 무작위 방 코드마다 새 «사람+방» 열쇠가
+# 생긴다. IP 칸이 없던 때는 IP 몫이 1,500이 된 뒤로 한 주소가 값싼 세션 몇 개로 프로세스 몫을 채워
+# 서버의 모든 방을 막을 수 있었다. 절반이라 한 주소로는 채울 수 없다(인증 몫 1,500/3,000과 같은
+# 비율). 12명 방 셋(교실 하나)의 가장 바쁜 1분도 든다 — deploy/oracle/README.md의 셈.
+ENDPOINT_CLIENT_SHARE_DIVISOR = 2
+# 한 사람이 방 코드를 바꿔 가며 보내도 «사람+방» 몫의 이 배수까지다 — 방 셋을 오가는 사람(같은
+# 브라우저의 탭 셋)도 방마다 제 몫을 다 쓴다.
+ENDPOINT_ACTOR_ROOM_SPAN = 3
 
 
 def _websocket_ticket(websocket: WebSocket) -> str | None:
@@ -181,6 +214,8 @@ class CreateRoomBody(StrictBody):
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt
     game_mode: StrictBool = Field(default=True, alias="gameMode")
+    # 방장이 고르는 문항 시간(ms). 보내지 않는 구버전 client의 방은 20초다
+    question_time_ms: StrictInt = Field(default=DEFAULT_QUESTION_TIME_MS, alias="questionTimeMs")
     is_public: StrictBool = Field(alias="isPublic")
     password: str | None = None
 
@@ -193,6 +228,7 @@ class UpdateRoomBody(StrictBody):
     category_id: str | None = Field(default=None, alias="categoryId")
     capacity: StrictInt | None = None
     game_mode: StrictBool | None = Field(default=None, alias="gameMode")
+    question_time_ms: StrictInt | None = Field(default=None, alias="questionTimeMs")
 
 
 class ChatBody(StrictBody):
@@ -447,6 +483,16 @@ class EventHub:
             )
         )
 
+    async def send_actor(self, code: str, actor_id: UUID, event: dict[str, object]) -> None:
+        """이 방에 열린 한 사람의 소켓에만 보낸다. 내보내진 사람의 화면에 이유를 먼저 알린다."""
+        await asyncio.gather(
+            *(
+                self._send_one(code, websocket, event)
+                for websocket in tuple(self._rooms.get(code, ()))
+                if self._connections.get(websocket) == (code, actor_id)
+            )
+        )
+
     async def close_all(self) -> None:
         self._accepting = False
         await asyncio.gather(
@@ -550,6 +596,75 @@ class EventHub:
         return websocket in self._connections
 
 
+RemovalReason = Literal["removed", "kicked"]
+
+
+class RemovedMembers:
+    """방장이 내보낸 (방, 참가자). 단일 worker 계약이라 presence 처럼 메모리로 충분하다.
+
+    두 가지다. 유예를 넘겨 끊긴 자리를 비운 것(`removed`)은 알리는 데만 쓰고 다시 참가하는 것을
+    막지 않는다. 접속 중에 내보낸 것(`kicked`)은 `block_seconds` 동안 같은 방 참가를 거절하고,
+    그 뒤로는 `removed` 처럼 알리기만 한다. 막는 시간은 기록보다 길 수 없다 — 기록이 사라지면
+    막을 근거도 없다. 기록 수는 `max_records` 로 묶는다. 넘치면 가장 오래된 것부터 버리므로
+    극단적으로 몰리면 막힌 기록도 일찍 풀릴 수 있다(메모리를 키우지 않는 쪽을 골랐다).
+    """
+
+    def __init__(
+        self,
+        *,
+        record_seconds: float = REMOVED_RECORD_SECONDS,
+        block_seconds: float = KICK_BLOCK_SECONDS,
+        max_records: int = MAX_REMOVED_RECORDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if record_seconds <= 0 or block_seconds <= 0 or max_records < 1:
+            raise ValueError("removed member records must be positive")
+        self._record_seconds = record_seconds
+        self._block_seconds = min(block_seconds, record_seconds)
+        self._max_records = max_records
+        self._clock = clock
+        # 넣은 순서가 곧 시각 순서다. 가득 차면 가장 오래된 것부터 버린다. 값은 (시각, 막는가).
+        self._records: dict[tuple[str, UUID], tuple[float, bool]] = {}
+
+    def mark(self, code: str, player_id: UUID, *, blocked: bool = False) -> None:
+        now = self._clock()
+        for key, (at, _) in tuple(self._records.items()):
+            if now - at < self._record_seconds:
+                break
+            del self._records[key]
+        key = (code, player_id)
+        self._records.pop(key, None)
+        self._records[key] = (now, blocked)
+        while len(self._records) > self._max_records:
+            del self._records[next(iter(self._records))]
+
+    def reason(self, code: str, player_id: UUID) -> RemovalReason | None:
+        """그 사람이 이 방에서 내보내졌는가. 아직 막혀 있으면 `kicked`, 알리기만 하면 `removed`."""
+        key = (code, player_id)
+        record = self._records.get(key)
+        if record is None:
+            return None
+        at, blocked = record
+        age = self._clock() - at
+        if age >= self._record_seconds:
+            del self._records[key]
+            return None
+        return "kicked" if blocked and age < self._block_seconds else "removed"
+
+    def was_removed(self, code: str, player_id: UUID) -> bool:
+        return self.reason(code, player_id) is not None
+
+    def is_blocked(self, code: str, player_id: UUID) -> bool:
+        return self.reason(code, player_id) == "kicked"
+
+    def forget(self, code: str, player_id: UUID) -> None:
+        self._records.pop((code, player_id), None)
+
+    def forget_room(self, code: str) -> None:
+        for key in [key for key in self._records if key[0] == code]:
+            del self._records[key]
+
+
 def _error(
     status: int,
     code: str,
@@ -564,23 +679,52 @@ def _error(
     )
 
 
+def _rate_limited(message: str, wait_seconds: float) -> HTTPException:
+    """요청 한도(429). `Retry-After`는 한도가 실제로 한 자리를 비울 때까지의 초다 (N01).
+
+    브라우저는 놓친 재조회를 이 값(상한 약 3초)과 jitter를 두고 한 번 다시 보낸다. 거절된 요청은
+    한도를 먹지 않으므로 이른 재시도가 몫을 더 깎지는 않는다.
+    """
+    return _error(
+        429,
+        "rate-limited",
+        message,
+        headers={"Retry-After": str(max(1, math.ceil(wait_seconds)))},
+    )
+
+
+def _removed_error(status: int, reason: RemovalReason) -> HTTPException:
+    """내보내진 사람이 방을 읽거나 다시 붙으려 할 때. «없는 방»과 다른 말을 한다 (U24)."""
+    if reason == "kicked":
+        return _error(
+            status,
+            "kicked",
+            "방장이 내보낸 방이에요. 잠시 뒤에 다시 들어올 수 있어요.",
+        )
+    return _error(
+        status,
+        "removed",
+        "방장이 방에서 내보냈어요. 방 코드로 다시 참가할 수 있어요.",
+    )
+
+
 def _identity(
     authorization: Annotated[str | None, Header()] = None,
     player_id_header: Annotated[str | None, Header(alias="X-Player-Id")] = None,
 ) -> Identity:
     if not authorization or not player_id_header:
-        raise _error(401, "unauthorized", "온라인 세션이 필요합니다.")
+        raise _error(401, "unauthorized", "온라인 세션이 필요해요.")
 
     scheme, separator, token = authorization.partition(" ")
     if separator != " " or scheme.lower() != "bearer" or not 32 <= len(token) <= 256:
-        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않습니다.")
+        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않아요.")
     if not token.isascii() or any(character.isspace() for character in token):
-        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않습니다.")
+        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않아요.")
 
     try:
         player_id = UUID(player_id_header)
     except ValueError as error:
-        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않습니다.") from error
+        raise _error(401, "unauthorized", "온라인 세션이 올바르지 않아요.") from error
 
     return Identity(
         player_id=player_id,
@@ -605,6 +749,7 @@ def _room_payload(room: RoomView) -> dict[str, object]:
         "categoryId": room.category_id,
         "capacity": room.capacity,
         "gameMode": room.game_mode,
+        "questionTimeMs": room.question_time_ms,
         "players": [_player_payload(player) for player in room.players],
         "isPublic": room.is_public,
         "hasPassword": room.has_password,
@@ -651,6 +796,36 @@ def _remaining_ms(match: MatchView, now: datetime) -> int | None:
     return max(0, math.floor((deadline - now).total_seconds() * 1000))
 
 
+def _score_payload(score: MatchScoreView, *, revealing: bool) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "playerId": str(score.player_id),
+        "nickname": score.nickname,
+        "characterId": score.character_id,
+        "score": score.score,
+        "correctCount": score.correct_count,
+        "answeredCount": score.answered_count,
+    }
+    # 공개 단계의 미니 점수판·이름표 ✓/✗ (U30). 공개 중일 때만 싣는다.
+    if revealing and score.last_answer_correct is not None:
+        payload["lastAnswerCorrect"] = score.last_answer_correct
+    return payload
+
+
+def _review_payload(item: MatchReviewView) -> dict[str, object]:
+    return {
+        "position": item.position,
+        "id": item.question_id,
+        "categoryId": item.category_id,
+        "question": item.question,
+        "choices": list(item.choices),
+        "answerIndex": item.answer_index,
+        "explanation": item.explanation,
+        "choiceIndex": item.choice_index,
+        "correct": item.correct,
+        "timedOut": item.timed_out,
+    }
+
+
 def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, object]:
     question = None
     if match.question is not None:
@@ -662,13 +837,15 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
             "position": match.question.position,
             "total": match.question.total,
         }
-    return {
+    payload: dict[str, object] = {
         "matchId": str(match.id),
         "state": match.state,
         "categoryId": match.category_id,
         "gameMode": match.game_mode,
         "currentPosition": match.current_position,
         "totalQuestions": match.total_questions,
+        # 이 판의 문항 시간. 화면의 남은 시간 막대가 «가득»으로 쓴다 (마감 판정은 여전히 서버다)
+        "questionTimeMs": match.question_time_ms,
         "deadlineAt": match.deadline_at,
         "remainingMs": _remaining_ms(match, now or datetime.now(UTC)),
         "question": question,
@@ -683,19 +860,16 @@ def _match_payload(match: MatchView, now: datetime | None = None) -> dict[str, o
             else None
         ),
         "scores": [
-            {
-                "playerId": str(score.player_id),
-                "nickname": score.nickname,
-                "characterId": score.character_id,
-                "score": score.score,
-                "correctCount": score.correct_count,
-                "answeredCount": score.answered_count,
-            }
+            _score_payload(score, revealing=match.state == "revealing")
             for score in match.scores
         ]
         if match.state != "running"
         else [],
     }
+    # «문제 다시 보기»(U38)는 끝난 판에만 있다. 진행 중인 판의 응답에는 키조차 없다.
+    if match.state == "finished":
+        payload["review"] = [_review_payload(item) for item in match.review]
+    return payload
 
 
 def _match_start_payload(match: MatchSetup) -> dict[str, object]:
@@ -704,6 +878,7 @@ def _match_start_payload(match: MatchSetup) -> dict[str, object]:
         "categoryId": match.category_id,
         "gameMode": match.game_mode,
         "totalQuestions": match.total_questions,
+        "questionTimeMs": match.question_time_ms,
     }
 
 
@@ -724,6 +899,7 @@ def create_app(
     cleanup_interval_seconds: float = 60.0,
     presence_interval_seconds: float = 5.0,
     event_hub: EventHub | None = None,
+    removed_members: RemovedMembers | None = None,
 ) -> FastAPI:
     if (
         isinstance(cleanup_interval_seconds, bool)
@@ -758,6 +934,7 @@ def create_app(
     password_work = BoundedPasswordWork(hasher=password_hasher)
     ticket_store = tickets or WebSocketTickets()
     hub = event_hub or EventHub()
+    removed = removed_members or RemovedMembers()
     ingress_limiter = AtomicMultiWindowLimiter()
     authenticated_ingress_limiter = AtomicMultiWindowLimiter()
     join_limiter = AtomicMultiWindowLimiter()
@@ -789,22 +966,38 @@ def create_app(
         """
         return hub.absent_actors(code) - {actor_id}
 
-    def allow_actor_room(
+    def actor_room_wait(
         limiter: AtomicMultiWindowLimiter,
         *,
         prefix: str,
         actor_id: UUID,
         code: str,
+        client_key: str,
         actor_limit: int,
         actor_window_seconds: float,
         process_limit: int,
-    ) -> bool:
-        return limiter.allow(
+    ) -> float | None:
+        """None이면 들였다. 아니면 다시 해도 되는 때까지의 초(`Retry-After`).
+
+        네 claim은 한꺼번에 먹거나 하나도 먹지 않는다. 멤버십·방 확인보다 먼저 먹으므로 무작위
+        코드도 몫을 먹는다 — 그래서 사람(방 코드와 무관)과 IP 칸이 프로세스 몫을 지킨다 (N01 리뷰).
+        """
+        return limiter.try_acquire(
             (
                 RateLimitClaim(
                     key=f"{prefix}:actor-room:{actor_id}:{code}",
                     limit=actor_limit,
                     window_seconds=actor_window_seconds,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:actor:{actor_id}",
+                    limit=actor_limit * ENDPOINT_ACTOR_ROOM_SPAN,
+                    window_seconds=actor_window_seconds,
+                ),
+                RateLimitClaim(
+                    key=f"{prefix}:client:{client_key}",
+                    limit=process_limit // ENDPOINT_CLIENT_SHARE_DIVISOR,
+                    window_seconds=60,
                 ),
                 RateLimitClaim(
                     key=f"{prefix}:process",
@@ -935,6 +1128,9 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Player-Id"],
+        # Retry-After는 CORS가 기본으로 보여 주는 응답 헤더가 아니다. Pages(다른 origin)의
+        # 브라우저가 요청 한도 거절에서 «언제 다시»를 읽으려면 드러내야 한다 (N01)
+        expose_headers=["Retry-After"],
     )
 
     async def require_actor(
@@ -942,28 +1138,35 @@ def create_app(
         identity: Identity = Depends(_identity),
     ) -> UUID:
         client_key = _client_key(request)
-        if not authenticated_ingress_limiter.allow(
+        wait = authenticated_ingress_limiter.try_acquire(
             (
+                # 한 사람의 몫 (N01). DB 인증 전이라 player id만으로 열쇠를 삼으면, 남의 id를 아는
+                # 사람(방 snapshot에 실린다)이 틀린 토큰으로 그 사람의 몫을 비울 수 있다. 그래서
+                # 토큰 해시까지 열쇠에 넣는다 — 위조 요청은 제 몫과 IP·프로세스 몫만 먹는다.
+                RateLimitClaim(
+                    key=(
+                        f"authenticated:player:{identity.player_id}:"
+                        f"{identity.token_hash.hex()}"
+                    ),
+                    limit=AUTHENTICATED_PLAYER_LIMIT,
+                    window_seconds=AUTHENTICATED_WINDOW_SECONDS,
+                ),
                 RateLimitClaim(
                     key=f"authenticated:client:{client_key}",
-                    limit=120,
-                    window_seconds=60,
+                    limit=AUTHENTICATED_CLIENT_LIMIT,
+                    window_seconds=AUTHENTICATED_WINDOW_SECONDS,
                 ),
                 RateLimitClaim(
                     key="authenticated:process",
-                    limit=600,
-                    window_seconds=60,
+                    limit=AUTHENTICATED_PROCESS_LIMIT,
+                    window_seconds=AUTHENTICATED_WINDOW_SECONDS,
                 ),
             )
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-                headers={"Retry-After": "1"},
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         if not await repo.authenticate(identity.player_id, identity.token_hash):
-            raise _error(401, "unauthorized", "온라인 세션이 만료되었습니다.")
+            raise _error(401, "unauthorized", "온라인 세션이 만료됐어요.")
         return identity.player_id
 
     @app.get("/healthz")
@@ -973,13 +1176,13 @@ def create_app(
     @app.get("/readyz")
     async def ready() -> dict[str, str]:
         if not await repo.health():
-            raise _error(503, "database-unavailable", "데이터베이스에 연결할 수 없습니다.")
+            raise _error(503, "database-unavailable", "데이터베이스에 연결할 수 없어요.")
         return {"status": "ready"}
 
     @app.get("/v1/release-readiness")
     async def release_readiness(request: Request) -> dict[str, str | int]:
         client_key = _client_key(request)
-        if not release_readiness_limiter.allow(
+        wait = release_readiness_limiter.try_acquire(
             (
                 RateLimitClaim(
                     key=f"release-readiness:client:{client_key}",
@@ -992,19 +1195,15 @@ def create_app(
                     window_seconds=60,
                 ),
             )
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-                headers={"Retry-After": "60"},
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         version = await repo.schema_version()
-        if version != 10:
+        if version != RELEASE_SCHEMA_VERSION:
             raise _error(
                 503,
                 "migration-required",
-                "캐릭터 전용 데이터베이스 전환이 완료되지 않았습니다.",
+                "데이터베이스 전환이 완료되지 않았어요.",
             )
         return {
             "status": "ready",
@@ -1019,7 +1218,7 @@ def create_app(
         identity: Identity = Depends(_identity),
     ) -> dict[str, str]:
         client_key = _client_key(request)
-        if not ingress_limiter.allow(
+        wait = ingress_limiter.try_acquire(
             (
                 RateLimitClaim(
                     key=f"session:client:{client_key}",
@@ -1032,8 +1231,9 @@ def create_app(
                     window_seconds=60,
                 ),
             )
-        ):
-            raise _error(429, "rate-limited", "잠시 뒤 다시 시도해 주세요.")
+        )
+        if wait is not None:
+            raise _rate_limited("잠시 뒤 다시 시도해 주세요.", wait)
         try:
             player = validate_player(body.nickname, body.character_id)
         except DomainError as error:
@@ -1049,7 +1249,7 @@ def create_app(
             raise _error(
                 409,
                 "identity-conflict",
-                "이 브라우저 식별자를 다시 만들 필요가 있습니다.",
+                "이 브라우저 식별자를 다시 만들 필요가 있어요.",
             ) from error
         return {"playerId": str(identity.player_id)}
 
@@ -1066,7 +1266,7 @@ def create_app(
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         client_key = _client_key(request)
-        if not ingress_limiter.allow(
+        wait = ingress_limiter.try_acquire(
             (
                 RateLimitClaim(
                     key=f"room-create:actor:{actor_id}",
@@ -1084,8 +1284,9 @@ def create_app(
                     window_seconds=3_600,
                 ),
             )
-        ):
-            raise _error(429, "rate-limited", "방은 잠시 뒤 다시 만들 수 있습니다.")
+        )
+        if wait is not None:
+            raise _rate_limited("방은 잠시 뒤 다시 만들 수 있어요.", wait)
         try:
             spec = validate_room(
                 name=body.name,
@@ -1094,6 +1295,7 @@ def create_app(
                 is_public=body.is_public,
                 password=body.password,
                 game_mode=body.game_mode,
+                question_time_ms=body.question_time_ms,
             )
         except DomainError as error:
             raise _error(400, error.code, str(error)) from error
@@ -1106,7 +1308,7 @@ def create_app(
                 raise _error(
                     429,
                     "rate-limited",
-                    "비밀번호 작업이 많습니다. 잠시 뒤 다시 시도해 주세요.",
+                    "비밀번호 작업이 많아요. 잠시 뒤 다시 시도해 주세요.",
                     headers={"Retry-After": "1"},
                 ) from error
         room = await repo.create_room(actor_id, spec, password_hash)
@@ -1120,10 +1322,14 @@ def create_app(
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         room = await repo.get_room(actor_id, code)
         if room is None:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.")
+            removal = removed.reason(code, actor_id)
+            if removal is not None:
+                # 방장이 나를 내보냈다. «없는 방»으로 돌려보내면 방이 사라진 줄 안다 (U24)
+                raise _removed_error(404, removal)
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.")
         return room_payload(room)
 
     @app.post("/v1/rooms/{raw_code}/join")
@@ -1136,30 +1342,32 @@ def create_app(
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             join_limiter,
             prefix="join",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=12,
             actor_window_seconds=60,
             process_limit=300,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "참가 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("참가 시도가 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
+        if removed.is_blocked(code, actor_id):
+            # 접속 중에 방장이 내보낸 사람이다. KICK_BLOCK_SECONDS 동안 같은 방에 들이지 않는다.
+            # 비밀번호를 견주기 전에 거절한다 — 막힌 사람에게 비밀번호 확인을 내주지 않는다.
+            raise _removed_error(403, "kicked")
 
         already_joined = await repo.is_member(actor_id, code)
         if not already_joined:
             access = await repo.get_access(code)
             if access is None:
-                raise _error(404, "not-found", "그런 코드의 방이 없습니다.")
+                raise _error(404, "not-found", "그런 코드의 방이 없어요.")
             if not access.is_public:
                 client_key = _client_key(request)
-                if not ingress_limiter.allow(
+                wait = ingress_limiter.try_acquire(
                     (
                         RateLimitClaim(
                             key=f"password-join:client-room:{client_key}:{code}",
@@ -1172,16 +1380,16 @@ def create_app(
                             window_seconds=60,
                         ),
                     )
-                ):
-                    raise _error(
-                        429,
-                        "rate-limited",
-                        "참가 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
+                )
+                if wait is not None:
+                    raise _rate_limited(
+                        "참가 시도가 너무 많아요. 잠시 뒤 다시 시도해 주세요.",
+                        wait,
                     )
                 if not body.password:
-                    raise _error(403, "need-password", "비밀번호가 필요한 방입니다.")
+                    raise _error(403, "need-password", "비밀번호가 필요한 방이에요.")
                 if not access.password_hash:
-                    raise _error(403, "wrong-password", "비밀번호가 맞지 않습니다.")
+                    raise _error(403, "wrong-password", "비밀번호가 맞지 않아요.")
                 try:
                     verified = await password_work.verify(
                         access.password_hash,
@@ -1191,57 +1399,58 @@ def create_app(
                     raise _error(
                         429,
                         "rate-limited",
-                        "비밀번호 작업이 많습니다. 잠시 뒤 다시 시도해 주세요.",
+                        "비밀번호 작업이 많아요. 잠시 뒤 다시 시도해 주세요.",
                         headers={"Retry-After": "1"},
                     ) from error
                 except (VerifyMismatchError, VerificationError, InvalidHashError):
                     verified = False
                 if not verified:
-                    raise _error(403, "wrong-password", "비밀번호가 맞지 않습니다.")
+                    raise _error(403, "wrong-password", "비밀번호가 맞지 않아요.")
 
         try:
             room = await repo.join_room(actor_id, code)
         except RoomNotFound as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         except RoomFull as error:
-            raise _error(409, "full", "방이 이미 가득 찼습니다.") from error
+            raise _error(409, "full", "방이 이미 가득 찼어요.") from error
         except MatchInProgress as error:
             raise _error(
                 409,
                 "game-in-progress",
-                "진행 중인 게임에는 새로 참가할 수 없습니다.",
+                "진행 중인 게임에는 새로 참가할 수 없어요.",
             ) from error
 
         if not already_joined:
             # 새 멤버십은 새 유예로 센다. 예전 멤버십의 끊김 기록이 남아 있으면 들어오자마자
             # 끊긴 사람이 되어 시작 판정과 판에서 빠진다.
             hub.forget_presence(code, actor_id)
+            # 내보내졌던 사람이 다시 들어왔다. 다음에 나가도 «내보냈다»로 듣지 않는다.
+            removed.forget(code, actor_id)
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
 
     @app.delete("/v1/rooms/{raw_code}/members/me", status_code=204)
     async def leave_room(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> Response:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             mutation_limiter,
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         try:
             room = await repo.leave_room(
                 actor_id,
@@ -1249,46 +1458,126 @@ def create_app(
                 absent_player_ids=hub.absent_actors(code),
             )
         except (RoomNotFound, NotMember) as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         except MatchInProgress as error:
             raise _error(
                 409,
                 "game-in-progress",
-                "진행 중인 게임에서는 방을 나갈 수 없습니다.",
+                "진행 중인 게임에서는 방을 나갈 수 없어요.",
             ) from error
         await hub.disconnect_actor(code, actor_id)
         hub.forget_presence(code, actor_id)
         if room is None:
             # 마지막 사람이 나가 방이 사라졌다. 같은 코드에 남은 기록도 버린다.
             hub.retain_presence(code, None)
+            removed.forget_room(code)
         else:
             await hub.broadcast(code, {"type": "room-invalidated"})
         return Response(status_code=204)
 
+    @app.delete("/v1/rooms/{raw_code}/members/{raw_player_id}")
+    async def remove_member(
+        raw_code: str,
+        raw_player_id: str,
+        request: Request,
+        connected: bool = False,
+        actor_id: UUID = Depends(require_actor),
+    ) -> dict[str, object]:
+        """방장의 «내보내기» (U24). 방장만, 남만, 도는 판의 참가자는 판이 끝난 뒤에 뺀다.
+
+        `connected` 는 방장이 확인창에서 본 그 사람의 상태다.
+
+        - 없거나 false: 탭을 닫고 떠난 자리를 비운다. 유예를 넘겨 끊긴 사람만 빼고(그 사이 다시
+          붙었으면 `member-connected`), 돌아오면 다시 참가할 수 있다. 구버전 화면도 이 길이다
+        - true: 접속 중인 사람을 내보낸다. «잠시 다시 들어올 수 없어요»를 보고 확인한 것이므로
+          KICK_BLOCK_SECONDS 동안 같은 방 참가를 거절한다(`kicked`)
+
+        같은 모양의 `members/me`(나가기)가 먼저 등록돼 그 경로를 가져간다.
+        """
+        try:
+            code = normalize_code(raw_code)
+        except DomainError as error:
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        try:
+            player_id = UUID(raw_player_id)
+        except ValueError as error:
+            raise _error(404, "not-member", "그 참가자는 이 방에 없어요.") from error
+        wait = actor_room_wait(
+            mutation_limiter,
+            prefix="mutation",
+            actor_id=actor_id,
+            code=code,
+            client_key=_client_key(request),
+            actor_limit=30,
+            actor_window_seconds=10,
+            process_limit=600,
+        )
+        if wait is not None:
+            raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
+        if player_id == actor_id:
+            raise _error(400, "invalid-target", "방을 떠나려면 나가기를 눌러 주세요.")
+        try:
+            room = await repo.remove_member(
+                actor_id,
+                code,
+                player_id,
+                absent_player_ids=hub.absent_actors(code),
+                allow_connected=connected,
+            )
+        except RoomNotFound as error:
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        except NotHost as error:
+            raise _error(403, "not-host", "방장만 참가자를 내보낼 수 있어요.") from error
+        except NotMember as error:
+            raise _error(404, "not-member", "그 참가자는 이 방에 없어요.") from error
+        except MemberConnected as error:
+            # 끊긴 자리를 비우려던 사이 그 사람이 다시 붙었다. 막히는 내보내기는 방장이 그
+            # 말을 보고 다시 골라야 한다 — 확인창이 말하지 않은 차단을 걸지 않는다.
+            raise _error(
+                409,
+                "member-connected",
+                "그 참가자가 다시 연결됐어요. 확인한 뒤 다시 내보내 주세요.",
+            ) from error
+        except MatchInProgress as error:
+            raise _error(
+                409,
+                "game-in-progress",
+                "진행 중인 판의 참가자는 판이 끝난 뒤에 내보낼 수 있어요.",
+            ) from error
+        # 소켓을 닫기 전에 기록한다. 닫힌 화면이 다시 붙으려다 같은 이유를 듣는다.
+        removed.mark(code, player_id, blocked=connected)
+        reason: RemovalReason = "kicked" if connected else "removed"
+        # 열린 화면에는 먼저 이유를 알려 곧바로 로비로 돌려보낸다. 이 이벤트를 모르는 구버전
+        # 화면도 소켓이 닫히면 다시 붙으려다 ws-ticket 에서 같은 이유를 듣는다.
+        await hub.send_actor(code, player_id, {"type": "removed", "reason": reason})
+        await hub.disconnect_actor(code, player_id)
+        hub.forget_presence(code, player_id)
+        await hub.broadcast(code, {"type": "room-invalidated"})
+        return room_payload(room)
+
     @app.patch("/v1/rooms/{raw_code}")
     async def update_room(
         raw_code: str,
+        request: Request,
         body: UpdateRoomBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             mutation_limiter,
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
 
         patch = body.model_dump(exclude_unset=True)
         if "game_mode" in patch:
@@ -1298,23 +1587,29 @@ def create_app(
         if "category_id" in patch:
             category = patch["category_id"]
             if category is not None and category not in ALLOWED_CATEGORIES:
-                raise _error(400, "invalid-category", "지원하지 않는 게임 형식입니다.")
+                raise _error(400, "invalid-category", "지원하지 않는 게임 형식이에요.")
         if "capacity" in patch and patch["capacity"] not in ALLOWED_CAPACITIES:
-            raise _error(400, "invalid-capacity", "지원하지 않는 최대 인원입니다.")
+            raise _error(400, "invalid-capacity", "지원하지 않는 최대 인원이에요.")
+        if "question_time_ms" in patch:
+            # 20초·40초 둘뿐이다. 방장만, 판이 돌지 않을 때만 바뀐다(저장소가 판정한다)
+            try:
+                validate_question_time(patch["question_time_ms"])
+            except DomainError as error:
+                raise _error(400, error.code, str(error)) from error
 
         try:
             room = await repo.update_room(actor_id, code, patch)
         except RoomNotFound as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         except NotHost as error:
-            raise _error(403, "not-host", "방장만 설정을 바꿀 수 있습니다.") from error
+            raise _error(403, "not-host", "방장만 설정을 바꿀 수 있어요.") from error
         except RoomFull as error:
-            raise _error(409, "full", "현재 인원보다 작은 정원으로 바꿀 수 없습니다.") from error
+            raise _error(409, "full", "현재 인원보다 작은 정원으로 바꿀 수 없어요.") from error
         except MatchInProgress as error:
             raise _error(
                 409,
                 "game-in-progress",
-                "진행 중에는 방 설정을 바꿀 수 없습니다.",
+                "진행 중에는 방 설정을 바꿀 수 없어요.",
             ) from error
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
@@ -1322,27 +1617,26 @@ def create_app(
     @app.put("/v1/rooms/{raw_code}/ready")
     async def set_ready(
         raw_code: str,
+        request: Request,
         body: ReadyBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             mutation_limiter,
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         try:
             room = await repo.set_ready(actor_id, code, body.is_ready)
         except (RoomNotFound, NotMember) as error:
@@ -1351,7 +1645,7 @@ def create_app(
             raise _error(
                 409,
                 "game-in-progress",
-                "진행 중에는 준비 상태를 바꿀 수 없습니다.",
+                "진행 중에는 준비 상태를 바꿀 수 없어요.",
             ) from error
         await hub.broadcast(code, {"type": "room-invalidated"})
         return room_payload(room)
@@ -1359,6 +1653,7 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/chat", status_code=202)
     async def send_chat(
         raw_code: str,
+        request: Request,
         body: ChatBody,
         actor_id: UUID = Depends(require_actor),
     ) -> Response:
@@ -1366,16 +1661,18 @@ def create_app(
             code = normalize_code(raw_code)
         except DomainError as error:
             raise _error(400, error.code, str(error)) from error
-        if not allow_actor_room(
+        wait = actor_room_wait(
             chat_limiter,
             prefix="chat",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=12,
             actor_window_seconds=60,
             process_limit=600,
-        ):
-            raise _error(429, "rate-limited", "채팅은 잠시 뒤 다시 보낼 수 있습니다.")
+        )
+        if wait is not None:
+            raise _rate_limited("채팅은 잠시 뒤 다시 보낼 수 있어요.", wait)
         try:
             text = validate_chat(body.text)
             player = await repo.send_chat(actor_id, code, text)
@@ -1397,26 +1694,25 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/start", status_code=201)
     async def start_game(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             mutation_limiter,
             prefix="mutation",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=30,
             actor_window_seconds=10,
             process_limit=600,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "방 변경 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("방 변경 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         try:
             match = await repo.start_game(
                 actor_id,
@@ -1424,17 +1720,17 @@ def create_app(
                 absent_player_ids=hub.absent_actors(code),
             )
         except RoomNotFound as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         except NotHost as error:
-            raise _error(403, "not-host", "방장만 게임을 시작할 수 있습니다.") from error
+            raise _error(403, "not-host", "방장만 게임을 시작할 수 있어요.") from error
         except MatchNotReady as error:
             raise _error(
                 409,
                 "not-ready",
-                "연결된 참가자가 두 명 이상이고 방장 말고 모두 준비해야 시작할 수 있습니다.",
+                "연결된 참가자가 두 명 이상이고 방장 말고 모두 준비해야 시작할 수 있어요.",
             ) from error
         except MatchInProgress as error:
-            raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있습니다.") from error
+            raise _error(409, "game-in-progress", "이미 진행 중인 게임이 있어요.") from error
         payload = _match_start_payload(match)
         await hub.broadcast(code, {"type": "game-started", **payload})
         return payload
@@ -1447,7 +1743,7 @@ def create_app(
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         match_read = await repo.get_match(
             actor_id,
             code,
@@ -1455,7 +1751,7 @@ def create_app(
         )
         match = match_read.match
         if match is None:
-            raise _error(404, "no-active-match", "진행하거나 방금 끝난 게임이 없습니다.")
+            raise _error(404, "no-active-match", "진행하거나 방금 끝난 게임이 없어요.")
         payload = _match_payload(match)
         if match_read.advanced:
             await hub.broadcast(code, {"type": "match-invalidated", "matchId": str(match.id)})
@@ -1467,27 +1763,26 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/match/answers")
     async def submit_answer(
         raw_code: str,
+        request: Request,
         body: AnswerBody,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, object]:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             answer_limiter,
             prefix="answer",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=8,
             actor_window_seconds=30,
             process_limit=600,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "답안 제출이 너무 빠릅니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("답안 제출이 너무 빨라요. 잠시 뒤 다시 시도해 주세요.", wait)
         try:
             submission = await repo.submit_answer(
                 actor_id,
@@ -1497,17 +1792,25 @@ def create_app(
                 absent_player_ids=match_absent_ids(code, actor_id),
             )
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
         except MatchNotFound as error:
-            raise _error(404, "no-active-match", "진행 중인 게임이 없습니다.") from error
+            raise _error(404, "no-active-match", "진행 중인 게임이 없어요.") from error
         except MatchPositionMismatch as error:
-            raise _error(409, "stale-question", "이미 다음 문제로 넘어갔습니다.") from error
+            raise _error(409, "stale-question", "이미 다음 문제로 넘어갔어요.") from error
         except NotMember as error:
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.") from error
-        await hub.broadcast(
-            code,
-            {"type": "match-invalidated", "matchId": str(submission.match.id)},
-        )
+        if submission.advanced:
+            # 이 답으로 모두 답해 공개로 넘어갔다. 방 전체가 다시 읽는다.
+            await hub.broadcast(
+                code,
+                {"type": "match-invalidated", "matchId": str(submission.match.id)},
+            )
+        # 넘어가지 않은 답은 방송하지 않는다 (N01). running snapshot에서 남이 보는 것은
+        # 하나도 바뀌지 않는다 — 점수는 공개 전까지 비어 있고(`scores: []`), 제출 표시
+        # (`ownSubmission`)는 묻는 사람 자신의 것뿐이다. 그래서 답 하나마다 방 전원이 같은
+        # snapshot을 다시 읽어 같은 IP의 몫을 N²로 먹던 방송이었다. 낸 사람은 아래 응답의
+        # snapshot을 그대로 그리고, 응답을 받지 못했으면 한 번 다시 읽는다(화면 쪽, N01 리뷰).
+        # 같은 사람의 다른 탭은 공개에서 «내 답»으로 안다.
         return {
             "match": _match_payload(submission.match),
             "accepted": True,
@@ -1517,27 +1820,30 @@ def create_app(
     @app.post("/v1/rooms/{raw_code}/ws-ticket", status_code=201)
     async def websocket_ticket(
         raw_code: str,
+        request: Request,
         actor_id: UUID = Depends(require_actor),
     ) -> dict[str, str]:
         try:
             code = normalize_code(raw_code)
         except DomainError as error:
-            raise _error(404, "not-found", "그런 코드의 방이 없습니다.") from error
-        if not allow_actor_room(
+            raise _error(404, "not-found", "그런 코드의 방이 없어요.") from error
+        wait = actor_room_wait(
             ticket_limiter,
             prefix="ticket",
             actor_id=actor_id,
             code=code,
+            client_key=_client_key(request),
             actor_limit=6,
             actor_window_seconds=60,
             process_limit=300,
-        ):
-            raise _error(
-                429,
-                "rate-limited",
-                "연결 준비 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.",
-            )
+        )
+        if wait is not None:
+            raise _rate_limited("연결 준비 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.", wait)
         if not await repo.is_member(actor_id, code):
+            removal = removed.reason(code, actor_id)
+            if removal is not None:
+                # 내보내진 화면이 다시 붙으려 한다. 같은 말로 알려 재시도를 멈추게 한다 (U24)
+                raise _removed_error(403, removal)
             raise _error(403, "not-member", "먼저 방에 참가해 주세요.")
         return {
             "ticket": ticket_store.issue(actor_id, code),

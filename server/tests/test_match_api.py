@@ -21,6 +21,7 @@ from app.repository import (
     MatchAnswerView,
     MatchQuestionView,
     MatchRead,
+    MatchReviewView,
     MatchScoreView,
     MatchSetup,
     MatchSubmission,
@@ -284,6 +285,7 @@ def test_match_routes_hide_answer_feedback_and_scores_until_reveal() -> None:
         "categoryId": "history",
         "gameMode": True,
         "totalQuestions": 10,
+        "questionTimeMs": 20_000,
     }
     assert initial.status_code == 200
     initial_payload = initial.json()
@@ -312,8 +314,68 @@ def test_match_routes_hide_answer_feedback_and_scores_until_reveal() -> None:
     assert '"correct"' not in submitted.text
 
 
-def test_match_answer_broadcast_only_invalidates_other_clients() -> None:
+def test_an_answer_that_does_not_advance_the_match_is_not_broadcast() -> None:
+    # N01: 아직 고르는 사람이 남은 답은 남의 running snapshot을 하나도 바꾸지 않는다(점수는
+    # 비어 있고 제출 표시는 묻는 사람 자신의 것뿐). 방송하면 방 전원이 같은 snapshot을 다시
+    # 읽어 같은 IP의 요청 한도를 N²로 먹는다. 낸 사람은 응답의 snapshot을 쓴다.
     repository = MatchApiRepository()
+    with _client(repository) as client:
+        ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
+        with client.websocket_connect(
+            "/v1/rooms/ABC234/events",
+            subprotocols=ws_protocols(ticket),
+        ) as websocket:
+            response = client.post(
+                "/v1/rooms/ABC234/match/answers",
+                headers=HEADERS,
+                json={"position": 1, "choiceIndex": 2},
+            )
+            # 같은 답을 다시 보내도(저장소는 첫 답을 돌려준다) 방송하지 않는다
+            repeated = client.post(
+                "/v1/rooms/ABC234/match/answers",
+                headers=HEADERS,
+                json={"position": 1, "choiceIndex": 2},
+            )
+            # 방송이 있었다면 그것이 먼저 온다. 뒤에 알려진 방송 하나를 보내 순서로 확인한다
+            client.put("/v1/rooms/ABC234/ready", headers=HEADERS, json={"isReady": False})
+            event = websocket.receive_json()
+
+    assert response.status_code == 200
+    assert response.json()["advanced"] is False
+    assert response.json()["match"]["ownSubmission"] == {
+        "position": 1,
+        "choiceIndex": 2,
+        "timedOut": False,
+    }
+    assert repeated.status_code == 200
+    assert event == {"type": "room-invalidated"}
+
+
+class RevealOpeningRepository(MatchApiRepository):
+    """마지막으로 답한 사람의 제출이 모두 답한 문항을 공개로 넘긴다."""
+
+    async def submit_answer(
+        self,
+        actor_id: UUID,
+        code: str,
+        *,
+        position: int,
+        choice_index: int | None,
+        absent_player_ids: frozenset[UUID] = frozenset(),
+    ) -> MatchSubmission:
+        submission = await super().submit_answer(
+            actor_id,
+            code,
+            position=position,
+            choice_index=choice_index,
+            absent_player_ids=absent_player_ids,
+        )
+        self.match = replace(self.match, state="revealing")
+        return replace(submission, match=self.match, advanced=True)
+
+
+def test_an_answer_that_opens_the_reveal_invalidates_the_whole_room() -> None:
+    repository = RevealOpeningRepository()
     with _client(repository) as client:
         ticket = client.post("/v1/rooms/ABC234/ws-ticket", headers=HEADERS).json()["ticket"]
         with client.websocket_connect(
@@ -328,6 +390,8 @@ def test_match_answer_broadcast_only_invalidates_other_clients() -> None:
             event = websocket.receive_json()
 
     assert response.status_code == 200
+    assert response.json()["advanced"] is True
+    assert response.json()["match"]["state"] == "revealing"
     assert event == {"type": "match-invalidated", "matchId": str(MATCH_ID)}
 
 
@@ -551,6 +615,31 @@ def test_active_match_payload_reports_remaining_time_measured_at_response() -> N
     assert finished["remainingMs"] is None
 
 
+def test_match_payload_carries_the_question_time_the_host_chose_for_the_room() -> None:
+    # 남은 시간 막대의 «가득»이 방장이 고른 시간이다. 늦게 받은 첫 응답의 남은 시간이 아니다.
+    repository = MatchApiRepository()
+    now = datetime(2026, 9, 18, 0, 0, 12, 500_000, tzinfo=UTC)
+    forty = replace(repository.match, question_time_ms=40_000)
+
+    for state, deadline, question in (
+        ("running", "2026-09-18T00:00:40+00:00", forty.question),
+        ("revealing", "2026-09-18T00:00:48+00:00", forty.question),
+        ("finished", None, None),
+    ):
+        payload = _match_payload(
+            replace(forty, state=state, deadline_at=deadline, question=question),
+            now,
+        )
+        assert payload["questionTimeMs"] == 40_000, state
+    assert _match_payload(repository.match, now)["questionTimeMs"] == 20_000
+
+    repository.match = forty
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["questionTimeMs"] == 40_000
+
+
 def test_remaining_time_never_goes_negative_after_the_deadline() -> None:
     repository = MatchApiRepository()
     late = datetime(2026, 9, 18, 0, 1, 0, tzinfo=UTC)
@@ -580,6 +669,8 @@ def test_answer_submission_is_rate_limited_per_player_and_room() -> None:
     assert [response.status_code for response in responses[:8]] == [200] * 8
     assert responses[8].status_code == 429
     assert responses[8].json()["detail"]["code"] == "rate-limited"
+    # 답안 몫은 30초 창이다. 언제 다시 낼 수 있는지 초로 말한다 (N01)
+    assert 25 <= int(responses[8].headers["retry-after"]) <= 30
 
 
 def test_match_answer_rejects_an_out_of_range_choice_index_before_repository() -> None:
@@ -593,3 +684,101 @@ def test_match_answer_rejects_an_out_of_range_choice_index_before_repository() -
         )
 
     assert response.status_code == 422
+
+
+def _scored(*, last_answer_correct: bool | None) -> MatchScoreView:
+    return MatchScoreView(
+        player_id=PLAYER_ID,
+        nickname="퀴즈왕",
+        character_id="slime-blue",
+        score=10,
+        correct_count=1,
+        answered_count=1,
+        last_answer_correct=last_answer_correct,
+    )
+
+
+_REVIEW = MatchReviewView(
+    position=1,
+    question_id="history-001",
+    category_id="history",
+    question="역사 문제",
+    choices=("1", "2", "3", "4"),
+    answer_index=2,
+    explanation="정답 해설",
+    choice_index=1,
+    correct=False,
+    timed_out=False,
+)
+
+
+def test_per_player_correctness_is_sent_only_while_revealing() -> None:
+    # 공개 단계의 «정답 n/m명»·이름표 ✓/✗ (U30). 아직 답을 고르는 사람에게는 남의 정오가 가지 않는다
+    repository = MatchApiRepository()
+    scores = (_scored(last_answer_correct=True),)
+    revealing = _match_payload(
+        replace(repository.match, state="revealing", own_answer=repository.answer, scores=scores)
+    )
+    running = _match_payload(replace(repository.match, scores=scores))
+    finished = _match_payload(
+        replace(repository.match, state="finished", deadline_at=None, question=None, scores=scores)
+    )
+
+    assert revealing["scores"] == [
+        {
+            "playerId": str(PLAYER_ID),
+            "nickname": "퀴즈왕",
+            "characterId": "slime-blue",
+            "score": 10,
+            "correctCount": 1,
+            "answeredCount": 1,
+            "lastAnswerCorrect": True,
+        }
+    ]
+    assert running["scores"] == []
+    finished_scores = cast(list[dict[str, object]], finished["scores"])
+    assert "lastAnswerCorrect" not in finished_scores[0]
+
+
+def test_question_review_exists_only_in_the_finished_snapshot() -> None:
+    # «문제 다시 보기»(U38). 판이 끝나기 전의 응답에는 키조차 없다
+    repository = MatchApiRepository()
+    running = _match_payload(replace(repository.match, review=(_REVIEW,)))
+    revealing = _match_payload(
+        replace(
+            repository.match,
+            state="revealing",
+            own_answer=repository.answer,
+            review=(_REVIEW,),
+        )
+    )
+    finished_match = replace(
+        repository.match,
+        state="finished",
+        deadline_at=None,
+        question=None,
+        review=(_REVIEW,),
+    )
+    repository.match = finished_match
+
+    with _client(repository) as client:
+        response = client.get("/v1/rooms/ABC234/match", headers=HEADERS)
+
+    assert "review" not in running
+    assert "review" not in revealing
+    assert response.status_code == 200
+    assert response.json()["review"] == [
+        {
+            "position": 1,
+            "id": "history-001",
+            "categoryId": "history",
+            "question": "역사 문제",
+            "choices": ["1", "2", "3", "4"],
+            "answerIndex": 2,
+            "explanation": "정답 해설",
+            "choiceIndex": 1,
+            "correct": False,
+            "timedOut": False,
+        }
+    ]
+    assert _match_payload(replace(finished_match, review=()))["review"] == []

@@ -98,21 +98,21 @@ test('응답 시간 초과는 플레이어의 말로 던지고 요청 경로는 
 test('서버가 4xx로 알려 준 이유는 그대로, 5xx의 개발 상세는 한 가지 말로 바꾼다', async () => {
   const { OnlinePlayerError } = await import('../js/online/rules.js');
   const limited = await storeWith(() => json({
-    detail: { code: 'rate-limited', message: '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.' },
+    detail: { code: 'rate-limited', message: '요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.' },
   }, 429));
   const rejected = await limited.listRooms().then(() => assert.fail('should reject'), (reason) => reason);
   assert.ok(rejected instanceof OnlinePlayerError);
-  assert.equal(rejected.message, '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.');
+  assert.equal(rejected.message, '요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.');
 
   const broken = await storeWith(() => json({
-    detail: { code: 'database-unavailable', message: '데이터베이스에 연결할 수 없습니다.' },
+    detail: { code: 'database-unavailable', message: '데이터베이스에 연결할 수 없어요.' },
   }, 503));
   const { result: failure, warnings } = await captureWarnings(
     () => broken.listRooms().then(() => assert.fail('should reject'), (reason) => reason),
   );
   assert.ok(failure instanceof OnlinePlayerError);
   assert.equal(failure.message, '온라인 연결이 잠시 원활하지 않아요. 잠시 후 다시 시도해 주세요.');
-  assert.ok(warnings.some((line) => line.includes('503') && line.includes('데이터베이스에 연결할 수 없습니다.')));
+  assert.ok(warnings.some((line) => line.includes('503') && line.includes('데이터베이스에 연결할 수 없어요.')));
 });
 
 test('응답 형식 검증 실패는 개발 상세를 지니되 화면에는 고른 말이 간다', async () => {

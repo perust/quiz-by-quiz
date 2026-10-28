@@ -7,12 +7,14 @@ import {
   QUESTIONS_PER_CATEGORY_IN_ALL,
   QUESTIONS_PER_ROUND,
   RECENT_QUESTION_MEMORY,
+  RULE_HINT_ROUNDS,
   TIME_LIMIT_MS,
 } from './constants.js';
 import { loadQuestionBanks } from './data/loader.js';
 import { buildAllRound, buildRound } from './core/sampler.js';
 import { createSession, type QuizSession } from './core/session.js';
 import { summarizeRound } from './core/scoring.js';
+import { buildRecordsExport, recordsExportFileName } from './core/records-export.js';
 import { preferences, rankingStore } from './storage/adapter.js';
 import { playToggleOn, setEnabled as setSoundEnabled } from './audio.js';
 import { showScreen, type ScreenName } from './ui/screens.js';
@@ -28,12 +30,14 @@ import {
 import { createHomeScreen } from './ui/home.js';
 import { createOnlineScreen } from './ui/online.js';
 import { createWaitingRoom } from './ui/waiting-room.js';
+import { createChatMutes } from './ui/chat-mutes.js';
 import { roomStore, type OnlineFinishedMatch } from './online/adapter.js';
 import { createHomeRoomNote } from './online/home-room-note.js';
 import { createOnlineMatchController } from './online/match-controller.js';
 import { isCurrentWaitingRoomEntry, recoverActiveNetworkMatch } from './online/match-recovery.js';
+import { playAgainInRoom } from './online/rematch.js';
 import { createRoomKeepalive } from './online/room-keepalive.js';
-import { normalizeCode } from './online/rules.js';
+import { normalizeCode, REMOVED_BY_HOST_MESSAGES } from './online/rules.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
 import { createQuizScreen, trapFocus } from './ui/quiz.js';
@@ -41,7 +45,9 @@ import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createRankingScreen } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
+import { withTopic } from './ui/korean.js';
 import { applyMotionPreference, createSettingsDialog } from './ui/settings-dialog.js';
+import { createRulesDialog } from './ui/rules-dialog.js';
 import { DEFAULT_CHARACTER_ID, findCharacter } from './characters.js';
 import type { CategoryId, RankingTarget, RoundMode, RoundSummary } from './types.js';
 
@@ -64,31 +70,35 @@ interface PendingResult {
 }
 
 /**
- * index.html의 인라인 스크립트가 걸어둔 타이머를 끈다.
- * 이 함수가 불리지 못하면(모듈 로드 실패) 화면에 안내가 뜬다.
+ * index.html의 인라인 스크립트가 걸어둔 타이머를 끄고 앱을 보인다.
+ * **문제를 받고 홈을 그리기 직전에 부른다** (U05) — 일찍 보이면 문제를 받는 동안 빈 dock과
+ * 눌러도 아무 일 없는 버튼이 보였다. 그동안은 부팅 화면의 «불러오는 중…»이 자리를 지킨다.
+ * 이 함수가 불리지 못하면(모듈 로드 실패·느린 망) 인라인 스크립트의 안내가 뜬다.
  */
 function markBooted(): void {
   clearTimeout(window.__bootTimer);
+  // 모듈이 15초 넘게 걸려 실패 카드가 먼저 떴어도 늦게 뜬 앱이 그 흔적을 거둔다 (local-ux-3)
+  document.body.classList.remove('is-boot-slow', 'is-boot-failed');
   document.body.classList.add('is-booted');
 }
 
-/** 앱을 띄울 수 없을 때. 콘솔에만 남기지 않고 화면으로 알린다 */
-function showFatalError(message: string): void {
+/**
+ * 앱을 띄울 수 없을 때. 콘솔에만 남기지 않고 화면으로 알린다 (U05).
+ *
+ * **플레이어의 말로 쓴다.** 예전에는 «data 폴더의 JSON 파일»과 오류 message를 그대로 보였다 —
+ * 개발 상세는 콘솔에만 남긴다. 부팅 화면의 실패 카드(`.boot__error--net`)가 「다시 시도」를 이미
+ * 갖고 있어 제목과 이유만 고쳐 쓴다. file:// 의 개발자 안내는 인라인 스크립트만 띄운다.
+ */
+function showFatalError(title: string, message: string): void {
   clearTimeout(window.__bootTimer);
-  document.body.classList.remove('is-booted');
-  document.body.classList.add('is-boot-failed');
-
-  const box = document.querySelector('.boot__error');
-  if (box) {
-    box.replaceChildren();
-    const title = document.createElement('h1');
-    title.className = 'boot__title';
-    title.textContent = '게임을 시작할 수 없습니다';
-    const body = document.createElement('p');
-    body.className = 'boot__body';
-    body.textContent = message;
-    box.append(title, body);
-  }
+  const body = document.body.classList;
+  body.remove('is-booted', 'is-boot-slow', 'is-boot-file');
+  // 먼저 펼치고 넣는다 — 숨긴 채로 채운 role="alert" 는 낭독되지 않는다
+  body.add('is-boot-failed');
+  const heading = document.getElementById('boot-error-title');
+  const reason = document.getElementById('boot-error-body');
+  if (heading) heading.textContent = title;
+  if (reason) reason.textContent = message;
 }
 
 /**
@@ -110,15 +120,18 @@ function takeInviteCode(): string | null {
 }
 
 async function main(): Promise<void> {
-  markBooted();
   const inviteCode = takeInviteCode();
 
+  // 이 동안은 부팅 화면이 보인다. 앱은 홈을 그리기 직전에 연다(markBooted, U05)
+  // 모듈이 다 왔다 — 실패 안내의 15초를 여기서 다시 센다. 문제 JSON 은 10초에 끊기므로 아직 받는 중인데
+  // «불러오지 못했어요»가 뜨지 않고, 끝은 markBooted·showFatalError 가 낸다 (local-ux-3)
+  window.__bootProgress?.();
   const { banks, failedCategories } = await loadQuestionBanks();
   const categoryNames = new Map(CATEGORIES.map((category) => [category.id, category.name]));
 
-  // 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다
+  // 카테고리가 모두 비면 할 수 있는 게 없다. 이유를 화면으로 알린다 (상세는 loader 가 콘솔에 남겼다)
   if (CATEGORIES.every((category) => (banks[category.id] ?? []).length === 0)) {
-    showFatalError('문제 데이터를 하나도 불러오지 못했습니다. data 폴더의 JSON 파일과 네트워크 상태를 확인해 주세요.');
+    showFatalError('문제를 불러오지 못했어요', '연결을 확인하고 다시 시도해 주세요.');
     return;
   }
 
@@ -126,7 +139,7 @@ async function main(): Promise<void> {
 
   // ── 설정 (U42·U54·U55) ─────────────────────────────────────────
   // 앱 바의 「설정」 대화상자. 고르는 순간 적용하고 저장한다.
-  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 서버의 20초다 */
+  /** 새로 여는 로컬 판의 문항 시간 (FR-3.7). 도는 판은 연 순간의 값을 지킨다. 온라인은 방장이 방에 고른 20초·40초다 */
   let timeLimitMs = settings.timeLimitMs;
   setSoundEnabled(settings.soundEnabled);
   applyMotionPreference(settings.reduceMotion);
@@ -146,8 +159,13 @@ async function main(): Promise<void> {
   });
   settingsDialog.set(settings);
 
+  // 「게임 방법」 (U01). 홈에서 판을 열기 전에 읽는다 — 시간이 흐르지 않는다. 문항 시간은 지금 고른 값이다
+  const rulesDialog = createRulesDialog({ getTimeLimit: () => timeLimitMs });
+
   // 직전 판 문제 ID (FR-1.4). 1단계의 메모리 변수에서 저장소로 옮겼다
   let recentQuestionIds = await preferences.getRecentQuestionIds();
+  /** 무대 아래 규칙 줄을 접지 않고 보인 로컬 판 수 (U01). 처음 RULE_HINT_ROUNDS 판만 짧은 화면에서도 남긴다 */
+  let ruleHintRounds = await preferences.getRuleHintRounds();
 
   // 랭킹에 쓰던 닉네임을 온라인 방에서도 그대로 쓴다. 이름을 두 번 묻지 않는다
   const storedNickname = await preferences.getNickname();
@@ -173,6 +191,8 @@ async function main(): Promise<void> {
   let onlineMatchNavigationGeneration: number | null = null;
   /** 늦게 끝난 REST/저장소 요청이 더 새 화면 전환을 덮지 못하게 하는 소유권 세대. */
   let waitingRoomEntryGeneration = 0;
+  /** 마지막으로 연 대기실. 그 세대가 아직 이기고 있으면 그 방의 대기실에 있거나 들어가는 중이다 */
+  let waitingRoomEntry: { code: string; generation: number } | null = null;
   /** 방금 등록한 기록 ID. 랭킹 화면에서 강조한다 (FR-6.5) */
   let registeredId: string | null = null;
 
@@ -196,6 +216,8 @@ async function main(): Promise<void> {
       syncRoomPlayer();
       preferences.setNickname(value);
     },
+    // 문제 은행 알림의 「다시 불러오기」 (U06). 분야 하나만 다시 받는 길은 두지 않는다 — 새로 읽는다
+    onReload: () => window.location.reload(),
   });
 
   // 홈의 «「방」 방에 아직 있어요» 줄 (U35). 언제 묻는지는 online/home-room-note.ts 가 정한다
@@ -218,9 +240,14 @@ async function main(): Promise<void> {
     getPlayer: () => ({ nickname: savedNickname, characterId }),
   });
 
+  // «이 사람 말 숨기기» (N06). 대기실과 그 방의 온라인 퀴즈가 같은 목록을 본다. 이 페이지의
+  // 메모리에만 있고 서버에도 저장소에도 가지 않는다
+  const chatMutes = createChatMutes();
+
   // 대기실. server-authoritative event로 시작을 알리고, 독립 개발 문서에서는
   // 동일한 adapter contract를 따르는 local implementation이 한 판을 연다.
   const waitingRoom = createWaitingRoom({
+    chatMutes,
     roomStore,
     onLeave: (code, entryGeneration, reason) => {
       if (!isCurrentWaitingRoomEntry({
@@ -311,6 +338,19 @@ async function main(): Promise<void> {
       : (target.category ? banks[target.category]?.length ?? 0 : 0) > 0),
     loadRankings: (target) => rankingStore.getRankings(target),
     clearRankings: () => rankingStore.clearAll(),
+    // 선생님께 낼 기록 파일 (N02). 저장소는 여기서만 부른다 — 화면은 받은 파일을 내려받기만 한다
+    exportRecords: async () => {
+      const targets: RankingTarget[] = [
+        { mode: 'all', category: null },
+        ...CATEGORIES.map((category) => ({ mode: 'category' as const, category: category.id })),
+      ];
+      const lists = await Promise.all(targets.map((target) => rankingStore.getRankings(target)));
+      const now = new Date();
+      return {
+        fileName: recordsExportFileName(savedNickname, now),
+        data: buildRecordsExport({ records: lists.flat(), nickname: savedNickname, now }),
+      };
+    },
   });
 
   // ── 서버 권위 온라인 매치 ──────────────────────────────────────
@@ -339,9 +379,12 @@ async function main(): Promise<void> {
       return result;
     },
     getPlayerId: () => roomStore.me(),
+    // 대기실에서 숨긴 사람의 말은 매치 중에도 그리지 않는다 (N06)
+    isChatHidden: (playerId) => onlineMatchRoomCode !== null
+      && chatMutes.isMuted(onlineMatchRoomCode, playerId),
     onExit: () => {
       stopOnlineMatch();
-      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중입니다.');
+      onlineQuizScreen.setNotice('온라인 로비를 불러오는 중이에요.');
       void openOnline('매치는 계속 진행돼요. 목록의 「들어가기」로 다시 돌아올 수 있어요.');
     },
     onFinished: showOnlineFinal,
@@ -349,6 +392,7 @@ async function main(): Promise<void> {
   onlineQuizScreen.setCharacter(characterId);
 
   const onlineResultScreen = createOnlineResultScreen({
+    onAgain: () => playAgain(),
     onRoom: () => {
       if (activeRoomCode) void openWaitingRoom(activeRoomCode);
       else void openOnline();
@@ -370,7 +414,7 @@ async function main(): Promise<void> {
       const code = onlineMatchRoomCode;
       stopOnlineMatch();
       if (code && activeRoomCode === code) void openWaitingRoom(code);
-      else void openOnline('진행 중인 온라인 매치를 찾지 못했습니다.');
+      else void openOnline('진행 중인 온라인 매치를 찾지 못했어요.');
     },
     onError: (message, context) => {
       if (!ownsOnlineMatchNavigation()) return;
@@ -389,7 +433,8 @@ async function main(): Promise<void> {
   function showOnlineFinal(snapshot: OnlineFinishedMatch): void {
     const code = onlineMatchRoomCode;
     stopOnlineMatch();
-    onlineResultScreen.show(snapshot);
+    // 「한 판 더」·「대기실로」는 아직 들어가 있는 방으로 돌아간다. 방 밖이면 「한 판 더」를 그리지 않는다
+    onlineResultScreen.show(snapshot, { inRoom: activeRoomCode !== null });
     goTo('online-result');
     // 아직 그 방에 있으면 소켓을 이어 붙든다. 화면을 떠나면 closers가 놓는다 — 대기실로 가면
     // 대기실이 제 구독을 연 뒤에 놓는다(다시 붙는 잠깐은 60초 유예 안이다). 홈·로비로 가면
@@ -405,6 +450,35 @@ async function main(): Promise<void> {
         hasOpenMatch: () => onlineMatchRoomCode === code,
         openMatch: openOnlineMatch,
       });
+    }, (kind) => {
+      // 결과를 보는 사이 방장이 나를 내보냈다. 대기실에서 내보내진 것과 같은 길이다 — 홈의 줄과
+      // 부팅 흔적을 거두고 로비에서 이유를 말한다(「한 판 더」·「대기실로」는 이제 갈 곳이 없다)
+      if (currentScreen !== 'online-result' || activeRoomCode !== code) return;
+      activeRoomCode = null;
+      homeRoomNote.leave(code);
+      void openOnline(REMOVED_BY_HOST_MESSAGES[kind]);
+    });
+  }
+
+  /**
+   * 「한 판 더」 (U38). 방장이 아니면 대기실을 열기 전에 준비를 켜 둔다(`online/rematch.ts`). 기다리는
+   * 사이 홈·대기실로 등 다른 행동을 눌렀으면 그쪽이 이긴다 — 늦게 끝난 준비가 화면을 옮기지 않고, 그 방의
+   * 대기실로 간 것이 아니면 서버에 닿은 준비도 되돌린다(online-flow-1).
+   */
+  async function playAgain(): Promise<void> {
+    const code = activeRoomCode;
+    if (!code) {
+      await openOnline();
+      return;
+    }
+    const navigation = waitingRoomEntryGeneration;
+    await playAgainInRoom({
+      store: roomStore,
+      code,
+      isStillCurrent: () => isCurrentNavigation(navigation) && activeRoomCode === code,
+      isInWaitingRoom: () => waitingRoomEntry?.code === code
+        && isCurrentNavigation(waitingRoomEntry.generation) && activeRoomCode === code,
+      openWaitingRoom: () => openWaitingRoom(code),
     });
   }
 
@@ -503,8 +577,10 @@ async function main(): Promise<void> {
     for (const [key, close] of Object.entries(closers)) {
       if (key !== name) close();
     }
-    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다
+    // 설정은 어느 화면에서나 열린다. 화면이 바뀌면(매치 시작 등) 새 화면 위에 남기지 않는다.
+    // 「게임 방법」은 홈에서만 열리지만 같은 이유로 접는다
     settingsDialog.dismiss();
+    rulesDialog.dismiss();
     showScreen(name);
     currentScreen = name;
     // 브라우저 «뒤로»가 앱 밖으로 나가지 않게 히스토리 상태만 남긴다. 주소는 그대로다
@@ -651,7 +727,7 @@ async function main(): Promise<void> {
           });
 
     if (questions.length === 0) {
-      homeScreen.setNote('이 카테고리에는 출제할 문제가 없습니다.');
+      homeScreen.setNote('이 카테고리에는 출제할 문제가 없어요.');
       goTo('home');
       return;
     }
@@ -682,8 +758,16 @@ async function main(): Promise<void> {
       timeLimitMs,
     });
 
+    // 처음 몇 판은 무대 아래 규칙 한 줄을 짧은 화면에서도 접지 않는다 (U01). 판을 여는 순간 센다 —
+    // 저장이 막혀도 이 세션 안에서는 세어 둔 값으로 접는다
+    const pinRules = ruleHintRounds < RULE_HINT_ROUNDS;
+    if (pinRules) {
+      ruleHintRounds += 1;
+      void preferences.setRuleHintRounds(ruleHintRounds);
+    }
+
     goTo('quiz');
-    quizScreen.start(session, { categoryLabel: labelFor(round) });
+    quizScreen.start(session, { categoryLabel: labelFor(round), pinRules });
   }
 
   function labelFor({ mode, categoryId }: Round): string {
@@ -737,7 +821,7 @@ async function main(): Promise<void> {
    * `pagehide`에서 불러도 기록이 남는다. 앞에 await를 넣으면 그 보장이 깨진다.
    */
   async function registerRecord(nickname: string) {
-    if (!pending) throw new Error('등록할 기록이 없습니다');
+    if (!pending) throw new Error('등록할 기록이 없어요');
 
     const { summary, target, playedAt, timeLimitMs: roundLimit } = pending;
     const outcome = await rankingStore.saveRecord({
@@ -788,12 +872,15 @@ async function main(): Promise<void> {
     }
     if (!isCurrentNavigation(navigationGeneration)) return;
     goTo('online');
+    // 되돌아온 이유(«방장이 방에서 내보냈어요» 등)는 화면이 보인 뒤에 넣어야 낭독된다
+    onlineScreen.activate();
     // 화면이 보인 뒤에 넘긴다. 포커스를 비밀번호 칸으로 옮길 수 있어야 한다 (U27)
     if (invite) onlineScreen.acceptInvite(invite);
   }
 
   async function openWaitingRoom(code: string): Promise<void> {
     const entryGeneration = invalidateWaitingRoomEntry();
+    waitingRoomEntry = { code, generation: entryGeneration };
     // 방에 들어간다는 흔적을 남긴다. 새로고침한 뒤의 홈이 이것을 보고 돌아갈 방을 묻는다 (server-5)
     homeRoomNote.enter(code);
     if (onlineMatchRoomCode) stopOnlineMatch();
@@ -852,7 +939,7 @@ async function main(): Promise<void> {
   const notes: string[] = [];
   if (failedCategories.length > 0) {
     const names = failedCategories.map(({ id }) => categoryNames.get(id) ?? id).join(', ');
-    notes.push(`문제를 불러오지 못한 카테고리가 있습니다: ${names}`);
+    notes.push(`문제를 불러오지 못한 카테고리가 있어요: ${names}`);
   }
 
   // 은행이 출제 수보다 적으면 그만큼만 낸다. 짧은 판이 버그로 보이지 않게 미리 알린다
@@ -862,10 +949,15 @@ async function main(): Promise<void> {
   });
   if (short.length > 0) {
     const names = short.map((category) => category.name).join(', ');
-    notes.push(`${names}는 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제됩니다.`);
+    // 조사는 마지막 이름의 받침으로 고른다 — «과학는»이 아니라 «과학은»
+    notes.push(`${withTopic(names)} 문제가 ${QUESTIONS_PER_ROUND}개보다 적어 있는 만큼만 출제돼요.`);
   }
 
   if (notes.length > 0) homeScreen.setNote(notes.join(' '));
+
+  // 문제를 받았고 화면이 모두 준비됐다. 여기서 앱을 보인다 (U05) — 아래 홈 그리기는 같은 태스크
+  // 안에서 끝나 빈 dock이 한 번도 칠해지지 않는다. 보인 뒤에 그려야 홈 워커가 시작 자리를 잰다
+  markBooted();
 
   if (inviteCode) {
     // 초대 링크로 왔으면 홈을 그려 둔 뒤 곧장 로비의 코드 참가로 간다 (U27). 홈의 온라인 입구가
@@ -879,7 +971,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  // 상세는 콘솔에만 남긴다. 화면은 플레이어의 말로 다시 시도를 권한다 (U05)
   console.error('[앱 시작 실패]', error);
-  const message = error instanceof Error ? error.message : String(error);
-  showFatalError(`예상치 못한 오류로 게임을 시작하지 못했습니다: ${message}`);
+  showFatalError('게임을 시작하지 못했어요', '잠시 뒤 다시 시도해 주세요.');
 });

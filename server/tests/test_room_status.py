@@ -117,6 +117,8 @@ def test_room_views_map_active_match_to_playing_status() -> None:
             "category_id": None,
             "capacity": 4,
             "game_mode": True,
+            # 방장이 고른 문항 시간이 그대로 방 모습에 실린다 (migration 011)
+            "question_time_ms": 40_000 if is_playing else 20_000,
             "is_public": True,
             "has_password": False,
             "is_mine": False,
@@ -132,7 +134,9 @@ def test_room_views_map_active_match_to_playing_status() -> None:
 
     views = _build_room_views([row("WAIT23", is_playing=False), row("PLAY23", is_playing=True)])
 
-    assert [(view.code, view.status, view.in_match) for view in views] == [
-        ("WAIT23", "waiting", False),
-        ("PLAY23", "playing", True),
+    assert [
+        (view.code, view.status, view.in_match, view.question_time_ms) for view in views
+    ] == [
+        ("WAIT23", "waiting", False, 20_000),
+        ("PLAY23", "playing", True, 40_000),
     ]

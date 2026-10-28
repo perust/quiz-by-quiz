@@ -72,6 +72,12 @@ export interface Preferences {
    */
   getLastRoomCode(): Promise<string | null>;
   setLastRoomCode(code: string | null): Promise<void>;
+  /**
+   * 무대 아래 규칙 한 줄을 접지 않고 보인 로컬 판 수 (U01). 처음 몇 판(`RULE_HINT_ROUNDS`)만
+   * 짧은 화면에서도 규칙을 남기려고 센다. 없거나 깨졌으면 0
+   */
+  getRuleHintRounds(): Promise<number>;
+  setRuleHintRounds(count: number): Promise<void>;
 }
 
 export const rankingStore: RankingStore = createLocalRankingStore();

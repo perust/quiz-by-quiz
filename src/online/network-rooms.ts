@@ -1,4 +1,4 @@
-import { CATEGORIES, ROOM_CAPACITY_CHOICES } from '../constants.js';
+import { CATEGORIES, ROOM_CAPACITY_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { DEFAULT_CHARACTER_ID } from '../characters.js';
 import type { KeyValueStorage } from '../storage/safe-storage.js';
 import type { CategoryId } from '../types.js';
@@ -15,11 +15,13 @@ import type {
   OnlineOwnSubmission,
   OnlineReveal,
   OnlineRevealingMatch,
+  OnlineReviewItem,
   OnlineRunningMatch,
   OnlineScore,
   PlayerInfo,
   PublicPlayer,
   PublicRoom,
+  RemoveMemberResult,
   RoomActionResult,
   RoomEvent,
   RoomEventHandler,
@@ -38,10 +40,18 @@ import {
   WAITING_ROOM_SEAT_CAPABILITY,
 } from './movement-contract.js';
 import {
+  ApiFailure,
+  isOnlineQuestionTime,
   LeaveRoomRejected,
   normalizeCode,
   OnlinePlayerError,
+  parseRetryAfterMs,
+  rateLimitRetryDelayMs,
+  removalKind,
+  RemovedFromRoom,
   type JoinFailReason,
+  type RemovalKind,
+  type RemoveMemberFailReason,
 } from './rules.js';
 
 const IDENTITY_KEY = 'quiz.online.identity.v1';
@@ -55,6 +65,16 @@ const JOIN_FAILURES = new Set<JoinFailReason>([
   // 409·429. 연결 실패로 던지면 화면이 «네트워크를 확인하라»고 잘못 말한다 (U33)
   'game-in-progress',
   'rate-limited',
+  // 403. 접속 중에 방장이 내보내 잠시 다시 들어갈 수 없다
+  'kicked',
+]);
+/** 내보내기 거절 가운데 화면이 이유를 말할 것. 그 밖(요청 한도 등)은 오류로 던진다 */
+const REMOVE_MEMBER_FAILURES = new Set<RemoveMemberFailReason>([
+  'not-found',
+  'not-host',
+  'not-member',
+  'member-connected',
+  'game-in-progress',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHARACTER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -97,27 +117,15 @@ export interface NetworkRoomStoreOptions {
   fetchImpl?: typeof fetch;
   webSocketFactory?: (url: string, protocols: string[]) => WebSocketLike;
   newIdentity?: () => BrowserIdentity;
+  /** 요청 한도(429)에 걸린 방 재조회를 다시 보내기 전의 기다림과 jitter (N01). 테스트가 가짜 시계를 넣는다 */
+  sleep?: (delayMs: number) => Promise<void>;
+  random?: () => number;
 }
 
 /** 서버가 이유를 말하지 않았거나(5xx·형식 밖 응답) 그 말이 개발 용어일 때 플레이어가 보는 말 (U40) */
 const SERVICE_TROUBLE_MESSAGE = '온라인 연결이 잠시 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
 /** 요청이 REQUEST_TIMEOUT_MS 안에 끝나지 않았을 때 (U40) */
 const TIMEOUT_MESSAGE = '응답이 늦어요. 연결을 확인하고 다시 시도해 주세요.';
-
-/**
- * HTTP 거절. `message`는 화면에 그대로 띄워도 되는 말이다 — 서버가 4xx로 알려 준 이유이거나
- * `SERVICE_TROUBLE_MESSAGE`다. 상태·코드 같은 개발 상세는 필드와 콘솔에만 남긴다.
- */
-class ApiFailure extends OnlinePlayerError {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiFailure';
-  }
-}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -273,6 +281,12 @@ function parseRoom(value: unknown): PublicRoom {
   if (typeof inMatch !== 'boolean') {
     throw new Error('서버 방 진행 상태가 올바르지 않습니다.');
   }
+  // 문항 시간을 모르는 이전 API의 방은 모두 20초였다. 있는데 20초·40초가 아니면 다른 계약이다 —
+  // null(로컬 설정의 «제한 없음»)도 20초로 바꿔 읽지 않는다.
+  const questionTimeMs = value.questionTimeMs === undefined ? TIME_LIMIT_MS : value.questionTimeMs;
+  if (!isOnlineQuestionTime(questionTimeMs)) {
+    throw new Error('서버 방 문항 시간이 올바르지 않습니다.');
+  }
   // 방장 자동 준비(U28)와 접속 상태(U24)는 같은 API에서 함께 생겼다. 참가자마다 `connected`를
   // 보내지 않는 이전 API는 방장의 준비도 요구하므로, 화면이 시작 앞에 준비를 먼저 보낸다.
   const hostReadyImplicit = players.every((player) => isObject(player) && Object.hasOwn(player, 'connected'));
@@ -283,6 +297,7 @@ function parseRoom(value: unknown): PublicRoom {
     categoryId: categoryId as CategoryId | null,
     capacity,
     gameMode: true,
+    questionTimeMs,
     players: players.map(parsePlayer),
     isPublic: value.isPublic,
     hasPassword: value.hasPassword,
@@ -389,7 +404,12 @@ function parseReveal(value: unknown): OnlineReveal | null {
   return { ...submission, correct: value.correct, answerIndex, explanation: value.explanation };
 }
 
-function parseScores(value: unknown): OnlineScore[] {
+/**
+ * `revealing`일 때만 참가자별 «방금 문항을 맞혔나»(`lastAnswerCorrect`, U30)를 받는다. 다른 phase에
+ * 섞여 와도 싣지 않는다. 표시용 값이라 깨졌으면 빼고(그 판은 «정답 n/m명»을 그리지 않는다) 점수판
+ * 전체를 거절하지는 않는다.
+ */
+function parseScores(value: unknown, { revealing = false }: { revealing?: boolean } = {}): OnlineScore[] {
   if (!Array.isArray(value)) throw new Error('서버 점수판이 올바르지 않습니다.');
   return value.map((row) => {
     if (!isObject(row)) throw new Error('서버 점수 행이 올바르지 않습니다.');
@@ -400,7 +420,7 @@ function parseScores(value: unknown): OnlineScore[] {
     if (typeof row.characterId !== 'string' || !CHARACTER_ID_PATTERN.test(row.characterId)) {
       throw new Error('서버 점수 캐릭터가 올바르지 않습니다.');
     }
-    return {
+    const score: OnlineScore = {
       playerId,
       nickname: row.nickname,
       characterId: row.characterId,
@@ -408,7 +428,56 @@ function parseScores(value: unknown): OnlineScore[] {
       correctCount: parseInteger(row.correctCount, '정답 수'),
       answeredCount: parseInteger(row.answeredCount, '제출 수'),
     };
+    if (revealing && typeof row.lastAnswerCorrect === 'boolean') score.lastAnswerCorrect = row.lastAnswerCorrect;
+    return score;
   });
+}
+
+function isChoiceIndex(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 3;
+}
+
+/**
+ * 끝난 판의 «문제 다시 보기» (U38). 하나라도 깨졌으면 통째로 뺀다 — 풀이 하나 때문에 최종 순위까지
+ * 거절하지 않는다. 문항 순서는 1부터 판의 문제 수까지 한 번씩이다.
+ */
+function parseReview(value: unknown, totalQuestions: number): OnlineReviewItem[] | undefined {
+  if (!Array.isArray(value) || value.length > totalQuestions) return undefined;
+  const items: OnlineReviewItem[] = [];
+  for (const [index, row] of value.entries()) {
+    if (!isObject(row)) return undefined;
+    const { position, id, categoryId, question, choices, answerIndex, explanation } = row;
+    if (position !== index + 1) return undefined;
+    if (typeof id !== 'string' || !id.trim()) return undefined;
+    if (typeof categoryId !== 'string' || !CATEGORIES_SET.has(categoryId)) return undefined;
+    if (typeof question !== 'string' || !question.trim()) return undefined;
+    if (typeof explanation !== 'string' || !explanation.trim()) return undefined;
+    if (
+      !Array.isArray(choices)
+      || choices.length !== 4
+      || choices.some((choice) => typeof choice !== 'string' || !choice.trim())
+    ) return undefined;
+    const chosen = row.choiceIndex;
+    if (!isChoiceIndex(answerIndex) || (chosen !== null && !isChoiceIndex(chosen))) return undefined;
+    if (typeof row.correct !== 'boolean' || typeof row.timedOut !== 'boolean') return undefined;
+    // 시간 초과는 고른 보기가 없고, 맞힌 것은 정답을 고른 것뿐이다
+    if (row.timedOut ? chosen !== null : chosen === null) return undefined;
+    if (row.correct !== (chosen === answerIndex)) return undefined;
+    items.push({
+      position: index + 1,
+      id,
+      categoryId: categoryId as CategoryId,
+      question,
+      // 바로 위에서 문자열 넷인 것을 확인했다
+      choices: [...choices] as string[],
+      answerIndex,
+      explanation,
+      choiceIndex: chosen,
+      correct: row.correct,
+      timedOut: row.timedOut,
+    });
+  }
+  return items;
 }
 
 function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
@@ -420,12 +489,16 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
   const totalQuestions = parseInteger(value.totalQuestions, '매치 문제 수', 1);
   const currentPosition = parseInteger(value.currentPosition, '매치 문제 순서', 1);
   if (currentPosition > totalQuestions) throw new Error('서버 매치 진행 상태가 올바르지 않습니다.');
+  // 이 판의 문항 시간은 남은 시간 막대의 «가득»에만 쓴다. remainingMs처럼 표시용이라 없거나 모르는
+  // 값이면 빼고(막대는 처음 받은 남은 시간을 가득으로 본다) 매치 전체를 거절하지 않는다.
+  const questionTimeMs = value.questionTimeMs;
   const base = {
     matchId,
     categoryId,
     gameMode: true as const,
     currentPosition,
     totalQuestions,
+    ...(isOnlineQuestionTime(questionTimeMs) ? { questionTimeMs } : {}),
   };
   const activeDeadlineAt = (): string => {
     const deadlineAt = value.deadlineAt;
@@ -442,6 +515,10 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       ? { remainingMs }
       : {};
   };
+  // «문제 다시 보기»는 끝난 판에만 있다 (U38). 진행 중인 응답에 섞이면 정답이 미리 나간 것이다
+  if (value.state !== 'finished' && Object.hasOwn(value, 'review')) {
+    throw new Error('진행 중인 매치 응답에 정답 풀이가 섞였습니다.');
+  }
   if (value.state === 'running') {
     if (value.reveal !== null || !Array.isArray(value.scores) || value.scores.length !== 0) {
       throw new Error('running 응답에 정답 또는 점수 정보가 섞였습니다.');
@@ -481,7 +558,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       question,
       ownSubmission: null,
       reveal: parseReveal(value.reveal),
-      scores: parseScores(value.scores),
+      scores: parseScores(value.scores, { revealing: true }),
     } satisfies OnlineRevealingMatch;
   }
   if (value.state === 'finished') {
@@ -493,6 +570,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
     ) {
       throw new Error('끝난 매치에 문제 또는 정답 공개 상태가 섞였습니다.');
     }
+    const review = parseReview(value.review, totalQuestions);
     return {
       ...base,
       deadlineAt: null,
@@ -501,6 +579,7 @@ function parseMatchSnapshot(value: unknown): OnlineMatchSnapshot {
       ownSubmission: null,
       reveal: null,
       scores: parseScores(value.scores),
+      ...(review === undefined ? {} : { review }),
     } satisfies OnlineFinishedMatch;
   }
   throw new Error('서버 매치 상태가 올바르지 않습니다.');
@@ -517,15 +596,19 @@ async function responseBody(response: Response): Promise<unknown> {
   }
 }
 
-function failureFrom(status: number, body: unknown): ApiFailure {
+function failureFrom(status: number, body: unknown, retryAfter: string | null = null): ApiFailure {
   const detail = isObject(body) && isObject(body.detail) ? body.detail : null;
   const code = detail && typeof detail.code === 'string' ? detail.code : 'request-failed';
   const serverMessage = detail && typeof detail.message === 'string' ? detail.message : null;
+  // 요청 한도(429)는 «언제 다시»를 함께 든다. 재조회가 그 값을 따라 한 번 다시 보낸다 (N01)
+  const retryAfterMs = status === 429 ? parseRetryAfterMs(retryAfter) : null;
   // 4xx의 이유는 서버가 플레이어에게 쓴 말이다(«이미 다음 문제로 넘어갔습니다»). 5xx나 이유 없는
   // 응답은 «데이터베이스…» 같은 개발 상세라 콘솔에만 남기고 화면에는 한 가지 말을 쓴다 (U40)
-  if (serverMessage !== null && status < 500) return new ApiFailure(status, code, serverMessage);
+  if (serverMessage !== null && status < 500) {
+    return new ApiFailure(status, code, serverMessage, retryAfterMs);
+  }
   console.warn(`[온라인 오류] 요청 실패 (${status} ${code})`, serverMessage ?? '');
-  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE);
+  return new ApiFailure(status, code, SERVICE_TROUBLE_MESSAGE, retryAfterMs);
 }
 
 export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomStore {
@@ -534,6 +617,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
   const socketFactory = options.webSocketFactory
     ?? ((url: string, protocols: string[]) => new WebSocket(url, protocols));
   const identityFactory = options.newIdentity ?? randomIdentity;
+  const sleep = options.sleep
+    ?? ((delayMs: number) => new Promise<void>((resolve) => { setTimeout(resolve, delayMs); }));
+  const random = options.random ?? Math.random;
   let identity = readIdentity(options.storage, identityFactory);
   let playerProfile: PlayerInfo = {
     nickname: '손님',
@@ -623,7 +709,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         signal: controller.signal,
       });
       const body = await responseBody(response);
-      if (!response.ok) throw failureFrom(response.status, body);
+      if (!response.ok) throw failureFrom(response.status, body, response.headers.get('Retry-After'));
       return body;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -719,6 +805,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           name: spec.name,
           categoryId: spec.categoryId,
           capacity: spec.capacity,
+          questionTimeMs: spec.questionTimeMs,
           isPublic: spec.isPublic,
           ...(spec.isPublic ? {} : { password: spec.password ?? '' }),
         }),
@@ -764,6 +851,9 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
         requestGeneration,
       };
     } catch (error) {
+      // 방장이 나를 내보냈다. «없는 방»과 다른 말을 해야 해서 따로 던진다 (U24)
+      const kind = error instanceof ApiFailure ? removalKind(error.code) : null;
+      if (kind) throw new RemovedFromRoom(kind);
       if (error instanceof ApiFailure && error.status === 404) {
         return { room: null, requestGeneration };
       }
@@ -775,6 +865,35 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     const code = normalizeCode(rawCode);
     if (!CODE_PATTERN.test(code)) return null;
     return (await fetchRoomSnapshot(code)).room;
+  }
+
+  /**
+   * 방장의 «내보내기» (U24). 접속 중인 사람은 방장이 그렇게 보고 확인했을 때만(`connected`) 보낸다 —
+   * 서버는 그 사람을 잠시 다시 들이지 않는다. 없으면 끊긴 자리를 비우는 요청이다(구버전과 같다).
+   */
+  async function removeMember(spec: {
+    code: string;
+    playerId: string;
+    connected?: boolean;
+  }): Promise<RemoveMemberResult> {
+    const code = normalizeCode(spec.code);
+    if (!CODE_PATTERN.test(code)) return { ok: false, reason: 'not-found' };
+    if (!UUID_PATTERN.test(spec.playerId)) return { ok: false, reason: 'not-member' };
+    const requestGeneration = beginRoomSnapshotRequest();
+    try {
+      const path = `/v1/rooms/${encodeURIComponent(code)}/members/${encodeURIComponent(spec.playerId)}`;
+      const room = parseRoom(await request(
+        spec.connected === true ? `${path}?connected=true` : path,
+        { method: 'DELETE' },
+      ));
+      commitRoomMutation(code, requestGeneration);
+      return { ok: true, room };
+    } catch (error) {
+      if (error instanceof ApiFailure && REMOVE_MEMBER_FAILURES.has(error.code as RemoveMemberFailReason)) {
+        return { ok: false, reason: error.code as RemoveMemberFailReason };
+      }
+      throw error;
+    }
   }
 
   async function updateRoom(spec: { code: string; patch: RoomPatch }): Promise<RoomActionResult> {
@@ -932,6 +1051,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
 
     const mutationState = retainRoomMutationState(code);
     let stopped = false;
+    /** 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 재연결을 멈춘다 (U24) */
+    let halted = false;
     let socket: WebSocketLike | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -957,15 +1078,57 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
     }
 
     function scheduleReconnect(): void {
-      if (stopped || reconnectTimer !== null) return;
+      if (stopped || halted || reconnectTimer !== null) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         void connect();
       }, RECONNECT_DELAY_MS);
     }
 
+    /**
+     * 방장이 나를 내보냈다. 다시 붙어도 소용이 없으니 그만 붙고 화면에 **한 번만** 알린다 (U24).
+     * 열린 소켓으로 먼저 들었으면 서버가 곧 그 소켓을 닫는다 — 닫혀도 다시 붙지 않는다.
+     */
+    function removedFromRoom(connectionGeneration: number, kind: RemovalKind): void {
+      if (stopped || halted || connectionGeneration !== generation) return;
+      halted = true;
+      clearTimers();
+      socket?.close();
+      handler({ type: 'removed', kind });
+    }
+
+    /**
+     * 방 GET 하나. 요청 한도(429)에 걸리면 Retry-After(상한 약 3초)와 jitter를 두고 **한 번만** 다시
+     * 보낸다 (N01) — 조용히 버리면 준비·입장 변화가 다음 무효화까지 화면에 오지 않는다. 그사이 구독이
+     * 끝났거나 소켓이 다시 붙었으면(재연결이 새로 읽는다), 또는 그사이 온 무효화가 후속 조회를
+     * 예약했으면(그것이 같은 일을 한다) 다시 보내지 않는다.
+     */
+    async function readRoomForRefresh(
+      connectionGeneration: number,
+    ): Promise<Awaited<ReturnType<typeof fetchRoomSnapshot>>> {
+      try {
+        return await fetchRoomSnapshot(code);
+      } catch (error) {
+        const delayMs = rateLimitRetryDelayMs(error, random);
+        if (delayMs === null) throw error;
+        await sleep(delayMs);
+        if (stopped || connectionGeneration !== generation || roomRefreshQueued) throw error;
+        return fetchRoomSnapshot(code);
+      }
+    }
+
     async function refreshRoom(connectionGeneration: number): Promise<void> {
-      const { room, requestGeneration } = await fetchRoomSnapshot(code);
+      let snapshot: Awaited<ReturnType<typeof fetchRoomSnapshot>>;
+      try {
+        snapshot = await readRoomForRefresh(connectionGeneration);
+      } catch (error) {
+        if (error instanceof RemovedFromRoom) {
+          removedFromRoom(connectionGeneration, error.kind);
+          return;
+        }
+        throw error;
+      }
+      const { room, requestGeneration } = snapshot;
       if (stopped || connectionGeneration !== generation) return;
       if (requestGeneration < latestDeliveredRoomGeneration) return;
       if (requestGeneration < mutationState.committedGeneration) return;
@@ -977,7 +1140,8 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
      * room-invalidated와 재연결 복구가 부르는 재조회. **요청을 합친다** — 방송 하나에 방
      * 전원이 GET을 보내므로, 준비 토글이 몰리면 무효화마다 한 번씩 읽는 것만으로 IP·프로세스
      * 요청 한도를 먼저 먹는다. 날아가는 요청이 있으면 표시만 해 두고, 끝나면 최신 상태를
-     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 실패해도 다음 무효화·재연결이 다시 맞춘다.
+     * 한 번 더 읽는다(그사이 몇 번이 왔든 한 번). 요청 한도(429)면 한 번 다시 보내고(N01), 그래도
+     * 실패하면 다음 무효화·재연결이 다시 맞춘다.
      */
     function requestRoomRefresh(): void {
       if (stopped) return;
@@ -1017,6 +1181,11 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       }
       if (value.type === 'room-invalidated') {
         requestRoomRefresh();
+        return;
+      }
+      if (value.type === 'removed') {
+        // 서버는 내보낸 그 사람의 소켓에만 보낸다. 이유를 모르면 끊긴 자리를 비운 쪽으로 읽는다
+        removedFromRoom(connectionGeneration, removalKind(value.reason) ?? 'removed');
         return;
       }
       const hasViewportWidth = Object.hasOwn(value, 'viewportWidth');
@@ -1149,7 +1318,13 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
           scheduleReconnect();
         });
         connected.addEventListener('error', () => connected.close());
-      } catch {
+      } catch (error) {
+        // 서버가 «방장이 내보냈다»고 했다. 같은 티켓 요청을 되풀이하지 않는다 (U24)
+        const kind = error instanceof ApiFailure ? removalKind(error.code) : null;
+        if (kind) {
+          removedFromRoom(connectionGeneration, kind);
+          return;
+        }
         scheduleReconnect();
       }
     }
@@ -1207,6 +1382,7 @@ export function createNetworkRoomStore(options: NetworkRoomStoreOptions): RoomSt
       return { ok: true };
     },
     getRoom,
+    removeMember,
     updateRoom,
     setReady,
     async sendChat({ code, text, player }) {

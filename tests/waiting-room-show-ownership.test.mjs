@@ -90,13 +90,14 @@ test('WaitingRoom.show clears prior ownership before fetch and checks it before 
     show.indexOf('remoteBubbles.reset();') < show.indexOf('await roomStore.getRoom(code)'),
     'previous-room bubbles must be reset before the new room fetch',
   );
+  // 방장이 나를 내보냈다는 거절(U24)도 소유권부터 확인한 뒤에만 로비로 돌려보낸다
   assert.match(
     uncommentedShow,
-    /const loadedRoom = await roomStore\.getRoom\(code\);\s*if \(!showGuard\.isCurrent\(request\)\) return;\s*room = loadedRoom;/,
+    /loadedRoom = await roomStore\.getRoom\(code\);\s*\} catch \(error\) \{\s*if \(!showGuard\.isCurrent\(request\)\) return;\s*if \(error instanceof RemovedFromRoom\) \{\s*onLeave\(code, entryGeneration, error\.message\);\s*return;\s*\}\s*throw error;\s*\}\s*if \(!showGuard\.isCurrent\(request\)\) return;\s*room = loadedRoom;/,
   );
   assert.match(
     show,
-    /if \(!room\) \{[\s\S]*?onLeave\(code, entryGeneration, '그 방은 이미 사라졌어요\. 마지막 사람이 나가면 방이 지워집니다\.'\);[\s\S]*?return;\s*\}[\s\S]*?visibleEntry = nextEntry;[\s\S]*?unsubscribe = roomStore\.subscribe\(code, \(event\) => \{\s*if \(showGuard\.isCurrent\(request\)\) onEvent\(event, \{ code, entryGeneration \}\);\s*\}\);/,
+    /if \(!room\) \{[\s\S]*?onLeave\(code, entryGeneration, '그 방은 이미 사라졌어요\. 마지막 사람이 나가면 방이 지워져요\.'\);[\s\S]*?return;\s*\}[\s\S]*?visibleEntry = nextEntry;[\s\S]*?unsubscribe = roomStore\.subscribe\(code, \(event\) => \{\s*if \(showGuard\.isCurrent\(request\)\) onEvent\(event, \{ code, entryGeneration \}\);\s*\}\);/,
   );
   assert.match(
     hide,

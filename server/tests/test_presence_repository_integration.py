@@ -14,7 +14,15 @@ from psycopg import AsyncConnection
 from app.domain import ValidatedRoom, validate_player, validate_room
 from app.postgres import PostgresRoomsRepository
 from app.question_catalog import QuestionCatalog
-from app.repository import MatchInProgress, MatchNotReady, PlayerView
+from app.repository import (
+    MatchInProgress,
+    MatchNotReady,
+    MemberConnected,
+    NotHost,
+    NotMember,
+    PlayerView,
+    RoomNotFound,
+)
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not set")
@@ -48,6 +56,151 @@ def test_postgres_leaving_host_prefers_a_connected_successor() -> None:
 @pytest.mark.integration
 def test_postgres_members_left_out_of_a_match_can_leave_and_ready_up() -> None:
     asyncio.run(_exercise_left_out_member())
+
+
+@pytest.mark.integration
+def test_postgres_host_removes_only_long_absent_members_outside_the_match() -> None:
+    asyncio.run(_exercise_remove_absent_member())
+
+
+@pytest.mark.integration
+def test_postgres_host_kicks_connected_members_but_not_match_players_or_self() -> None:
+    asyncio.run(_exercise_kick_connected_member())
+
+
+async def _exercise_kick_connected_member() -> None:
+    """방장이 확인한 내보내기는 접속 중인 사람도 뺀다. 방장 자신·도는 판의 참가자는 아니다."""
+    assert DATABASE_URL is not None
+    repository = PostgresRoomsRepository(
+        DATABASE_URL,
+        question_catalog=_test_catalog(),
+        max_pool_size=4,
+    )
+    await repository.open()
+    host_id, guest_id, watcher_id = uuid4(), uuid4(), uuid4()
+    player_ids = [host_id, guest_id, watcher_id]
+    room_code: str | None = None
+    nobody_absent: frozenset[UUID] = frozenset()
+
+    try:
+        await _register(repository, player_ids)
+        room = await repository.create_room(host_id, _room_spec("접속 중 내보내기"), None)
+        room_code = room.code
+        await repository.join_room(guest_id, room.code)
+        await repository.join_room(watcher_id, room.code)
+
+        # 끊긴 자리를 비우는 내보내기는 그대로 접속 중인 사람을 빼지 않는다.
+        with pytest.raises(MemberConnected):
+            await repository.remove_member(
+                host_id, room.code, guest_id, absent_player_ids=nobody_absent
+            )
+        # 방장만, 방장 자신은 아니다.
+        with pytest.raises(NotHost):
+            await repository.remove_member(
+                guest_id, room.code, watcher_id,
+                absent_player_ids=nobody_absent, allow_connected=True,
+            )
+        with pytest.raises(MemberConnected):
+            await repository.remove_member(
+                host_id, room.code, host_id,
+                absent_player_ids=nobody_absent, allow_connected=True,
+            )
+
+        # 판이 도는 동안 판의 참가자는 내보내지 않는다 — 판이 끝난 뒤에 뺀다.
+        await repository.set_ready(guest_id, room.code, True)
+        await repository.set_ready(watcher_id, room.code, True)
+        setup = await repository.start_game(host_id, room.code, absent_player_ids=nobody_absent)
+        assert await _match_player_ids(setup.id) == {host_id, guest_id, watcher_id}
+        with pytest.raises(MatchInProgress):
+            await repository.remove_member(
+                host_id, room.code, guest_id,
+                absent_player_ids=nobody_absent, allow_connected=True,
+            )
+        assert await repository.is_member(guest_id, room.code)
+
+        await _reveal_last_question(setup.id)
+        await repository.advance_expired_matches()
+        after = await repository.remove_member(
+            host_id, room.code, guest_id,
+            absent_player_ids=nobody_absent, allow_connected=True,
+        )
+        assert [player.id for player in after.players] == [host_id, watcher_id]
+        assert after.is_mine is True
+        assert not await repository.is_member(guest_id, room.code)
+        assert await repository.get_room(guest_id, room.code) is None
+        # 다시 들어오는 것을 막는 것은 API의 메모리 기록이다. DB는 막지 않는다.
+        rejoined = await repository.join_room(guest_id, room.code)
+        assert [player.id for player in rejoined.players] == [host_id, watcher_id, guest_id]
+    finally:
+        await repository.close()
+        await _cleanup(player_ids, room_code)
+
+
+async def _exercise_remove_absent_member() -> None:
+    """U24: 방장의 «내보내기»는 유예를 넘겨 끊긴 사람만, 도는 판의 참가자는 판이 끝난 뒤에 뺀다."""
+    assert DATABASE_URL is not None
+    repository = PostgresRoomsRepository(
+        DATABASE_URL,
+        question_catalog=_test_catalog(),
+        max_pool_size=4,
+    )
+    await repository.open()
+    host_id, guest_id, ghost_id, stranger_id = uuid4(), uuid4(), uuid4(), uuid4()
+    player_ids = [host_id, guest_id, ghost_id, stranger_id]
+    room_code: str | None = None
+
+    try:
+        await _register(repository, player_ids)
+        room = await repository.create_room(host_id, _room_spec("내보내기 검증"), None)
+        room_code = room.code
+        await repository.join_room(guest_id, room.code)
+        await repository.join_room(ghost_id, room.code)
+        absent = frozenset({ghost_id})
+
+        with pytest.raises(RoomNotFound):
+            await repository.remove_member(host_id, "ZZZZZZ", ghost_id, absent_player_ids=absent)
+        # 방장만 내보낸다.
+        with pytest.raises(NotHost):
+            await repository.remove_member(guest_id, room.code, ghost_id, absent_player_ids=absent)
+        # 접속 중인 사람과 방장 자신은 내보내지 않는다. 방장이 끊긴 사람으로 세어져 있어도 그렇다.
+        with pytest.raises(MemberConnected):
+            await repository.remove_member(host_id, room.code, guest_id, absent_player_ids=absent)
+        with pytest.raises(MemberConnected):
+            await repository.remove_member(
+                host_id, room.code, host_id, absent_player_ids=frozenset({host_id})
+            )
+        with pytest.raises(NotMember):
+            await repository.remove_member(
+                host_id, room.code, stranger_id, absent_player_ids=frozenset({stranger_id})
+            )
+
+        # 판이 도는 동안: 판에 자리가 있는 사람은 끊겨도 판이 끝난 뒤에 뺀다.
+        await repository.set_ready(guest_id, room.code, True)
+        setup = await repository.start_game(host_id, room.code, absent_player_ids=absent)
+        assert await _match_player_ids(setup.id) == {host_id, guest_id}
+        with pytest.raises(MatchInProgress):
+            await repository.remove_member(
+                host_id, room.code, guest_id, absent_player_ids=frozenset({guest_id, ghost_id})
+            )
+
+        # 판에서 빠진 끊긴 사람은 판이 도는 동안에도 뺀다.
+        after = await repository.remove_member(
+            host_id, room.code, ghost_id, absent_player_ids=absent
+        )
+        assert [player.id for player in after.players] == [host_id, guest_id]
+        assert after.is_mine is True
+        assert not await repository.is_member(ghost_id, room.code)
+        assert await repository.get_room(ghost_id, room.code) is None
+        assert await _match_player_ids(setup.id) == {host_id, guest_id}
+
+        # 차단이 아니다. 판이 끝나면 같은 코드로 다시 들어온다.
+        await _reveal_last_question(setup.id)
+        await repository.advance_expired_matches()
+        rejoined = await repository.join_room(ghost_id, room.code)
+        assert [player.id for player in rejoined.players] == [host_id, guest_id, ghost_id]
+    finally:
+        await repository.close()
+        await _cleanup(player_ids, room_code)
 
 
 async def _exercise_absent_host_sweep() -> None:

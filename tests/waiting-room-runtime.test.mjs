@@ -55,6 +55,17 @@ class FakeElement extends EventTarget {
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
     this.parentElement = null;
   }
+  get nextElementSibling() {
+    const siblings = this.parentElement?.children.filter((child) => child instanceof FakeElement) ?? [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }
+  insertBefore(node, reference) {
+    node.remove();
+    const at = reference === null ? this.children.length : this.children.indexOf(reference);
+    node.parentElement = this;
+    this.children.splice(at, 0, node);
+    return node;
+  }
   querySelector() { return null; }
   querySelectorAll() { return []; }
   closest() { return null; }
@@ -125,6 +136,7 @@ function snapshot(players, changes = {}) {
     categoryId: null,
     capacity: 6,
     gameMode: true,
+    questionTimeMs: 20_000,
     players,
     isPublic: true,
     hasPassword: false,
@@ -299,7 +311,7 @@ test('거절 뒤 다시 읽어 보니 방이 사라졌으면 그렇다고 말하
   await settle();
 
   assert.equal(byId('waiting-start-status').textContent, '준비 상태를 다시 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.');
-  assert.equal(chatLines().at(-1), '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워집니다.');
+  assert.equal(chatLines().at(-1), '그 방은 이미 사라졌어요. 마지막 사람이 나가면 방이 지워져요.');
   waiting.hide();
 });
 
@@ -346,11 +358,56 @@ test('방 작업 실패: 요청 한도·시간 초과처럼 이유를 아는 오
   assert.equal(chatLines().at(-1), '방에서 나오지 못했어요. 잠시 뒤 다시 시도해 주세요.');
   assert.deepEqual(left, [], '거절됐으면 방을 떠나지 않는다');
 
-  behaviour.sendChat = () => Promise.reject(new OnlinePlayerError('채팅은 잠시 뒤 다시 보낼 수 있습니다.'));
+  behaviour.sendChat = () => Promise.reject(new OnlinePlayerError('채팅은 잠시 뒤 다시 보낼 수 있어요.'));
   byId('chat-input').value = '안녕';
   byId('chat-form').dispatchEvent(new Event('submit', { cancelable: true }));
   await settle();
-  assert.equal(chatLines().at(-1), '메시지를 보내지 못했어요. 채팅은 잠시 뒤 다시 보낼 수 있습니다.');
+  assert.equal(chatLines().at(-1), '메시지를 보내지 못했어요. 채팅은 잠시 뒤 다시 보낼 수 있어요.');
   assert.equal(byId('chat-input').value, '안녕', '보내지 못한 글은 칸에 남긴다');
+  waiting.hide();
+});
+
+test('문항 시간 칸: 모두에게 같은 값이 보이고 방장만 20초 ↔ 40초로 돌린다 (FR-3.7)', async () => {
+  const patches = [];
+  behaviour.updateRoom = async ({ patch }) => {
+    patches.push(patch);
+    return { ok: true, room: snapshot(READY_ROOM.players, { questionTimeMs: patch.questionTimeMs }) };
+  };
+  await enter(READY_ROOM);
+  const button = byId('setting-question-time');
+  const value = byId('setting-question-time-value');
+  assert.equal(value.textContent, '20초');
+  assert.equal(button.disabled, false, '방장은 돌릴 수 있다');
+
+  button.click();
+  await settle();
+  assert.deepEqual(patches, [{ questionTimeMs: 40_000 }], '20초 다음은 40초다');
+  assert.equal(value.textContent, '40초', '저장소가 돌려준 방으로 다시 그린다');
+
+  button.click();
+  await settle();
+  assert.deepEqual(patches.at(-1), { questionTimeMs: 20_000 }, '40초 다음은 다시 20초다 — 제한 없음이 없다');
+  assert.equal(value.textContent, '20초');
+  waiting.hide();
+
+  // 참가자에게도 보이지만 잠겨 있다. 바꾸는 판정은 저장소가 한다 (not-host)
+  const guestRoom = snapshot([player('host', '민수'), player(ME, '퀴즈왕')], {
+    code: 'GST234', isMine: false, questionTimeMs: 40_000,
+  });
+  await enter(guestRoom);
+  assert.equal(value.textContent, '40초');
+  assert.equal(button.disabled, true);
+  // 대기실에 있는 동안 방장이 바꾸면 같은 칸이 따라 바뀐다
+  roomEvents({ type: 'room', room: { ...guestRoom, questionTimeMs: 20_000 } });
+  assert.equal(value.textContent, '20초');
+  waiting.hide();
+
+  // 판이 도는 동안에는 방장도 바꾸지 못한다 (판에서 빠진 방장이 대기실에 있을 때). 서버가 거절할 버튼을 열어 두지 않는다
+  await enter(snapshot(READY_ROOM.players, { code: 'PLY234', status: 'playing', inMatch: false }));
+  for (const id of ['setting-category', 'setting-capacity', 'setting-question-time']) {
+    assert.equal(byId(id).disabled, true, id);
+  }
+  roomEvents({ type: 'room', room: snapshot(READY_ROOM.players, { code: 'PLY234', status: 'waiting' }) });
+  assert.equal(button.disabled, false, '판이 끝나면 다시 돌릴 수 있다');
   waiting.hide();
 });

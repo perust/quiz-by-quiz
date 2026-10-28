@@ -7,8 +7,10 @@
 import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need } from '../dom.js';
 import { createWalker } from './walker.js';
+import { shortHomeStartPoint } from './walker-geometry.js';
 import { trapFocus } from './quiz.js';
 import { paintCharacter } from './sprite.js';
+import { allRoundLength, categoryDockCaption } from './round-rules.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -22,6 +24,8 @@ export interface HomeScreenDeps {
   onReturnToRoom: (code: string) => void;
   /** 닉네임을 바꿨을 때 */
   onNickname: (nickname: string) => void;
+  /** 문제 은행 알림의 「다시 불러오기」 (U06). 페이지를 새로 읽어 문제를 다시 받는다 */
+  onReload: () => void;
 }
 
 /** 홈에서 돌아갈 수 있는 방. 이름은 화면에 보이고 코드는 돌아갈 때 쓴다 */
@@ -51,7 +55,10 @@ export interface HomeScreen {
   /** 홈을 떠날 때. 캐릭터가 다른 화면에서 계속 뛰지 않게 한다 */
   hide(): void;
 
-  /** 홈 하단 안내 문구. 문구가 없으면 숨긴다 */
+  /**
+   * 문제 은행 오류·문항 부족 알림. 문구가 없으면 숨긴다. 보이는 동안 캐릭터와 조작부를 거두고,
+   * 알림의 「닫기」가 이것을 null 로 불러 다시 켠다 (U06)
+   */
   setNote(message: string | null | undefined): void;
 
   /**
@@ -75,11 +82,12 @@ const COMPACT_CATEGORY_NAMES: Partial<Record<CategoryId, string>> = {
 
 export function createHomeScreen({
   onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onReturnToRoom,
-  onNickname,
+  onNickname, onReload,
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
     quests: need('home-quests'),
+    caption: need('category-caption'),
     grid: need('category-grid'),
     startAll: need<HTMLButtonElement>('start-all'),
     startAllMeta: need('start-all-meta'),
@@ -97,17 +105,36 @@ export function createHomeScreen({
     dialogMessage: need('nickname-message'),
     dialogCancel: need<HTMLButtonElement>('nickname-cancel'),
     walker: need('home-character'),
+    title: need('home-title'),
     note: need('home-note'),
+    noteText: need('home-note-text'),
+    noteReload: need<HTMLButtonElement>('home-note-reload'),
+    noteClose: need<HTMLButtonElement>('home-note-close'),
   };
+
+  // 한 판의 길이를 시작 전에 말한다 (U04). 상수에서 오는 글이라 한 번만 쓴다 — 은행 크기는 쓰지 않는다
+  el.caption.textContent = categoryDockCaption();
 
   // 하단 dock은 최고 기록 유무·번역 길이에 따라 높이가 달라진다. 고정 조작부가 그 높이를
   // 추측하지 않고 실제 값을 따라가게 해, 저장 기록이 생긴 뒤에도 버튼을 덮지 않는다.
+  // 숨은 화면(높이 0)에서는 맞추지 않는다 — 다시 보일 때 맞춘다
   const syncDockHeight = (): void => {
     const height = Math.ceil(el.quests.getBoundingClientRect().height);
     if (height > 0) document.documentElement.style.setProperty('--home-dock-h', `${height}px`);
   };
+  // 화면 크기·글꼴로 바뀌는 높이는 ResizeObserver가 알린다. 다만 그것은 다음 프레임을 그리기 직전에야 오고,
+  // 숨은 탭에서는 오지 않는다 — 그동안 조작부·두 입구는 낡은 높이(처음에는 대체값 148px)에 서서 자동 점검에서
+  // 선택 원이 「게임 방법」을, 스틱이 dock을 덮었다 (layout-01). 그래서 dock 안의 DOM이 바뀌거나(방 복귀 줄·
+  // 전체 도전 표식·분야 칸·바쁨 글) 홈이 다시 보일 때는 MutationObserver가 그 틱 안에서 맞춘다. 워커가
+  // 첫 자리를 재는 rAF(입구 줄 위)도 그 뒤라 맞춘 값을 본다. 워커의 is-standing 같은 class는 보지 않는다
   const dockObserver = new ResizeObserver(syncDockHeight);
   dockObserver.observe(el.quests);
+  const dockMutations = new MutationObserver(syncDockHeight);
+  dockMutations.observe(el.quests, {
+    subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'],
+  });
+  const homeSection = el.stage.closest<HTMLElement>('[data-screen]');
+  if (homeSection) dockMutations.observe(homeSection, { attributes: true, attributeFilter: ['hidden'] });
   requestAnimationFrame(syncDockHeight);
 
   // 화면 전체를 걸어 다닌다. 칸 목록을 따로 만들지 않고 발밑에 실제로 무엇이
@@ -123,15 +150,16 @@ export function createHomeScreen({
     startAt: () => {
       // 200% 확대나 가로 화면에서는 두 보조 입구가 dock 위 양쪽으로 이동한다.
       // 그때는 가운데 위의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
+      // 짧은 가로 화면(U07)은 접었던 브랜드를 위 가운데에 되살리므로 그 아래에 선다.
+      // 브랜드가 접혀 있으면 머리말이 1px 칸이라 제목의 폭도 1px 이하다
       if (window.innerHeight <= 700) {
-        const entry = el.openRanking.getBoundingClientRect();
-        return {
-          x: window.innerWidth / 2,
-          y: Math.max(
-            el.walker.offsetHeight,
-            Math.min(el.walker.offsetHeight + 48, entry.top - 8),
-          ),
-        };
+        const brand = el.title.getBoundingClientRect();
+        return shortHomeStartPoint({
+          viewportWidth: window.innerWidth,
+          walkerHeight: el.walker.offsetHeight,
+          entryTop: el.openRanking.getBoundingClientRect().top,
+          brandBottom: brand.width > 1 ? brand.bottom : null,
+        });
       }
       const box = el.openCharacters.getBoundingClientRect();
       if (box.width === 0) return null;
@@ -160,6 +188,33 @@ export function createHomeScreen({
   el.roomNote.addEventListener('click', () => {
     if (roomNoteCode) onReturnToRoom(roomNoteCode);
   });
+
+  // ── 문제 은행 알림 (U06) ───────────────────────────────────────
+  // 보이는 동안은 캐릭터와 조작부가 꺼져 있다(알림을 덮지 않게). 예전에는 닫을 길이 없어 분야
+  // 하나만 못 받아도 세션 내내 홈에서 걸을 수 없었다. 닫으면 다시 걷고, 다시 불러오기는 새로 읽는다
+  el.noteReload.addEventListener('click', () => onReload());
+  el.noteClose.addEventListener('click', () => {
+    const hadFocus = el.note.contains(document.activeElement);
+    setNote(null);
+    // 누른 버튼이 사라졌다. 포커스가 <body> 로 떨어지지 않게 홈 화면에 둔다 — 버튼이 아니라
+    // 화면이라 다음 방향키·Enter 는 캐릭터가 받는다(워커가 비켜나지 않는다)
+    const screen = el.stage.closest<HTMLElement>('[data-screen]');
+    if (hadFocus) screen?.focus({ preventScroll: true });
+  });
+
+  function setNote(message: string | null | undefined): void {
+    noteVisible = Boolean(message);
+    // 먼저 펼치고 넣는다 — 숨긴 채로 채운 role="alert" 는 낭독되지 않는다
+    el.note.hidden = !noteVisible;
+    el.noteText.textContent = message ?? '';
+
+    if (noteVisible) {
+      walker.setEnabled(false);
+    } else {
+      const screen = el.stage.closest<HTMLElement>('[data-screen]');
+      if (screen && !screen.hidden) walker.setEnabled(true);
+    }
+  }
 
   // ── 닉네임 바꾸기 ──────────────────────────────────────────────
   // window.prompt 대신 페이지 안 다이얼로그를 쓴다. 열려 있는 동안에는
@@ -251,11 +306,14 @@ export function createHomeScreen({
       card.className = 'category-card';
       card.dataset.category = category.id;
       const bestScore = bestScores[category.id];
+      // 문제를 못 받은 칸은 흐리게 잠긴다. 알림을 닫은 뒤에도 왜 잠겼는지 이름이 말한다 (U06)
       card.setAttribute(
         'aria-label',
-        bestScore === null || bestScore === undefined
-          ? `${category.name} 문제 풀기`
-          : `${category.name} 문제 풀기, 최고 ${bestScore}점`,
+        count === 0
+          ? `${category.name} 문제 풀기, 불러오지 못함`
+          : bestScore === null || bestScore === undefined
+            ? `${category.name} 문제 풀기`
+            : `${category.name} 문제 풀기, 최고 ${bestScore}점`,
       );
       card.disabled = count === 0;
 
@@ -303,13 +361,14 @@ export function createHomeScreen({
       el.openOnline.disabled = false;
       el.startAll.disabled = allCount === 0;
 
+      // 기록이 없으면 한 판의 길이(«25문제»)를, 있으면 최고 점수를 보인다 (U04). 길이는 은행 크기가
+      // 아니라 실제로 나갈 문항 수다. 짧은 화면에서 표식이 접혀도 접근 가능한 이름에는 남는다
       const best = bestScores.all;
-      el.startAllMeta.hidden = best === null || best === undefined;
-      el.startAllMeta.textContent = best === null || best === undefined ? '' : `최고 ${best}점`;
-      el.startAll.setAttribute(
-        'aria-label',
-        best === null || best === undefined ? '전체 도전' : `전체 도전, 최고 ${best}점`,
-      );
+      const hasBest = best !== null && best !== undefined;
+      const length = allRoundLength(allCount);
+      el.startAllMeta.hidden = !hasBest && allCount === 0;
+      el.startAllMeta.textContent = hasBest ? `최고 ${best}점` : length;
+      el.startAll.setAttribute('aria-label', hasBest ? `전체 도전, 최고 ${best}점` : `전체 도전, ${length}`);
 
       // 선택한 모습은 홈을 직접 걷는 캐릭터 하나로 보여 준다.
       // 카드에 같은 몸을 한 번 더 그리면 시작 자리에서 캐릭터가 겹쳐 보인다.
@@ -324,18 +383,7 @@ export function createHomeScreen({
       walker.setEnabled(false);
     },
 
-    setNote(message) {
-      noteVisible = Boolean(message);
-      el.note.textContent = message ?? '';
-      el.note.hidden = !noteVisible;
-
-      if (noteVisible) {
-        walker.setEnabled(false);
-      } else {
-        const screen = el.stage.closest<HTMLElement>('[data-screen]');
-        if (screen && !screen.hidden) walker.setEnabled(true);
-      }
-    },
+    setNote,
 
     setOnlineBusy(busy) {
       onlineBusy = busy;
