@@ -387,10 +387,23 @@ shortcut, the timeout fill and the standing-answer drafts are skipped, and the
 question is revealed when the player submits (the 8-second reveal keeps its
 deadline). Time used is measured, not clipped, up to the 2-hour match lifetime
 (`elapsed_ms` 0..7,200,000, `UNTIMED_ELAPSED_MS_CAP`). Snapshots say so
-additively: `questionTimeMs: null` with `untimed: true`, and `deadlineAt: null`,
-`remainingMs: null` and `standingAnswers: false` while a question runs; the room
-and the match-start payload carry `untimed: true` too, and the Pages client
-trusts a `null` question time only next to that mark. A record of an untimed
+additively: the match snapshot has `questionTimeMs: null` with `untimed: true`,
+and `deadlineAt: null`, `remainingMs: null` and `standingAnswers: false` while a
+question runs; the match-start payload has `questionTimeMs: null` with `untimed:
+true`; the **room** payload (lobby list, room reads, the solo start's `room`)
+leaves the `questionTimeMs` key out and carries `untimed: true`. The Pages
+client of this branch trusts "no question time" only next to that mark. The key
+is left out for the Pages clients before #109 (#106–#108): they read a missing
+room question time as 20 seconds but reject `null`, and one rejected room fails
+their whole lobby list — a tab opened before the step-6 Pages publish, sharing
+its browser identity (localStorage) with a new-client tab that opened an
+untimed solo match, would otherwise lose its 온라인 lobby until reloaded. Such a
+tab now lists that room like a timed solo room (a «혼자 하기» room of its own,
+shown as 20 seconds); it cannot play the untimed match — its match read refuses
+a running question without a deadline, so entering the room leaves it in the
+waiting room on «진행 중인 판에 내 자리가 있어요…» without opening the match
+(checked with the #108 client against this API) — and a reload fixes it.
+A record of an untimed
 match keeps `question_time_ms NULL`. Friend rooms keep 20/40 seconds (an
 earlier owner decision): `POST /v1/rooms` refuses `null` (422), `PATCH` refuses
 it (400 `invalid-question-time`), and the database refuses a `NULL` outside solo
@@ -406,8 +419,13 @@ finished round, so it is closed and recorded instead (`recorded: true`).
 Standing-answer drafts of the ended match are dropped, and other tabs re-read
 through `game-started`/`match-invalidated`. `DELETE /v1/solo` takes the same
 solo buckets as a start. An `abandoned` match reads as "no match" (`GET
-…/match` 404); it is deleted with its room or after its 2-hour lifetime, and its
-questions still count as that room's recent questions.
+…/match` 404); it stays in the room until the room is deleted or its own 2-hour
+lifetime ends (`cleanup_expired_matches()`), and its questions still count as
+that room's recent questions. The recent-question read of a start
+(`_RECENT_ROOM_QUESTIONS_SQL`, N08) looks at the room's latest
+`RECENT_MATCH_MEMORY` = 24 matches only (120 questions fill in 12 category
+rounds, so twice that), because restarts can pile matches up in one room
+("Limits and envelope" below).
 
 Abandoned untimed matches: an untimed match has no deadline that would end it,
 so the 60-second cleanup ends (as `abandoned`, unrecorded) every running untimed
@@ -453,9 +471,20 @@ tab close and reconnect follow the existing online rules: the match continues
 on the server and is recorded when it closes.
 
 Limits and envelope: `POST /v1/solo` takes 12 per player, 120 per address and
-600 per process per minute; a starting request needs no running match, and a
-match takes at least ten 8-second reveals, so one player starts at most about
-one match a minute and owns at most one solo room. Solo rooms do **not** take
+600 per process per minute, and a player owns at most one solo room. Without
+`restart` a start that finds a running match resumes it, and a match takes at
+least ten 8-second reveals, so a player starts about one match a minute; with
+`restart: true` (every start of the Pages client of this branch) each pick of
+another board ends the running match and opens a new one, so **one player can
+open and end up to 12 solo matches a minute** in the same room (still within
+the 120 per address and 600 per process). Every ended match stays `abandoned`
+in that room for at most its 2-hour lifetime, so one room can hold about 1,440
+matches (up to 36,000 `match_questions` rows on 25-question boards); a start
+reads only the latest 24 of them for its recent questions (above), so the
+per-start read stays bounded. The service-wide number of retained matches is
+bounded by the process bucket as before (600 starts a minute for the 2-hour
+lifetime, about 72,000 matches; restarts add no new bound — before restart the
+same bucket was the binding one). Solo rooms do **not** take
 the room-create bucket (100/process/hour), and the client's 홈으로 deletes the
 solo room, so every round started from home creates a room. Because session
 identities are cheap (60 per address, 300 per process a minute), the per-player
@@ -493,8 +522,12 @@ resource-envelope review boundary like the others. The ops log writes one
 `match_started` (`questionTimeMs: null` when untimed). A solo match ends in
 exactly one of `match_finished` (closed and recorded; `via: restart` or `left`
 when ended early at its final reveal), `solo_abandoned` (`via: restart` or
-`left`, unrecorded) or the cleanup's `soloMatchesAbandoned` count, unless it is
-deleted with its room after a `match_finished`.
+`left`, unrecorded), the cleanup's `soloMatchesAbandoned` count (an untimed
+match nobody was seen in for 30 minutes), or — for an untimed match whose player
+stays connected for its whole 2-hour lifetime — its deletion by
+`cleanup_expired_matches()`, counted only in the cleanup's `matchesDeleted`;
+a finished or abandoned match is later deleted with its room or at that expiry
+without another event.
 
 Rollback: migration 013 stays applied; the API goes back to the migration-012
 API of #108, which keeps working on a migration-013 database (below) once no
@@ -883,15 +916,20 @@ when every step is `ok`.
   `soloUntimed: true` and `soloRestart: true` — the 012 API fails here; then the
   same nickname, ranking, room, settings and socket checks as the baseline, and
   a `solo` step: `POST /v1/solo` with `{categoryId: null, questionTimeMs: null}`
-  must answer 201 with a solo room and match marked `untimed: true` and a `null`
-  question time, `GET …/match` a running question with `deadlineAt`,
+  must answer 201 with a solo room and match marked `untimed: true` (the room
+  without a `questionTimeMs` key, the match with `null`), `GET …/match` a
+  running question with `deadlineAt`,
   `remainingMs` and `questionTimeMs` `null` and `standingAnswers: false`, and
   `DELETE /v1/solo` `{left: true, ended: {recorded: false}}` with the solo room
   gone (404)). It opens no friend-room match and ends its one untimed solo
   match unanswered and unrecorded, so it records nothing in the ranking and
   leaves no solo room; cleanup ends that solo match too if the step stopped
-  half-way (also when the start's answer was lost). The ops log shows one
-  `solo_started` and one `solo_abandoned` (`via: left`) line for it.
+  half-way (also when the start's answer was lost, and counts a `DELETE` that
+  finds no solo room as already ended when the room reads 404). Cleanup always
+  leaves the smoke's public two-seat room as well, even when ending the solo
+  match fails (a timeout, 429 or 5xx); both failures are reported on its one
+  `FAIL cleanup` line. The ops log shows one `solo_started` and one
+  `solo_abandoned` (`via: left`) line for it.
 
 If the host cannot reach its own public address, add `--resolve-to 127.0.0.1`;
 the URL host still names the Host header and the TLS certificate.

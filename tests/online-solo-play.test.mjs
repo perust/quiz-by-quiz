@@ -632,7 +632,8 @@ test('결정 #2·#4를 아는 API에만: «제한 없음»은 null로, 다른 �
     if (url.pathname === '/v1/session') return json(DECIDED_SESSION);
     if (url.pathname === '/v1/solo') {
       return json({
-        room: soloRoom({ questionTimeMs: null, untimed: true }),
+        // 서버는 «제한 없음» 방에 문항 시간 키를 싣지 않는다(이전 화면의 로비 목록이 null에 깨지지 않게)
+        room: soloRoom({ questionTimeMs: undefined, untimed: true }),
         match: { matchId: MATCH_ID, categoryId: 'science', gameMode: true, totalQuestions: 10, questionTimeMs: null, untimed: true },
         resumed: false,
         ended: { matchId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', categoryId: 'history', recorded: false },
@@ -711,11 +712,20 @@ test('«제한 없음» 방·판은 untimed 표시가 함께일 때만 믿는다
     await assert.rejects(store.getMatch('SQL234'), Error, label);
   }
 
+  // 서버는 «제한 없음» 혼자 방에 문항 시간 키를 싣지 않고 표시만 싣는다 — #109 전의 화면은 키가 없는 방을 20초로
+  // 읽어 로비 목록을 그린다. null과 함께 온 표시도 같은 뜻으로 받는다
+  snapshots.set('room', soloRoom({ questionTimeMs: undefined, untimed: true }));
+  assert.equal((await store.getRoom('SQL234')).questionTimeMs, null);
   snapshots.set('room', soloRoom({ questionTimeMs: null, untimed: true }));
   assert.equal((await store.getRoom('SQL234')).questionTimeMs, null);
+  // 표시가 없으면 키가 없는 방은 예전처럼 20초 방이다
+  snapshots.set('room', soloRoom({ questionTimeMs: undefined }));
+  assert.equal((await store.getRoom('SQL234')).questionTimeMs, 20000);
   for (const [label, broken] of [
     ['표시 없는 null', soloRoom({ questionTimeMs: null })],
     ['혼자 방이 아닌 방의 null', soloRoom({ questionTimeMs: null, untimed: true, solo: undefined })],
+    ['혼자 방이 아닌 방의 표시', soloRoom({ questionTimeMs: undefined, untimed: true, solo: undefined })],
+    ['표시와 함께 온 숫자 문항 시간', soloRoom({ questionTimeMs: 20000, untimed: true })],
   ]) {
     snapshots.set('room', broken);
     await assert.rejects(store.getRoom('SQL234'), /문항 시간/, label);

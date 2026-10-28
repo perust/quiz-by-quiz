@@ -22,6 +22,7 @@ from .domain import (
 )
 from .nickname_filter import ranking_nickname
 from .question_catalog import (
+    RECENT_MATCH_MEMORY,
     RECENT_QUESTION_MEMORY,
     CatalogError,
     QuestionCatalog,
@@ -489,12 +490,20 @@ FOR UPDATE OF room
 
 # 이 방의 지난 판에 나온 문항과 마지막으로 낸 시각 (N08). 판은 `_MATCH_LIFETIME` 동안 남으므로
 # 그 사이의 «한 판 더»가 이 기억을 쓴다. 프로세스 메모리가 아니라 DB에서 읽어 worker 수·재시작과
-# 무관하고, 방이 지워지면 판과 함께 사라진다. `matches_room_started_at_idx`를 탄다.
+# 무관하고, 방이 지워지면 판과 함께 사라진다. 가장 최근 `RECENT_MATCH_MEMORY`판만 본다 — 혼자 판의
+# «끝내고 새로 열기»가 한 방에 판을 많이 쌓아도(1분에 12판) 판을 열 때 읽는 줄이 그만큼으로 묶인다.
+# 최근 판은 `matches_room_started_at_idx`(room_id, started_at DESC)를 탄다.
 _RECENT_ROOM_QUESTIONS_SQL = """
-SELECT question.question_id, max(match.started_at) AS last_used
-FROM quiz_online.matches match
-JOIN quiz_online.match_questions question ON question.match_id = match.id
-WHERE match.room_id = %s
+WITH recent_matches AS MATERIALIZED (
+    SELECT match.id, match.started_at
+    FROM quiz_online.matches match
+    WHERE match.room_id = %s
+    ORDER BY match.started_at DESC
+    LIMIT %s
+)
+SELECT question.question_id, max(recent.started_at) AS last_used
+FROM recent_matches recent
+JOIN quiz_online.match_questions question ON question.match_id = recent.id
 GROUP BY question.question_id
 ORDER BY last_used DESC, question.question_id ASC
 LIMIT %s
@@ -1282,7 +1291,7 @@ class PostgresRoomsRepository:
 
         recent_cursor = await connection.execute(
             _RECENT_ROOM_QUESTIONS_SQL,
-            (room["id"], RECENT_QUESTION_MEMORY),
+            (room["id"], RECENT_MATCH_MEMORY, RECENT_QUESTION_MEMORY),
         )
         recent_use = {
             str(row["question_id"]): row["last_used"].timestamp()

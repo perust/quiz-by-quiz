@@ -1460,8 +1460,9 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
 }
 
 /* 혼자 판의 한 줄 알림 (PRD 10.1 #11): 다른 분야를 골라 풀던 판을 기록 없이 끝냈다. 확인창 대신 이 판의 첫
-   문항 동안 HUD 바로 아래에 선다(online-quiz.ts 의 showSoloNotice). 상태 줄과 같은 한 줄 안내 모양이고,
-   짧은 가로 화면의 두 열 배치에서는 HUD와 같은 왼쪽 열이다(무대 절의 `.quiz--character > *`) */
+   문항 동안 HUD 바로 아래에 선다(online-quiz.ts 의 showSoloNotice). 상태 줄과 같은 한 줄 안내 모양이다.
+   짧은 가로 touch 화면의 두 열 배치에서는 두 열 아래, 상태 줄 위에 폭을 다 쓴다(무대 절 뒤의 짧은 가로 블록) —
+   왼쪽 열에 두면 그 높이만큼 보기가 밀려 아래 줄 보기가 화면 밖으로 나갔다(U15) */
 .online-solo-notice {
   display: flex;
   align-items: center;
@@ -2710,6 +2711,18 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   .quiz--character > .online-match-status,
   .quiz--character > .online-quiz-chat {
     grid-column: 1 / -1;
+  }
+
+  /* 혼자 판의 앞 판 알림(PRD 10.1 #11)도 두 열 아래, 공개 카드·상태 줄 위다. 왼쪽 열(HUD 아래)에 두면 알림
+     높이(한두 줄 38–57px + 12px)가 왼쪽 열에 그대로 더해져, 끝내고 연 판의 첫 문항 동안 740×360에서 아래 줄
+     보기가 화면 밖으로 7–13px 나갔다 — 답하기 전에 HUD·질문·보기 넷·바닥 칸 넷이 한 화면이라는 U15 계약이다.
+     줄을 정해 두면(5) 공개 카드·상태 줄·채팅은 그 뒤 줄로 저절로 놓인다. 아래도 12px를 띄운다 — 상태 줄은 위 여백이
+     없어 붙으면 두 유리가 한 덩어리로 보였다 */
+  .quiz--character > .online-solo-notice {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    width: 100%;
+    margin: var(--space-3) 0;
   }
 
   /* 공개 카드도 양옆 여백 안이라 떠 있는 조작부와 겹치지 않는다. 스틱 높이만큼 더 올리면 보기와

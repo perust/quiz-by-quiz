@@ -32,7 +32,8 @@ from test_online_rankings_integration import (
 from test_solo_play_integration import _room_exists, _solo_marks
 
 from app.domain import validate_solo_room
-from app.postgres import PostgresRoomsRepository
+from app.postgres import _RECENT_ROOM_QUESTIONS_SQL, PostgresRoomsRepository
+from app.question_catalog import RECENT_MATCH_MEMORY, RECENT_QUESTION_MEMORY
 from app.repository import MatchView, StandingAnswer
 
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not set")
@@ -82,6 +83,11 @@ def test_postgres_an_untimed_solo_match_nobody_watches_ends_with_the_stale_membe
 @pytest.mark.integration
 def test_postgres_no_time_limit_lives_only_in_solo_rooms_and_their_matches() -> None:
     asyncio.run(_exercise_untimed_constraints())
+
+
+@pytest.mark.integration
+def test_postgres_many_restarts_keep_the_recent_question_read_to_the_latest_matches() -> None:
+    asyncio.run(_exercise_restart_memory_window())
 
 
 async def _exercise_untimed_match() -> None:
@@ -210,6 +216,72 @@ async def _exercise_restart() -> None:
         assert read.match.total_questions == 25
         # 끝낸 판의 문항은 이 방의 «최근 문제»라 다음 판이 피한다 (N08) — 판은 남아 있다
         assert await _match_count(first.room.code) == 2
+    finally:
+        await repository.close()
+        for code in codes:
+            await _cleanup([], code)
+        await _cleanup([owner], None)
+
+
+async def _exercise_restart_memory_window() -> None:
+    # «끝내고 새로 열기»는 한 방에 판을 1분에 12개까지 쌓는다(2시간 남는다). 판을 열 때 읽는
+    # «최근 문제»(N08)는 가장 최근 RECENT_MATCH_MEMORY판만 본다 — 그보다 오래된 판의 문항은
+    # 읽지 않는다
+    assert DATABASE_URL is not None
+    repository = await _repository()
+    owner = uuid4()
+    codes: list[str] = []
+    try:
+        await _register(repository, {owner: "자주바꾸는나"})
+        # 가장 오래된 두 판은 한국사·지리, 그 뒤 RECENT_MATCH_MEMORY + 1판은 과학·예술을 번갈아 연다
+        boards = ["history", "geography"] + [
+            "science" if index % 2 == 0 else "art" for index in range(RECENT_MATCH_MEMORY + 1)
+        ]
+        match_ids: list[UUID] = []
+        for index, board in enumerate(boards):
+            started = await repository.start_solo(
+                owner,
+                validate_solo_room(category_id=board, question_time_ms=20_000),
+                restart=index > 0,
+            )
+            assert started.match is not None and started.match.category_id == board
+            if index > 0:
+                assert started.ended is not None and started.ended.recorded is False
+            match_ids.append(started.match.id)
+            if not codes:
+                codes.append(started.room.code)
+        code = codes[0]
+        assert await _match_count(code) == len(boards)
+
+        async with await AsyncConnection.connect(DATABASE_URL, autocommit=True) as connection:
+            room_cursor = await connection.execute(
+                "SELECT id FROM quiz_online.rooms WHERE code = %s", (code,)
+            )
+            room_row = await room_cursor.fetchone()
+            assert room_row is not None
+            cursor = await connection.execute(
+                _RECENT_ROOM_QUESTIONS_SQL,
+                (room_row[0], RECENT_MATCH_MEMORY, RECENT_QUESTION_MEMORY),
+            )
+            recent = await cursor.fetchall()
+            latest_cursor = await connection.execute(
+                """
+                SELECT match.category_id, max(match.started_at)
+                FROM quiz_online.matches match
+                WHERE match.id = ANY(%s)
+                GROUP BY match.category_id
+                """,
+                (match_ids[-RECENT_MATCH_MEMORY:],),
+            )
+            latest_by_board = dict(await latest_cursor.fetchall())
+
+        # 최근 판(과학·예술)의 문항만 읽고, 그보다 앞선 한국사·지리 판의 문항은 읽지 않는다
+        boards_read = {str(question_id).split("-")[1] for question_id, _ in recent}
+        assert boards_read == {"science", "art"}
+        assert len(recent) == 20
+        # 문항마다 마지막으로 낸 시각은 그 분야의 가장 최근 판이다
+        for question_id, last_used in recent:
+            assert last_used == latest_by_board[str(question_id).split("-")[1]]
     finally:
         await repository.close()
         for code in codes:

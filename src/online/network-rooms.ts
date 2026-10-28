@@ -360,8 +360,14 @@ function parseRoom(value: unknown): PublicRoom {
   }
   // 문항 시간을 모르는 이전 API의 방은 모두 20초였다. 있는데 20초·40초가 아니면 다른 계약이다 —
   // null(로컬 설정의 «제한 없음»)도 20초로 바꿔 읽지 않는다. 다만 «제한 없음» 혼자 방(PRD 10.1 #9)은
-  // 서버가 `untimed: true`·`solo: true`와 함께 null을 보낸다 — 그때만 null을 믿는다
-  const untimedSoloRoom = value.untimed === true && value.solo === true && value.questionTimeMs === null;
+  // 서버가 `questionTimeMs` 키 없이 `untimed: true`·`solo: true`를 보낸다 — 키가 없으면 이전 화면(#106–#108)이
+  // 20초 방으로 읽어 로비 목록을 그대로 그린다(null을 받으면 목록째 버렸다). 그 표시가 있을 때만 문항 시간이
+  // 없는 방으로 읽고, 표시와 숫자 문항 시간이 함께 오거나 혼자 방이 아니면 다른 계약이라 믿지 않는다
+  const untimedSoloRoom = value.untimed === true && value.solo === true
+    && (value.questionTimeMs === undefined || value.questionTimeMs === null);
+  if (value.untimed === true && !untimedSoloRoom) {
+    throw new Error('서버 방 문항 시간이 서로 맞지 않습니다.');
+  }
   const questionTimeMs = value.questionTimeMs === undefined ? TIME_LIMIT_MS : value.questionTimeMs;
   if (!untimedSoloRoom && !isOnlineQuestionTime(questionTimeMs)) {
     throw new Error('서버 방 문항 시간이 올바르지 않습니다.');

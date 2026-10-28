@@ -124,6 +124,8 @@ class FakeApi:
         ranking_extra: dict | None = None,
         ranking_entry_extra: dict | None = None,
         anonymous_mine: bool = False,
+        solo_end_recorded: bool = False,
+        solo_end_failures: int = 0,
     ) -> None:
         self.schema_version = schema_version
         self.readiness_error = readiness_error
@@ -159,6 +161,10 @@ class FakeApi:
         # 혼자 판 (FR-7.13 3단계): 연 혼자 방과 그 판이 «제한 없음»인가, 끝냈는가
         self.solo_rooms: dict[str, dict] = {}
         self.solo_ended: list[str] = []
+        # DELETE /v1/solo가 방을 지우고도 «기록했다»고 답한다(점검이 잡아야 할 서버 잘못)
+        self.solo_end_recorded = solo_end_recorded
+        # DELETE /v1/solo가 이만큼 503으로 답한다(아무것도 지우지 않는다)
+        self.solo_end_failures = solo_end_failures
 
     def _cors(self, headers: dict) -> dict:
         origin = headers.get("Origin")
@@ -360,7 +366,7 @@ class FakeApi:
                 "categoryId": None,
                 "capacity": 2,
                 "gameMode": True,
-                "questionTimeMs": None,
+                # «제한 없음» 방에는 문항 시간 키가 없다(server/app/main.py의 _room_payload)
                 "untimed": True,
                 "solo": True,
                 "players": [
@@ -394,12 +400,19 @@ class FakeApi:
                 headers,
             )
         assert method == "DELETE" and payload is None
+        if self.solo_end_failures:
+            self.solo_end_failures -= 1
+            return self._ok(503, {"detail": {"code": "database-unavailable"}}, headers)
         if not self.solo_rooms:
             return self._ok(200, {"ended": None, "left": False}, headers)
         (code,) = self.solo_rooms
         del self.solo_rooms[code]
         self.solo_ended.append(code)
-        ended = {"matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "categoryId": None, "recorded": False}
+        ended = {
+            "matchId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "categoryId": None,
+            "recorded": self.solo_end_recorded,
+        }
         return self._ok(200, {"ended": ended, "left": True}, headers)
 
     def _untimed_match(self) -> dict:
@@ -955,6 +968,88 @@ class SmokeRunTests(unittest.TestCase):
         )
         self.assertEqual(run.api.solo_rooms, {})
         self.assertEqual(run.api.solo_ended, ["SQL234"])
+
+    def test_an_untimed_solo_room_that_carries_a_null_question_time_fails(self):
+        # 방의 null은 #109 전 화면의 로비 목록 전체를 깨뜨린다 — 점검이 그 모양을 막는다
+        api = FakeApi()
+        original = api._solo
+
+        def null_room(method, player, payload, headers):
+            reply = original(method, player, payload, headers)
+            if method == "POST":
+                for room in api.solo_rooms.values():
+                    room["questionTimeMs"] = None
+                value = json.loads(reply.body)
+                value["room"]["questionTimeMs"] = None
+                return smoke.Reply(reply.status, reply.headers, body(value))
+            return reply
+
+        api._solo = null_room
+        run = Run("candidate", api)
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: POST /v1/solo: room questionTimeMs=null (want missing)"
+        )
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.rooms, {})
+
+    def test_solo_step_failing_after_its_delete_still_leaves_the_public_room(self):
+        # solo 단계의 DELETE가 혼자 방을 지웠는데 답이 틀렸다(기록했다고 한다) — 그 단계는 FAIL이고,
+        # cleanup의 두 번째 DELETE는 방이 없다는 답({left: false, ended: null})을 GET 404로 확인해 이미
+        # 끝난 것으로 본다. 공개 방은 그대로 나간다(한때 그 DELETE가 던져 공개 방이 운영 로비에 남았다)
+        run = Run("candidate", FakeApi(solo_end_recorded=True))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: DELETE /v1/solo: ended recorded=true (want false)"
+        )
+        self.assertEqual(
+            run.lines[-1],
+            "ok cleanup: left room QZ7K2M, GET -> 404; "
+            "DELETE /v1/solo -> 200 already ended, GET SQL234 -> 404",
+        )
+        self.assertEqual(run.api.rooms, {})
+        self.assertEqual(run.api.solo_rooms, {})
+        self.assertEqual(run.api.solo_ended, ["SQL234"])
+
+    def test_failed_solo_cleanup_still_leaves_the_public_room(self):
+        # solo 단계의 DELETE도, cleanup의 DELETE도 503이다 — 혼자 판은 남았다고 FAIL로 알리되 공개 방은 나간다
+        run = Run("candidate", FakeApi(solo_end_failures=2))
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[7], "FAIL solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200"
+        )
+        self.assertEqual(
+            run.lines[-1],
+            "FAIL cleanup: solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200",
+        )
+        self.assertEqual(run.api.rooms, {})
+        self.assertEqual(list(run.api.solo_rooms), ["SQL234"])
+        leaves = [
+            (method, path)
+            for method, path, _, _ in run.api.requests
+            if path == "/v1/rooms/QZ7K2M/members/me"
+        ]
+        self.assertEqual(leaves, [("DELETE", "/v1/rooms/QZ7K2M/members/me")])
+
+    def test_cleanup_reports_both_failures_on_one_line(self):
+        # 혼자 판 끝내기와 공개 방 나가기가 모두 실패하면 둘 다 적는다 — 하나가 다른 하나를 가리지 않는다
+        api = FakeApi(solo_end_failures=2)
+        original = api.request
+
+        def refuse_leave(method, path, headers, data=None):
+            if (method, path) == ("DELETE", "/v1/rooms/QZ7K2M/members/me"):
+                api.requests.append((method, path, dict(headers), None))
+                return smoke.Reply(500, api._cors(headers), body({"detail": {"code": "server-error"}}))
+            return original(method, path, headers, data)
+
+        api.request = refuse_leave
+        run = Run("candidate", api)
+        self.assertEqual(run.code, 1)
+        self.assertEqual(
+            run.lines[-1],
+            "FAIL cleanup: leave room QZ7K2M: HTTP 500 server-error, expected 204 or 404; "
+            "solo: DELETE /v1/solo: HTTP 503 database-unavailable, expected 200",
+        )
 
     def test_sigterm_through_the_installed_handler_still_leaves_the_room(self):
         previous = smoke.trap_termination()

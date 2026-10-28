@@ -545,9 +545,32 @@ def test_an_untimed_solo_start_says_no_deadline_additively() -> None:
     body = response.json()
     # 문항 시간 null과 함께 «마감 없음» 표시를 싣는다 — 화면은 이 표시가 있을 때만 null을 믿는다
     assert body["match"]["questionTimeMs"] is None and body["match"]["untimed"] is True
-    assert body["room"]["questionTimeMs"] is None and body["room"]["untimed"] is True
+    # 방에는 문항 시간 키가 없다 — #109 전의 화면(#106–#108)은 방의 null을 거절하고 한 방이
+    # 틀리면 로비 목록 전체를 버린다. 키가 없으면 그 화면은 20초 방으로 읽는다. 지금 화면은
+    # 표시로 안다
+    assert "questionTimeMs" not in body["room"] and body["room"]["untimed"] is True
     solo = [json.loads(line) for line in lines if '"solo_started"' in line]
     assert len(solo) == 1 and solo[0]["questionTimeMs"] is None
+
+
+def test_untimed_solo_rooms_leave_the_question_time_out_for_earlier_pages_clients() -> None:
+    # 같은 브라우저(같은 신분)의 Pages 발행 전 탭(#106–#108의 화면)이 로비를 읽는다. 그 화면은
+    # 방마다 questionTimeMs가 없으면 20초로 읽고 null이면 거절하며, 한 방이 틀리면 목록 전체를
+    # 버린다. 그래서 «제한 없음» 혼자 방은 키 없이 표시만 싣는다. 판 snapshot은 그대로 null이다
+    # (그 화면은 마감 없는 도는 판 읽기를 거절한다 — 그 판을 풀 수 없다)
+    repository = SoloRepository()
+    repository.room = solo_room(status="playing", in_match=True, question_time_ms=None)
+    with make_client(repository) as client:
+        listed = client.get("/v1/rooms", headers=HEADERS)
+        read = client.get(f"/v1/rooms/{SOLO_CODE}", headers=HEADERS)
+
+    assert listed.status_code == 200 and read.status_code == 200
+    for room in (listed.json()[0], read.json()):
+        assert "questionTimeMs" not in room
+        assert room["untimed"] is True and room["solo"] is True
+        # #108 화면의 읽기(network-rooms.ts의 parseRoom)를 옮겼다: 없으면 20초, 있으면 20초·40초만
+        legacy_time = room.get("questionTimeMs", 20_000)
+        assert legacy_time in (20_000, 40_000)
 
 
 def test_timed_rooms_and_matches_carry_no_untimed_mark() -> None:

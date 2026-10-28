@@ -166,11 +166,14 @@ RANKING_MODES = frozenset({"category", "all"})
 RANKING_PERIODS: frozenset[RankingPeriod] = frozenset({"week", "all"})
 # 랭킹의 «이번 주»가 쓰는 시간대. 응답이 함께 알린다.
 RANKING_TIME_ZONE = "Asia/Seoul"
-# 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo)의 몫. 판 하나는 빨라도 1분 남짓(공개 8초 ×
-# 문항 수)이라 한 사람이 1분에 여는 판은 많아야 하나다 — 판이 도는 동안의 요청은 새 판을 열지 않고
-# 그 판을 돌려준다(resumed). 사람 칸은 두 번 누르기·다른 탭·이어 풀기를 넉넉히 품는다. 한
-# 교실(한 주소 뒤 36명)이 함께 판을 열어도 1분에 30번 남짓이라 IP 칸 120에 들고, 프로세스 600은 방
-# 변경 몫과 같다.
+# 혼자 푸는 온라인 판 (FR-7.13 3단계, POST /v1/solo)의 몫. restart 없이는 판이 도는 동안의 요청이
+# 새 판을 열지 않고 그 판을 돌려주고(resumed) 판 하나가 빨라도 1분 남짓(공개 8초 × 문항 수)이라 한
+# 사람이 1분에 여는 판은 하나 남짓이다. 다만 화면은 늘 restart를 싣고(PRD 10.1 #11) 다른 판을 고를
+# 때마다 도는 판을 끝내고 새로 열므로, 한 사람이 1분에 판을 이 사람 칸(12)만큼 열고 끝낼 수 있다 —
+# 끝낸 판은 그 방에 2시간까지 남고, 판을 열 때 읽는 최근 출제는 최근 24판만 본다
+# (`RECENT_MATCH_MEMORY`). 사람 칸은 두 번 누르기·다른 탭·이어 풀기도 넉넉히 품는다. 한 교실(한 주소
+# 뒤 36명)이 함께 판을 열어도 1분에 30번 남짓이라 IP 칸 120에 들고, 프로세스 600은 방 변경 몫과
+# 같다 — 서비스 전체에 남는 판 수는 이 칸 × 판의 수명으로 묶인다(deploy/oracle/README.md).
 SOLO_ACTOR_LIMIT = 12
 SOLO_CLIENT_LIMIT = 120
 SOLO_PROCESS_LIMIT = 600
@@ -1142,9 +1145,15 @@ def _room_payload(room: RoomView) -> dict[str, object]:
     # 화면은 로비 목록에서 빼고 홈의 «풀던 혼자 판»으로만 잇는다. 이전 화면은 이 키를 모른다
     if room.solo:
         payload["solo"] = True
-    # «제한 없음» 혼자 방 (PRD 10.1 #9, migration 013). 문항 시간이 null이면 함께 싣는다 — 화면은 이
-    # 표시가 있을 때만 null을 믿는다(없는 null은 다른 계약이다). 친구와 푸는 방에는 없다
+    # «제한 없음» 혼자 방 (PRD 10.1 #9, migration 013)은 `questionTimeMs` 키를 싣지 않고
+    # `untimed: true`만 싣는다. #109 전의 Pages 화면(#106–#108)은 방마다 null을 거절하고 한 방이
+    # 틀리면 로비 목록 전체를 버린다 — 같은 브라우저의 새 화면 탭이 연 «제한 없음» 혼자 방
+    # 하나가 Pages 발행 전부터 열려 있던 탭의 로비를 통째로 막았다. 키가 없으면 그 화면은 20초
+    # 방으로 읽어 목록을 그린다(그 방의 도는 판은 마감이 null이라 그 화면의 판 읽기가 거절한다
+    # — 판 snapshot은 null을 그대로 싣는다). 지금 화면은 이 표시를 보고 문항 시간이 없는 방으로
+    # 읽는다. 친구와 푸는 방은 언제나 20초·40초를 싣는다
     if room.question_time_ms is None:
+        del payload["questionTimeMs"]
         payload["untimed"] = True
     return payload
 

@@ -356,6 +356,25 @@
             && (document.getElementById('announcer')?.textContent ?? '').includes(끝낸말),
           무엇: `${알림.hidden ? '!! 줄 숨김' : 알림.textContent.trim()} · 분야 ${document.getElementById('online-quiz-category').textContent.trim()}`,
         });
+        // 짧은 가로 touch 두 열(U15)에서 알림이 왼쪽 열(HUD 아래)에 서면 그 높이만큼 보기가 밀려, 끝내고 연 판의 첫
+        // 문항 동안 740×360에서 아래 줄 보기가 화면 밖으로 7–13px 나갔다(리뷰에서 실제로 나왔다). 알림은 두 열 아래에 선다
+        if (!알림.hidden && matchMedia('(pointer: coarse) and (max-height: 480px) and (orientation: landscape)').matches) {
+          for (let i = 0; i < 50 && document.querySelectorAll('#online-choices .choice').length === 0; i += 1) await 잠깐(100);
+          document.getAnimations().forEach((움직임) => 움직임.finish());
+          await 그려질때까지();
+          const 화면안 = (상자) => 상자.top >= -1 && 상자.bottom <= innerHeight + 1 && 상자.left >= -1 && 상자.right <= innerWidth + 1;
+          const 위쪽 = [document.querySelector('[data-screen="online-quiz"] .quiz-hud'), document.getElementById('online-question-text')]
+            .map((요소) => 요소.getBoundingClientRect());
+          const 보기상자 = [...document.querySelectorAll('#online-choices .choice')].map((보기) => 보기.getBoundingClientRect());
+          const 칸상자 = [...document.querySelectorAll('#online-arena-tiles .arena-tile')].map((칸) => 칸.getBoundingClientRect());
+          const 알림상자 = 알림.getBoundingClientRect();
+          결과.push({
+            자리: '혼자 판', 이름: '짧은 가로: 앞 판 알림이 보여도 HUD·질문·네 보기·네 바닥 칸이 화면 안에 있고, 알림은 두 열 아래다',
+            통과: 보기상자.length === 4 && 칸상자.length === 4 && [...위쪽, ...보기상자, ...칸상자].every(화면안)
+              && 알림상자.top >= Math.max(...보기상자.map((상자) => 상자.bottom), ...칸상자.map((상자) => 상자.bottom)) - 1,
+            무엇: `${innerWidth}×${innerHeight} · 보기 아래 ${Math.round(Math.max(...보기상자.map((상자) => 상자.bottom)))}px · 칸 아래 ${Math.round(Math.max(...칸상자.map((상자) => 상자.bottom)))}px · 알림 ${Math.round(알림상자.top)}–${Math.round(알림상자.bottom)}px`,
+          });
+        }
         이을판 = 다른이름;
         await 눌러('online-quiz-exit', 300);
         await 눌러('online-exit-confirm', 300);

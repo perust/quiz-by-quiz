@@ -999,10 +999,12 @@ class Smoke:
             raise Failure("POST /v1/solo: room code is missing or malformed")
         self.solo_code = code
         problems = field_problems(started, {"resumed": False})
+        # «제한 없음» 방은 문항 시간 키 없이 표시만 싣는다 — #109 전의 화면은 방의 null을 거절하고 한 방이
+        # 틀리면 로비 목록 전체를 버린다(키가 없으면 20초 방으로 읽는다). 판은 null을 그대로 싣는다
         problems += [
             f"room {problem}"
             for problem in field_problems(
-                room, {"solo": True, "untimed": True, "questionTimeMs": None}
+                room, {"solo": True, "untimed": True, "questionTimeMs": _MISSING}
             )
         ]
         problems += [
@@ -1037,8 +1039,13 @@ class Smoke:
             f"{ended}"
         )
 
-    def _end_solo(self) -> str:
-        """DELETE /v1/solo — 도는 판을 기록 없이 끝내고 혼자 방을 지운다. 그 방은 다시 읽히지 않는다."""
+    def _end_solo(self, *, cleanup: bool = False) -> str:
+        """DELETE /v1/solo — 도는 판을 기록 없이 끝내고 혼자 방을 지운다. 그 방은 다시 읽히지 않는다.
+
+        ``cleanup``이면 앞선 DELETE가 이미 닿았을 수 있다(``solo`` 단계가 그 DELETE의 답을 보고 실패했거나
+        답을 받지 못했다). 그때 서버는 혼자 방이 없어 ``{left: false, ended: null}``로 답하므로, 그 방이
+        정말 읽히지 않으면(404) 이미 끝난 것으로 본다.
+        """
         reply = self.call("DELETE", "/v1/solo")
         if self.solo_code is None:
             # 열기의 답을 받지 못했다 — 혼자 방이 있으면 끝내고, 없으면(404는 그 길이 없는 API) 할 일이 없다
@@ -1047,20 +1054,29 @@ class Smoke:
             return f"DELETE /v1/solo -> {reply.status}"
         expect_status(reply, 200, what="DELETE /v1/solo")
         body_value = reply.json_object()
-        problems = field_problems(body_value, {"left": True})
-        problems += [
-            f"ended {problem}"
-            for problem in field_problems(body_value.get("ended"), {"recorded": False})
-        ]
-        if problems:
-            raise Failure("DELETE /v1/solo: " + "; ".join(problems))
+        already_gone = cleanup and not field_problems(body_value, {"left": False, "ended": None})
+        if not already_gone:
+            problems = field_problems(body_value, {"left": True})
+            problems += [
+                f"ended {problem}"
+                for problem in field_problems(body_value.get("ended"), {"recorded": False})
+            ]
+            if problems:
+                raise Failure("DELETE /v1/solo: " + "; ".join(problems))
         reply = self.call("GET", f"/v1/rooms/{self.solo_code}")
         if reply.status != 404:
+            if already_gone:
+                raise Failure(
+                    f"DELETE /v1/solo: left=false but solo room {self.solo_code} is still "
+                    f"readable ({status_text(reply)})"
+                )
             raise Failure(
                 f"solo room {self.solo_code} is still readable after ending "
                 f"({status_text(reply)})"
             )
         self.solo_ended = True
+        if already_gone:
+            return f"DELETE /v1/solo -> 200 already ended, GET {self.solo_code} -> 404"
         return f"DELETE /v1/solo -> 200 ended unrecorded, GET {self.solo_code} -> 404"
 
     def _is_my_movement(self, frame: Frame) -> bool:
@@ -1123,18 +1139,34 @@ class Smoke:
     def cleanup(self) -> str:
         if not self.session_ready:
             return "nothing to leave (no session)"
-        # 열려고 한 혼자 판을 끝내지 못했으면(실패·중단) 여기서 끝낸다. 혼자 방이 없으면 아무 일도 없다
+        # 열려고 한 혼자 판을 끝내지 못했으면(실패·중단) 여기서 끝낸다. 혼자 방이 없으면 아무 일도 없다.
+        # 그것이 실패해도(시간 초과·429·5xx) 공개 방은 나간다 — 공개 2인 방이 운영 로비에 남으면 30분
+        # 정리까지 누구나 들어올 수 있다. 두 실패는 한 줄에 함께 적는다
         solo = ""
+        problems: list[str] = []
         unknown = not self.solo_answered
         if self.solo_requested and not self.solo_ended and (self.solo_code or unknown):
-            solo = "; " + self._end_solo()
+            try:
+                solo = "; " + self._end_solo(cleanup=True)
+            except Exception as error:  # 네트워크·HTTP 오류도 방 나가기를 막지 않는다
+                problems.append(f"solo: {_failure_text(error)}")
+        try:
+            left = self._leave_rooms()
+        except Exception as error:
+            problems.insert(0, _failure_text(error))
+            left = None
+        if problems:
+            raise Failure("; ".join(problems))
+        return f"{left}{solo}"
+
+    def _leave_rooms(self) -> str:
         codes = [self.room_code] if self.room_code else []
         if not codes and self.room_requested:
             codes = self._created_room_codes()
             if not codes and not self.room_answered:
                 raise Failure("create outcome unknown; no joined room seen")
         if not codes:
-            return "nothing to leave (no room)" + solo
+            return "nothing to leave (no room)"
         for code in codes:
             path = f"/v1/rooms/{code}"
             reply = self.call("DELETE", f"{path}/members/me")
@@ -1142,7 +1174,12 @@ class Smoke:
             reply = self.call("GET", path)
             if reply.status != 404:
                 raise Failure(f"room {code} is still readable after leaving ({status_text(reply)})")
-        return f"left room {', '.join(codes)}, GET -> 404" + solo
+        return f"left room {', '.join(codes)}, GET -> 404"
+
+
+def _failure_text(error: Exception) -> str:
+    # Failure는 이미 사람이 읽을 이유다. 그 밖의 오류(네트워크·TLS·HTTP)는 클래스 이름을 붙인다
+    return str(error) if isinstance(error, Failure) else _describe(error)
 
 
 def _is_close(frame: Frame) -> bool:
