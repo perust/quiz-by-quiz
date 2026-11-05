@@ -240,6 +240,18 @@ test('짧은 화면의 핵심 직접 행동은 양쪽 공용 조작부 사이 �
   }
 });
 
+test('568×320·480×320 랭킹 분류 탭은 하단 공용 조작부 사이 안전 통로를 쓴다', () => {
+  const body = node('body', null, { has: ['.walk-controls--on'] });
+  const app = node('main.app', body);
+  const ranking = node("section.screen[data-screen='ranking']", app);
+  const tabs = node('div.ranking-tabs', ranking);
+
+  for (const env of [SHORT_LANDSCAPE, { ...SHORT_LANDSCAPE, width: 480 }]) {
+    assert.equal(valueOf(rules, tabs, 'margin-left', env), 'var(--walk-controls-left-clearance)', `${env.width}×${env.height}: 스틱 오른쪽 여백`);
+    assert.equal(valueOf(rules, tabs, 'margin-right', env), 'var(--walk-controls-right-clearance)', `${env.width}×${env.height}: 선택 버튼 왼쪽 여백`);
+  }
+});
+
 test('대기실 라운지는 fixed walker의 좌표 기준을 바꾸는 backdrop-filter를 쓰지 않는다', () => {
   const waiting = node("section.screen[data-screen='waiting']", node('main.app', node('body')));
   const lounge = node('div.lounge#lounge', waiting);

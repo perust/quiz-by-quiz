@@ -3149,11 +3149,12 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
-/* 568×320 같은 짧은 가로에서는 보기·새로고침·게임 시작을 양쪽 44px 조작부
+/* 568×320 같은 짧은 가로에서는 보기·새로고침·게임 시작·랭킹 분류를 양쪽 44px 조작부
    사이의 직접 누르기 안전 통로에 둔다. 조작부는 숨기거나 화면별로 옮기지 않는다. */
 @media (pointer: coarse) and (max-height: 360px) and (min-width: 480px) {
   body:has(.walk-controls--on) .quiz--character:not([hidden]) .choices,
-  body:has(.walk-controls--on) [data-screen='waiting']:not([hidden]) .waiting-start {
+  body:has(.walk-controls--on) [data-screen='waiting']:not([hidden]) .waiting-start,
+  body:has(.walk-controls--on) [data-screen='ranking']:not([hidden]) .ranking-tabs {
     width: auto;
     margin-right: var(--walk-controls-right-clearance);
     margin-left: var(--walk-controls-left-clearance);
