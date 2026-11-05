@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { DESKTOP, MOBILE, NARROW, lengthOf, loadStyles, node, shorthandParts, valueOf } from './css-cascade.mjs';
 
 const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
+const css = await readFile(new URL('../css/style.css', import.meta.url), 'utf8');
 const homeSource = await readFile(new URL('../src/ui/home.ts', import.meta.url), 'utf8');
 const SHORT_ZOOM = { width: 390, height: 420, pointer: 'coarse', hover: 'none', reducedMotion: false };
 const SHORT_LANDSCAPE = { width: 568, height: 320, pointer: 'coarse', hover: 'none', reducedMotion: false };
@@ -24,18 +25,11 @@ function bottomOf(value) {
   return parts.length === 1 ? parts[0] : parts[2] ?? parts[0];
 }
 
-function controlTree({
-  screen = null,
-  placement = 'viewport',
-  on = true,
-} = {}) {
-  const rootDescriptor = `div.walk-controls${on ? '.walk-controls--on' : ''}[data-placement='${placement}']#walk-controls`;
+function controlTree({ screen = null, on = true } = {}) {
+  const rootDescriptor = `div.walk-controls${on ? '.walk-controls--on' : ''}#walk-controls`;
   const has = [];
   if (screen) has.push(`[data-screen='${screen}']:not([hidden])`);
-  if (on) {
-    has.push('.walk-controls--on');
-    has.push(`.walk-controls--on[data-placement='${placement}']`);
-  }
+  if (on) has.push('.walk-controls--on');
   const body = node('body', null, { has });
   const app = node('main.app', body);
   const root = node(rootDescriptor, app);
@@ -52,12 +46,9 @@ function stickReserve(env, screen = null) {
 }
 
 /** 걷는 화면이 맨 아래에 비워 두는 높이 = .app 의 아래 여백 + 화면 자신의 아래 여백 */
-function bottomSpace(screen, env, { stickOn = true, placement = 'viewport' } = {}) {
+function bottomSpace(screen, env, { stickOn = true } = {}) {
   const has = [`[data-screen='${screen}']:not([hidden])`];
-  if (stickOn) {
-    has.push('.walk-controls--on');
-    has.push(`.walk-controls--on[data-placement='${placement}']`);
-  }
+  if (stickOn) has.push('.walk-controls--on');
   const body = node('body', null, { has });
   const app = node('main.app', body);
   const section = node(`section.screen[data-screen='${screen}']`, app);
@@ -65,9 +56,22 @@ function bottomSpace(screen, env, { stickOn = true, placement = 'viewport' } = {
     + px(bottomOf(valueOf(rules, section, 'padding-bottom', env)), env);
 }
 
+test('손가락 조작부: 홈과 다른 walking 화면은 같은 하단 엄지 anchor를 공유한다', () => {
+  for (const env of [MOBILE, NARROW, SHORT_ZOOM, SHORT_LANDSCAPE]) {
+    const ranking = controlTree({ screen: 'ranking' });
+    const home = controlTree({ screen: 'home' });
+
+    for (const property of ['--walk-controls-bottom', '--walk-stick-left', '--walk-confirm-right']) {
+      const expected = px(valueOf(rules, ranking.root, property, env), env);
+      const actual = px(valueOf(rules, home.root, property, env), env);
+      assert.equal(actual, expected, `${env.width}×${env.height} ${property}: 홈 ${actual}px / 공용 ${expected}px`);
+    }
+  }
+});
+
 const SCROLLING_WALKING_SCREENS = ['characters', 'ranking', 'result', 'online', 'waiting'];
 
-test('손가락 조작부: 스크롤 화면은 마지막 행동을 스틱 위까지 올릴 수 있고 홈은 dock 위에 조작부를 둔다', () => {
+test('손가락 조작부: 스크롤 끝과 홈 메뉴는 공용 하단 조작부 위에 여백을 둔다', () => {
   for (const env of [MOBILE, NARROW]) {
     const reserve = stickReserve(env);
     assert.ok(reserve >= 88, `스틱이 차지하는 높이를 읽지 못했다: ${reserve}`);
@@ -79,34 +83,40 @@ test('손가락 조작부: 스크롤 화면은 마지막 행동을 스틱 위까
       );
     }
 
-    const expectedGap = env.height <= 700 ? 12 : 8;
+    const expectedGap = 8;
     assert.equal(
       bottomSpace('ranking', env) - reserve,
       expectedGap,
       `${env.width}×${env.height}: 스크롤 화면은 조작부 위에 숨 쉴 틈을 남긴다`,
     );
 
-    const { root } = controlTree({ screen: 'home', placement: 'home-dock' });
-    const bottom = px(valueOf(rules, root, '--walk-controls-bottom', env), env);
-    assert.ok(bottom >= 180, '홈 조작부는 분야 dock 위에 뜬다');
+    const { app, root, stick } = controlTree({ screen: 'home' });
+    const home = node("section.screen[data-screen='home']", app);
+    const quests = node('div.home-quests#home-quests', home);
+    const controlsTop = px(valueOf(rules, root, '--walk-controls-bottom', env), env)
+      + px(valueOf(rules, stick, 'height', env), env);
+    const questsBottom = px(valueOf(rules, quests, 'bottom', env), env);
+    assert.equal(questsBottom - controlsTop, 8, `${env.width}×${env.height}: 홈 메뉴와 공용 조작부 간격`);
   }
 });
 
 test('손가락 조작부: 여백은 조작부가 떠 있을 때만이고, 온라인 퀴즈의 채팅 여백과 겹치지 않는다', () => {
   // 마우스 기기와 조작부를 거둔 화면(로컬 피드백 등)은 원래 여백 그대로다
   assert.equal(bottomSpace('home', DESKTOP), 0);
-  assert.equal(bottomSpace('home', MOBILE, { placement: 'home-dock' }), 0);
+  assert.equal(bottomSpace('home', MOBILE), 0);
   assert.ok(bottomSpace('quiz', MOBILE, { stickOn: false }) < stickReserve(MOBILE));
   // 온라인 퀴즈는 채팅 블록이 공용 스틱 크기만큼 비운다. 화면 padding까지 두 번 비우지 않는다
   assert.equal(bottomSpace('online-quiz', MOBILE), bottomSpace('quiz', MOBILE, { stickOn: false }));
   const onlineQuiz = node("section.screen[data-screen='online-quiz']", node('main.app', node('body')));
   const chat = node('section.online-quiz-chat', onlineQuiz);
   assert.equal(px(valueOf(rules, chat, 'margin-bottom', MOBILE), MOBILE), 120);
-  assert.equal(px(valueOf(rules, chat, 'margin-bottom', SHORT_LANDSCAPE), SHORT_LANDSCAPE), 68);
+  assert.equal(px(valueOf(rules, chat, 'margin-bottom', SHORT_LANDSCAPE), SHORT_LANDSCAPE), 64);
 });
 
-test('짧은 touch 홈도 이동 스틱과 선택 버튼을 dock·입구 위에 유지한다', () => {
-  const { root, stick, knob, confirm } = controlTree({ screen: 'home', placement: 'home-dock' });
+test('짧은 touch 홈도 공용 하단 이동 스틱과 선택 버튼을 유지한다', () => {
+  const { app, root, stick, knob, confirm } = controlTree({ screen: 'home' });
+  const home = node("section.screen[data-screen='home']", app);
+  const quests = node('div.home-quests#home-quests', home);
 
   assert.equal(valueOf(rules, stick, 'display', NARROW), 'block');
   assert.equal(valueOf(rules, confirm, 'display', NARROW), 'block');
@@ -114,7 +124,13 @@ test('짧은 touch 홈도 이동 스틱과 선택 버튼을 dock·입구 위에 
   assert.equal(px(valueOf(rules, stick, 'height', NARROW), NARROW), 80);
   assert.equal(px(valueOf(rules, knob, 'width', NARROW), NARROW), 40);
   assert.equal(px(valueOf(rules, confirm, 'width', NARROW), NARROW), 64);
-  assert.ok(px(valueOf(rules, root, '--walk-controls-bottom', NARROW), NARROW) >= 230, '조작부는 dock과 홈 입구 한 줄 위에 뜬다');
+  const controlsBottom = px(valueOf(rules, root, '--walk-controls-bottom', NARROW), NARROW);
+  assert.equal(controlsBottom, 12, '조작부는 공용 viewport 하단 edge를 쓴다');
+  assert.equal(
+    px(valueOf(rules, quests, 'bottom', NARROW), NARROW) - controlsBottom - 80,
+    8,
+    '홈 메뉴는 조작부 위에 토큰 간격을 둔다',
+  );
 });
 
 test('홈 오류 문구가 보이면 숨은 캐릭터의 조작부도 꺼서 문구를 덮지 않는다', () => {
@@ -159,7 +175,7 @@ test('짧은 touch 화면: 고정 조작부 아래의 중복 설명은 접어 �
 
 test('홈·퀴즈는 짧은 화면까지 같은 touch 조작부를 쓰고 피드백은 arena 뒤 문서 흐름에서 이어진다', () => {
   const quizControls = controlTree({ screen: 'quiz' });
-  const home = controlTree({ screen: 'home', placement: 'home-dock' });
+  const home = controlTree({ screen: 'home' });
   const { app, stick, knob } = quizControls;
 
   assert.equal(px(valueOf(rules, stick, 'width', MOBILE), MOBILE), 96);
@@ -179,7 +195,7 @@ test('홈·퀴즈는 짧은 화면까지 같은 touch 조작부를 쓰고 피드
   assert.ok(bottomSpace('quiz', MOBILE) >= stickReserve(MOBILE, 'quiz'), '일반 세로 화면은 arena 아래 스틱 여백을 둔다');
   assert.ok(bottomSpace('quiz', NARROW) >= stickReserve(NARROW, 'quiz'), '짧은 세로 화면도 arena 아래 스틱 여백을 둔다');
   assert.equal(bottomSpace('quiz', MOBILE) - stickReserve(MOBILE, 'quiz'), 8);
-  assert.equal(bottomSpace('quiz', NARROW) - stickReserve(NARROW, 'quiz'), 12);
+  assert.equal(bottomSpace('quiz', NARROW) - stickReserve(NARROW, 'quiz'), 8);
 
   assert.equal(px(valueOf(rules, stick, 'width', SHORT_LANDSCAPE), SHORT_LANDSCAPE), 44);
   assert.equal(px(valueOf(rules, quizControls.confirm, 'width', SHORT_LANDSCAPE), SHORT_LANDSCAPE), 44);
@@ -195,6 +211,33 @@ test('홈·퀴즈는 짧은 화면까지 같은 touch 조작부를 쓰고 피드
   const feedback = node('div.feedback#feedback', feedbackBody);
   assert.equal(valueOf(rules, grid, 'translate', MOBILE), 'none');
   assert.equal(valueOf(rules, feedback, 'position', MOBILE), 'relative');
+});
+
+test('짧은 화면의 핵심 직접 행동은 양쪽 공용 조작부 사이 안전 통로를 쓴다', () => {
+  const body = node('body', null, { has: ['.walk-controls--on'] });
+  const app = node('main.app', body);
+  const quiz = node("section.screen.quiz--character[data-screen='quiz']", app);
+  const choices = node('ul.choices#choices', quiz);
+  const online = node("section.screen[data-screen='online']", app);
+  const tools = node('div.online-block__tools', node('div.online-block__head', node('section.online-block.online-block--rooms', online)));
+  const waiting = node("section.screen[data-screen='waiting']", app);
+  const start = node('button.button.button--primary.waiting-start#waiting-start', waiting);
+  const onlineQuiz = node("section.screen.online-quiz.quiz--character[data-screen='online-quiz']", app);
+  const chat = node('form.chat.online-quiz-chat__form#online-chat-form', node('section.online-quiz-chat', onlineQuiz));
+
+  for (const element of [choices, start]) {
+    assert.equal(valueOf(rules, element, 'margin-left', SHORT_LANDSCAPE), 'var(--walk-controls-left-clearance)');
+    assert.equal(valueOf(rules, element, 'margin-right', SHORT_LANDSCAPE), 'var(--walk-controls-right-clearance)');
+  }
+  assert.equal(valueOf(rules, choices, 'width', SHORT_LANDSCAPE), 'auto');
+  assert.equal(valueOf(rules, start, 'width', SHORT_LANDSCAPE), 'auto');
+  assert.equal(valueOf(rules, tools, 'margin-right', SHORT_LANDSCAPE), 'var(--walk-controls-right-clearance)');
+
+  for (const env of [MOBILE, NARROW, SHORT_ZOOM]) {
+    assert.equal(valueOf(rules, chat, 'margin-left', env), 'var(--walk-controls-left-clearance)');
+    assert.equal(valueOf(rules, chat, 'margin-right', env), 'var(--walk-controls-right-clearance)');
+    assert.equal(valueOf(rules, chat, 'flex-direction', env), 'column');
+  }
 });
 
 test('대기실 라운지는 fixed walker의 좌표 기준을 바꾸는 backdrop-filter를 쓰지 않는다', () => {
@@ -258,4 +301,16 @@ test('온라인 퀴즈: 걷는 캐릭터 뒤에 오는 표면(공개 카드·상
       assert.ok(position === null || position === 'static', `${env.width}px ${label}: position ${position}`);
     }
   }
+});
+
+
+test('walking 목록·대기실·온라인 입력·arena는 초기·최대 scroll에서 양쪽 엄지 목표와 경쟁하지 않는다', () => {
+  assert.match(css, /\[data-screen='waiting'\]:not\(\[hidden\]\) \.lounge \{[\s\S]*?margin-top: calc\(var\(--walk-controls-reserve\) \+ var\(--space-10\)\)/);
+  assert.match(css, /\[data-screen='online-quiz'\]:not\(\[hidden\]\) \.online-quiz-chat__form \{[\s\S]*?margin-right: var\(--walk-controls-right-clearance\)[\s\S]*?margin-left: var\(--walk-controls-left-clearance\)/);
+  assert.match(css, /\[data-screen='characters'\]:not\(\[hidden\]\) \.character-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)[\s\S]*?margin-right: var\(--walk-controls-right-clearance\)[\s\S]*?margin-left: var\(--walk-controls-left-clearance\)/);
+  assert.match(css, /\.quiz--character:not\(\[hidden\]\) \.arena__grid \{[\s\S]*?margin-right: var\(--walk-controls-right-clearance\)[\s\S]*?margin-left: var\(--walk-controls-left-clearance\)/);
+  assert.match(css, /\.ranking-tab \{[\s\S]*?min-width: var\(--tap\)/);
+
+  assert.match(css, /\[data-screen='result'\]:not\(\[hidden\]\) \.result-actions,[\s\S]*?\[data-screen='result'\]:not\(\[hidden\]\) \.review \{[\s\S]*?margin-right: var\(--walk-controls-right-clearance\)[\s\S]*?margin-left: var\(--walk-controls-left-clearance\)/);
+  assert.match(css, /max-height: 360px[\s\S]*?\[data-screen='characters'\]:not\(\[hidden\]\) \.character-grid \{[\s\S]*?margin-right: var\(--walk-controls-right-clearance\)[\s\S]*?margin-left: var\(--walk-controls-left-clearance\)/);
 });

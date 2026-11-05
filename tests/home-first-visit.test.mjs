@@ -116,27 +116,12 @@ Object.assign(fakeDocument, {
   },
 });
 fakeDocument.activeElement = fakeDocument.body;
-fakeDocument.documentElement.style = {
-  setProperty: (name, value) => { rootStyle.set(name, value); },
-  removeProperty: (name) => { rootStyle.delete(name); },
-  getPropertyValue: (name) => rootStyle.get(name) ?? '',
-};
 globalThis.document = fakeDocument;
 globalThis.HTMLElement = FakeElement;
 globalThis.window = {
   innerWidth: 390, innerHeight: 844, scrollY: 0,
   addEventListener() {}, removeEventListener() {}, scrollBy() {}, scrollTo() {},
 };
-globalThis.ResizeObserver = class { observe() {} disconnect() {} };
-/** 홈이 단 MutationObserver 들. 무엇을 어떤 옵션으로 보는지와 콜백을 남긴다 (layout-01) */
-const mutationObservers = [];
-globalThis.MutationObserver = class {
-  constructor(callback) { this.callback = callback; this.targets = []; mutationObservers.push(this); }
-  observe(target, options) { this.targets.push({ target, options }); }
-  disconnect() {}
-};
-/** 문서 뿌리의 사용자 속성(--home-dock-h)을 읽을 수 있게 한다 */
-const rootStyle = new Map();
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 
@@ -227,35 +212,13 @@ test('홈 dock 캡션: 어두운 dock 위의 보조 글자이고, 짧은 가로 
   assert.equal(valueOf(rules, caption, 'clip-path', landscape), 'inset(50%)', '분야 칸 묶음의 이름으로는 그대로 읽힌다');
 });
 
-// ── dock 높이 (layout-01) ──────────────────────────────────────────
+// ── 공용 하단 reserve ──────────────────────────────────────────────
 
-test('dock 높이: dock 안의 DOM 이나 홈의 hidden 이 바뀌면 MutationObserver 가 그 틱 안에서 --home-dock-h 를 맞춘다', () => {
-  // ResizeObserver 는 다음 프레임 직전에야 알리고 숨은 탭에서는 알리지 않는다. 그동안 조작부·두 입구가
-  // 대체값(148px)에 서서 선택 원이 「게임 방법」을, 스틱이 dock 을 덮었다
-  const dock = byId('home-quests');
-  const watcher = mutationObservers.find((observer) => observer.targets.some(({ target }) => target === dock));
-  assert.ok(watcher, 'dock 을 보는 MutationObserver 가 있다');
-  const onDock = watcher.targets.find(({ target }) => target === dock).options;
-  assert.equal(onDock.subtree, true);
-  assert.equal(onDock.childList, true, '분야 칸·표식 글을 바꾸면');
-  assert.equal(onDock.characterData, true, '«연결 중…» 같은 글이 바뀌면');
-  assert.deepEqual(onDock.attributeFilter, ['hidden'], '방 복귀 줄·표식을 펴고 접으면 — 워커의 is-standing 같은 class 는 보지 않는다');
-  const onScreen = watcher.targets.find(({ target }) => target === homeScreenElement)?.options;
-  assert.deepEqual(onScreen?.attributeFilter, ['hidden'], '홈이 다시 보이면(숨은 동안 화면 크기가 바뀌었을 수 있다)');
-  assert.notEqual(onScreen?.subtree, true);
-
-  let height = 128;
-  dock.getBoundingClientRect = () => ({ left: 0, top: 232, right: 700, bottom: 360, width: 700, height });
-  watcher.callback([]);
-  assert.equal(rootStyle.get('--home-dock-h'), '128px');
-  height = 71.5;
-  watcher.callback([]);
-  assert.equal(rootStyle.get('--home-dock-h'), '72px', '올려 잡아 dock 위 1px 도 덮지 않는다');
-  // 숨은 홈(높이 0)에서는 맞추지 않는다 — 다시 보일 때 맞춘다
-  height = 0;
-  watcher.callback([]);
-  assert.equal(rootStyle.get('--home-dock-h'), '72px');
-  delete dock.getBoundingClientRect;
+test('홈은 dock 높이를 관찰하지 않고 메뉴만 공용 조작부 reserve 위로 올린다', async () => {
+  const [homeSource, css] = await Promise.all([source('src/ui/home.ts'), source('css/style.css')]);
+  assert.doesNotMatch(homeSource, /ResizeObserver|MutationObserver|syncDockHeight|--home-dock-h|home-dock/);
+  assert.match(css, /body:has\(\.walk-controls--on\) \[data-screen='home'\]:not\(\[hidden\]\) \.home-quests \{[\s\S]*?bottom: var\(--walk-controls-reserve\)/);
+  assert.doesNotMatch(css, /\.walk-controls\[data-placement|--home-dock-h|home-dock/);
 });
 
 // ── 「게임 방법」 (U01) ────────────────────────────────────────────

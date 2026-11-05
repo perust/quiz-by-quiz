@@ -20,11 +20,11 @@ const px = (value, env) => lengthOf(rules, value, env);
 
 function quizTree(screen = 'quiz', { controlsOn = true } = {}) {
   const has = [`[data-screen='${screen}']:not([hidden])`];
-  if (controlsOn) has.push('.walk-controls--on', ".walk-controls--on[data-placement='viewport']");
+  if (controlsOn) has.push('.walk-controls--on');
   const body = node('body', null, { has });
   const app = node('main.app', body);
   const section = node(`section.screen.quiz--character[data-screen='${screen}']`, app);
-  const controls = node("div.walk-controls.walk-controls--on[data-placement='viewport']#walk-controls", app);
+  const controls = node('div.walk-controls.walk-controls--on#walk-controls', app);
   return {
     body,
     section,
@@ -165,7 +165,7 @@ test('짧은 가로 배치는 touch 가로 화면에만 걸린다 — 세로 휴
 });
 
 function homeTree() {
-  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])", '.walk-controls--on'] });
   const app = node('main.app', body);
   const section = node("section.screen[data-screen='home']", app);
   const stage = node('div.home-stage#home-stage', section);
@@ -184,7 +184,7 @@ function homeTree() {
     header,
     title: node('h1.home-title#home-title', heading),
     subtitle: node('p.home-subtitle', heading),
-    controls: node("div.walk-controls.walk-controls--on[data-placement='home-dock']#walk-controls", app),
+    controls: node('div.walk-controls.walk-controls--on#walk-controls', app),
   };
 }
 
@@ -214,128 +214,79 @@ test('짧은 가로 홈(U07): 분야 | 온라인·전체 도전을 dock 한 줄�
   }
 });
 
-test('짧은 가로 홈(U07): 낮아진 dock 위 양쪽 모서리로 조작부 anchor를 되돌리고 입구 한 줄 위에 둔다', () => {
-  for (const env of LANDSCAPE_PHONES) {
+test('홈과 퀴즈는 짧은 가로에서도 같은 viewport 하단 anchor를 쓴다', () => {
+  for (const env of [...LANDSCAPE_PHONES, OLD_LANDSCAPE, touch(480, 320), touch(926, 428)]) {
     const at = `${env.width}×${env.height}`;
-    const { controls } = homeTree();
-    assert.equal(px(valueOf(rules, controls, '--walk-stick-left', env), env), 12, at);
-    assert.equal(px(valueOf(rules, controls, '--walk-confirm-right', env), env), 12, at);
-    // dock 높이(런타임 측정값)를 뺀 나머지: 입구 한 줄(20px + 입구 56px) 위 16px
-    const bottom = valueOf(rules, controls, '--walk-controls-bottom', env);
-    assert.equal(px(bottom.replace('var(--home-dock-h, 148px)', '0px'), env), 92, `${at}: ${bottom}`);
-  }
-  // 폭 640px 아래의 짧은 가로 홈은 dock이 두 줄 그대로라 위 HUD를 피하는 가운데 anchor를 유지한다
-  const { controls } = homeTree();
-  assert.equal(valueOf(rules, controls, '--walk-stick-left', OLD_LANDSCAPE), 'calc(50% - 112px)');
-  // 높이 421–480px(눕힌 큰 휴대폰의 전체 화면)도 두 줄 dock이라 가운데다 (layout-01)
-  assert.equal(valueOf(rules, controls, '--walk-stick-left', touch(926, 428)), 'calc(50% - 140px)');
-  assert.equal(valueOf(rules, controls, '--walk-confirm-right', touch(926, 428)), 'calc(50% - 140px)');
-});
-
-/**
- * 홈 조각의 화면 상자를 CSS 캐스케이드로 계산한다. dock 높이는 런타임 측정값이라 받아서 넣는다.
- * 설정 버튼은 앱 바의 fixed HUD(위·오른쪽 12px, 44px)이고, 안전 영역은 0이다.
- */
-function homeBoxes(env, dockHeight) {
-  const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", node('main.app', node('body', null, { has: ["[data-screen='home']:not([hidden])"] }))));
-  const app = stage.parent.parent;
-  const controls = node("div.walk-controls.walk-controls--on[data-placement='home-dock']#walk-controls", app);
-  const stick = node('div.walk-stick#walk-stick', controls);
-  const confirm = node('button.walk-confirm#walk-confirm', controls);
-  const rulesButton = node('button.icon-button.home-rules#open-rules', node('nav.home-menu', stage));
-  const player = node('div.home-player', stage);
-  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
-  const ranking = node('button.menu-card#open-ranking', node('nav.home-menu', stage));
-  const W = env.width;
-  const H = env.height;
-  // 요소에 선언된 사용자 속성과 런타임 값(dock 높이·% 기준)을 풀고 나머지 :root 토큰은 lengthOf 가 푼다
-  const own = (name) => valueOf(rules, controls, name, env);
-  const resolve = (value) => value
-    .replaceAll('var(--walk-controls-bottom)', own('--walk-controls-bottom'))
-    .replaceAll('var(--home-hud-right)', own('--home-hud-right'))
-    .replaceAll('var(--home-hud-left)', own('--home-hud-left'))
-    .replaceAll(/var\(--home-dock-h, \d+px\)/g, `${dockHeight}px`)
-    .replaceAll('100%', `${H}px`)
-    .replaceAll('50%', `${W / 2}px`);
-  const len = (value) => px(resolve(value), env);
-  const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height });
-
-  const stickSize = len(valueOf(rules, stick, 'width', env));
-  const confirmSize = len(valueOf(rules, confirm, 'width', env));
-  const stickBottom = len(valueOf(rules, stick, 'bottom', env));
-  const confirmBottom = len(valueOf(rules, confirm, 'bottom', env));
-  const stickLeft = len(own('--walk-stick-left'));
-  const confirmRight = len(own('--walk-confirm-right'));
-  const rulesTop = len(valueOf(rules, rulesButton, 'top', env));
-  const rulesRight = len(valueOf(rules, rulesButton, 'right', env));
-  const nicknameWidth = len(valueOf(rules, player, 'width', env));
-  const nicknameHeight = len(valueOf(rules, nickname, 'min-height', env));
-  // 높이 700px 이하에서만 두 입구가 dock 위 모서리다(그 위로는 위쪽 HUD 자리라 조작부와 멀다)
-  const entrySize = H <= 700 ? len(valueOf(rules, ranking, 'width', env)) : 0;
-  const entryBottom = H <= 700 ? len(valueOf(rules, ranking, 'bottom', env)) : 0;
-  return {
-    stickBottom,
-    confirmBottom,
-    stick: box(stickLeft, H - stickBottom - stickSize, stickSize, stickSize),
-    confirm: box(W - confirmRight - confirmSize, H - confirmBottom - confirmSize, confirmSize, confirmSize),
-    settings: box(W - 12 - 44, 12, 44, 44),
-    rules: box(W - rulesRight - 44, rulesTop, 44, 44),
-    nickname: box(12, 12, nicknameWidth, nicknameHeight),
-    ranking: H <= 700 ? box(W - 12 - entrySize, H - entryBottom - entrySize, entrySize, entrySize) : null,
-    characters: H <= 700 ? box(12, H - entryBottom - entrySize, entrySize, entrySize) : null,
-    dock: box(12, H - 12 - dockHeight, W - 24, dockHeight),
-  };
-}
-
-const overlaps = (a, b) => a && b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-
-test('홈 조작부(layout-01): 방 복귀 줄로 dock이 커져도 스틱·선택이 위 HUD·두 입구·dock과 겹치지 않는다', () => {
-  // 실측 dock 높이(tools/check-screens.js ⑯ · 헤드리스 Chrome): 한 줄 dock 72px → 방 복귀 줄 128px,
-  // 두 줄 가로 174px → 230px, 세로 휴대폰 239·252px → 308px. 한때 740×360 의 복귀 줄 상태에서 선택 원(96–140)이
-  // 「게임 방법」(64–108)을 12px 덮었고, 926×428 에서는 설정·닉네임까지 닿았다
-  const cases = [
-    ...LANDSCAPE_PHONES.map((env) => [env, [72, 128]]),
-    [touch(926, 428), [174, 230]],
-    [touch(375, 812), [252, 308]],
-    [touch(390, 844), [252, 308]],
-    [touch(375, 667), [252, 308]],
-    [touch(320, 568), [239, 308]],
-  ];
-  for (const [env, heights] of cases) {
-    for (const dockHeight of heights) {
-      const at = `${env.width}×${env.height} dock ${dockHeight}px`;
-      const boxes = homeBoxes(env, dockHeight);
-      assert.ok(Object.values(boxes).every((value) => value === null || typeof value === 'number' || Object.values(value).every(Number.isFinite)), `${at}: 상자를 계산하지 못했다 ${JSON.stringify(boxes)}`);
-      assert.equal(boxes.stickBottom, boxes.confirmBottom, `${at}: 스틱과 선택은 같은 바닥에 선다`);
-      for (const control of ['stick', 'confirm']) {
-        for (const piece of ['settings', 'rules', 'nickname', 'ranking', 'characters', 'dock']) {
-          assert.ok(!overlaps(boxes[control], boxes[piece]), `${at}: ${control} ${JSON.stringify(boxes[control])} × ${piece} ${JSON.stringify(boxes[piece])}`);
-        }
-      }
-      assert.ok(!overlaps(boxes.rules, boxes.ranking), `${at}: 「게임 방법」 × 랭킹 입구`);
+    const homeControls = homeTree().controls;
+    const quizControls = quizTree('quiz').controls;
+    for (const property of ['--walk-controls-bottom', '--walk-stick-left', '--walk-confirm-right']) {
+      assert.equal(
+        px(valueOf(rules, homeControls, property, env), env),
+        px(valueOf(rules, quizControls, property, env), env),
+        `${at}: ${property}`,
+      );
     }
   }
 });
 
-test('홈 조작부(layout-01): 어느 배치에서도 위 HUD 열 아래 8px 보다 위로 오르지 않는다 — dock이 아주 커져도', () => {
-  for (const env of [...LANDSCAPE_PHONES, OLD_LANDSCAPE, touch(926, 428), touch(375, 667), touch(390, 844)]) {
-    const boxes = homeBoxes(env, env.height); // 화면만 한 dock 이면 anchor 는 화면 위로 나간다
-    const at = `${env.width}×${env.height}`;
-    const hudRight = Math.max(boxes.settings.bottom, boxes.rules.left >= boxes.settings.left ? boxes.rules.bottom : 0);
-    assert.ok(boxes.confirm.top >= hudRight + 8, `${at}: 선택 top ${boxes.confirm.top} / 오른쪽 HUD ${hudRight}`);
-    assert.ok(boxes.stick.top >= boxes.nickname.bottom + 8, `${at}: 스틱 top ${boxes.stick.top} / 닉네임 ${boxes.nickname.bottom}`);
-  }
-});
+const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
-test('짧은 가로 홈(U07) 규칙은 폭 640px 이상·높이 420px 이하에만 걸린다', () => {
-  for (const env of [OLD_LANDSCAPE, MOBILE, touch(375, 667), DESKTOP, touch(1024, 768)]) {
+function shortHomeHudBoxes(env) {
+  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])", '.walk-controls--on'] });
+  const app = node('main.app', body);
+  const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", app));
+  const nav = node('nav.home-menu', stage);
+  const player = node('div.home-player', stage);
+  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
+  const characters = node('button.menu-card#open-characters', nav);
+  const ranking = node('button.menu-card#open-ranking', nav);
+  const rulesButton = node('button.icon-button.home-rules#open-rules', nav);
+  const controls = node('div.walk-controls.walk-controls--on#walk-controls', app);
+  const stick = node('div.walk-stick#walk-stick', controls);
+  const confirm = node('button.walk-confirm#walk-confirm', controls);
+  const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height });
+  const positioned = (element) => {
+    const width = px(valueOf(rules, element, 'width', env), env);
+    const height = px(valueOf(rules, element, 'min-height', env) ?? valueOf(rules, element, 'height', env), env);
+    const leftValue = valueOf(rules, element, 'left', env);
+    const rightValue = valueOf(rules, element, 'right', env);
+    const left = leftValue && leftValue !== 'auto' ? px(leftValue, env) : env.width - px(rightValue, env) - width;
+    return box(left, px(valueOf(rules, element, 'top', env), env), width, height);
+  };
+  const controlsBottom = px(valueOf(rules, controls, '--walk-controls-bottom', env), env);
+  const stickSize = px(valueOf(rules, stick, 'width', env), env);
+  const confirmSize = px(valueOf(rules, confirm, 'width', env), env);
+  const playerLeft = px(valueOf(rules, player, 'left', env), env);
+  const playerTop = px(valueOf(rules, player, 'top', env), env);
+  const playerWidth = px(valueOf(rules, player, 'width', env), env);
+  const nicknameHeight = px(valueOf(rules, nickname, 'min-height', env), env);
+  const stickLeft = px(valueOf(rules, controls, '--walk-stick-left', env), env);
+  const confirmRight = px(valueOf(rules, controls, '--walk-confirm-right', env), env);
+  return {
+    nickname: box(playerLeft, playerTop, playerWidth, nicknameHeight),
+    characters: positioned(characters),
+    ranking: positioned(ranking),
+    rules: positioned(rulesButton),
+    settings: box(env.width - 12 - 44, 12, 44, 44),
+    stick: box(stickLeft, env.height - controlsBottom - stickSize, stickSize, stickSize),
+    confirm: box(env.width - confirmRight - confirmSize, env.height - controlsBottom - confirmSize, confirmSize, confirmSize),
+  };
+}
+
+test('568×320·480×320 홈 바로가기는 닉네임·설정·게임 방법·공용 조작부와 겹치지 않는다', () => {
+  for (const env of [OLD_LANDSCAPE, touch(480, 320)]) {
     const at = `${env.width}×${env.height}`;
-    const home = homeTree();
-    assert.notEqual(valueOf(rules, home.quests, 'grid-template-columns', env), 'minmax(0, 1fr) auto', at);
-    assert.notEqual(valueOf(rules, home.header, 'clip', env), 'auto', at);
+    const boxes = shortHomeHudBoxes(env);
+    assert.ok(Object.values(boxes).every((box) => Object.values(box).every(Number.isFinite)), `${at}: ${JSON.stringify(boxes)}`);
+    for (const [a, b] of [
+      ['characters', 'nickname'], ['ranking', 'settings'], ['ranking', 'rules'],
+      ['characters', 'stick'], ['ranking', 'confirm'],
+    ]) {
+      assert.equal(overlaps(boxes[a], boxes[b]), false, `${at}: ${a} ${JSON.stringify(boxes[a])} × ${b} ${JSON.stringify(boxes[b])}`);
+    }
+    assert.ok(boxes.characters.left - boxes.nickname.right >= 8, `${at}: 닉네임–캐릭터 8px`);
+    assert.ok(boxes.rules.left - boxes.ranking.right >= 8, `${at}: 랭킹–게임 방법 8px`);
   }
-  // 높이 700px 이하의 다른 화면은 여전히 브랜드를 1px로 접는다
-  assert.equal(valueOf(rules, homeTree().header, 'width', touch(375, 667)), '1px');
 });
 
 /** 방 복귀 줄이 펼쳐진 홈. 568×320 규칙은 dock 의 :has() 로 걸린다 */

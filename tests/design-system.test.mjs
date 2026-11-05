@@ -147,7 +147,7 @@ test('DECOR: 토큰 규칙을 면제받는 장식 규칙은 화면이 실제로 
 // ── 규칙 검사 (장식 밖의 모든 컴포넌트) ───────────────────────────────
 
 const SPACING = /^(?:margin|padding|gap|row-gap|column-gap)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$/;
-const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|walk-(?:stick|knob|confirm)-size|(?:screen-)?walker-width|lounge-floor)(?:,\s*0px)?\)/g;
+const SPACING_TOKENS = /var\(--(?:space-\d+|page-pad|icon-tile|icon-(?:sm|md|lg)|tap|walk-(?:(?:stick|knob|confirm)-size|controls-(?:reserve|left-clearance|right-clearance))|(?:screen-)?walker-width|lounge-floor)(?:,\s*0px)?\)/g;
 
 test('간격: margin·padding·gap 은 토큰이거나 4px 격자 위의 값이다', () => {
   const offenders = [];
@@ -880,7 +880,7 @@ test('안전 영역: 노치·홈 표시줄이 있는 기기에서도 조작과 �
   const app = node('main.app', body);
   const home = node("section.screen[data-screen='home']", app);
   const stage = node('div.home-stage', home);
-  const controls = node("div.walk-controls[data-placement='viewport']#walk-controls", app);
+  const controls = node('div.walk-controls#walk-controls', app);
   const checks = [
     [node("section.screen[data-screen='ranking']", app), 'padding',
       /safe-area-inset-top[\s\S]*safe-area-inset-right[\s\S]*safe-area-inset-bottom[\s\S]*safe-area-inset-left/],

@@ -14,10 +14,7 @@ import {
   walkerHitPoint,
   type WalkerHitAnchor,
 } from './walker-geometry.js';
-import {
-  createWalkControls,
-  type WalkControlsOptions,
-} from './walk-controls.js';
+import { createWalkControls } from './walk-controls.js';
 
 /** 초당 이동 거리(px). 한 화면을 가로지르는 데 1초 남짓 걸린다 */
 const SPEED = 320;
@@ -67,8 +64,6 @@ export interface WalkerConfig {
   startAt?: () => Point | null;
   /** 발밑 요소가 있어도 현재 화면 상태에서 확정할 수 있는지 */
   canPick?: (target: HTMLElement) => boolean;
-  /** 모든 화면이 공유하는 손가락 조작부의 배치 */
-  controls?: WalkControlsOptions;
 }
 
 /**
@@ -264,8 +259,8 @@ function inputVector(): readonly [number, number] {
  * 움직일 수 있는 화면에서, 잠기지 않았을 때만 보인다.
  * 잠긴 뒤에도 남아 있으면 «다음 문제» 버튼을 가린다.
  */
-function showControls(value: boolean, options?: WalkControlsOptions): void {
-  if (value) controls.show(options);
+function showControls(value: boolean): void {
+  if (value) controls.show();
   else controls.hide();
 }
 
@@ -293,7 +288,6 @@ export function createWalker(config: WalkerConfig): Walker {
     pickable = 'button, a[href], [role="button"], summary, input:not([type="hidden"]), textarea, select',
     onStep, onMove, standClass = 'is-standing', hitAnchor = DEFAULT_WALKER_HIT_ANCHOR, edge = 7, startAt,
     canPick = () => true,
-    controls: controlOptions,
   } = config;
 
   let enabled = false;
@@ -596,7 +590,7 @@ export function createWalker(config: WalkerConfig): Walker {
       // --idle 뒤에 두었기 때문에, 남아 있으면 제자리 뛰기가 영영 가려진다.
       // 실제로 그래서 2번 문제부터 캐릭터가 굳어 있었다.
       character.classList.remove('walker--hop');
-      showControls(true, controlOptions);
+      showControls(true);
       locked = false;
       placed = false;
       // 아직 서지 않았으니 누를 것도 없다. 다음 프레임의 place()가 발밑을 보고 다시 칠한다
@@ -623,7 +617,7 @@ export function createWalker(config: WalkerConfig): Walker {
       locked = Boolean(value);
       // CSS 선택자로 숨기지 않는다 — 조작부는 화면에 띄운(fixed) 요소라
       // 어느 화면의 자손도 아니다. 잠금은 워커가 아는 상태이므로 여기서 처리한다
-      if (active === walker) showControls(enabled && !locked, controlOptions);
+      if (active === walker) showControls(enabled && !locked);
       paintArmed();
       if (locked) stop();
       else start();

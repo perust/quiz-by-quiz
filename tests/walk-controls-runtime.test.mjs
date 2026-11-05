@@ -106,9 +106,9 @@ async function mount() {
 test('공용 이동 UI는 포인터 소유권·해제·idempotent show를 한 상태로 관리한다', async () => {
   const { root, stick, knob, confirm, controls, counts } = await mount();
 
-  controls.show({ placement: 'home-dock' });
+  controls.show();
   assert.equal(root.classList.contains('walk-controls--on'), true);
-  assert.equal(root.dataset.placement, 'home-dock');
+  assert.deepEqual(root.dataset, {});
   assert.equal(controls.contains(knob), true);
   assert.equal(controls.contains(new FakeElement()), false);
 
@@ -123,10 +123,10 @@ test('공용 이동 UI는 포인터 소유권·해제·idempotent show를 한 �
   assert.deepEqual(controls.vector(), [1, 0]);
   assert.deepEqual(stick.captured, [1]);
 
-  // 같은 활성 상태를 다시 보여도 진행 중인 drag는 보존하고 배치만 갱신한다.
-  controls.show({ placement: 'viewport' });
+  // 같은 활성 상태를 다시 보여도 진행 중인 drag와 공용 anchor를 보존한다.
+  controls.show();
   assert.deepEqual(controls.vector(), [1, 0]);
-  assert.equal(root.dataset.placement, 'viewport');
+  assert.deepEqual(root.dataset, {});
 
   stick.dispatchEvent(pointer('lostpointercapture', 1));
   assert.deepEqual(controls.vector(), [0, 0]);
