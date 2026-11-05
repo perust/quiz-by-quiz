@@ -128,10 +128,10 @@ test('온라인 퀴즈 채팅: 로그가 표면 첫 줄이고 줄 사이는 8px,
 
 test('고정 조작부 자리는 그대로 비운다: 채팅칸(마지막 조각)을 스틱·선택 버튼 위까지 올릴 수 있다', () => {
   // 대기실은 화면 아래 여백, 온라인 퀴즈는 채팅 표면 아래 여백이 공용 스틱 크기 + 여백이다 (touch-clearance 와 같은 셈)
-  const has = ["[data-screen='waiting']:not([hidden])", '.walk-controls--on', ".walk-controls--on[data-placement='viewport']"];
+  const has = ["[data-screen='waiting']:not([hidden])", '.walk-controls--on'];
   const body = node('body', null, { has });
   const waiting = node("section.screen[data-screen='waiting']", node('main.app', body));
-  const controls = node("div.walk-controls.walk-controls--on[data-placement='viewport']#walk-controls", node('main.app', body));
+  const controls = node('div.walk-controls.walk-controls--on#walk-controls', node('main.app', body));
   const stick = node('div.walk-stick#walk-stick', controls);
   const onlineQuiz = node("section.screen[data-screen='online-quiz']", node('main.app', node('body')));
   const chat = node('section.online-quiz-chat', onlineQuiz);

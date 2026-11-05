@@ -45,8 +45,7 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.match(homeSource, /art: '예술'/);
   assert.match(homeSource, /`\$\{category\.name\} 문제 풀기, 최고 \$\{bestScore\}점`/, '전체 분야 이름과 최고 점수를 함께 낭독한다');
   assert.match(homeSource, /category-card__name category-card__name--compact/);
-  assert.match(homeSource, /new ResizeObserver\(syncDockHeight\)/);
-  assert.match(homeSource, /--home-dock-h/);
+  assert.doesNotMatch(homeSource, /ResizeObserver|MutationObserver|syncDockHeight|--home-dock-h/);
   assert.match(homeSource, /window\.innerHeight <= 700/);
 
   // 홈의 월드 배치(edge HUD 입구·dock)는 파일 안의 글 위치가 아니라 index.html 의 실제 사슬에서 이긴 값으로 본다.
@@ -79,7 +78,7 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.doesNotMatch(css, /#open-online\s*\{/, '온라인은 보조 HUD 입구가 아니다 — 따로 배치하지 않는다');
   assert.doesNotMatch(css, /\.menu-card:nth-child\(odd\):last-child/);
   assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
-  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구가 dock 바로 위로 내려오고 브랜드는 접힌다
+  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구는 상단 edge HUD로 가고 브랜드는 접힌다
   const short = { ...MOBILE, width: 390, height: 700 };
   const homeChain = node("div.home-stage#home-stage", node("section.screen[data-screen='home']"));
   const player = node('div.home-player', homeChain);
@@ -88,21 +87,21 @@ test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 
   assert.equal(valueOf(rules, nickname, 'grid-template-columns', short), '36px minmax(0, 1fr)');
   assert.equal(valueOf(rules, node('span.menu-card__edit', nickname), 'display', short), 'none');
   const shortcutsNav = node('nav.home-menu', homeChain);
-  for (const id of ['open-characters', 'open-ranking']) {
-    const entry = node(`button.menu-card#${id}`, shortcutsNav);
-    assert.equal(valueOf(rules, entry, 'top', short), 'auto', `${id} top`);
-    assert.match(valueOf(rules, entry, 'bottom', short), /^calc\(var\(--home-dock-h/, `${id} bottom`);
+  const shortCharacters = node('button.menu-card#open-characters', shortcutsNav);
+  const shortRanking = node('button.menu-card#open-ranking', shortcutsNav);
+  assert.equal(lengthOf(rules, valueOf(rules, shortCharacters, 'top', short), short), 76, '캐릭터는 닉네임 아래');
+  assert.equal(lengthOf(rules, valueOf(rules, shortRanking, 'top', short), short), 116, '랭킹은 설정·게임 방법 아래');
+  for (const entry of [shortCharacters, shortRanking]) {
+    assert.equal(valueOf(rules, entry, 'bottom', short), 'auto');
   }
   assert.equal(valueOf(rules, node('header.home-header', homeChain), 'position', short), 'absolute');
   assert.equal(valueOf(rules, node('header.home-header', homeChain), 'width', short), '1px');
-  assert.match(homeSource, /controls: \{ placement: 'home-dock' \}/);
+  assert.doesNotMatch(homeSource, /controls:|home-dock|--home-dock-h/);
   assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
-  assert.match(css, /\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--home-dock-h/);
-  // 두 줄 dock의 짧은 가로 홈은 가운데 anchor다 — 높이 421–480px도 두 줄이다 (layout-01)
-  assert.match(css, /@media \(pointer: coarse\) and \(max-height: 480px\) and \(min-width: 480px\)[\s\S]*?\.walk-controls\[data-placement='home-dock'\] \{[\s\S]*?--walk-stick-left: calc\(50% - 140px\)/);
-  assert.match(homeSource, /new MutationObserver\(syncDockHeight\)/);
+  assert.doesNotMatch(css, /\.walk-controls\[data-placement|home-dock|--home-dock-h/);
+  assert.match(css, /body:has\(\.walk-controls--on\) \[data-screen='home'\]:not\(\[hidden\]\) \.home-quests \{[\s\S]*?bottom: var\(--walk-controls-reserve\)/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
-  assert.match(css, /\.home-note \{[\s\S]*?bottom: calc\(var\(--home-dock-h/);
+  assert.match(css, /\.home-note \{[\s\S]*?top: calc\(max\(var\(--space-3\), env\(safe-area-inset-top\)\) \+ var\(--space-16\) \+ var\(--space-16\)\);[\s\S]*?bottom: auto/);
   assert.match(css, /body:has\(\.home-note:not\(\[hidden\]\)\) #home-character \{\s*display: none/);
 });
 

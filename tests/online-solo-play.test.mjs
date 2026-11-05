@@ -409,7 +409,7 @@ test('온라인 퀴즈: 혼자 판은 채팅과 혼자인 점수판을 거두고
   assert.match(quiz, /if \(solo\) setTextIfChanged\(el\.exitBody, untimed \? SOLO_UNTIMED_EXIT_BODY : SOLO_EXIT_BODY\);/);
   assert.match(
     css,
-    /@media \(pointer: coarse\) \{[\s\S]*?\[data-screen='online-quiz'\]\[data-solo='true'\] \{\s*padding-bottom: calc\(var\(--walk-stick-size\) \+ var\(--space-4\) \+ var\(--space-2\) \+ env\(safe-area-inset-bottom, 0px\)\);/,
+    /@media \(pointer: coarse\) \{[\s\S]*?\[data-screen='online-quiz'\]\[data-solo='true'\] \{\s*padding-bottom: var\(--walk-controls-reserve\);/,
   );
 });
 

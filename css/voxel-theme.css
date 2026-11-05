@@ -171,6 +171,20 @@
   --walk-stick-size: 96px;
   --walk-knob-size: 48px;
   --walk-confirm-size: 72px;
+  /* 모든 walking 화면의 하단 엄지 anchor와 그 위 콘텐츠 여백을 한 계약으로 묶는다. */
+  --walk-controls-edge: var(--space-4);
+  --walk-controls-reserve: calc(
+    var(--walk-stick-size) + var(--walk-controls-edge) + var(--space-2) + env(safe-area-inset-bottom, 0px)
+  );
+  /* 아래 모서리 조작부 사이에 직접 누르는 행동을 둘 때 쓰는 좌우 안전 통로. */
+  --walk-controls-left-clearance: calc(
+    var(--walk-stick-size) + max(var(--walk-controls-edge), env(safe-area-inset-left, 0px))
+    + var(--space-2) - var(--page-pad)
+  );
+  --walk-controls-right-clearance: calc(
+    var(--walk-confirm-size) + max(var(--walk-controls-edge), env(safe-area-inset-right, 0px))
+    + var(--space-2) - var(--page-pad)
+  );
   --walker-width: 34px;
   --walker-height: 42px;
   --screen-walker-width: 40px;
@@ -266,6 +280,7 @@
     --walk-stick-size: 80px;
     --walk-knob-size: 40px;
     --walk-confirm-size: 64px;
+    --walk-controls-edge: var(--space-3);
   }
 }
 

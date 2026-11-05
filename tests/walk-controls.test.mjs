@@ -19,7 +19,7 @@ test('모든 walker는 단일 이동 UI 컴포넌트의 DOM·입력 수명을 �
   assert.match(html, /id="walk-controls"[\s\S]*?id="walk-stick"[\s\S]*?id="walk-confirm"[\s\S]*?<\/div>\s*<\/main>/);
 
   assert.match(walker, /createWalkControls\(\{/);
-  assert.match(walker, /controls\.show\(options\)/);
+  assert.match(walker, /controls\.show\(\)/);
   assert.match(walker, /controls\.hide\(\)/);
   assert.match(walker, /controls\.contains\(hit\)/);
   assert.doesNotMatch(walker, /getElementById\(['"]walk-(?:stick|confirm|controls)/);
@@ -31,12 +31,12 @@ test('모든 walker는 단일 이동 UI 컴포넌트의 DOM·입력 수명을 �
   }
   assert.match(controls, /setPointerCapture\(event\.pointerId\)/);
   assert.match(controls, /if \(event\.pointerId !== pointerId\) return/);
-  assert.match(controls, /root\.dataset\.placement = options\.placement \?\? 'viewport'/);
+  assert.doesNotMatch(controls, /dataset\.placement|data-placement|home-dock|WalkControlsOptions|WalkControlsPlacement/);
   assert.match(controls, /root\.classList\.add\('walk-controls--on'\)/);
   assert.match(controls, /if \(!wasVisible\) release\(\)/);
 });
 
-test('화면은 공용 조작부에 배치만 선언하고 짧은 화면까지 같은 UI를 유지한다', async () => {
+test('화면은 배치를 선언하지 않고 짧은 화면까지 같은 공용 조작부를 유지한다', async () => {
   const [css, theme, home, arena, onlineQuiz] = await Promise.all([
     source('../css/style.css'),
     source('../css/voxel-theme.css'),
@@ -45,7 +45,7 @@ test('화면은 공용 조작부에 배치만 선언하고 짧은 화면까지 �
     source('../src/ui/online-quiz.ts'),
   ]);
 
-  assert.match(home, /controls: \{ placement: 'home-dock' \}/);
+  assert.doesNotMatch(`${home}\n${arena}\n${onlineQuiz}\n${css}\n${theme}`, /home-dock|data-placement|WalkControlsOptions|WalkControlsPlacement/);
   assert.doesNotMatch(`${arena}\n${onlineQuiz}\n${css}`, /shortViewport|data-short-viewport/);
 
   const styles = `${css}\n${theme}`;
@@ -69,7 +69,9 @@ test('화면은 공용 조작부에 배치만 선언하고 짧은 화면까지 �
   assert.deepEqual(screenSizedControls, [], '화면 범위에서 공용 크기 토큰을 덮지 않는다');
   assert.match(css, /\.walk-controls--on \.walk-stick \{\s*display: block/);
   assert.match(css, /\.walk-controls--on \.walk-confirm \{\s*display: block/);
-  assert.match(css, /\.walk-controls\[data-placement='home-dock'\]/);
+  assert.doesNotMatch(css, /\.walk-controls\[data-placement|home-dock/);
+  assert.match(theme, /--walk-controls-edge: var\(--space-4\)/);
+  assert.match(theme, /--walk-controls-reserve: calc\([\s\S]*?var\(--walk-stick-size\)[\s\S]*?env\(safe-area-inset-bottom, 0px\)/);
   const shortQuiz = css.match(/@media \(pointer: coarse\) and \(max-height: 772px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
   assert.doesNotMatch(shortQuiz, /[.#]walk-(?:controls|stick|confirm|knob)/);
   assert.match(css, /\.walk-stick \{[\s\S]*?left: var\(--walk-stick-left\);[\s\S]*?bottom: var\(--walk-controls-bottom\)/);

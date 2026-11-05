@@ -182,28 +182,6 @@ export function createHomeScreen({
   // `setPlayMode`가 앞에 말을 붙인다(`homeDockCaption`)
   el.caption.textContent = categoryDockCaption();
 
-  // 하단 dock은 최고 기록 유무·번역 길이에 따라 높이가 달라진다. 고정 조작부가 그 높이를
-  // 추측하지 않고 실제 값을 따라가게 해, 저장 기록이 생긴 뒤에도 버튼을 덮지 않는다.
-  // 숨은 화면(높이 0)에서는 맞추지 않는다 — 다시 보일 때 맞춘다
-  const syncDockHeight = (): void => {
-    const height = Math.ceil(el.quests.getBoundingClientRect().height);
-    if (height > 0) document.documentElement.style.setProperty('--home-dock-h', `${height}px`);
-  };
-  // 화면 크기·글꼴로 바뀌는 높이는 ResizeObserver가 알린다. 다만 그것은 다음 프레임을 그리기 직전에야 오고,
-  // 숨은 탭에서는 오지 않는다 — 그동안 조작부·두 입구는 낡은 높이(처음에는 대체값 148px)에 서서 자동 점검에서
-  // 선택 원이 「게임 방법」을, 스틱이 dock을 덮었다 (layout-01). 그래서 dock 안의 DOM이 바뀌거나(방 복귀 줄·
-  // 전체 도전 표식·분야 칸·바쁨 글) 홈이 다시 보일 때는 MutationObserver가 그 틱 안에서 맞춘다. 워커가
-  // 첫 자리를 재는 rAF(입구 줄 위)도 그 뒤라 맞춘 값을 본다. 워커의 is-standing 같은 class는 보지 않는다
-  const dockObserver = new ResizeObserver(syncDockHeight);
-  dockObserver.observe(el.quests);
-  const dockMutations = new MutationObserver(syncDockHeight);
-  dockMutations.observe(el.quests, {
-    subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'],
-  });
-  const homeSection = el.stage.closest<HTMLElement>('[data-screen]');
-  if (homeSection) dockMutations.observe(homeSection, { attributes: true, attributeFilter: ['hidden'] });
-  requestAnimationFrame(syncDockHeight);
-
   // 화면 전체를 걸어 다닌다. 칸 목록을 따로 만들지 않고 발밑에 실제로 무엇이
   // 있는지 그때그때 보므로, 카드를 더하거나 빼도 여기를 고칠 일이 없다.
   // 고르는 것도 워커가 그 자리를 진짜로 누르는 것이라, 버튼에 달린 리스너가
@@ -211,13 +189,11 @@ export function createHomeScreen({
   // 선택점은 넘기지 않는다 — 워커의 기본(몸통 가운데)이 모든 화면의 규칙이다 (U10)
   const walker = createWalker({
     character: el.walker,
-    // 공용 조작부의 모양은 다른 화면과 같고, 하단 dock을 피하는 배치만 선언한다.
-    controls: { placement: 'home-dock' },
     // 처음에는 「내 캐릭터」 입구 바로 아래의 월드 바닥에 선다.
     // HUD 글자를 덮지 않으면서도 한 번 위로 걸으면 바로 입구를 고를 수 있다.
     startAt: () => {
-      // 200% 확대나 가로 화면에서는 두 보조 입구가 dock 위 양쪽으로 이동한다.
-      // 그때는 가운데 위의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
+      // 200% 확대나 가로 화면에서는 두 보조 입구가 상단 edge HUD 양쪽으로 이동한다.
+      // 그때는 가운데의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
       // 짧은 가로 화면(U07)은 접었던 브랜드를 위 가운데에 되살리므로 그 아래에 선다.
       // 브랜드가 접혀 있으면 머리말이 1px 칸이라 제목의 폭도 1px 이하다
       if (window.innerHeight <= 700) {

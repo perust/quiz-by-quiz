@@ -1,20 +1,13 @@
 // 모든 워커가 함께 쓰는 손가락 이동 UI
 //
-// DOM·포인터 캡처·반응형 배치 상태는 이 컴포넌트 하나가 소유한다. 화면은 별도 스틱을
-// 만들거나 CSS로 현재 화면을 추측하지 않고, walker 설정으로 배치만
-// 선언한다. 실제 이동·발밑 선택 규칙은 walker.ts가 맡는다.
+// DOM·포인터 캡처·반응형 입력 상태는 이 컴포넌트 하나가 소유한다. 화면은 별도 스틱을
+// 만들거나 CSS로 현재 화면을 추측하지 않는다. 모든 walking 화면은 같은 viewport 하단
+// anchor를 쓴다. 실제 이동·발밑 선택 규칙은 walker.ts가 맡는다.
 //
 // 화면이 아니라 입력 상태만 조작부의 모습을 바꾼다 — 글자를 적는 동안(data-typing)과
 // 누를 대상이 없을 때(data-armed="false"). 둘 다 walker.ts가 알려 준다.
 
 import { maybe } from '../dom.js';
-
-/** 조작부를 화면 어디에 고정할지. 모양과 크기는 모든 배치가 공유한다. */
-export type WalkControlsPlacement = 'viewport' | 'home-dock';
-
-export interface WalkControlsOptions {
-  placement?: WalkControlsPlacement;
-}
 
 export interface WalkControlsHandlers {
   /** 스틱 방향이나 세기가 바뀌었을 때 이동 루프를 깨운다. */
@@ -27,8 +20,8 @@ export interface WalkControlsHandlers {
 }
 
 export interface WalkControls {
-  /** 활성 walker의 배치 계약으로 공용 조작부를 켠다. */
-  show(options?: WalkControlsOptions): void;
+  /** 활성 walker의 공용 조작부를 같은 viewport anchor에 켠다. */
+  show(): void;
   /** 조작부와 남아 있는 포인터 입력을 함께 거둔다. */
   hide(): void;
   /** 현재 스틱 방향과 세기(-1~1). */
@@ -203,10 +196,9 @@ export function createWalkControls({
   }
 
   return {
-    show(options = {}) {
+    show() {
       if (!root) return;
       const wasVisible = root.classList.contains('walk-controls--on');
-      root.dataset.placement = options.placement ?? 'viewport';
       root.classList.add('walk-controls--on');
       if (!wasVisible) release();
     },
