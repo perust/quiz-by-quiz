@@ -3189,6 +3189,19 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
+/* 세로 랭킹은 내보내기 행동을 양쪽 엄지 목표 사이에 두고, 문서가 위로 스크롤되면
+   설정 HUD도 함께 흘려보낸다. 홈의 설정 HUD와 공용 조작부 anchor는 바꾸지 않는다. */
+@media (pointer: coarse) and (orientation: portrait) {
+  body:has([data-screen='ranking']:not([hidden])) .app-bar {
+    position: absolute;
+  }
+
+  body:has(.walk-controls--on) [data-screen='ranking']:not([hidden]) .ranking-export__actions {
+    margin-right: var(--walk-controls-right-clearance);
+    margin-left: var(--walk-controls-left-clearance);
+  }
+}
+
 @media (pointer: coarse) and (max-height: 360px) and (min-width: 480px) {
   body:has(.walk-controls--on) [data-screen='characters']:not([hidden]) .character-grid {
     margin-right: var(--walk-controls-right-clearance);
