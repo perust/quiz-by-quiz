@@ -8,6 +8,11 @@ const css = await readFile(new URL('../css/style.css', import.meta.url), 'utf8')
 const homeSource = await readFile(new URL('../src/ui/home.ts', import.meta.url), 'utf8');
 const SHORT_ZOOM = { width: 390, height: 420, pointer: 'coarse', hover: 'none', reducedMotion: false };
 const SHORT_LANDSCAPE = { width: 568, height: 320, pointer: 'coarse', hover: 'none', reducedMotion: false };
+const RANKING_PORTRAITS = [
+  { width: 390, height: 844, pointer: 'coarse', hover: 'none', reducedMotion: false },
+  { width: 390, height: 670, pointer: 'coarse', hover: 'none', reducedMotion: false },
+  { width: 320, height: 550, pointer: 'coarse', hover: 'none', reducedMotion: false },
+];
 
 /**
  * 이긴 선언을 토큰까지 풀어 px 로 계산한다. 선언이 없으면 0 이다.
@@ -249,6 +254,29 @@ test('568×320·480×320 랭킹 분류 탭은 하단 공용 조작부 사이 안
   for (const env of [SHORT_LANDSCAPE, { ...SHORT_LANDSCAPE, width: 480 }]) {
     assert.equal(valueOf(rules, tabs, 'margin-left', env), 'var(--walk-controls-left-clearance)', `${env.width}×${env.height}: 스틱 오른쪽 여백`);
     assert.equal(valueOf(rules, tabs, 'margin-right', env), 'var(--walk-controls-right-clearance)', `${env.width}×${env.height}: 선택 버튼 왼쪽 여백`);
+  }
+});
+
+test('세로 touch 랭킹 내보내기 행동은 하단 공용 조작부 사이 안전 통로를 쓴다', () => {
+  const body = node('body', null, { has: ['.walk-controls--on'] });
+  const ranking = node("section.screen[data-screen='ranking']", node('main.app', body));
+  const actions = node('div.ranking-export__actions', node('div.ranking-export#ranking-export', ranking));
+
+  for (const env of RANKING_PORTRAITS) {
+    assert.equal(valueOf(rules, actions, 'margin-left', env), 'var(--walk-controls-left-clearance)', `${env.width}×${env.height}: 스틱 오른쪽 여백`);
+    assert.equal(valueOf(rules, actions, 'margin-right', env), 'var(--walk-controls-right-clearance)', `${env.width}×${env.height}: 선택 버튼 왼쪽 여백`);
+  }
+});
+
+test('세로 랭킹의 설정 HUD는 문서와 함께 흐르고 홈에서는 viewport에 고정된다', () => {
+  const rankingBody = node('body', null, { has: ["[data-screen='ranking']:not([hidden])"] });
+  const rankingBar = node('div.app-bar', rankingBody);
+  const homeBody = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
+  const homeBar = node('div.app-bar', homeBody);
+
+  for (const env of RANKING_PORTRAITS) {
+    assert.equal(valueOf(rules, rankingBar, 'position', env), 'absolute', `${env.width}×${env.height}: 최대 scroll에서 탭을 덮지 않는다`);
+    assert.equal(valueOf(rules, homeBar, 'position', env), 'fixed', `${env.width}×${env.height}: 스크롤 없는 홈 HUD`);
   }
 });
 
