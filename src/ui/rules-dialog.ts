@@ -18,7 +18,7 @@
 
 import { need, needOne } from '../dom.js';
 import type { OnlineRules } from '../online/adapter.js';
-import { trapFocus } from './quiz.js';
+import { trapFocus } from './accessibility.js';
 import { soloQuestionTime } from '../online/solo-play.js';
 import {
   ONLINE_RECORD_RULE,

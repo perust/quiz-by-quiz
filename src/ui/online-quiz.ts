@@ -18,6 +18,7 @@ import type {
 } from '../online/adapter.js';
 import { onlineErrorText } from '../online/rules.js';
 import { createStandingAnswerPublisher, onlineStandingDraft } from '../online/standing-answer.js';
+import { trapFocus } from './accessibility.js';
 import type { Arena, ArenaDeps } from './arena.js';
 import { createChatLineQueue } from './chat-queue.js';
 import { choiceLayout } from './choice-layout.js';
@@ -552,7 +553,6 @@ export interface OnlineQuizScreenDeps {
    */
   isChatHidden?: (playerId: string) => boolean;
   createCharacterArena: (deps: ArenaDeps) => Arena;
-  trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
 }
 
 export interface OnlineQuizScreen {
@@ -604,7 +604,6 @@ export function createOnlineQuizScreen(
     getPlayerId,
     isChatHidden = () => false,
     createCharacterArena,
-    trapFocus,
   }: OnlineQuizScreenDeps,
 ): OnlineQuizScreen {
   const el = {
@@ -772,7 +771,6 @@ export function createOnlineQuizScreen(
     },
     onStandingChange: (index) => syncStandingDraft(index),
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
-    trapFocus,
     ids: {
       root: 'online-arena',
       character: 'online-arena-character',

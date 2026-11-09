@@ -12,7 +12,7 @@ import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need } from '../dom.js';
 import { createWalker } from './walker.js';
 import { shortHomeStartPoint } from './walker-geometry.js';
-import { trapFocus } from './quiz.js';
+import { trapFocus } from './accessibility.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
 import { onlineEntryCopy, SOLO_ONLINE_ENTRY } from '../online/rules.js';

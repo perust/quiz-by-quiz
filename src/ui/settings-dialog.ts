@@ -14,7 +14,7 @@
 
 import { TIME_LIMIT_CHOICES, TIME_LIMIT_MS } from '../constants.js';
 import { all, need, needOne } from '../dom.js';
-import { trapFocus } from './quiz.js';
+import { trapFocus } from './accessibility.js';
 import type { Settings, TimeLimitChoice } from '../types.js';
 
 /** 이 대화상자가 다루는 설정. 캐릭터는 「내 캐릭터」 화면이 맡는다 */

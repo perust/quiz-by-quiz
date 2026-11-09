@@ -112,7 +112,6 @@ const quiz = createOnlineQuizScreen({
   getPlayerId: () => 'me',
   isChatHidden: (playerId) => hidden.has(playerId),
   createCharacterArena: quietArena,
-  trapFocus: () => {},
 });
 
 const room = {

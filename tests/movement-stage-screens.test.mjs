@@ -160,7 +160,6 @@ test('온라인 퀴즈: 바닥 위의 내 자리를 무대 좌표로 보내고, 
     onFinished: () => {},
     getPlayerId: () => ME,
     createCharacterArena: (deps) => { arenaDeps = deps; return fakeArena; },
-    trapFocus: () => {},
   });
   // 휴대폰 세로: 질문·보기 아래의 바닥
   const tiles = byId('online-arena-tiles');

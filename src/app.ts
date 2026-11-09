@@ -64,7 +64,7 @@ import {
 } from './online/solo-play.js';
 import { createOnlineQuizScreen } from './ui/online-quiz.js';
 import { createOnlineResultScreen } from './ui/online-result.js';
-import { createQuizScreen, trapFocus } from './ui/quiz.js';
+import { createQuizScreen } from './ui/quiz.js';
 import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createQuizReviewScreen } from './ui/quiz-review.js';
@@ -519,7 +519,6 @@ async function main(): Promise<void> {
 
   const onlineQuizScreen = createOnlineQuizScreen({
     createCharacterArena: createArena,
-    trapFocus,
     onSubmit: async (spec) => {
       if (!onlineMatchController) return;
       await onlineMatchController.submit(spec);

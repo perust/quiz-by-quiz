@@ -92,6 +92,8 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const settle = async () => { for (let index = 0; index < 4; index += 1) await tick(); };
 
 const WEEK = { start: '2026-10-25T15:00:00+00:00', end: '2026-11-01T15:00:00+00:00' };
+const ONLINE_UNTRUSTED_NAME = '<svg onload=alert(1)>';
+const LOCAL_UNTRUSTED_NAME = '<img src=x onerror=alert(1)>';
 
 function entry(rank, changes = {}) {
   return {
@@ -108,7 +110,7 @@ const loads = [];
 const opened = [];
 const localRecords = {
   history: [{
-    id: 'local-1', nickname: '로컬기록', mode: 'category', category: 'history', score: 70,
+    id: 'local-1', nickname: LOCAL_UNTRUSTED_NAME, mode: 'category', category: 'history', score: 70,
     correctCount: 7, totalCount: 10, durationMs: 1000, playedAt: '2026-10-27T00:00:00.000Z',
   }],
 };
@@ -144,7 +146,7 @@ test('처음 열면 온라인 랭킹의 이번 주다: 범위·기간 탭이 보
   answer = (target, period) => new Promise((resolve) => {
     arrive = () => resolve({
       status: 'ok',
-      board: { target, period, window: WEEK, entries: [entry(1), entry(2, { isMine: true }), entry(3)] },
+      board: { target, period, window: WEEK, entries: [entry(1, { nickname: ONLINE_UNTRUSTED_NAME }), entry(2, { isMine: true }), entry(3)] },
     });
   });
   await ranking.show({ target: HISTORY });
@@ -176,7 +178,7 @@ test('처음 열면 온라인 랭킹의 이번 주다: 범위·기간 탭이 보
   assert.equal(rank.textContent, '1');
   assert.equal(figure.className, 'ranking-item__figure');
   assert.equal(figure.attributes['aria-hidden'], 'true', '캐릭터는 그림이다 — 이름은 옆 글자가 말한다');
-  assert.equal(nickname.textContent, '참가자1');
+  assert.equal(nickname.textContent, ONLINE_UNTRUSTED_NAME, '서버 닉네임은 HTML이 아니라 글자로 그린다');
   assert.equal(score.textContent, '90점 9/10');
   assert.match(date.textContent, /^2026\.10\.27 \d\d:10$/);
   assert.ok(mine.classList.contains('ranking-item--mine'));
@@ -268,7 +270,11 @@ test('이 브라우저의 기록은 예전 화면 그대로다 — 결과 화면
   assert.equal(byId('ranking-scope-note').textContent, '이 브라우저에 저장된 내 기록이에요.');
   assert.equal(byId('ranking-footer').hidden, false);
   assert.equal(byId('ranking-export').hidden, false);
-  assert.equal(rows()[0].children[1].textContent, '로컬기록 방금 등록');
+  assert.equal(
+    rows()[0].children[1].textContent,
+    LOCAL_UNTRUSTED_NAME + ' 방금 등록',
+    '로컬 닉네임도 HTML이 아니라 글자로 그린다',
+  );
 
   // 범위 탭으로 온라인을 고르면 다시 묻는다. 홈에서 다시 열면 마지막 범위를 기억한다
   byId('ranking-scope-online').click();
@@ -290,7 +296,7 @@ test('랭킹을 모르는 API면 한 번 물어본 뒤 범위 탭을 거두고 �
   assert.equal(byId('ranking-periods').hidden, true);
   assert.equal(byId('ranking-online-status').hidden, true);
   assert.equal(byId('ranking-scope-note').textContent, '이 브라우저에 저장된 내 기록이에요.');
-  assert.equal(rows()[0].children[1].textContent, '로컬기록');
+  assert.equal(rows()[0].children[1].textContent, LOCAL_UNTRUSTED_NAME);
 
   // 다시 열어도 묻지 않는다
   await ranking.show({ target: HISTORY, scope: 'online' });

@@ -125,7 +125,6 @@ const quiz = createOnlineQuizScreen({
   getPlayerId: () => ME,
   isChatHidden: () => false,
   createCharacterArena: quietArena,
-  trapFocus: () => {},
 });
 
 function score(playerId, nickname, points, lastAnswerCorrect) {
