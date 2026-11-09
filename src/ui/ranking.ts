@@ -6,7 +6,7 @@ import { CATEGORIES } from '../constants.js';
 import { need, needOne } from '../dom.js';
 import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 import { formatPlayedAt } from './format.js';
-import { trapFocus } from './quiz.js';
+import { trapFocus } from './accessibility.js';
 import { announce } from './screens.js';
 import { createBody } from './sprite.js';
 import type { OnlineRankingBoard, OnlineRankingEntry, OnlineRankingPeriod } from '../online/adapter.js';
@@ -339,47 +339,74 @@ export function createRankingScreen(
 
   // ── 목록 ───────────────────────────────────────────────────────
 
-  function createItem(record: ScoreRecord, rank: number): HTMLLIElement {
-    const item = document.createElement('li');
-    item.className = 'ranking-item';
-    if (record.id === highlightId) {
-      item.classList.add('ranking-item--mine');
-    }
-
+  /**
+   * 로컬·온라인 행이 함께 쓰는 글자 cell. 두 저장 모델은 합치지 않고 화면에 공통인 primitive 값만 받는다.
+   * 닉네임과 badge는 모두 textContent로 넣어 외부 문자열을 HTML로 해석하지 않는다.
+   */
+  function createRankingCells(values: {
+    rank: number;
+    nickname: string;
+    badge: string | null;
+    score: number;
+    correctCount: number;
+    totalCount: number;
+    playedAt: string;
+  }): {
+    rankLabel: HTMLSpanElement;
+    nickname: HTMLSpanElement;
+    score: HTMLSpanElement;
+    date: HTMLSpanElement;
+  } {
     const rankLabel = document.createElement('span');
     rankLabel.className = 'ranking-item__rank';
-    rankLabel.textContent = String(rank);
+    rankLabel.textContent = String(values.rank);
 
     const nickname = document.createElement('span');
     nickname.className = 'ranking-item__nickname';
-    nickname.textContent = record.nickname;
-
-    // 방금 등록한 기록임을 색상 말고 글자로도 알린다
-    if (record.id === highlightId) {
+    nickname.textContent = values.nickname;
+    if (values.badge !== null) {
       const badge = document.createElement('span');
       badge.className = 'ranking-item__badge';
-      badge.textContent = '방금 등록';
+      badge.textContent = values.badge;
       nickname.append(' ', badge);
     }
 
     const score = document.createElement('span');
     score.className = 'ranking-item__score';
-    score.textContent = `${record.score}점`;
+    score.textContent = String(values.score) + '점';
 
     // 점수만 보여주면 만점이 다른 기록끼리 잘못 비교된다.
     // 카테고리가 늘면 전체 도전 만점이 함께 커지는데(400 → 500) 기록은 같은
     // 목록에 쌓이므로, 몇 문제 중 몇 개인지를 붙여 읽는 사람이 가늠하게 한다.
     const hits = document.createElement('span');
     hits.className = 'ranking-item__hits';
-    hits.textContent = `${record.correctCount}/${record.totalCount}`;
+    hits.textContent = String(values.correctCount) + '/' + String(values.totalCount);
     score.append(' ', hits);
 
     // 소요 시간은 목록에 넣지 않는다 (FR-6.4)
     const date = document.createElement('span');
     date.className = 'ranking-item__date';
-    date.textContent = formatPlayedAt(record.playedAt);
+    date.textContent = formatPlayedAt(values.playedAt);
 
-    item.append(rankLabel, nickname, score, date);
+    return { rankLabel, nickname, score, date };
+  }
+
+  function createItem(record: ScoreRecord, rank: number): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'ranking-item';
+    const highlighted = record.id === highlightId;
+    if (highlighted) item.classList.add('ranking-item--mine');
+
+    const cells = createRankingCells({
+      rank,
+      nickname: record.nickname,
+      badge: highlighted ? '방금 등록' : null,
+      score: record.score,
+      correctCount: record.correctCount,
+      totalCount: record.totalCount,
+      playedAt: record.playedAt,
+    });
+    item.append(cells.rankLabel, cells.nickname, cells.score, cells.date);
     return item;
   }
 
@@ -392,39 +419,22 @@ export function createRankingScreen(
     item.className = 'ranking-item ranking-item--online';
     item.classList.toggle('ranking-item--mine', entry.isMine);
 
-    const rankLabel = document.createElement('span');
-    rankLabel.className = 'ranking-item__rank';
-    rankLabel.textContent = String(entry.rank);
-
     // 캐릭터는 그림이다. 누구인지는 옆의 이름 글자가 말한다
     const figure = document.createElement('span');
     figure.className = 'ranking-item__figure';
     figure.setAttribute('aria-hidden', 'true');
     figure.append(createBody(entry.characterId));
 
-    const nickname = document.createElement('span');
-    nickname.className = 'ranking-item__nickname';
-    nickname.textContent = entry.nickname;
-    if (entry.isMine) {
-      const badge = document.createElement('span');
-      badge.className = 'ranking-item__badge';
-      badge.textContent = '나';
-      nickname.append(' ', badge);
-    }
-
-    const score = document.createElement('span');
-    score.className = 'ranking-item__score';
-    score.textContent = `${entry.score}점`;
-    const hits = document.createElement('span');
-    hits.className = 'ranking-item__hits';
-    hits.textContent = `${entry.correctCount}/${entry.totalCount}`;
-    score.append(' ', hits);
-
-    const date = document.createElement('span');
-    date.className = 'ranking-item__date';
-    date.textContent = formatPlayedAt(entry.recordedAt);
-
-    item.append(rankLabel, figure, nickname, score, date);
+    const cells = createRankingCells({
+      rank: entry.rank,
+      nickname: entry.nickname,
+      badge: entry.isMine ? '나' : null,
+      score: entry.score,
+      correctCount: entry.correctCount,
+      totalCount: entry.totalCount,
+      playedAt: entry.recordedAt,
+    });
+    item.append(cells.rankLabel, figure, cells.nickname, cells.score, cells.date);
     return item;
   }
 

@@ -428,7 +428,6 @@ test('퀴즈 무대만 발끝으로 본다 — 십자 틈에 선 발은 아무 �
   const arena = createArena({
     onChoose() {},
     getChoiceNodes: () => [],
-    trapFocus() {},
   });
   arena.setEnabled(true);
   arena.reset(4);

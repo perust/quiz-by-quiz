@@ -48,10 +48,10 @@ test('퀴즈의 직접 보기와 조작법 버튼은 44px 이상 터치 목표�
 });
 
 test('조작법 대화상자는 확대 시 제목부터 읽도록 패널에 초기 포커스를 둔다', async () => {
-  const [html, arena, quiz] = await Promise.all([
+  const [html, arena, accessibility] = await Promise.all([
     source('../index.html'),
     source('../src/ui/arena.ts'),
-    source('../src/ui/quiz.ts'),
+    source('../src/ui/accessibility.ts'),
   ]);
 
   for (const id of ['help-dialog', 'online-help-dialog']) {
@@ -69,7 +69,7 @@ test('조작법 대화상자는 확대 시 제목부터 읽도록 패널에 초�
   assert.match(arena, /helpPanel\?\.focus\(\{ preventScroll: true \}\);/);
   assert.doesNotMatch(arena, /el\.helpClose\.focus\(\);/);
   assert.match(
-    quiz,
+    accessibility,
     /if \(!items\.includes\(document\.activeElement as HTMLElement\)\)[\s\S]*event\.preventDefault\(\);[\s\S]*\(event\.shiftKey \? last : first\)\.focus\(\);/,
     '패널 자체에 포커스가 있을 때 Tab과 Shift+Tab 모두 대화상자 안으로 들어간다',
   );

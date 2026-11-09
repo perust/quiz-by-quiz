@@ -47,7 +47,7 @@ import {
   type WaitingRoomPortraitActions,
 } from './waiting-room-portrait.js';
 import { chatMuteNotice, createChatMutes, type ChatMutes } from './chat-mutes.js';
-import { trapFocus } from './quiz.js';
+import { trapFocus } from './accessibility.js';
 import {
   createWaitingRoomSeatLeaseController,
   isWaitingRoomSeatId,

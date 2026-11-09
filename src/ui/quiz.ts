@@ -7,6 +7,7 @@ import { createQuestionTimer, type QuestionTimer } from '../core/timer.js';
 import { playCorrect, playTimeout, playWrong } from '../audio.js';
 import { need, needOne } from '../dom.js';
 import { announce } from './screens.js';
+import { trapFocus } from './accessibility.js';
 import { createArena } from './arena.js';
 import { choiceLayout } from './choice-layout.js';
 import { answerLines, feedbackScrollTarget } from './feedback-view.js';
@@ -24,9 +25,6 @@ const NEXT_KEYS = ['Enter', ' '];
 
 /** 전체 도전에서 문항마다 분야 칩에 붙일 이름 (FR-2.2) */
 const CATEGORY_NAMES = new Map(CATEGORIES.map((category) => [category.id, category.name]));
-
-/** 다이얼로그 안에서 Tab이 맴돌게 할 대상 */
-const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
 export interface QuizScreenDeps {
@@ -132,12 +130,10 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
   let timer: QuestionTimer = createQuestionTimer();
 
   // 캐릭터 무대. 고른 번호를 넘겨줄 뿐이고 채점에는 관여하지 않는다.
-  // 조작법 대화상자도 여기와 같은 포커스 가두기를 쓰라고 trapFocus를 넘긴다.
   const arena = createArena({
     onChoose: (index) => selectChoice(index),
     // 캐릭터가 위 보기 버튼 위에 서도 같은 번호로 본다
     getChoiceNodes: () => el.choices.querySelectorAll('.choice'),
-    trapFocus,
     // 도움말을 보는 동안 시간이 끝났다면 닫는 즉시 결과 패널로 이어 간다.
     onDialogClose: () => {
       if (!el.feedback.hidden && feedbackWaitingForDialogClose) {
@@ -672,29 +668,4 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
  */
 function anyDialogOpen(): boolean {
   return document.querySelector('.dialog-backdrop:not([hidden])') !== null;
-}
-
-/**
- * Tab이 다이얼로그 밖으로 새어 나가지 않게 막는다.
- * 뒤 화면 요소로 포커스가 가면 무엇을 조작하는지 알 수 없다.
- */
-export function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
-  const items = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((node) => !node.hidden);
-  if (items.length === 0) return;
-
-  const first = items[0];
-  const last = items[items.length - 1];
-
-  // 조작법처럼 읽기 시작점인 패널(tabindex=-1)에 포커스를 둔 경우도 있다.
-  // 그 자리에서 Tab/Shift+Tab을 누르면 각각 첫/마지막 조작부로 들여보낸다.
-  if (!items.includes(document.activeElement as HTMLElement)) {
-    event.preventDefault();
-    (event.shiftKey ? last : first).focus();
-  } else if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
 }

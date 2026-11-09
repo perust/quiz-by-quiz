@@ -536,7 +536,6 @@ test('온라인 퀴즈 화면: 새 규칙의 판에서만, 움직인 뒤 선 칸
     onFinished: () => {},
     getPlayerId: () => identity.id,
     createCharacterArena: (deps) => { arenaDeps = deps; return fakeArena; },
-    trapFocus: () => {},
   });
   /** arena가 실제 이동 뒤의 발밑 칸을 알리고 캐릭터가 멈춰 선다 */
   const standOn = (index) => {
@@ -601,7 +600,6 @@ test('온라인 퀴즈 화면: 초안이 닿지 않는 동안 판의 규칙 줄�
     onFinished: () => {},
     getPlayerId: () => identity.id,
     createCharacterArena: () => fakeArena,
-    trapFocus: () => {},
   });
   const status = byId('online-match-status');
   const fresh = running({ standingAnswers: true });

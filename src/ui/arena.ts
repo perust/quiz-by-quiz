@@ -21,6 +21,7 @@
 // 두 번 낭독하지 않는다. 그래서 이 무대를 꺼도 게임을 온전히 할 수 있다.
 
 import { need } from '../dom.js';
+import { trapFocus } from './accessibility.js';
 import { markArenaTarget, setArenaTileSelectable } from './arena-state.js';
 import { createWalker, type Point } from './walker.js';
 import { paintCharacter } from './sprite.js';
@@ -42,7 +43,6 @@ export interface ArenaDeps {
    * 만들 이유가 없다. 배열로 좁히면 넘기는 쪽이 없던 `Array.from`을 불러야 한다
    */
   getChoiceNodes: () => Iterable<Element>;
-  trapFocus: (container: HTMLElement, event: KeyboardEvent) => void;
   /** 도움말을 닫은 뒤 화면이 후속 상태(예: timeout 피드백)를 드러낼 때 쓴다. */
   onDialogClose?: () => void;
   /** 로컬·온라인 화면이 독립된 무대를 가질 수 있게 DOM id를 주입한다. */
@@ -113,7 +113,6 @@ export function createArena({
   onMove,
   onStandingChange,
   getChoiceNodes,
-  trapFocus,
   onDialogClose,
   ids = DEFAULT_IDS,
 }: ArenaDeps): Arena {
