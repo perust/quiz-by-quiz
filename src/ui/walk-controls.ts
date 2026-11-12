@@ -14,7 +14,8 @@ export interface WalkControlsHandlers {
   onStickInput: () => void;
   /**
    * 오른쪽 선택 버튼. 활성 walker의 Enter/Space와 같은 동작을 연결한다.
-   * 누르는 순간이 아니라 **버튼 안에서 손을 뗄 때** 부른다.
+   * 누르는 순간이 아니라 **버튼 안에서 손을 뗀 뒤** 부른다. primary 포인터는 같은 버튼의
+   * 호환 click에서, 호환 click이 없는 secondary 포인터는 pointerup에서 부른다.
    */
   onConfirm: () => void;
 }
@@ -53,6 +54,8 @@ export function createWalkControls({
   const direction = { x: 0, y: 0 };
   /** 선택 버튼을 누르고 있는 손가락. 스틱 손가락과 따로 센다 — 두 엄지가 함께 쓴다 */
   let confirmPointerId: number | null = null;
+  /** primary pointerup 뒤 touch click이 새 화면 버튼에 꽂히지 않도록 같은 버튼 click까지 기다린다. */
+  let confirmClickPending = false;
 
   function releaseStick(): void {
     pointerId = null;
@@ -61,8 +64,9 @@ export function createWalkControls({
     if (knob) knob.style.translate = '';
   }
 
-  function releaseConfirm(): void {
+  function releaseConfirm({ preserveClick = false }: { preserveClick?: boolean } = {}): void {
     confirmPointerId = null;
+    if (!preserveClick) confirmClickPending = false;
     confirm?.classList.remove('walk-confirm--pressed');
   }
 
@@ -149,15 +153,17 @@ export function createWalkControls({
     stick.addEventListener('lostpointercapture', releasePointer);
   }
 
-  // 선택은 **뗄 때** 확정한다. 누르는 순간 확정하면 엄지가 스치기만 해도 지나가던 칸이
-  // 답이 되고, 낸 답은 되돌릴 수 없다(FR-3.3). 스틱과 같은 capture 수명을 쓴다 — 누르면
-  // 붙잡아 눌림을 보이고, 버튼 안에서 떼면 확정, 밖에서 떼거나 입력이 끊기면 취소한다.
+  // 선택은 버튼 안에서 **뗀 뒤** 확정한다. primary 포인터는 같은 버튼의 click까지 기다려
+  // 조작부가 사라진 자리에 뜬 「다음 문제」가 뒤따르는 touch click을 받지 않게 한다.
+  // 호환 click이 없는 secondary 포인터는 pointerup에서 확정한다. 스틱과 같은 capture 수명을
+  // 써서 누르면 눌림, 밖에서 떼거나 입력이 끊기면 취소한다.
   if (root && confirm) {
     confirm.addEventListener('pointerdown', (event) => {
-      // 포커스와 호환 마우스 이벤트를 가져가지 않게 한다. 확정은 pointerup의 몫이다
+      // 포커스와 호환 마우스 이벤트를 가져가지 않게 한다. primary 확정은 후속 click의 몫이다
       event.preventDefault();
       if (!root.classList.contains('walk-controls--on')) return;
       if (confirmPointerId !== null) return;
+      confirmClickPending = false;
       try {
         confirm.setPointerCapture(event.pointerId);
       } catch {
@@ -177,8 +183,13 @@ export function createWalkControls({
     confirm.addEventListener('pointerup', (event) => {
       if (event.pointerId !== confirmPointerId) return;
       const inside = insideConfirm(event);
-      releaseConfirm();
-      if (inside) onConfirm();
+      if (inside && !event.isPrimary) {
+        releaseConfirm();
+        onConfirm();
+        return;
+      }
+      confirmClickPending = inside;
+      releaseConfirm({ preserveClick: inside });
     });
 
     const cancelConfirm = (event: PointerEvent): void => {
@@ -188,10 +199,17 @@ export function createWalkControls({
     confirm.addEventListener('pointercancel', cancelConfirm);
     confirm.addEventListener('lostpointercapture', cancelConfirm);
 
-    // 키보드·보조기기가 버튼을 «누른» 경우(detail 0). 손가락·마우스가 낸 click은
-    // detail이 1 이상이고 위 pointerup이 이미 처리했으므로 두 번 고르지 않는다.
+    // 키보드·보조기기의 click(detail 0)은 곧바로 확정한다. 포인터 click은 pointerup에서
+    // 버튼 안에 뗐다고 표시한 한 번만 받는다. 여기까지 DOM을 유지해야 click target이 선택 버튼으로 남는다.
     confirm.addEventListener('click', (event) => {
-      if (event.detail === 0) onConfirm();
+      if (event.detail === 0) {
+        releaseConfirm();
+        onConfirm();
+        return;
+      }
+      if (!confirmClickPending) return;
+      confirmClickPending = false;
+      onConfirm();
     });
   }
 

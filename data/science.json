@@ -1098,5 +1098,1212 @@
     "explanation": "변성암은 암석이 녹지 않을 정도의 큰 압력과 열을 받은 결과입니다.",
     "difficulty": "normal",
     "tags": ["지구과학", "암석"]
+  },
+  {
+    "id": "science-111",
+    "category": "science",
+    "question": "빛이 진공에서 1년 동안 나아가는 거리를 뜻하는 천문학의 거리 단위는?",
+    "choices": ["천문단위", "파섹", "광초", "광년"],
+    "answerIndex": 3,
+    "explanation": "광년은 빛이 1년 동안 이동하는 거리이므로 시간 단위가 아니라 거리 단위입니다.",
+    "difficulty": "easy",
+    "tags": ["천문", "단위"]
+  },
+  {
+    "id": "science-112",
+    "category": "science",
+    "question": "전류의 세기를 나타내는 국제단위계 기본 단위는 무엇인가?",
+    "choices": ["암페어", "볼트", "옴", "와트"],
+    "answerIndex": 0,
+    "explanation": "암페어는 기호 A로 나타내는 국제단위계의 전류 기본 단위입니다.",
+    "difficulty": "easy",
+    "tags": ["물리", "단위"]
+  },
+  {
+    "id": "science-113",
+    "category": "science",
+    "question": "진핵세포에서 DNA 대부분이 포장된 염색체를 담고 있는, 막으로 둘러싸인 소기관은?",
+    "choices": ["리보솜", "미토콘드리아", "골지체", "세포핵"],
+    "answerIndex": 3,
+    "explanation": "DNA 대부분은 세포핵 안의 염색체에 포장되어 있고, 세포핵은 막으로 둘러싸인 소기관입니다. 미토콘드리아에도 소량의 자체 DNA와 작은 염색체가 있으므로 대부분이라는 범위로 두 소기관을 구분합니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "세포"]
+  },
+  {
+    "id": "science-114",
+    "category": "science",
+    "question": "메신저 RNA의 유전 정보를 읽어 아미노산 사슬을 만드는 단백질 합성 장소는?",
+    "choices": ["골지체", "리보솜", "리소좀", "중심체"],
+    "answerIndex": 1,
+    "explanation": "리보솜은 메신저 RNA의 염기서열을 읽고 그 정보에 맞는 아미노산 사슬을 합성합니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "세포"]
+  },
+  {
+    "id": "science-115",
+    "category": "science",
+    "question": "지구 대기에서 유성체 대부분이 타거나 기화하는 층은?",
+    "choices": ["대류권", "성층권", "열권", "중간권"],
+    "answerIndex": 3,
+    "explanation": "중간권은 성층권 위, 열권 아래에 있으며 대기로 들어온 유성체 대부분이 이곳에서 타거나 기화합니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학", "대기"]
+  },
+  {
+    "id": "science-116",
+    "category": "science",
+    "question": "반투과성 막을 사이에 두고 물이 용질 농도가 낮은 쪽에서 높은 쪽으로 순이동하는 현상은?",
+    "choices": ["삼투", "확산", "능동 수송", "여과"],
+    "answerIndex": 0,
+    "explanation": "삼투는 반투과성 막을 통해 물이 자유 물 분자가 많은 쪽에서 적은 쪽, 곧 용질 농도가 높은 쪽으로 순이동하는 현상입니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "세포"]
+  },
+  {
+    "id": "science-117",
+    "category": "science",
+    "question": "햇빛이 닿지 않는 심해 열수 분출공에서 미생물이 광물과 화학 물질로 에너지를 얻어 먹이망의 바탕을 이루는 과정은?",
+    "choices": ["세포 호흡", "발효", "광합성", "화학합성"],
+    "answerIndex": 3,
+    "explanation": "열수 분출공의 세균과 고세균은 햇빛 대신 물속의 광물과 화학 물질을 이용하는 화학합성으로 에너지를 얻습니다.",
+    "difficulty": "normal",
+    "tags": ["생명과학", "생태계"]
+  },
+  {
+    "id": "science-118",
+    "category": "science",
+    "question": "우주가 팽창하면서 먼 은하의 빛 파장이 길어져 더 붉은 쪽으로 이동해 보이는 현상은?",
+    "choices": ["청색편이", "우주론적 적색편이", "회절", "편광"],
+    "answerIndex": 1,
+    "explanation": "우주 공간이 팽창하면 그 안을 지나는 빛의 파장도 늘어나며, 이를 우주론적 적색편이라고 합니다.",
+    "difficulty": "normal",
+    "tags": ["천문", "우주"]
+  },
+  {
+    "id": "science-119",
+    "category": "science",
+    "question": "콩과식물 뿌리혹의 리조비움이 대기 중 질소 기체를 식물이 이용할 수 있는 암모늄으로 바꾸는 과정은?",
+    "choices": ["탈질산화", "질산화", "암모니아화", "질소 고정"],
+    "answerIndex": 3,
+    "explanation": "리조비움은 콩과식물과 공생하며 뿌리혹에서 질소 기체를 암모늄으로 환원하는 질소 고정을 수행합니다.",
+    "difficulty": "hard",
+    "tags": ["생명과학", "물질순환"]
+  },
+  {
+    "id": "science-120",
+    "category": "science",
+    "question": "곰팡이가 몸체를 만들고 그 안의 조류나 남세균이 광합성하는 공생 생물은?",
+    "choices": ["이끼", "균근", "산호", "지의류"],
+    "answerIndex": 3,
+    "explanation": "지의류는 곰팡이와 조류 또는 남세균이 함께 사는 공생체로, 광합성 파트너가 둘 모두에게 필요한 에너지를 만듭니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학", "공생"]
+  }
+,
+  {
+    "id": "science-121",
+    "category": "science",
+    "question": "외부 환경이 달라져도 몸의 내부 환경을 비교적 일정하게 유지하거나 회복하는 조절 작용은?",
+    "choices": ["면역 반응","세포 분화","항상성","자연 선택"],
+    "answerIndex": 2,
+    "explanation": "항상성은 외부 변화 속에서도 몸의 내부 환경을 비교적 일정한 상태로 유지하거나 회복하는 조절 작용입니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학","인체"]
+  },
+  {
+    "id": "science-122",
+    "category": "science",
+    "question": "액체나 기체가 순환하며 열에너지를 옮기는 방식은?",
+    "choices": ["대류","전도","복사","증발"],
+    "answerIndex": 0,
+    "explanation": "대류는 액체나 기체 같은 유체가 움직이고 순환하면서 열에너지를 전달하는 방식입니다.",
+    "difficulty": "easy",
+    "tags": ["물리","열"]
+  },
+  {
+    "id": "science-123",
+    "category": "science",
+    "question": "빛이 광학적으로 조밀한 매질에서 성긴 매질로 가며 입사각이 임계각보다 클 때, 모두 경계면 안쪽으로 반사되는 현상은?",
+    "choices": ["굴절","전반사","회절","편광"],
+    "answerIndex": 1,
+    "explanation": "전반사는 빛이 더 조밀한 매질에서 덜 조밀한 매질로 향하고 입사각이 임계각보다 클 때 빛이 모두 반사되는 현상입니다.",
+    "difficulty": "normal",
+    "tags": ["물리","빛"]
+  },
+  {
+    "id": "science-124",
+    "category": "science",
+    "question": "두 지각판이 서로 다가올 때 한 판이 다른 판 아래로 내려가 맨틀로 들어가는 과정은?",
+    "choices": ["발산","융기","섭입","주향 이동"],
+    "answerIndex": 2,
+    "explanation": "섭입은 수렴하는 두 지각판 가운데 하나가 다른 판 아래로 내려가 지구 맨틀로 들어가는 과정입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학","지구 내부"]
+  },
+  {
+    "id": "science-125",
+    "category": "science",
+    "question": "천체가 받은 빛에 견주어 얼마나 많은 빛을 반사하는지 나타내는 값은?",
+    "choices": ["알베도","절대등급","광도","색지수"],
+    "answerIndex": 0,
+    "explanation": "알베도는 천체에 들어온 빛과 반사된 빛의 비율을 나타내며, 값이 클수록 더 많은 빛을 반사합니다.",
+    "difficulty": "hard",
+    "tags": ["천문","빛"]
+  }
+,
+  {
+    "id": "science-126",
+    "category": "science",
+    "question": "같은 유전체 위치에서 존재할 수 있는 서로 다른 DNA 서열 버전을 무엇이라 하는가?",
+    "choices": ["염색분체","대립유전자","뉴클레오솜","전사인자"],
+    "answerIndex": 1,
+    "explanation": "대립유전자는 같은 유전체 위치에 존재할 수 있는 둘 이상의 서로 다른 DNA 서열 버전입니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학","유전"]
+  },
+  {
+    "id": "science-127",
+    "category": "science",
+    "question": "모든 세포의 안과 바깥 환경을 나누고 물질 출입을 조절하는 반투과성 지질 이중층은?",
+    "choices": ["세포벽","세포질","세포막","핵막"],
+    "answerIndex": 2,
+    "explanation": "세포막은 세포 내부와 외부 환경을 구분하는 반투과성 지질 이중층으로, 드나드는 물질을 조절합니다.",
+    "difficulty": "easy",
+    "tags": ["생명과학","세포"]
+  },
+  {
+    "id": "science-128",
+    "category": "science",
+    "question": "대기의 특정 기체가 지표 가까이에 열을 가두어 지구를 더 따뜻하게 유지하는 과정은?",
+    "choices": ["오존층 파괴","산성비","해양 산성화","온실 효과"],
+    "answerIndex": 3,
+    "explanation": "온실 효과는 온실가스가 지표 가까이에 열을 붙잡아 지구를 그렇지 않을 때보다 따뜻하게 유지하는 과정입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학","기후"]
+  },
+  {
+    "id": "science-129",
+    "category": "science",
+    "question": "지구 자전 때문에 움직이는 공기가 북반구에서는 오른쪽, 남반구에서는 왼쪽으로 휘는 현상은?",
+    "choices": ["에크만 수송","코리올리 효과","열염순환","조석력"],
+    "answerIndex": 1,
+    "explanation": "코리올리 효과는 지구 자전으로 인해 이동하는 공기가 북반구에서는 오른쪽, 남반구에서는 왼쪽으로 휘어 보이는 현상입니다.",
+    "difficulty": "normal",
+    "tags": ["지구과학","대기"]
+  },
+  {
+    "id": "science-130",
+    "category": "science",
+    "question": "블랙홀에서 빛조차 빠져나올 수 없게 되는 경계를 무엇이라 하는가?",
+    "choices": ["강착 원반","광구","사건의 지평선","특이점"],
+    "answerIndex": 2,
+    "explanation": "사건의 지평선은 블랙홀을 둘러싼 경계로, 이 안쪽에서는 중력이 매우 강해 빛조차 탈출할 수 없습니다.",
+    "difficulty": "hard",
+    "tags": ["천문학","블랙홀"]
+  }
+,
+  {
+    "id": "science-131",
+    "category": "science",
+    "question": "염색체 끝의 반복 DNA 영역으로, 끝부분이 닳거나 서로 얽히는 것을 막고 세포가 분열할 때 조금씩 짧아지는 구조는?",
+    "choices": ["중심절","텔로미어","염색분체","키네토코어"],
+    "answerIndex": 1,
+    "explanation": "텔로미어는 염색체 끝의 반복 DNA 영역으로 염색체 끝을 보호하며, 세포가 분열할 때 조금씩 짧아집니다.",
+    "difficulty": "normal",
+    "tags": ["유전학","염색체"]
+  },
+  {
+    "id": "science-132",
+    "category": "science",
+    "question": "유성 생식 생물에서 난자와 정자 같은 생식세포의 염색체 수를 줄이는 세포 분열은?",
+    "choices": ["유사분열","이분법","출아","감수분열"],
+    "answerIndex": 3,
+    "explanation": "감수분열은 유성 생식 생물에서 생식세포의 염색체 수를 줄이는 세포 분열입니다.",
+    "difficulty": "easy",
+    "tags": ["세포 분열","유전학"]
+  },
+  {
+    "id": "science-133",
+    "category": "science",
+    "question": "지구 자기장이 지배하며 태양 및 우주 입자 복사와 태양풍에 의한 대기 침식으로부터 지구를 보호하는 영역은?",
+    "choices": ["자기권","태양권","전리층","복사대"],
+    "answerIndex": 0,
+    "explanation": "자기권은 지구 자기장이 지배하는 주변 영역으로, 태양 및 우주 입자 복사와 태양풍에 의한 대기 침식에서 지구를 보호합니다.",
+    "difficulty": "normal",
+    "tags": ["행성과학","자기장"]
+  },
+  {
+    "id": "science-134",
+    "category": "science",
+    "question": "태양에서 계속 흘러나오며 양성자와 전자 같은 전하 입자로 이루어진 흐름은?",
+    "choices": ["태양 플레어","코로나 질량 방출","태양풍","흑점"],
+    "answerIndex": 2,
+    "explanation": "태양풍은 태양에서 계속 흘러나오며 양성자와 전자 같은 전하 입자로 이루어집니다.",
+    "difficulty": "easy",
+    "tags": ["태양","우주환경"]
+  },
+  {
+    "id": "science-135",
+    "category": "science",
+    "question": "공전 행성의 표면에 액체 물이 존재할 수 있는 항성으로부터의 거리 범위를 가리키는 말은?",
+    "choices": ["생명가능지대","항성권","전리권","복사대"],
+    "answerIndex": 0,
+    "explanation": "생명가능지대는 공전하는 행성 표면에 액체 물이 존재할 수 있는 항성으로부터의 거리 범위입니다.",
+    "difficulty": "hard",
+    "tags": ["외계행성","생명가능지대"]
+  }
+,
+  {
+    "id": "science-136",
+    "category": "science",
+    "question": "DNA 염기서열 자체를 바꾸지 않는 화학적 변형이 유전자의 작동 정도를 조절하는 현상을 연구하는 분야는?",
+    "choices": ["전사체학","단백질체학","유전체학","후성유전학"],
+    "answerIndex": 3,
+    "explanation": "후성유전학은 DNA 염기서열 자체의 변화 없이 화학적 변형이 유전자의 작동 정도를 조절하는 현상을 연구합니다.",
+    "difficulty": "normal",
+    "tags": ["유전학","유전자 조절"]
+  },
+  {
+    "id": "science-137",
+    "category": "science",
+    "question": "DNA나 RNA에서 세 개의 뉴클레오타이드로 이루어져 특정 아미노산 또는 단백질 합성의 종료를 지정하는 단위는?",
+    "choices": ["코돈","인트론","엑손","안티코돈"],
+    "answerIndex": 0,
+    "explanation": "코돈은 세 개의 뉴클레오타이드로 이루어진 DNA 또는 RNA 서열로, 특정 아미노산이나 단백질 합성의 종료를 지정합니다.",
+    "difficulty": "easy",
+    "tags": ["유전 암호","단백질 합성"]
+  },
+  {
+    "id": "science-138",
+    "category": "science",
+    "question": "유전자 안에 존재하지만 전사 뒤 최종 성숙 mRNA에는 남지 않고 단백질의 아미노산을 암호화하지 않는 영역은?",
+    "choices": ["프로모터","엑손","인트론","인핸서"],
+    "answerIndex": 2,
+    "explanation": "인트론은 유전자 안에 있지만 성숙 mRNA가 만들어질 때 제거되며, 단백질의 아미노산 서열을 암호화하지 않습니다.",
+    "difficulty": "hard",
+    "tags": ["분자생물학","RNA 가공"]
+  },
+  {
+    "id": "science-139",
+    "category": "science",
+    "question": "빠르게 회전하는 중성자별로, 표면의 밝은 고온점이 등대 불빛처럼 시야에 들어왔다 나가며 맥동을 보이는 천체는?",
+    "choices": ["적색거성","펄서","퀘이사","백색왜성"],
+    "answerIndex": 1,
+    "explanation": "펄서는 빠르게 회전하는 중성자별로, 밝은 고온점이 회전에 따라 등대 불빛처럼 보였다 사라지며 맥동을 만듭니다.",
+    "difficulty": "normal",
+    "tags": ["중성자별","천문학"]
+  },
+  {
+    "id": "science-140",
+    "category": "science",
+    "question": "무거운 별의 철 핵이 붕괴했다가 반동하며 충격파를 만들고, 핵은 중성자별이나 블랙홀로 남을 수 있는 거대한 폭발은?",
+    "choices": ["태양 플레어","신성","코로나 질량 방출","초신성"],
+    "answerIndex": 3,
+    "explanation": "초신성 가운데 무거운 별의 핵붕괴로 일어나는 경우에는 철 핵의 붕괴와 반동이 충격파를 만들며, 핵이 중성자별이나 블랙홀로 남을 수 있습니다.",
+    "difficulty": "easy",
+    "tags": ["항성 진화","초신성"]
+  },
+  {
+    "id": "science-141",
+    "category": "science",
+    "question": "유전체의 특정 위치에 어떤 변이형이 있는지를 BB·Bb·bb 또는 실제 염기서열로 나타낸 것은?",
+    "choices": [
+      "표현형",
+      "유전체",
+      "유전자형",
+      "대립유전자"
+    ],
+    "answerIndex": 2,
+    "explanation": "유전자형은 유전체의 특정 위치에 존재하는 변이형을 기호나 실제 DNA 염기서열로 나타낸 것입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전학",
+      "유전자 변이"
+    ]
+  },
+  {
+    "id": "science-142",
+    "category": "science",
+    "question": "키·눈 색·혈액형처럼 관찰할 수 있으며 유전체 구성과 환경 요인의 영향을 함께 받는 특성은?",
+    "choices": [
+      "유전자형",
+      "표현형",
+      "핵형",
+      "일배체형"
+    ],
+    "answerIndex": 1,
+    "explanation": "표현형은 키, 눈 색, 혈액형처럼 관찰할 수 있는 특성으로 유전자형과 환경 요인의 영향을 함께 받습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전학",
+      "형질"
+    ]
+  },
+  {
+    "id": "science-143",
+    "category": "science",
+    "question": "세균 등에서 염색체 DNA와 물리적으로 분리되어 독립적으로 복제되는 작은 원형 DNA 분자는?",
+    "choices": [
+      "플라스미드",
+      "뉴클레오솜",
+      "리보솜",
+      "중심체"
+    ],
+    "answerIndex": 0,
+    "explanation": "플라스미드는 세균 등에서 발견되는 작은 원형 DNA 분자로, 염색체 DNA와 분리되어 독립적으로 복제됩니다.",
+    "difficulty": "normal",
+    "tags": [
+      "미생물학",
+      "DNA"
+    ]
+  },
+  {
+    "id": "science-144",
+    "category": "science",
+    "question": "염색체에서 잘록하게 보이며 세포 분열 때 방추사가 붙어 자매 염색분체를 반대쪽으로 나누는 데 핵심 역할을 하는 부위는?",
+    "choices": [
+      "텔로미어",
+      "리보솜",
+      "중심체",
+      "센트로미어"
+    ],
+    "answerIndex": 3,
+    "explanation": "센트로미어는 염색체의 잘록한 부위로, 방추사가 붙어 자매 염색분체가 분열하는 세포의 반대쪽으로 이동하도록 합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "염색체",
+      "세포 분열"
+    ]
+  },
+  {
+    "id": "science-145",
+    "category": "science",
+    "question": "행성보다 질량이 크지만 주계열성 규모의 핵융합을 할 만큼 질량을 얻지 못해 가시광선을 거의 내지 않는 천체는?",
+    "choices": [
+      "적색거성",
+      "백색왜성",
+      "갈색왜성",
+      "중성자별"
+    ],
+    "answerIndex": 2,
+    "explanation": "갈색왜성은 행성보다 질량이 크지만 주계열성 규모의 핵융합을 할 만큼 질량을 얻지 못하며 가시광선을 거의 내지 않습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "천문학",
+      "갈색왜성"
+    ]
+  },
+  {
+    "id": "science-146",
+    "category": "science",
+    "question": "개별 세포의 염색체를 분리해 크기·띠 무늬·센트로미어 위치에 따라 배열하여 수나 구조의 이상을 살피는 자료는?",
+    "choices": [
+      "유전자형",
+      "표현형",
+      "핵형",
+      "일배체형"
+    ],
+    "answerIndex": 2,
+    "explanation": "핵형은 개별 세포에서 분리한 염색체를 크기, 띠 무늬, 센트로미어 위치 등에 따라 배열한 것으로 염색체 수나 구조의 이상을 살필 수 있습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전학",
+      "염색체"
+    ]
+  },
+  {
+    "id": "science-147",
+    "category": "science",
+    "question": "한 염색체에서 서로 가까이 있어 재조합이 드물고 함께 유전되는 경향이 있는 유전체 변이들의 조합은?",
+    "choices": [
+      "일배체형",
+      "핵형",
+      "유전자형",
+      "대립유전자"
+    ],
+    "answerIndex": 0,
+    "explanation": "일배체형은 한 염색체에서 서로 가까운 유전체 변이들이 함께 유전되는 경향을 보이는 물리적 조합입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "유전학",
+      "유전체 변이"
+    ]
+  },
+  {
+    "id": "science-148",
+    "category": "science",
+    "question": "DNA가 감겨 염색체를 조밀하게 만들도록 구조적으로 지지하고 유전자 발현 조절에도 관여하는 단백질은?",
+    "choices": [
+      "콜라겐",
+      "튜불린",
+      "액틴",
+      "히스톤"
+    ],
+    "answerIndex": 3,
+    "explanation": "히스톤은 DNA가 감기는 단백질로 염색체를 조밀하게 만드는 구조적 지지를 제공하고 유전자 발현 조절에도 관여합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "염색체"
+    ]
+  },
+  {
+    "id": "science-149",
+    "category": "science",
+    "question": "세포핵의 염색질을 이루는 기본 반복 단위로, DNA가 히스톤 단백질의 중심부를 감싼 구조는?",
+    "choices": [
+      "리보솜",
+      "뉴클레오솜",
+      "중심체",
+      "프로테아좀"
+    ],
+    "answerIndex": 1,
+    "explanation": "뉴클레오솜은 세포핵에 포장된 염색질의 기본 반복 단위로 DNA가 히스톤 단백질 중심부를 감싼 구조입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "분자생물학",
+      "염색질"
+    ]
+  },
+  {
+    "id": "science-150",
+    "category": "science",
+    "question": "세포질에서 세포의 주요 에너지원인 ATP를 생산하는 소기관 내부에 존재하는 원형 염색체는?",
+    "choices": [
+      "핵 DNA",
+      "플라스미드 DNA",
+      "미토콘드리아 DNA",
+      "바이러스 DNA"
+    ],
+    "answerIndex": 2,
+    "explanation": "미토콘드리아 DNA는 세포의 주요 에너지원인 ATP를 생산하는 세포질 소기관인 미토콘드리아 안에 존재하는 원형 염색체입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "세포생물학",
+      "세포소기관"
+    ]
+  },
+  {
+    "id": "science-151",
+    "category": "science",
+    "question": "유전체 안에서 특정 유전자나 관심 있는 DNA 구간이 자리한 물리적 위치를 가리키는 용어는?",
+    "choices": [
+      "일배체형",
+      "대립유전자",
+      "유전체",
+      "유전자좌"
+    ],
+    "answerIndex": 3,
+    "explanation": "유전자좌는 로커스라고도 하며, 유전체 안에서 유전자나 다른 관심 DNA 구간이 자리한 물리적 위치입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "유전학",
+      "유전체"
+    ]
+  },
+  {
+    "id": "science-152",
+    "category": "science",
+    "question": "생물의 DNA 염기서열에 생긴 변화를 가리키는 것은?",
+    "choices": [
+      "전사",
+      "돌연변이",
+      "번역",
+      "DNA 복제"
+    ],
+    "answerIndex": 1,
+    "explanation": "돌연변이는 생물의 DNA 염기서열에 생긴 변화입니다. DNA 복제 오류, 돌연변이원 노출, 바이러스 감염 등으로 생길 수 있습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전학",
+      "DNA"
+    ]
+  },
+  {
+    "id": "science-153",
+    "category": "science",
+    "question": "감수분열 때 짝지은 염색체의 비슷한 DNA 서열이 서로 교환되어 자손의 유전체 다양성에 기여하는 과정은?",
+    "choices": [
+      "비상동 말단 연결",
+      "DNA 복제",
+      "상동 재조합",
+      "전사"
+    ],
+    "answerIndex": 2,
+    "explanation": "상동 재조합은 비슷하거나 동일한 두 DNA 분자 사이에서 염기서열을 교환하는 유전적 재조합입니다. 감수분열 때의 교환은 자손의 유전체 다양성을 만드는 원천이 됩니다.",
+    "difficulty": "hard",
+    "tags": [
+      "감수분열",
+      "유전적 재조합"
+    ]
+  },
+  {
+    "id": "science-154",
+    "category": "science",
+    "question": "성염색체와 달리 번호로 구분하는 염색체를 무엇이라고 하는가?",
+    "choices": [
+      "상염색체",
+      "성염색체",
+      "미토콘드리아 염색체",
+      "플라스미드"
+    ],
+    "answerIndex": 0,
+    "explanation": "상염색체는 성염색체와 구별되는, 번호로 이름 붙인 염색체입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전학",
+      "염색체"
+    ]
+  },
+  {
+    "id": "science-155",
+    "category": "science",
+    "question": "유성생식 생물이 난자와 정자를 통해 유전체를 부모에서 자손으로 전달하는 세포 계통은?",
+    "choices": [
+      "체세포 계통",
+      "신경계",
+      "면역계",
+      "생식계열"
+    ],
+    "answerIndex": 3,
+    "explanation": "생식계열은 세대 사이에 유전체를 전달하는 난자와 정자 같은 생식세포의 계통입니다. 몸의 다른 세포인 체세포와 구별됩니다.",
+    "difficulty": "normal",
+    "tags": [
+      "유전학",
+      "생식세포"
+    ]
+  },
+  {
+    "id": "science-156",
+    "category": "science",
+    "question": "유전체에서 최종 성숙 mRNA에 남는 영역으로, 일부는 단백질을 만드는 정보를 담는 것은?",
+    "choices": [
+      "엑손",
+      "인트론",
+      "프로모터",
+      "텔로미어"
+    ],
+    "answerIndex": 0,
+    "explanation": "엑손은 mRNA에 남는 유전체 영역입니다. 일부 엑손은 단백질을 만드는 정보를 담고, 다른 엑손은 비암호화 영역입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "RNA 가공"
+    ]
+  },
+  {
+    "id": "science-157",
+    "category": "science",
+    "question": "태양계가 형성될 때 남은 암석성 잔해로, 대부분 화성과 목성 사이에서 태양을 도는 천체는?",
+    "choices": [
+      "혜성",
+      "소행성",
+      "유성체",
+      "왜행성"
+    ],
+    "answerIndex": 1,
+    "explanation": "소행성은 태양계 형성 과정에서 남은 암석성 천체이며, 대부분은 화성과 목성 사이의 주 소행성대에서 태양을 공전합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "천문학",
+      "태양계"
+    ]
+  },
+  {
+    "id": "science-158",
+    "category": "science",
+    "question": "유전자의 DNA 염기서열을 RNA 사본으로 만드는 과정은?",
+    "choices": [
+      "전사",
+      "번역",
+      "DNA 복제",
+      "RNA 스플라이싱"
+    ],
+    "answerIndex": 0,
+    "explanation": "전사는 유전자의 DNA 서열을 RNA로 복사하는 과정입니다. 만들어진 mRNA는 DNA에 담긴 단백질 정보를 운반합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "분자생물학",
+      "유전자 발현"
+    ]
+  },
+  {
+    "id": "science-159",
+    "category": "science",
+    "question": "태양풍이 성간 물질에 가로막히기 전까지 퍼져 태양과 행성을 둘러싼 거대한 거품 모양의 영역은?",
+    "choices": [
+      "자기권",
+      "태양권",
+      "복사대",
+      "코로나"
+    ],
+    "answerIndex": 1,
+    "explanation": "태양권은 태양풍이 바깥으로 퍼지며 태양과 행성 주위에 만든 거대한 거품 모양의 영역입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "태양",
+      "우주환경"
+    ]
+  },
+  {
+    "id": "science-160",
+    "category": "science",
+    "question": "두 큰 천체의 중력과 작은 물체가 함께 움직이는 데 필요한 구심력이 맞아, 우주선이 적은 연료로 위치를 유지할 수 있는 지점은?",
+    "choices": [
+      "궤도 공명",
+      "힐 구",
+      "로슈 한계",
+      "라그랑주점"
+    ],
+    "answerIndex": 3,
+    "explanation": "라그랑주점에서는 두 큰 천체의 중력과 작은 물체에 필요한 구심력이 맞습니다. 우주선은 이 지점을 이용해 위치 유지에 드는 연료를 줄일 수 있습니다.",
+    "difficulty": "hard",
+    "tags": [
+      "천문학",
+      "궤도"
+    ]
+  },
+  {
+    "id": "science-161",
+    "category": "science",
+    "question": "특정 DNA 구간을 선택해 반복적인 DNA 합성으로 많은 사본을 만드는 실험실 기술은?",
+    "choices": [
+      "중합효소 연쇄 반응",
+      "DNA 염기서열 분석",
+      "겔 전기영동 분석",
+      "제한 효소 절편 분석"
+    ],
+    "answerIndex": 0,
+    "explanation": "중합효소 연쇄 반응(PCR)은 짧은 합성 DNA 조각으로 증폭할 구간을 선택하고, 여러 차례 DNA 합성을 거쳐 그 구간을 증폭합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "DNA"
+    ]
+  },
+  {
+    "id": "science-162",
+    "category": "science",
+    "question": "해왕성 궤도 바깥에서 태양을 두르는 얼음 천체의 도넛 모양 영역으로, 명왕성이 속한 곳은?",
+    "choices": [
+      "소행성대",
+      "카이퍼 벨트",
+      "오르트 구름",
+      "태양권"
+    ],
+    "answerIndex": 1,
+    "explanation": "카이퍼 벨트는 해왕성 궤도 바로 바깥에서 태양을 두르는 도넛 모양의 얼음 천체 영역이며, 명왕성도 이곳에 속합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "태양계",
+      "소천체"
+    ]
+  },
+  {
+    "id": "science-163",
+    "category": "science",
+    "question": "태양계를 멀리서 구형 껍질처럼 둘러싼 것으로 추정되며, 장주기 혜성의 근원으로 여겨지는 영역은?",
+    "choices": [
+      "태양권",
+      "카이퍼 벨트",
+      "오르트 구름",
+      "소행성대"
+    ],
+    "answerIndex": 2,
+    "explanation": "오르트 구름은 태양계의 가장 먼 영역에 있는 거대한 구형 껍질로 추정되며, 많은 장주기 혜성의 근원으로 여겨집니다.",
+    "difficulty": "normal",
+    "tags": [
+      "태양계",
+      "혜성"
+    ]
+  },
+  {
+    "id": "science-164",
+    "category": "science",
+    "question": "행성이 별 앞을 지날 때 별빛이 조금 어두워지는 현상을 이용하는 외계행성 탐지법은?",
+    "choices": [
+      "직접 영상법",
+      "시선속도법",
+      "위치천문법",
+      "통과법"
+    ],
+    "answerIndex": 3,
+    "explanation": "통과법은 행성이 관측자와 별 사이를 지날 때 가리는 별빛의 작은 감소를 측정합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "외계행성",
+      "통과법"
+    ]
+  },
+  {
+    "id": "science-165",
+    "category": "science",
+    "question": "앞쪽 별의 중력이 뒤쪽 별빛을 휘고 확대할 때, 행성이 만드는 추가 밝기 변화를 찾는 외계행성 탐지법은?",
+    "choices": [
+      "통과법",
+      "중력 미세렌즈법",
+      "시선속도법",
+      "직접 영상법"
+    ],
+    "answerIndex": 1,
+    "explanation": "중력 미세렌즈법은 가까운 별의 중력이 먼 별빛을 휘고 모아 밝게 보이게 할 때, 그 별을 도는 행성이 만드는 두 번째의 더 작은 밝기 신호를 탐지합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "외계행성",
+      "중력렌즈"
+    ]
+  },
+  {
+    "id": "science-166",
+    "category": "science",
+    "question": "공전 행성의 중력 때문에 별이 앞뒤로 흔들릴 때, 별빛 파장이 번갈아 짧아지고 길어지는 변화를 측정하는 외계행성 탐지법은?",
+    "choices": [
+      "시선속도법",
+      "통과법",
+      "직접 영상법",
+      "중력 미세렌즈법"
+    ],
+    "answerIndex": 0,
+    "explanation": "시선속도법은 행성의 중력으로 별이 가까워졌다 멀어질 때 별빛 파장이 번갈아 짧아지고 길어지는 변화를 측정합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "외계행성",
+      "천문학"
+    ]
+  },
+  {
+    "id": "science-167",
+    "category": "science",
+    "question": "별빛이 공전 행성의 대기를 지나온 스펙트럼에서 분자의 특징을 읽어 대기 성분을 알아내는 방법은?",
+    "choices": [
+      "시선속도법",
+      "직접 영상법",
+      "통과 분광법",
+      "중력 미세렌즈법"
+    ],
+    "answerIndex": 2,
+    "explanation": "통과 분광법은 별빛이 행성 대기를 지나온 스펙트럼의 색 띠를 분석해 어떤 분자가 있는지 알아냅니다.",
+    "difficulty": "hard",
+    "tags": [
+      "외계행성",
+      "분광학"
+    ]
+  },
+  {
+    "id": "science-168",
+    "category": "science",
+    "question": "코로나그래프로 중심별의 강한 빛을 가려 주위를 도는 행성의 빛을 드러내는 외계행성 탐지법은?",
+    "choices": [
+      "통과법",
+      "시선속도법",
+      "중력 미세렌즈법",
+      "직접 영상법"
+    ],
+    "answerIndex": 3,
+    "explanation": "직접 영상법은 코로나그래프 등으로 별빛의 눈부심을 억제해 별 주위를 도는 행성의 빛을 포착합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "외계행성",
+      "관측기술"
+    ]
+  },
+  {
+    "id": "science-169",
+    "category": "science",
+    "question": "세균의 자연적 유전체 편집 체계에서 응용되어, 살아 있는 생물의 DNA를 선택적으로 바꾸는 기술은?",
+    "choices": [
+      "CRISPR",
+      "PCR",
+      "NGS",
+      "RNAi"
+    ],
+    "answerIndex": 0,
+    "explanation": "CRISPR는 세균의 자연적 유전체 편집 체계에서 응용되어 생물의 DNA를 선택적으로 바꾸는 기술입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "유전체 편집",
+      "분자생물학"
+    ]
+  },
+  {
+    "id": "science-170",
+    "category": "science",
+    "question": "전류를 이용해 DNA·RNA·단백질 분자를 젤 속으로 이동시키고 크기와 전하에 따라 분리하는 실험 기법은?",
+    "choices": [
+      "크로마토그래피",
+      "전기영동",
+      "원심분리",
+      "중합효소 연쇄 반응"
+    ],
+    "answerIndex": 1,
+    "explanation": "전기영동은 전류로 DNA·RNA·단백질을 젤 속에서 이동시켜 크기와 전하에 따라 분리하는 실험 기법입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "실험기법"
+    ]
+  },
+  {
+    "id": "science-171",
+    "category": "science",
+    "question": "DNA를 주형으로 전사되어 만들어지고, 단백질 정보를 세포핵에서 세포질의 합성 기계로 운반하는 단일 가닥 RNA는?",
+    "choices": [
+      "전이 RNA(tRNA)",
+      "리보솜 RNA(rRNA)",
+      "메신저 RNA(mRNA)",
+      "마이크로RNA(miRNA)"
+    ],
+    "answerIndex": 2,
+    "explanation": "메신저 RNA는 DNA 주형에서 전사되어 만들어지며, 단백질을 만드는 정보를 세포핵에서 세포질로 운반합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "RNA"
+    ]
+  },
+  {
+    "id": "science-172",
+    "category": "science",
+    "question": "단백질 합성 때 메신저 RNA의 상보적 서열과 짝을 이루어 알맞은 아미노산이 사슬에 들어가도록 연결자 역할을 하는 RNA는?",
+    "choices": [
+      "전이 RNA(tRNA)",
+      "메신저 RNA(mRNA)",
+      "리보솜 RNA(rRNA)",
+      "마이크로RNA(miRNA)"
+    ],
+    "answerIndex": 0,
+    "explanation": "전이 RNA는 메신저 RNA의 상보적 서열과 짝을 이루어 그 자리에 알맞은 아미노산이 들어가게 하는 연결자입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "분자생물학",
+      "단백질 합성"
+    ]
+  },
+  {
+    "id": "science-173",
+    "category": "science",
+    "question": "전이 RNA의 한쪽 끝에 있으며, 메신저 RNA의 코돈과 상보적으로 결합하는 서열은?",
+    "choices": [
+      "프로모터",
+      "인핸서",
+      "코돈",
+      "안티코돈"
+    ],
+    "answerIndex": 3,
+    "explanation": "안티코돈은 전이 RNA에 있는 서열로, 메신저 RNA의 대응 코돈과 상보적으로 결합합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "분자생물학",
+      "유전암호"
+    ]
+  },
+  {
+    "id": "science-174",
+    "category": "science",
+    "question": "DNA 분자에 배열된 뉴클레오타이드 염기의 정확한 순서를 알아내는 일반적인 실험실 기법은?",
+    "choices": [
+      "DNA 복제",
+      "DNA 염기서열 분석",
+      "유전자 편집",
+      "중합효소 연쇄 반응"
+    ],
+    "answerIndex": 1,
+    "explanation": "DNA 염기서열 분석은 DNA 분자에서 뉴클레오타이드 염기가 놓인 정확한 순서를 결정하는 실험실 기법입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "유전체학",
+      "실험기법"
+    ]
+  },
+  {
+    "id": "science-175",
+    "category": "science",
+    "question": "세포핵 안에 있는 둥근 구조로, 리보솜을 만들고 조립하며 리보솜 RNA 유전자가 전사되는 곳은?",
+    "choices": [
+      "중심체",
+      "리소좀",
+      "핵소체",
+      "골지체"
+    ],
+    "answerIndex": 2,
+    "explanation": "핵소체는 세포핵 안에서 리보솜을 만들고 조립하며, 리보솜 RNA 유전자가 전사되는 구조입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "세포생물학",
+      "세포핵"
+    ]
+  }
+,
+  {
+    "id": "science-176",
+    "category": "science",
+    "question": "바다의 맨 위쪽에 있어 바람·파도와 상호작용하며 물과 온기가 섞이고, ‘햇빛층’이라고도 불리는 층은?",
+    "choices": [
+      "중층원양대(mesopelagic zone)",
+      "심해원양대(bathypelagic zone)",
+      "표해수층(epipelagic zone)",
+      "초심해대(hadal zone)"
+    ],
+    "answerIndex": 2,
+    "explanation": "표해수층(epipelagic zone)은 바다의 맨 위 표층으로 바람과 파도가 물과 온기를 섞는 곳이며, 햇빛층이라고도 불립니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양학",
+      "수층"
+    ]
+  },
+  {
+    "id": "science-177",
+    "category": "science",
+    "question": "따뜻하게 섞인 바다 표층수와 아래의 차가운 심층수 사이에서 온도가 빠르게 낮아지는 전이층은?",
+    "choices": [
+      "염분약층",
+      "밀도약층",
+      "산소최소층",
+      "수온약층"
+    ],
+    "answerIndex": 3,
+    "explanation": "수온약층은 따뜻한 표층 혼합수와 차가운 심층수 사이의 전이층으로, 깊이에 따라 수온이 빠르게 낮아집니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양학",
+      "수온"
+    ]
+  },
+  {
+    "id": "science-178",
+    "category": "science",
+    "question": "대기에서 흡수된 이산화탄소로 해수의 수소 이온이 늘고 탄산 이온이 줄어드는 장기적 변화는?",
+    "choices": [
+      "해양 산성화",
+      "해양 열파",
+      "부영양화",
+      "산호 백화"
+    ],
+    "answerIndex": 0,
+    "explanation": "해양 산성화는 대기 중 이산화탄소를 바다가 흡수하면서 수소 이온이 증가하고 탄산 이온이 상대적으로 줄어드는 변화입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "해양화학",
+      "탄소"
+    ]
+  },
+  {
+    "id": "science-179",
+    "category": "science",
+    "question": "무역풍이 약해져 따뜻한 물이 아메리카 서쪽 해안 쪽으로 이동하고 동태평양의 용승이 약해지거나 멈추는 현상은?",
+    "choices": [
+      "라니냐",
+      "북대서양 진동",
+      "인도양 쌍극자",
+      "엘니뇨"
+    ],
+    "answerIndex": 3,
+    "explanation": "엘니뇨 때에는 무역풍이 약해지고 따뜻한 물이 아메리카 서쪽 해안 쪽으로 이동하며 동태평양의 용승이 약해집니다.",
+    "difficulty": "easy",
+    "tags": [
+      "기후",
+      "태평양"
+    ]
+  },
+  {
+    "id": "science-180",
+    "category": "science",
+    "question": "무역풍이 평소보다 강해져 따뜻한 물이 아시아 쪽으로 더 밀리고, 아메리카 서쪽 해안에서 차갑고 영양분 많은 물이 더 많이 올라오는 현상은?",
+    "choices": [
+      "엘니뇨",
+      "라니냐",
+      "몬순",
+      "극소용돌이"
+    ],
+    "answerIndex": 1,
+    "explanation": "라니냐 때에는 무역풍이 평소보다 강해져 따뜻한 물을 아시아 쪽으로 밀고, 아메리카 서쪽 해안의 용승을 강화합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "기후",
+      "태평양"
+    ]
+  }
+,
+  {
+    "id": "science-181",
+    "category": "science",
+    "question": "중성자별이나 블랙홀처럼 질량이 큰 천체가 가속 운동할 때 시공간에 생겨 우주로 퍼지며 근원에 관한 정보를 나르는 물결은?",
+    "choices": [
+      "중력파",
+      "전자기파",
+      "충격파",
+      "밀도파"
+    ],
+    "answerIndex": 0,
+    "explanation": "중력파는 질량이 큰 천체의 가속 운동 등이 시공간에 일으키는 물결로, 퍼져 나가며 근원에 관한 정보를 전달합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "천체물리",
+      "시공간"
+    ]
+  },
+  {
+    "id": "science-182",
+    "category": "science",
+    "question": "생물이 몸 안에서 일어나는 화학 반응의 에너지를 이용해 빛을 만들어 내보내는 현상은?",
+    "choices": [
+      "생물형광",
+      "생물발광",
+      "인광",
+      "편광"
+    ],
+    "answerIndex": 1,
+    "explanation": "생물발광은 생물의 화학 반응에서 방출되는 에너지로 빛을 만들어 내보내는 현상입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "생명과학",
+      "빛"
+    ]
+  },
+  {
+    "id": "science-183",
+    "category": "science",
+    "question": "바다나 민물의 광합성 생물이 통제하기 어려울 만큼 증식하면서 사람·물고기·조개류·해양 포유류·새에 독성 또는 해로운 영향을 일으키는 현상은?",
+    "choices": [
+      "용승",
+      "부영양화",
+      "유해 조류 대발생",
+      "산호 백화"
+    ],
+    "answerIndex": 2,
+    "explanation": "유해 조류 대발생은 바다나 민물의 조류가 과도하게 자라면서 사람과 여러 수생·해양 생물에 독성 또는 해로운 영향을 주는 현상입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양생태",
+      "수질현상"
+    ]
+  },
+  {
+    "id": "science-184",
+    "category": "science",
+    "question": "과잉 영양분이 조류 증식을 촉진하고, 가라앉은 조류가 분해되며 산소를 소비해 해양 생물이 죽거나 떠나게 되는 수역은?",
+    "choices": [
+      "용승대",
+      "염수 쐐기",
+      "해양 열파",
+      "데드존"
+    ],
+    "answerIndex": 3,
+    "explanation": "데드존은 물속 산소가 줄어 대부분의 해양 생물이 죽거나 다른 곳으로 떠나는 저산소 수역입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양과학",
+      "용존산소"
+    ]
+  },
+  {
+    "id": "science-185",
+    "category": "science",
+    "question": "주변 파도보다 훨씬 크고 예측하기 어려우며, 우세한 바람과 파도 방향과 다른 쪽에서 갑자기 나타나기도 하는 위험한 파도는?",
+    "choices": [
+      "이상파랑",
+      "쓰나미",
+      "폭풍 해일",
+      "너울"
+    ],
+    "answerIndex": 0,
+    "explanation": "이상파랑은 주변 파도보다 매우 크고 예측하기 어려우며, 지배적인 바람이나 파도 방향과 다른 쪽에서 갑자기 나타나기도 합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "해양과학",
+      "해양현상"
+    ]
+  }
+,
+  {
+    "id": "science-186",
+    "category": "science",
+    "question": "죽은 동식물의 잔해와 배설물, 모래·그을음 같은 입자가 흰 조각처럼 바닷속으로 계속 가라앉아 심해 생물의 먹이가 되는 것은?",
+    "choices": [
+      "생물발광",
+      "해양 눈",
+      "용승",
+      "적조"
+    ],
+    "answerIndex": 1,
+    "explanation": "해양 눈은 유기물과 무기 입자가 눈송이처럼 뭉쳐 가라앉는 물질로, 깊은 바다 생물에게 먹이를 공급합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "해양학",
+      "심해"
+    ]
+  },
+  {
+    "id": "science-187",
+    "category": "science",
+    "question": "호수처럼 닫히거나 반쯤 닫힌 수역에서 양 끝의 수면이 크게 오르내리고 중앙의 마디는 거의 움직이지 않는 정상파는?",
+    "choices": [
+      "폭풍 해일",
+      "이안류",
+      "세이시",
+      "너울"
+    ],
+    "answerIndex": 2,
+    "explanation": "세이시는 닫히거나 반쯤 닫힌 수역에서 진동하는 정상파로, 수역의 양 끝에서 수직 진폭이 크게 나타납니다.",
+    "difficulty": "hard",
+    "tags": [
+      "파동",
+      "수문학"
+    ]
+  },
+  {
+    "id": "science-188",
+    "category": "science",
+    "question": "고래 낙하가 깊은 바다 생물에게 갑작스럽고 집중된 먹이원을 제공하는 까닭은?",
+    "choices": [
+      "해저 화산재가 영양염을 보충하기 때문에",
+      "표층 해수가 산소를 운반하기 때문에",
+      "열수 분출공이 수온을 높이기 때문에",
+      "가라앉은 사체가 영양분을 제공하기 때문에"
+    ],
+    "answerIndex": 3,
+    "explanation": "고래 낙하에서는 가라앉은 고래 사체가 깊은 바다 생물에게 갑작스럽고 집중된 영양분을 제공합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "해양생태",
+      "심해"
+    ]
+  },
+  {
+    "id": "science-189",
+    "category": "science",
+    "question": "물속 소리의 압력 변화를 작은 전압 신호로 바꾸어 증폭·기록하는 장비는?",
+    "choices": [
+      "수중 청음기",
+      "조류계",
+      "수온염분측정기",
+      "니스킨 채수기"
+    ],
+    "answerIndex": 0,
+    "explanation": "수중 청음기는 물속 소리를 전기 신호로 바꾸어 해양의 다양한 소리를 정밀하게 기록하는 장비입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양관측",
+      "음향"
+    ]
+  },
+  {
+    "id": "science-190",
+    "category": "science",
+    "question": "퇴적물이 많이 섞여 밀도가 높아진 물이 해저 경사를 따라 빠르게 흘러내리며 바닥 지형을 바꾸기도 하는 흐름은?",
+    "choices": [
+      "연안류",
+      "혼탁류",
+      "저밀도류",
+      "용승류"
+    ],
+    "answerIndex": 1,
+    "explanation": "혼탁류는 많은 퇴적물 때문에 밀도가 높아진 물이 해저 경사를 따라 빠르게 내려가는 흐름입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해양지질",
+      "퇴적"
+    ]
   }
 ]

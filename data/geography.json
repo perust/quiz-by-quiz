@@ -1098,5 +1098,1212 @@
     "explanation": "해령은 판이 서로 벌어지는 발산형 경계에 나타나며, 그곳에서 새로운 해저가 만들어집니다.",
     "difficulty": "normal",
     "tags": ["자연지리", "판구조론"]
+  },
+  {
+    "id": "geography-111",
+    "category": "geography",
+    "question": "갈라파고스 제도가 속한 나라는?",
+    "choices": ["에콰도르", "페루", "칠레", "콜롬비아"],
+    "answerIndex": 0,
+    "explanation": "갈라파고스 제도는 에콰도르 해안 서쪽의 태평양에 있는 화산섬 무리입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-112",
+    "category": "geography",
+    "question": "베트남 북동부에 있으며 수많은 석회암 섬이 바다 위로 솟은 곳은?",
+    "choices": ["메콩강 삼각주", "하롱베이", "홍강 삼각주", "달랏 고원"],
+    "answerIndex": 1,
+    "explanation": "하롱베이와 깟바 군도에는 크기와 모양이 다양한 석회암 섬들이 바다 위로 솟아 있습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-113",
+    "category": "geography",
+    "question": "보츠와나 북서부에서 바다로 흘러가지 않고 내륙 습지를 이루는 삼각주는?",
+    "choices": ["나일강 삼각주", "니제르강 삼각주", "오카방고 삼각주", "잠베지강 삼각주"],
+    "answerIndex": 2,
+    "explanation": "오카방고 삼각주는 보츠와나 북서부의 내륙 삼각주로, 영구 습지와 계절에 따라 물에 잠기는 평원을 이룹니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-114",
+    "category": "geography",
+    "question": "잠베지강의 빅토리아 폭포를 국경에 두고 함께 접한 두 나라는?",
+    "choices": ["케냐와 탄자니아", "남아프리카공화국과 레소토", "나미비아와 앙골라", "잠비아와 짐바브웨"],
+    "answerIndex": 3,
+    "explanation": "빅토리아 폭포의 세계유산 구역은 잠비아의 모시 오아 툰야 국립공원과 짐바브웨의 빅토리아 폭포 국립공원에 걸쳐 있습니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "국가"]
+  },
+  {
+    "id": "geography-115",
+    "category": "geography",
+    "question": "네덜란드·독일·덴마크의 북해 연안을 따라 갯벌과 염습지가 이어지는 해역은?",
+    "choices": ["아랄해", "바덴해", "발트해", "아드리아해"],
+    "answerIndex": 1,
+    "explanation": "바덴해는 세 나라의 북해 연안에 걸쳐 모래 갯벌, 진흙 갯벌, 염습지와 하구가 이어지는 해안 습지입니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "바다"]
+  },
+  {
+    "id": "geography-116",
+    "category": "geography",
+    "question": "칠레에 있으며, 넓은 지역에서 오랫동안 수분이 거의 관측되지 않은 매우 건조한 사막은?",
+    "choices": ["아타카마 사막", "고비 사막", "나미브 사막", "타클라마칸 사막"],
+    "answerIndex": 0,
+    "explanation": "아타카마 사막은 칠레에 있는 매우 건조한 지역으로, 넓은 구역에서 오랫동안 수분이 관측되지 않았습니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "사막"]
+  },
+  {
+    "id": "geography-117",
+    "category": "geography",
+    "question": "티베트 고원에서 시작해 미얀마·라오스·태국·캄보디아를 거쳐 베트남의 큰 삼각주로 바다에 이르는 강은?",
+    "choices": ["이라와디강", "메콩강", "살윈강", "짜오프라야강"],
+    "answerIndex": 1,
+    "explanation": "메콩강은 티베트 고원에서 발원해 동남아시아 여러 나라를 지나 베트남의 메콩 삼각주로 이어집니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리", "강"]
+  },
+  {
+    "id": "geography-118",
+    "category": "geography",
+    "question": "러시아 중부를 남쪽으로 흐른 뒤 큰 삼각주를 이루며 카스피해 북서부로 들어가는 강은?",
+    "choices": ["돈강", "우랄강", "볼가강", "드네프르강"],
+    "answerIndex": 2,
+    "explanation": "볼가강은 러시아를 흘러 카스피해 북서부로 들어가면서 복잡한 삼각주를 이룹니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "강"]
+  },
+  {
+    "id": "geography-119",
+    "category": "geography",
+    "question": "아라비아판과 아프리카판의 누비아·소말리아 부분이 서로 멀어지는 삼중점에서 남쪽으로 이어지는 지구대는?",
+    "choices": ["라인 지구대", "바이칼 지구대", "요르단 지구대", "동아프리카 지구대"],
+    "answerIndex": 3,
+    "explanation": "동아프리카 지구대는 아라비아판과 아프리카판의 두 부분이 갈라지는 아파르 삼중점과 이어진 대륙 지구대입니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리", "지형"]
+  },
+  {
+    "id": "geography-120",
+    "category": "geography",
+    "question": "아프리카의 뿔과 중동 사이에서 홍해와 아덴만을 연결하는 해협은?",
+    "choices": ["호르무즈 해협", "말라카 해협", "지브롤터 해협", "바브엘만데브 해협"],
+    "answerIndex": 3,
+    "explanation": "바브엘만데브 해협은 아프리카의 뿔과 중동 사이에서 홍해를 아덴만·아라비아해와 잇습니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리", "해협"]
+  }
+,
+  {
+    "id": "geography-121",
+    "category": "geography",
+    "question": "산호가 석호를 부분적으로 또는 완전히 둘러싸 고리 모양의 섬을 이룬 것은?",
+    "choices": ["환초","거초","보초","해저산"],
+    "answerIndex": 0,
+    "explanation": "환초는 산호로 이루어진 섬이나 산호초가 가운데의 석호를 부분적으로 또는 완전히 둘러싼 지형입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리","섬"]
+  },
+  {
+    "id": "geography-122",
+    "category": "geography",
+    "question": "강의 민물이 바닷물과 섞여 기수 환경을 이루는 강 어귀의 수역은?",
+    "choices": ["석호","하구","삼각주","환초"],
+    "answerIndex": 1,
+    "explanation": "하구는 강이 바다와 만나는 곳에서 민물과 바닷물이 섞여 기수 환경을 이루는 수역입니다.",
+    "difficulty": "easy",
+    "tags": ["세계지리","바다"]
+  },
+  {
+    "id": "geography-123",
+    "category": "geography",
+    "question": "빙하가 모래·진흙·바위 같은 퇴적물을 운반해 쌓아 만든 둑이나 언덕은?",
+    "choices": ["빙식곡","빙하호","빙퇴석","피오르"],
+    "answerIndex": 2,
+    "explanation": "빙퇴석은 빙하가 모으고 운반한 모래, 진흙, 바위가 쌓여 만들어진 둑이나 언덕입니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리","지형"]
+  },
+  {
+    "id": "geography-124",
+    "category": "geography",
+    "question": "해안에서 모래톱·산호초 같은 자연 장벽에 가로막혀 바다와 분리된 수역은?",
+    "choices": ["하구","만","삼각주","석호"],
+    "answerIndex": 3,
+    "explanation": "석호는 모래톱이나 장벽 역할을 하는 산호초 같은 자연 지형에 의해 바다나 더 큰 수역과 분리된 물입니다.",
+    "difficulty": "normal",
+    "tags": ["세계지리","바다"]
+  },
+  {
+    "id": "geography-125",
+    "category": "geography",
+    "question": "판 내부의 비교적 고정된 마그마 공급원 위로 판이 이동하면서 오래된 화산 흔적의 줄을 남기는 곳은?",
+    "choices": ["열점","섭입대","해령","변환 단층"],
+    "answerIndex": 0,
+    "explanation": "열점은 판 아래의 비교적 고정된 마그마 공급원으로, 판이 그 위를 이동하면 표면에 점차 오래된 화산 흔적이 이어집니다.",
+    "difficulty": "hard",
+    "tags": ["세계지리","화산지형"]
+  }
+,
+  {
+    "id": "geography-126",
+    "category": "geography",
+    "question": "해안선과 나란히 모래가 쌓여 형성되고 본토와 만·석호 등으로 분리된 퇴적 지형은?",
+    "choices": ["삼각주","장벽섬","육계사주","해식대"],
+    "answerIndex": 1,
+    "explanation": "장벽섬은 해안선과 나란히 모래가 퇴적되어 만들어지며 본토와는 만, 조수로, 석호 등으로 떨어져 있습니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리","해안지형"]
+  },
+  {
+    "id": "geography-127",
+    "category": "geography",
+    "question": "바람에 밀려난 표층수를 대신해 차갑고 영양분이 풍부한 깊은 바닷물이 올라오는 현상은?",
+    "choices": ["침강","이안류","용승","조석"],
+    "answerIndex": 2,
+    "explanation": "용승은 표층수가 밀려난 자리를 차갑고 영양분이 풍부한 심층수가 올라와 채우는 과정입니다.",
+    "difficulty": "easy",
+    "tags": ["자연지리","해양"]
+  },
+  {
+    "id": "geography-128",
+    "category": "geography",
+    "question": "해저에서 가파르게 솟은 수중 산으로, 많은 경우 사화산의 흔적인 지형은?",
+    "choices": ["해구","대륙붕","해령","해산"],
+    "answerIndex": 3,
+    "explanation": "해산은 해저에서 가파르게 솟은 수중 산이며, 많은 해산은 활동을 멈춘 화산의 흔적입니다.",
+    "difficulty": "normal",
+    "tags": ["자연지리","해저지형"]
+  },
+  {
+    "id": "geography-129",
+    "category": "geography",
+    "question": "빙하 흐름에 깎여 길쭉하고 완만한 달걀 모양이 된 퇴적물 언덕은?",
+    "choices": ["에스커","드럼린","케임","빙퇴석"],
+    "answerIndex": 1,
+    "explanation": "드럼린은 빙하 흐름에 의해 유선형으로 다듬어진 길쭉한 퇴적물 언덕으로, 과거 빙하 이동 방향을 보여 줍니다.",
+    "difficulty": "normal",
+    "tags": ["자연지리","빙하지형"]
+  },
+  {
+    "id": "geography-130",
+    "category": "geography",
+    "question": "수온과 염분이 만든 바닷물의 밀도 차로 움직이는 심해 순환은?",
+    "choices": ["바람 순환","조석 순환","열염순환","에크만 수송"],
+    "answerIndex": 2,
+    "explanation": "열염순환은 수온과 염분이 좌우하는 밀도 차 때문에 바닷물이 가라앉고 이동하며 생기는 심해 순환입니다.",
+    "difficulty": "hard",
+    "tags": ["자연지리","해양"]
+  }
+,
+  {
+    "id": "geography-131",
+    "category": "geography",
+    "question": "물을 머금고 우물과 샘으로 쉽게 전달하는 암석층을 무엇이라고 하는가?",
+    "choices": ["불포화대","지하수면","대수층","불투수층"],
+    "answerIndex": 2,
+    "explanation": "대수층은 물을 머금은 암석이 우물과 샘으로 물을 쉽게 전달할 수 있는 지하의 암석층입니다.",
+    "difficulty": "normal",
+    "tags": ["지하수","수문지리"]
+  },
+  {
+    "id": "geography-132",
+    "category": "geography",
+    "question": "하나의 시내·호수·강으로 물이 흘러 모이는 육지의 범위를 무엇이라고 하는가?",
+    "choices": ["분수계","유역","수계","범람원"],
+    "answerIndex": 1,
+    "explanation": "유역은 물이 하나의 시내, 호수 또는 강으로 흘러 들어가는 육지의 범위입니다.",
+    "difficulty": "easy",
+    "tags": ["하천","수문지리"]
+  },
+  {
+    "id": "geography-133",
+    "category": "geography",
+    "question": "조수가 가져온 소금물에 주기적으로 잠기고 물이 빠지는 해안 습지는?",
+    "choices": ["염습지","해안사구","사주","해식애"],
+    "answerIndex": 0,
+    "explanation": "염습지는 조수가 가져온 소금물에 잠겼다가 물이 빠지는 해안 습지입니다.",
+    "difficulty": "easy",
+    "tags": ["해안 지형","습지"]
+  },
+  {
+    "id": "geography-134",
+    "category": "geography",
+    "question": "크고 지속적인 여러 해류가 함께 이루는 회전하는 해양 시스템을 무엇이라고 하는가?",
+    "choices": ["용승","조석","이안류","환류"],
+    "answerIndex": 3,
+    "explanation": "환류는 크고 지속적인 여러 해류가 함께 이루는 회전하는 해양 시스템입니다.",
+    "difficulty": "normal",
+    "tags": ["해류","해양지리"]
+  },
+  {
+    "id": "geography-135",
+    "category": "geography",
+    "question": "적도 부근의 따뜻한 공기가 상승해 극 쪽으로 이동하고 아열대에서 하강한 뒤 지표를 따라 적도로 돌아오는 대기 순환은?",
+    "choices": ["해들리 순환","워커 순환","열염 순환","극순환"],
+    "answerIndex": 0,
+    "explanation": "해들리 순환에서는 따뜻한 공기가 적도 부근에서 상승해 극 쪽으로 이동하고 아열대에서 하강한 뒤 지표를 따라 적도로 돌아옵니다.",
+    "difficulty": "hard",
+    "tags": ["대기 순환","기후"]
+  }
+,
+  {
+    "id": "geography-136",
+    "category": "geography",
+    "question": "지표로 빠져나가는 자연 배수로가 없어 빗물이 내부에 머물다가 보통 지하로 스며드는 지면의 함몰지는?",
+    "choices": ["사구","칼데라","우각호","싱크홀"],
+    "answerIndex": 3,
+    "explanation": "싱크홀은 자연적인 외부 지표 배수로가 없어 빗물이 내부에 머물다가 보통 지하로 빠져나가는 함몰지입니다.",
+    "difficulty": "easy",
+    "tags": ["카르스트","지형"]
+  },
+  {
+    "id": "geography-137",
+    "category": "geography",
+    "question": "메사보다 작고 정상부가 평평하며 사방의 사면이 가파른 산이나 언덕은?",
+    "choices": ["메사","뷰트","인젤베르그","첨탑암"],
+    "answerIndex": 1,
+    "explanation": "뷰트는 메사보다 작은 평정 산지나 언덕으로, 정상부가 평평하고 사방의 사면이 가파릅니다.",
+    "difficulty": "easy",
+    "tags": ["건조 지형","침식 지형"]
+  },
+  {
+    "id": "geography-138",
+    "category": "geography",
+    "question": "서로 이웃한 두 빙하를 가르며 칼날처럼 얇고 톱니 모양으로 날카롭게 솟은 산등성이는?",
+    "choices": ["권곡","빙퇴석","아레트","에스커"],
+    "answerIndex": 2,
+    "explanation": "아레트는 서로 이웃한 두 빙하를 가르는 얇고 들쭉날쭉한 산등성이로, 가파른 측면과 날카로운 능선을 이룹니다.",
+    "difficulty": "normal",
+    "tags": ["빙하 지형","침식 지형"]
+  },
+  {
+    "id": "geography-139",
+    "category": "geography",
+    "question": "바다로 나가는 출구가 없는 분지에 물이 모인 뒤 빠르게 증발해 생기는 얕고 수명이 짧은 건조 지역의 호수는?",
+    "choices": ["플라야","오아시스","석호","우각호"],
+    "answerIndex": 0,
+    "explanation": "플라야는 바다로 나가는 출구가 없는 분지에 물이 모였다가 빠르게 증발해 형성되는 얕고 수명이 짧은 호수입니다.",
+    "difficulty": "normal",
+    "tags": ["건조 지형","호수"]
+  },
+  {
+    "id": "geography-140",
+    "category": "geography",
+    "question": "고지대 산지와 계곡 벽을 빙하가 깎아 만든 그릇 또는 원형극장 모양의 오목한 지형은?",
+    "choices": ["피오르","U자곡","현곡","권곡"],
+    "answerIndex": 3,
+    "explanation": "권곡은 빙하가 고지대 산지와 계곡 벽을 깎아 만든 그릇 또는 원형극장 모양의 오목한 지형입니다.",
+    "difficulty": "hard",
+    "tags": ["빙하 지형","권곡"]
+  },
+  {
+    "id": "geography-141",
+    "category": "geography",
+    "question": "여러 면을 빙하가 둘러 깎아 평평한 면과 날카로운 모서리를 지닌 피라미드 모양의 산봉우리는?",
+    "choices": [
+      "누나탁",
+      "호른",
+      "아레트",
+      "권곡"
+    ],
+    "answerIndex": 1,
+    "explanation": "호른은 여러 면을 빙하가 둘러 깎아 평평한 면과 날카로운 모서리를 이룬 뾰족한 봉우리입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "빙하 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-142",
+    "category": "geography",
+    "question": "산지가 침식으로 후퇴할 때 산기슭에 형성되는 완만한 경사의 기반암 표면은?",
+    "choices": [
+      "페디먼트",
+      "바하다",
+      "선상지",
+      "메사"
+    ],
+    "answerIndex": 0,
+    "explanation": "페디먼트는 침식으로 산지가 후퇴할 때 그 기슭에 형성되는 완만한 경사의 기반암 표면입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "건조 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-143",
+    "category": "geography",
+    "question": "평소에는 말라 있다가 비가 올 때 일시적으로 물이 흐르는 건조 지역의 하천 바닥은?",
+    "choices": [
+      "플라야",
+      "페디먼트",
+      "사막 포장",
+      "아로요"
+    ],
+    "answerIndex": 3,
+    "explanation": "아로요는 평소에는 마른 하천 바닥이지만 비가 올 때 일시적으로 물이 흐르는 건조 지역 지형입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "건조 지형",
+      "하천"
+    ]
+  },
+  {
+    "id": "geography-144",
+    "category": "geography",
+    "question": "거친 자갈과 작은 돌이 촘촘히 모여 지표를 덮은 건조 지역의 표면층은?",
+    "choices": [
+      "바하다",
+      "사막 포장",
+      "인젤베르그",
+      "플라야"
+    ],
+    "answerIndex": 1,
+    "explanation": "사막 포장은 거친 자갈과 작은 돌이 촘촘히 모여 건조 지역의 지표를 덮은 표면층입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "건조 지형",
+      "지표"
+    ]
+  },
+  {
+    "id": "geography-145",
+    "category": "geography",
+    "question": "주변이 침식된 뒤 저항성 암석만 남아 낮은 페디먼트 위로 갑자기 솟은 고립된 급경사 언덕은?",
+    "choices": [
+      "선상지",
+      "바하다",
+      "인젤베르그",
+      "사구"
+    ],
+    "answerIndex": 2,
+    "explanation": "인젤베르그는 주변보다 침식에 강한 암석이 남아 낮은 페디먼트 위로 갑자기 솟은 고립된 급경사 언덕입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "건조 지형",
+      "잔구"
+    ]
+  },
+  {
+    "id": "geography-146",
+    "category": "geography",
+    "question": "흐르는 빙하 얼음에 둘러싸여 바위섬처럼 드러난 지형은?",
+    "choices": [
+      "드럼린",
+      "누나탁",
+      "에스커",
+      "빙퇴석"
+    ],
+    "answerIndex": 1,
+    "explanation": "누나탁은 흐르는 빙하 얼음에 둘러싸여 바위섬처럼 드러난 지형입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "빙하 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-147",
+    "category": "geography",
+    "question": "뷰트가 침식되고 남은 가늘고 고립된 암석 기둥을 무엇이라 하는가?",
+    "choices": [
+      "메사",
+      "뷰트",
+      "인젤베르그",
+      "첨탑암"
+    ],
+    "answerIndex": 3,
+    "explanation": "첨탑암은 뷰트가 침식되고 남은 가늘고 고립된 암석 기둥입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "건조 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-148",
+    "category": "geography",
+    "question": "빠르게 흐르는 물이 깎아 만든 좁고 벽이 가파른 골짜기는?",
+    "choices": [
+      "캐니언",
+      "사구",
+      "페디먼트",
+      "플라야"
+    ],
+    "answerIndex": 0,
+    "explanation": "캐니언은 빠르게 흐르는 물이 깎아 만든 좁고 벽이 가파른 골짜기입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "하천 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-149",
+    "category": "geography",
+    "question": "여러 선상지가 합쳐져 산기슭을 따라 계곡 바닥 쪽으로 퍼지는 암석 부스러기의 완만한 경사면은?",
+    "choices": [
+      "선상지",
+      "하천단구",
+      "바하다",
+      "사막 포장"
+    ],
+    "answerIndex": 2,
+    "explanation": "바하다는 여러 선상지가 합쳐져 계곡 바닥 쪽으로 펼쳐지는 암석 부스러기의 완만한 경사면입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "건조 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-150",
+    "category": "geography",
+    "question": "현재 하천보다 높은 곳에서 물길을 따라 길고 평평한 단 모양으로 남은 과거 하천의 지표는?",
+    "choices": [
+      "페디먼트",
+      "하천단구",
+      "바하다",
+      "플라야"
+    ],
+    "answerIndex": 1,
+    "explanation": "하천단구는 하천을 따라 이어지는 긴 단 모양의 지표로, 과거 하천이 더 높은 높이로 흐를 때 형성되었습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "하천 지형",
+      "침식·퇴적"
+    ]
+  },
+  {
+    "id": "geography-151",
+    "category": "geography",
+    "question": "파도·바람·폭풍에 노출된 바위 곶에서 비교적 약한 기반암 안쪽으로 파여 들어간 빈 공간이 발달해 만들어지는 해안 지형은?",
+    "choices": [
+      "해식동굴",
+      "해빈",
+      "톰볼로",
+      "사구"
+    ],
+    "answerIndex": 0,
+    "explanation": "해식동굴은 바위 해안의 곶에서 비교적 약하고 쉽게 침식되는 기반암에 동굴 형태의 공동이 발달한 지형입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "해안 지형",
+      "침식"
+    ]
+  },
+  {
+    "id": "geography-152",
+    "category": "geography",
+    "question": "바위 곶이 계속 침식될 때 생기며, 더 침식되어 무너지면 시스택으로 바뀔 수 있는 지형은?",
+    "choices": [
+      "파식대",
+      "해식아치",
+      "톰볼로",
+      "해식절벽"
+    ],
+    "answerIndex": 1,
+    "explanation": "해식아치는 바위 곶의 지속적인 침식으로 생깁니다. 침식이 이어져 아치가 무너지면 가파른 바위기둥인 시스택이 될 수 있습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해안 지형",
+      "침식"
+    ]
+  },
+  {
+    "id": "geography-153",
+    "category": "geography",
+    "question": "해안선을 따라 퇴적물이 파도·조석·해류에 의해 계속 움직이는 장소로 정의되는 지형은?",
+    "choices": [
+      "사구",
+      "해식절벽",
+      "해빈",
+      "해식아치"
+    ],
+    "answerIndex": 2,
+    "explanation": "해빈은 해안선을 따라 퇴적물이 파도와 조석, 해류에 의해 움직이는 장소입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "해안 지형",
+      "퇴적"
+    ]
+  },
+  {
+    "id": "geography-154",
+    "category": "geography",
+    "question": "섬이나 시스택 뒤쪽의 느린 물에 퇴적물이 쌓여 그 해안 지형과 본토를 연결할 때 만들어지는 지형은?",
+    "choices": [
+      "배리어 스핏",
+      "해빈",
+      "톰볼로",
+      "사구"
+    ],
+    "answerIndex": 2,
+    "explanation": "톰볼로는 퇴적물이 섬이나 시스택 같은 앞바다 지형과 본토를 이어 만든 지형입니다. 섬이 파도를 굴절시켜 뒤쪽 물의 흐름을 늦추면 퇴적이 일어납니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해안 지형",
+      "퇴적"
+    ]
+  },
+  {
+    "id": "geography-155",
+    "category": "geography",
+    "question": "해안에서 뻗은 사주가 만을 바다와 완전히 갈라 석호를 만들었을 때 그 사주를 부르는 이름은?",
+    "choices": [
+      "해빈",
+      "톰볼로",
+      "배리어 스핏",
+      "만입구사주"
+    ],
+    "answerIndex": 3,
+    "explanation": "배리어 스핏이 길게 자라 만을 바다와 완전히 가르면 석호가 생기며, 이때 그 지형을 베이 배리어 또는 만입구사주라고 합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "해안 지형",
+      "퇴적"
+    ]
+  },
+  {
+    "id": "geography-156",
+    "category": "geography",
+    "question": "녹는 빙하 앞에서 빙하의 퇴적물이 녹은물에 다시 운반·퇴적되어 형성되는 넓고 대체로 평평한 지형은?",
+    "choices": [
+      "빙하유출평원",
+      "빙퇴석",
+      "드럼린",
+      "케임"
+    ],
+    "answerIndex": 0,
+    "explanation": "빙하유출평원은 녹는 빙하 앞에서 녹은물 하천이 퇴적물을 나르고 분급해 만든 넓고 평평한 지형입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "빙하 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-157",
+    "category": "geography",
+    "question": "빙하 아래나 얼음 속의 녹은물 통로에서 퇴적물이 쌓여 만들어지는 구불구불한 능선은?",
+    "choices": [
+      "드럼린",
+      "아레트",
+      "빙퇴석",
+      "에스커"
+    ],
+    "answerIndex": 3,
+    "explanation": "에스커는 빙하 아래나 얼음 속의 물길에 퇴적물이 쌓여 물길 모양을 따라 구불구불하게 이어진 능선입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "빙하 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-158",
+    "category": "geography",
+    "question": "곡빙하가 골짜기 바닥을 넓히고 벽을 가파르게 깎아, 빙하가 물러난 뒤 남기는 평평한 바닥의 골짜기는?",
+    "choices": [
+      "U자곡",
+      "V자곡",
+      "캐니언",
+      "아로요"
+    ],
+    "answerIndex": 0,
+    "explanation": "곡빙하는 골짜기 전체를 깎아 바닥을 넓히고 벽을 가파르게 만듭니다. 그 결과 평평한 바닥과 급한 벽을 지닌 U자곡이 남습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "빙하 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-159",
+    "category": "geography",
+    "question": "작은 지류 빙하가 큰 곡빙하와 만났던 곳에서, 빙하가 물러난 뒤 작은 골짜기 바닥이 주 골짜기보다 높은 곳에 남는 지형은?",
+    "choices": [
+      "피오르",
+      "권곡",
+      "현곡",
+      "아레트"
+    ],
+    "answerIndex": 2,
+    "explanation": "현곡은 작은 빙하가 만든 골짜기 바닥이 큰 빙하가 만든 주 골짜기보다 높은 곳에 남은 지형으로, 두 골짜기가 만나는 곳에 폭포가 생기기도 합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "빙하 지형",
+      "침식 지형"
+    ]
+  },
+  {
+    "id": "geography-160",
+    "category": "geography",
+    "question": "빙하에서 떨어진 얼음 덩어리가 퇴적물에 묻힌 뒤 천천히 녹아 남기는 움푹한 구덩이는?",
+    "choices": [
+      "드럼린",
+      "빙퇴석",
+      "에스커",
+      "케틀"
+    ],
+    "answerIndex": 3,
+    "explanation": "케틀은 퇴적물에 묻힌 정체된 얼음 덩어리가 녹아 남긴 구덩이입니다. 물이 차면 연못이나 호수가 되기도 합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "빙하 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-161",
+    "category": "geography",
+    "question": "한 분화구에서 튀어나온 굳은 용암 조각이 주변에 쌓여 만들어지는 화산체는?",
+    "choices": [
+      "분석구",
+      "응회환",
+      "칼데라",
+      "마르"
+    ],
+    "answerIndex": 0,
+    "explanation": "분석구는 한 분화구에서 분출한 굳은 용암 조각이 주변에 떨어져 쌓이면서 형성되는 원형 또는 타원형 화산체입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "화산 지형",
+      "분석구"
+    ]
+  },
+  {
+    "id": "geography-162",
+    "category": "geography",
+    "question": "유동성이 큰 용암이 여러 방향으로 멀리 흘러, 폭이 넓고 경사가 완만한 방패 모양을 이루는 화산은?",
+    "choices": [
+      "화산목",
+      "순상 화산",
+      "용암돔",
+      "칼데라"
+    ],
+    "answerIndex": 1,
+    "explanation": "순상 화산은 유동성이 큰 용암류가 분화구에서 여러 방향으로 넓게 퍼져 쌓이기 때문에 경사가 완만합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "화산 지형",
+      "순상 화산"
+    ]
+  },
+  {
+    "id": "geography-163",
+    "category": "geography",
+    "question": "용암류와 화산재·화산탄 같은 분출물이 번갈아 층을 이루며 쌓여 만들어지는 화산은?",
+    "choices": [
+      "순상 화산",
+      "용암대지",
+      "성층 화산",
+      "분석구"
+    ],
+    "answerIndex": 2,
+    "explanation": "성층 화산은 용암류와 화산재, 분석, 화산탄 등이 번갈아 쌓인 층으로 이루어져 복합 화산이라고도 합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "화산 지형",
+      "성층 화산"
+    ]
+  },
+  {
+    "id": "geography-164",
+    "category": "geography",
+    "question": "점성이 매우 커 멀리 흐르지 못하는 용암이 분화구 위에 뭉쳐 형성되는 둥근 언덕은?",
+    "choices": [
+      "분석구",
+      "화산목",
+      "성층 화산",
+      "용암돔"
+    ],
+    "answerIndex": 3,
+    "explanation": "용암돔은 점성이 큰 용암이 멀리 흐르지 못하고 분화구 주변에 뭉쳐 쌓이면서 만들어집니다.",
+    "difficulty": "hard",
+    "tags": [
+      "화산 지형",
+      "용암돔"
+    ]
+  },
+  {
+    "id": "geography-165",
+    "category": "geography",
+    "question": "깊은 바다의 해저에 넓게 펼쳐진, 평탄하고 퇴적물로 덮인 지형은?",
+    "choices": [
+      "대륙붕",
+      "해구",
+      "심해평원",
+      "해저협곡"
+    ],
+    "answerIndex": 2,
+    "explanation": "심해평원은 깊은 바다의 해저에 넓게 펼쳐진 평탄한 지형으로, 주로 퇴적물로 덮여 있습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "해저 지형",
+      "심해평원"
+    ]
+  },
+  {
+    "id": "geography-166",
+    "category": "geography",
+    "question": "서로 반대 방향에서 부는 두 바람 때문에 사구의 마루가 때때로 반대쪽으로 뒤집혀 날카로운 능선을 만드는 사구는?",
+    "choices": [
+      "역전 사구",
+      "별 사구",
+      "포물선 사구",
+      "바르한 사구"
+    ],
+    "answerIndex": 0,
+    "explanation": "역전 사구는 서로 반대 방향의 바람이 번갈아 불면서 마루가 반대쪽으로 뒤집혀 날카로운 능선을 이룹니다.",
+    "difficulty": "normal",
+    "tags": [
+      "사막지형",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-167",
+    "category": "geography",
+    "question": "정상에서 여러 능선이 사방으로 뻗고, 여러 방향에서 부는 바람으로 형성되는 사구는?",
+    "choices": [
+      "포물선 사구",
+      "별 사구",
+      "네브카 사구",
+      "역전 사구"
+    ],
+    "answerIndex": 1,
+    "explanation": "별 사구는 정상에서 여러 능선이 뻗으며, 여러 방향에서 부는 바람으로 형성됩니다.",
+    "difficulty": "easy",
+    "tags": [
+      "사막지형",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-168",
+    "category": "geography",
+    "question": "식생이 긴 양쪽 팔을 고정하는 동안 코 부분은 바람이 불어가는 쪽으로 이동하는 사구는?",
+    "choices": [
+      "네브카 사구",
+      "바르한 사구",
+      "역전 사구",
+      "포물선 사구"
+    ],
+    "answerIndex": 3,
+    "explanation": "포물선 사구는 식생이 양쪽 팔을 붙잡아 두고, 코 부분의 모래가 바람이 불어가는 쪽으로 이동합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "사막지형",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-169",
+    "category": "geography",
+    "question": "바람이 한 방향으로 불고 식생이 거의 없는 곳에서, 두 팔이 앞을 향한 단순한 호 모양으로 발달하는 사구는?",
+    "choices": [
+      "바르한 사구",
+      "포물선 사구",
+      "별 사구",
+      "네브카 사구"
+    ],
+    "answerIndex": 0,
+    "explanation": "바르한 사구는 한 방향의 바람이 불고 식생이 거의 없는 곳에서 두 팔을 지닌 호 모양으로 발달합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "사막지형",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-170",
+    "category": "geography",
+    "question": "관목이나 나무가 날려 온 모래를 붙잡아 식생 주위에 형성되는 사구는?",
+    "choices": [
+      "바르한 사구",
+      "역전 사구",
+      "네브카 사구",
+      "별 사구"
+    ],
+    "answerIndex": 2,
+    "explanation": "네브카 사구는 관목이나 나무가 바람에 날린 모래를 모으면서 식생 주위에 형성됩니다.",
+    "difficulty": "easy",
+    "tags": [
+      "사막지형",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-171",
+    "category": "geography",
+    "question": "동굴 천장에서 고드름이나 당근처럼 아래로 매달려 자라는 동굴 생성물은?",
+    "choices": [
+      "석순",
+      "종유석",
+      "석주",
+      "유석"
+    ],
+    "answerIndex": 1,
+    "explanation": "종유석은 동굴 천장에서 고드름이나 당근처럼 아래로 매달려 자라는 대표적인 동굴 생성물입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "동굴 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-172",
+    "category": "geography",
+    "question": "천장이나 위쪽 생성물에서 떨어진 물방울이 동굴 바닥에 광물을 쌓아, 둥근 꼭대기를 이루며 위로 자라는 생성물은?",
+    "choices": [
+      "석순",
+      "종유석",
+      "석주",
+      "헬릭타이트"
+    ],
+    "answerIndex": 0,
+    "explanation": "석순은 위에서 떨어진 물방울이 동굴 바닥에 광물을 쌓으면서 넓게 퍼지고 위로 자랍니다.",
+    "difficulty": "easy",
+    "tags": [
+      "동굴 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-173",
+    "category": "geography",
+    "question": "천장에서 내려오던 생성물과 바닥에서 올라오던 생성물이 맞닿아 하나로 이어질 때 만들어지는 기둥 모양의 동굴 생성물은?",
+    "choices": [
+      "유석",
+      "종유석",
+      "동굴진주",
+      "석주"
+    ],
+    "answerIndex": 3,
+    "explanation": "석주는 천장에서 자란 종유석과 바닥에서 자란 석순이 서로 이어져 만들어지는 기둥 모양의 생성물입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "동굴 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-174",
+    "category": "geography",
+    "question": "동굴 안을 흐르는 물에서 광물이 층이나 띠를 이루며 쌓여, 얼어붙은 폭포처럼 보이는 생성물은?",
+    "choices": [
+      "석주",
+      "동굴진주",
+      "유석",
+      "종유석"
+    ],
+    "answerIndex": 2,
+    "explanation": "유석은 동굴 안을 흐르는 물에서 광물이 층이나 띠로 쌓여 형성되며, 녹은 장식이나 얼어붙은 폭포처럼 보입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "동굴 지형",
+      "퇴적 지형"
+    ]
+  },
+  {
+    "id": "geography-175",
+    "category": "geography",
+    "question": "중력 방향을 따르지 않는 듯 여러 방향으로 비틀리고 굽어 자라며, 내부의 가느다란 통로로 물이 스며드는 동굴 생성물은?",
+    "choices": [
+      "석순",
+      "헬릭타이트",
+      "유석",
+      "동굴진주"
+    ],
+    "answerIndex": 1,
+    "explanation": "헬릭타이트는 중력을 거스르는 듯 여러 방향으로 꼬여 자라고, 내부의 미세한 통로를 따라 스며든 물로 성장합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "동굴 지형",
+      "퇴적 지형"
+    ]
+  }
+,
+  {
+    "id": "geography-176",
+    "category": "geography",
+    "question": "이집트 서부 사막에 있으며, 육상 생활을 하던 고래 조상이 해양 포유류로 이행한 과정을 보여 주는 화석으로 유명한 세계유산은?",
+    "choices": [
+      "와디 알히탄",
+      "메셀 화석 유적",
+      "조긴스 화석 절벽",
+      "미구아샤 국립공원"
+    ],
+    "answerIndex": 0,
+    "explanation": "와디 알히탄은 이집트 서부 사막의 화석 유적으로, 고래가 육상 조상에서 해양 포유류로 이행한 과정을 생생하게 보여 줍니다.",
+    "difficulty": "normal",
+    "tags": [
+      "이집트",
+      "화석유산"
+    ]
+  },
+  {
+    "id": "geography-177",
+    "category": "geography",
+    "question": "북아일랜드 앤트림 고원 가장자리 해안의 현무암 절벽 아래에서 검은 현무암 기둥들이 바다로 뻗어 있는 세계유산은?",
+    "choices": [
+      "도싯 및 동부 데번 해안",
+      "플로우 컨트리",
+      "자이언츠 코즈웨이와 해안",
+      "세인트 킬다"
+    ],
+    "answerIndex": 2,
+    "explanation": "자이언츠 코즈웨이와 해안은 북아일랜드 앤트림 고원 가장자리의 현무암 절벽 아래에 형성된 거대한 검은 현무암 기둥 경관입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "북아일랜드",
+      "화산지형"
+    ]
+  },
+  {
+    "id": "geography-178",
+    "category": "geography",
+    "question": "그린란드 빙상이 바다에 닿는 세르메크 쿠얄레크 빙하의 바다 쪽 어귀이며, 빠르게 움직이는 빙하가 빙산으로 덮인 피오르에 얼음을 쪼개 내보내는 세계유산은?",
+    "choices": [
+      "사그네피오르",
+      "일룰리사트 아이스피오르",
+      "밀포드 사운드",
+      "보카 코토르만"
+    ],
+    "answerIndex": 1,
+    "explanation": "일룰리사트 아이스피오르는 세르메크 쿠얄레크 빙하의 바다 쪽 출구로, 빠른 빙하가 얼음을 피오르에 분리해 내보내는 현상이 두드러집니다.",
+    "difficulty": "hard",
+    "tags": [
+      "그린란드",
+      "빙하지형"
+    ]
+  },
+  {
+    "id": "geography-179",
+    "category": "geography",
+    "question": "아덴만 가까운 인도양 북서부에 있고 아프리카의 뿔이 이어진 듯한 위치이며, 고유 생물이 풍부한 군도는?",
+    "choices": [
+      "갈라파고스 제도",
+      "코모도 국립공원",
+      "알다브라 환초",
+      "소코트라 군도"
+    ],
+    "answerIndex": 3,
+    "explanation": "소코트라 군도는 아덴만 가까운 인도양 북서부에 있으며, 독특한 육상·해양 생물과 높은 고유성으로 중요합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "예멘",
+      "생물지리"
+    ]
+  },
+  {
+    "id": "geography-180",
+    "category": "geography",
+    "question": "브라질 중서부 마투그로수주 남서쪽에 있으며, 쿠이아바강과 파라과이강의 수원이 자리한 대규모 담수 습지는?",
+    "choices": [
+      "오카방고 델타",
+      "순다르반스",
+      "에버글레이즈",
+      "판타나우 보전 지역"
+    ],
+    "answerIndex": 3,
+    "explanation": "판타나우 보전 지역은 브라질 중서부의 대규모 담수 습지로, 쿠이아바강과 파라과이강 수계의 수원이 자리합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "브라질",
+      "습지"
+    ]
+  }
+,
+  {
+    "id": "geography-181",
+    "category": "geography",
+    "question": "브라질 북동부 마라냥 동부 해안의 흰 사구 지대로, 우기에 모래언덕 사이에 여러 색과 모양의 호수가 만들어지는 국립공원은?",
+    "choices": [
+      "렌소이스 마라녠시스 국립공원",
+      "이구아수 국립공원",
+      "자우 국립공원",
+      "세라다카피바라 국립공원"
+    ],
+    "answerIndex": 0,
+    "explanation": "렌소이스 마라녠시스 국립공원은 브라질 북동부의 흰 해안 사구 지대로, 우기에 사구 사이에 다양한 호수가 형성됩니다.",
+    "difficulty": "easy",
+    "tags": [
+      "브라질",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-182",
+    "category": "geography",
+    "question": "마다가스카르 서부에서 카르스트 지형이 칭기 봉우리와 석회암 바늘 숲을 이루고, 마남볼로강 협곡과 건조한 숲·가시숲 생태계를 함께 품은 세계유산은?",
+    "choices": [
+      "아칭아나나 열대우림",
+      "니오콜로코바 국립공원",
+      "아이르·테네레 자연보호구",
+      "안드레파나 건조림"
+    ],
+    "answerIndex": 3,
+    "explanation": "안드레파나 건조림은 마다가스카르 서부의 칭기 봉우리와 석회암 바늘 숲, 마남볼로강 협곡 및 다양한 건조림 생태계를 포함합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "마다가스카르",
+      "카르스트"
+    ]
+  },
+  {
+    "id": "geography-183",
+    "category": "geography",
+    "question": "석회암과 백악 위로 흐르는 물이 석회화 장벽을 쌓아 천연 댐을 만들고, 동굴과 폭포가 잇따라 형성되는 크로아티아의 국립공원은?",
+    "choices": [
+      "두르미토르 국립공원",
+      "플리트비체 호수 국립공원",
+      "피린 국립공원",
+      "리라 국립공원"
+    ],
+    "answerIndex": 1,
+    "explanation": "플리트비체 호수 국립공원에서는 물이 쌓은 석회화 장벽이 천연 댐을 이루어 호수와 동굴, 폭포가 이어집니다.",
+    "difficulty": "normal",
+    "tags": [
+      "크로아티아",
+      "카르스트"
+    ]
+  },
+  {
+    "id": "geography-184",
+    "category": "geography",
+    "question": "중국 쓰촨성 북서부에서 눈 덮인 봉우리와 빙하, 석회암 지형·폭포·온천이 함께 나타나고 자이언트판다와 황금들창코원숭이가 사는 세계유산은?",
+    "choices": [
+      "우링위안 풍경명승구",
+      "주자이거우 계곡 풍경명승구",
+      "황룽 경관·역사 지구",
+      "싼칭산 국립공원"
+    ],
+    "answerIndex": 2,
+    "explanation": "황룽 경관·역사 지구에는 눈 덮인 봉우리와 빙하, 석회암 지형, 폭포와 온천이 있으며 희귀 동물도 서식합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "중국",
+      "산악지형"
+    ]
+  },
+  {
+    "id": "geography-185",
+    "category": "geography",
+    "question": "베네수엘라 남동부에서 테푸이라 불리는 탁상형 산지와 가파른 절벽·폭포가 장관을 이루는 국립공원은?",
+    "choices": [
+      "로스글라시아레스 국립공원",
+      "카나이마 국립공원",
+      "이구아수 국립공원",
+      "마누 국립공원"
+    ],
+    "answerIndex": 1,
+    "explanation": "카나이마 국립공원은 베네수엘라 남동부에 있으며, 테푸이 탁상형 산지와 가파른 절벽·폭포가 특징입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "베네수엘라",
+      "테푸이"
+    ]
+  }
+,
+  {
+    "id": "geography-186",
+    "category": "geography",
+    "question": "미국 뉴멕시코주 툴라로사 분지에 물결 같은 석고 모래언덕이 펼쳐진 국립공원은?",
+    "choices": [
+      "그레이트 샌드 듄스 국립공원",
+      "데스밸리 국립공원",
+      "화이트 샌즈 국립공원",
+      "조슈아트리 국립공원"
+    ],
+    "answerIndex": 2,
+    "explanation": "화이트 샌즈 국립공원은 툴라로사 분지의 석고 모래언덕 지대를 보전합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "미국",
+      "사구"
+    ]
+  },
+  {
+    "id": "geography-187",
+    "category": "geography",
+    "question": "미국 뉴멕시코주의 치와와 사막 아래에서 황산이 석회암을 녹여 만든 수많은 동굴로 유명한 국립공원은?",
+    "choices": [
+      "윈드 케이브 국립공원",
+      "매머드 케이브 국립공원",
+      "그레이트 베이슨 국립공원",
+      "칼즈배드 동굴 국립공원"
+    ],
+    "answerIndex": 3,
+    "explanation": "칼즈배드 동굴 국립공원에는 황산이 석회암을 녹여 형성한 다양한 크기의 동굴들이 있습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "미국",
+      "동굴"
+    ]
+  },
+  {
+    "id": "geography-188",
+    "category": "geography",
+    "question": "큰 화산 분화 뒤 높은 봉우리가 무너지며 생긴 칼데라에 비와 눈이 모여 푸른 호수를 이룬 미국 오리건주의 국립공원은?",
+    "choices": [
+      "크레이터 레이크 국립공원",
+      "레이니어산 국립공원",
+      "래슨 화산 국립공원",
+      "노스캐스케이즈 국립공원"
+    ],
+    "answerIndex": 0,
+    "explanation": "크레이터 레이크 국립공원의 호수는 화산 분화와 봉우리 붕괴로 생긴 칼데라에 비와 눈이 채워져 형성되었습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "미국",
+      "칼데라"
+    ]
+  },
+  {
+    "id": "geography-189",
+    "category": "geography",
+    "question": "미국 사우스다코타주에서 지질 퇴적층과 풍부한 화석층을 볼 수 있으며, 오늘날 혼합초원을 보전하는 국립공원은?",
+    "choices": [
+      "시어도어 루스벨트 국립공원",
+      "배드랜즈 국립공원",
+      "윈드 케이브 국립공원",
+      "그레이트 베이슨 국립공원"
+    ],
+    "answerIndex": 1,
+    "explanation": "배드랜즈 국립공원은 고대 말과 코뿔소가 살던 곳으로, 지질 퇴적층과 풍부한 화석층, 혼합초원 생태계를 함께 간직하고 있습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "미국",
+      "지질"
+    ]
+  },
+  {
+    "id": "geography-190",
+    "category": "geography",
+    "question": "미국 콜로라도주에서 초원·습지·숲·고산호수·툰드라가 이어지는 다양한 경관을 보전하는 국립공원은?",
+    "choices": [
+      "그레이트 샌드 듄스 국립공원",
+      "그레이트 스모키 마운틴 국립공원",
+      "블랙 캐니언 오브 더 거니슨 국립공원",
+      "그레이트 베이슨 국립공원"
+    ],
+    "answerIndex": 0,
+    "explanation": "그레이트 샌드 듄스 국립공원은 콜로라도에서 초원·습지·숲·고산호수·툰드라가 함께 이어지는 다양한 경관을 보전합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "미국",
+      "사구"
+    ]
   }
 ]

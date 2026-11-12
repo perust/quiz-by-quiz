@@ -7,6 +7,7 @@ const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
 const css = await readFile(new URL('../css/style.css', import.meta.url), 'utf8');
 const homeSource = await readFile(new URL('../src/ui/home.ts', import.meta.url), 'utf8');
 const SHORT_ZOOM = { width: 390, height: 420, pointer: 'coarse', hover: 'none', reducedMotion: false };
+const SHORT_PORTRAIT = { width: 320, height: 480, pointer: 'coarse', hover: 'none', reducedMotion: false };
 const SHORT_LANDSCAPE = { width: 568, height: 320, pointer: 'coarse', hover: 'none', reducedMotion: false };
 const RANKING_PORTRAITS = [
   { width: 390, height: 844, pointer: 'coarse', hover: 'none', reducedMotion: false },
@@ -223,6 +224,7 @@ test('짧은 화면의 핵심 직접 행동은 양쪽 공용 조작부 사이 �
   const app = node('main.app', body);
   const quiz = node("section.screen.quiz--character[data-screen='quiz']", app);
   const choices = node('ul.choices#choices', quiz);
+  const choiceText = node('span.choice__text', node('button.choice', node('li', choices)));
   const online = node("section.screen[data-screen='online']", app);
   const tools = node('div.online-block__tools', node('div.online-block__head', node('section.online-block.online-block--rooms', online)));
   const waiting = node("section.screen[data-screen='waiting']", app);
@@ -230,11 +232,19 @@ test('짧은 화면의 핵심 직접 행동은 양쪽 공용 조작부 사이 �
   const onlineQuiz = node("section.screen.online-quiz.quiz--character[data-screen='online-quiz']", app);
   const chat = node('form.chat.online-quiz-chat__form#online-chat-form', node('section.online-quiz-chat', onlineQuiz));
 
-  for (const element of [choices, start]) {
-    assert.equal(valueOf(rules, element, 'margin-left', SHORT_LANDSCAPE), 'var(--walk-controls-left-clearance)');
-    assert.equal(valueOf(rules, element, 'margin-right', SHORT_LANDSCAPE), 'var(--walk-controls-right-clearance)');
+  for (const env of [SHORT_LANDSCAPE, SHORT_PORTRAIT]) {
+    assert.equal(valueOf(rules, choices, 'margin-left', env), 'var(--walk-controls-left-clearance)', `${env.width}×${env.height}: 보기 왼쪽`);
+    assert.equal(valueOf(rules, choices, 'margin-right', env), 'var(--walk-controls-right-clearance)', `${env.width}×${env.height}: 보기 오른쪽`);
+    assert.equal(valueOf(rules, choices, 'width', env), 'auto', `${env.width}×${env.height}: 보기 폭`);
+    const safeWidth = env.width
+      - 2 * px('var(--page-pad)', env)
+      - px('var(--walk-controls-left-clearance)', env)
+      - px('var(--walk-controls-right-clearance)', env);
+    assert.ok(safeWidth >= 44, `${env.width}×${env.height}: 안전 통로 ${safeWidth}px`);
+    assert.equal(valueOf(rules, choiceText, 'overflow-wrap', env), 'anywhere', `${env.width}×${env.height}: 긴 낱말 줄바꿈`);
   }
-  assert.equal(valueOf(rules, choices, 'width', SHORT_LANDSCAPE), 'auto');
+  assert.equal(valueOf(rules, start, 'margin-left', SHORT_LANDSCAPE), 'var(--walk-controls-left-clearance)');
+  assert.equal(valueOf(rules, start, 'margin-right', SHORT_LANDSCAPE), 'var(--walk-controls-right-clearance)');
   assert.equal(valueOf(rules, start, 'width', SHORT_LANDSCAPE), 'auto');
   assert.equal(valueOf(rules, tools, 'margin-right', SHORT_LANDSCAPE), 'var(--walk-controls-right-clearance)');
 

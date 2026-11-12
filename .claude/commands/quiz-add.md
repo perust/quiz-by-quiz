@@ -47,8 +47,8 @@ if count < 1:
 rows = [row for row in report.questions if row.category == code]
 nums = [int(row.id.rsplit('-', 1)[1]) for row in rows]
 start = max(nums, default=0) + 1
-if start + count - 1 > 999:
-    raise SystemExit('현재 ID 규칙 category-NNN 범위를 넘습니다. 규칙 변경을 먼저 합의하세요.')
+if start + count - 1 > 9999:
+    raise SystemExit('현재 ID 규칙은 category-NNN 또는 category-NNNN이며 최대 9999입니다.')
 
 difficulty = Counter(row.difficulty for row in rows)
 positions = Counter(row.answer_index for row in rows)

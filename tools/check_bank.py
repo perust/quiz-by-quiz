@@ -269,8 +269,11 @@ def _validated_question(
     if not isinstance(qid, str) or not qid.strip():
         report.errors.append(f"{label} id는 비어 있지 않은 문자열이어야 함")
         qid = ""
-    elif not re.fullmatch(rf"{re.escape(category)}-\d{{3}}", qid):
-        report.errors.append(f"{label} ID 형식이 파일과 맞지 않음: {category}-NNN 필요")
+    elif not re.fullmatch(rf"{re.escape(category)}-\d{{3,4}}", qid):
+        report.errors.append(
+            f"{label} ID 형식이 파일과 맞지 않음: "
+            f"{category}-NNN 또는 {category}-NNNN 필요"
+        )
 
     row_category = value.get("category")
     if row_category != category:
