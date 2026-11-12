@@ -371,6 +371,19 @@ class CheckBankTests(unittest.TestCase):
         self.assertIn("UTF-8", completed.stderr)
         self.assertNotIn("Traceback", completed.stderr)
 
+    def test_current_safety_explanations_follow_verified_guidance(self):
+        rows = json.loads((ROOT / "data" / "general.json").read_text(encoding="utf-8"))
+        by_id = {row["id"]: row for row in rows}
+        expected = {
+            "general-064": "튼튼한 탁자 아래에서 머리와 목을 가리면 떨어지거나 날아오는 물건으로부터 몸을 보호할 수 있습니다.",
+            "general-068": "화상 부위는 흐르는 찬물로 20분 이상 식힙니다. 얼음이나 아주 찬물은 사용하지 않습니다.",
+        }
+
+        self.assertEqual(
+            expected,
+            {qid: by_id[qid]["explanation"] for qid in expected},
+        )
+
     def test_current_repository_has_no_blocking_bank_errors(self):
         report = check_bank.audit_repository(ROOT)
 
