@@ -3165,6 +3165,20 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   }
 }
 
+/* 320×480 같은 짧은 세로에서는 보기가 하단 두 엄지 목표 뒤까지 넓어지지 않게 안전 통로에 둔다.
+   폭만 좁혀 줄바꿈하며 보기 텍스트와 44px 높이는 그대로 유지한다. */
+@media (pointer: coarse) and (max-width: 420px) and (max-height: 480px) and (orientation: portrait) {
+  body:has(.walk-controls--on) .quiz--character:not([hidden]) .choices {
+    width: auto;
+    margin-right: var(--walk-controls-right-clearance);
+    margin-left: var(--walk-controls-left-clearance);
+  }
+
+  body:has(.walk-controls--on) .quiz--character:not([hidden]) .choice__text {
+    overflow-wrap: anywhere;
+  }
+}
+
 /* 공용 하단 조작부가 켜진 화면의 직접 누르기 표면은 초기·최대 scroll 모두
    좌우 엄지 목표와 경쟁하지 않는다. 조작부 자체는 화면별로 옮기지 않는다. */
 @media (pointer: coarse) {

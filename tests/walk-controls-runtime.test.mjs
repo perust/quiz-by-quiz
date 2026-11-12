@@ -64,12 +64,14 @@ class FakeElement extends EventTarget {
   }
 }
 
-function pointer(type, pointerId, clientX = 0, clientY = 0) {
+function pointer(type, pointerId, clientX = 0, clientY = 0, { isPrimary = true, pointerType = 'touch' } = {}) {
   const event = new Event(type, { cancelable: true });
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
     clientX: { value: clientX },
     clientY: { value: clientY },
+    isPrimary: { value: isPrimary },
+    pointerType: { value: pointerType },
   });
   return event;
 }
@@ -102,6 +104,18 @@ async function mount() {
   });
   return { root, stick, knob, confirm, controls, counts };
 }
+
+test('선택 버튼은 pointerup 뒤 호환 click까지 DOM 변화를 미뤄 다음 버튼 ghost click을 막는다', async () => {
+  const { confirm, controls, counts } = await mount();
+  controls.show();
+
+  confirm.dispatchEvent(pointer('pointerdown', 21, 36, 36));
+  confirm.dispatchEvent(pointer('pointerup', 21, 36, 36));
+  assert.equal(counts.confirms, 0, 'pointerup 중 화면을 바꾸면 뒤따르는 touch click이 새 화면 버튼을 누를 수 있다');
+
+  confirm.dispatchEvent(click(1));
+  assert.equal(counts.confirms, 1, '같은 선택 버튼에 도착한 호환 click에서 한 번만 확정한다');
+});
 
 test('공용 이동 UI는 포인터 소유권·해제·idempotent show를 한 상태로 관리한다', async () => {
   const { root, stick, knob, confirm, controls, counts } = await mount();
@@ -138,6 +152,8 @@ test('공용 이동 UI는 포인터 소유권·해제·idempotent show를 한 �
   assert.deepEqual(confirm.captured, [3]);
   assert.equal(confirm.classList.contains('walk-confirm--pressed'), true);
   confirm.dispatchEvent(pointer('pointerup', 3, 40, 30));
+  assert.equal(counts.confirms, 0, 'pointerup은 눌림만 끝내고 같은 버튼의 click을 기다린다');
+  confirm.dispatchEvent(click(1));
   assert.equal(counts.confirms, 1);
   assert.equal(confirm.classList.contains('walk-confirm--pressed'), false);
 
@@ -197,28 +213,33 @@ test('선택 버튼은 밖으로 빼고 떼거나 입력이 끊기면 취소하�
   confirm.dispatchEvent(pointer('pointerup', 5, 36, 36));
   assert.equal(counts.confirms, 0);
 
-  // 두 엄지: 스틱을 미는 중에도 선택이 되고, 선택을 떼도 스틱은 그대로 민다
+  // 두 엄지: primary 스틱을 미는 동안 secondary touch는 호환 click 없이도 선택되고 스틱은 그대로 민다
   controls.show();
   stick.dispatchEvent(pointer('pointerdown', 6, 72, 48));
-  confirm.dispatchEvent(pointer('pointerdown', 7, 36, 36));
+  confirm.dispatchEvent(pointer('pointerdown', 7, 36, 36, { isPrimary: false }));
   // 이미 누르고 있는 버튼에 닿은 다른 손가락은 따로 확정하지 않는다
-  confirm.dispatchEvent(pointer('pointerdown', 8, 36, 36));
-  confirm.dispatchEvent(pointer('pointerup', 8, 36, 36));
+  confirm.dispatchEvent(pointer('pointerdown', 8, 36, 36, { isPrimary: false }));
+  confirm.dispatchEvent(pointer('pointerup', 8, 36, 36, { isPrimary: false }));
   assert.equal(counts.confirms, 0);
-  confirm.dispatchEvent(pointer('pointerup', 7, 36, 36));
-  assert.equal(counts.confirms, 1);
+  confirm.dispatchEvent(pointer('pointerup', 7, 36, 36, { isPrimary: false }));
+  assert.equal(counts.confirms, 1, 'secondary touch는 브라우저가 호환 click을 만들지 않아 pointerup에서 확정한다');
   assert.deepEqual(controls.vector(), [1, 0]);
+  confirm.dispatchEvent(click(1));
+  assert.equal(counts.confirms, 1, '예상 밖의 늦은 포인터 click이 와도 두 번 확정하지 않는다');
 
   // capture가 실패한 손가락은 소유권을 남기지 않는다 — 다음 누르기가 바로 된다
   confirm.throwCapture = true;
   confirm.dispatchEvent(pointer('pointerdown', 9, 36, 36));
   confirm.dispatchEvent(pointer('pointerup', 9, 36, 36));
+  confirm.dispatchEvent(click(1));
   assert.equal(counts.confirms, 1);
   confirm.dispatchEvent(pointer('pointerdown', 10, 36, 36));
   confirm.dispatchEvent(pointer('pointerup', 10, 36, 36));
+  assert.equal(counts.confirms, 1);
+  confirm.dispatchEvent(click(1));
   assert.equal(counts.confirms, 2);
 
-  // 손가락·마우스의 click(detail ≥ 1)은 pointerup이 이미 처리했다. 키보드가 누른 click만 받는다
+  // 승인된 pointerup 없이 온 포인터 click은 무시하고, 키보드 click(detail 0)은 받는다
   confirm.dispatchEvent(click(1));
   assert.equal(counts.confirms, 2);
   confirm.dispatchEvent(click(0));

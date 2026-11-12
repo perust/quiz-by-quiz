@@ -49,7 +49,7 @@ python3 tools/check_bank.py --category 과학 --show-similar
 }
 ```
 
-- `id`: `<category>-NNN`. 전역에서 고유하며 삭제된 번호를 다시 쓰지 않는다.
+- `id`: `<category>-NNN` 또는 `<category>-NNNN`. 전역에서 고유하며 삭제된 번호를 다시 쓰지 않는다. 번호 부분은 3자리 또는 4자리 십진수이며 5자리 ID는 허용하지 않는다.
 - `category`: 파일명과 같아야 한다.
 - `question`: 답이 하나로 결정되는 완결된 질문이다.
 - `choices`: 비어 있지 않고 서로 다른 문자열 정확히 4개다.

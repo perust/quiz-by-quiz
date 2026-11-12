@@ -1098,5 +1098,1212 @@
     "explanation": "공개 키 암호는 서로 관련된 공개 키와 개인 키를 한 쌍으로 쓰며, 공개 키만으로 개인 키를 알아내기는 계산상 매우 어렵게 설계됩니다.",
     "difficulty": "normal",
     "tags": ["정보기술", "보안"]
+  },
+  {
+    "id": "general-111",
+    "category": "general",
+    "question": "유엔 기관으로, 전 세계 어린이의 권리 보호와 건강·교육 지원을 맡는 곳은?",
+    "choices": ["유니세프", "유네스코", "세계보건기구", "국제노동기구"],
+    "answerIndex": 0,
+    "explanation": "유니세프는 어린이의 권리를 보호하고 건강·영양·교육·안전한 물과 위생 등을 지원하는 유엔 기관입니다.",
+    "difficulty": "easy",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-112",
+    "category": "general",
+    "question": "책의 특정 제목·판·형식을 구별하는 국제 표준 식별 번호는?",
+    "choices": ["DOI", "ISSN", "ISMN", "ISBN"],
+    "answerIndex": 3,
+    "explanation": "ISBN은 출판 유통 과정에서 책의 특정 제목과 판, 형식을 구별하는 국제 표준 도서 번호입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "도서"]
+  },
+  {
+    "id": "general-113",
+    "category": "general",
+    "question": "돋아난 점을 손끝으로 읽고 쓰는 문자 체계는?",
+    "choices": ["점자", "모스 부호", "수어", "속기"],
+    "answerIndex": 0,
+    "explanation": "점자는 돋아난 점의 배열로 글자와 숫자, 음악 기호 등을 나타내 손끝으로 읽고 쓰는 체계입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "언어"]
+  },
+  {
+    "id": "general-114",
+    "category": "general",
+    "question": "점과 선의 조합으로 문자를 나타내 전신에 사용한 통신 부호는?",
+    "choices": ["QR 코드", "점자", "모스 부호", "바코드"],
+    "answerIndex": 2,
+    "explanation": "모스 부호는 짧은 신호인 점과 긴 신호인 선을 조합해 문자를 전송하도록 만든 통신 부호입니다.",
+    "difficulty": "normal",
+    "tags": ["정보기술", "통신"]
+  },
+  {
+    "id": "general-115",
+    "category": "general",
+    "question": "웹 브라우저와 서버 사이에서 하이퍼미디어 문서를 주고받도록 설계된 응용 계층 프로토콜은?",
+    "choices": ["HTML", "URL", "TCP", "HTTP"],
+    "answerIndex": 3,
+    "explanation": "HTTP는 웹 브라우저와 웹 서버 사이에서 HTML 같은 하이퍼미디어 문서를 전송하는 데 쓰는 응용 계층 프로토콜입니다.",
+    "difficulty": "normal",
+    "tags": ["정보기술", "인터넷"]
+  },
+  {
+    "id": "general-116",
+    "category": "general",
+    "question": "사람이 읽기 쉬운 인터넷 도메인 이름을 컴퓨터가 사용하는 IP 주소와 연결해 주는 체계는?",
+    "choices": ["도메인 이름 시스템(DNS)", "파일 전송 프로토콜(FTP)", "전송 제어 프로토콜(TCP)", "하이퍼텍스트 전송 프로토콜(HTTP)"],
+    "answerIndex": 0,
+    "explanation": "도메인 이름 시스템은 기억하기 쉬운 도메인 이름을 해당 IP 주소와 연결해 인터넷 자원을 찾게 합니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "인터넷"]
+  },
+  {
+    "id": "general-117",
+    "category": "general",
+    "question": "운영체제·프로그램·언어가 달라도 문자를 같은 고유 번호로 나타내도록 만든 문자 표준은?",
+    "choices": ["ASCII", "유니코드", "QR 코드", "마크다운"],
+    "answerIndex": 1,
+    "explanation": "유니코드는 플랫폼과 프로그램, 언어에 관계없이 각 문자에 고유한 번호를 부여하는 표준입니다.",
+    "difficulty": "easy",
+    "tags": ["정보기술", "문자"]
+  },
+  {
+    "id": "general-118",
+    "category": "general",
+    "question": "무선 스피커·헤드폰·차량 오디오에서 음향을 스트리밍하는 데 주로 쓰이는 무선 규격은?",
+    "choices": ["NFC", "지그비", "블루투스 클래식", "적외선 통신"],
+    "answerIndex": 2,
+    "explanation": "블루투스 클래식은 무선 스피커와 헤드폰, 차량 오디오의 스트리밍과 기기 간 데이터 전송에 쓰입니다.",
+    "difficulty": "normal",
+    "tags": ["정보기술", "통신"]
+  },
+  {
+    "id": "general-119",
+    "category": "general",
+    "question": "과거에 MIME 타입이라 불렸고, IANA가 하위 유형과 함께 등록·목록화하는 자료 형식 분류는?",
+    "choices": ["도메인 이름", "포트 번호", "문자 인코딩", "미디어 타입"],
+    "answerIndex": 3,
+    "explanation": "미디어 타입은 IANA가 등록·목록화하는 자료 형식 분류이며, 과거에는 MIME 타입이라고 불렸습니다.",
+    "difficulty": "hard",
+    "tags": ["정보기술", "인터넷"]
+  },
+  {
+    "id": "general-120",
+    "category": "general",
+    "question": "국제원자시(TAI)에서 출발해 지구 자전 기반 시간과 맞추려고 윤초를 적용해 만드는 국제 참조 시간 척도는?",
+    "choices": ["국제원자시(TAI)", "세계시(UT1)", "그리니치 평균시(GMT)", "협정 세계시(UTC)"],
+    "answerIndex": 3,
+    "explanation": "협정 세계시(UTC)는 국제원자시(TAI)에서 유도되며, 지구 자전 기반 시간과 맞추기 위해 윤초를 적용합니다.",
+    "difficulty": "normal",
+    "tags": ["시간", "국제표준"]
+  }
+,
+  {
+    "id": "general-121",
+    "category": "general",
+    "question": "알파·브라보처럼 글자마다 코드 단어를 붙여 무선 통화의 철자 오해를 줄이는 체계는?",
+    "choices": ["ICAO 철자 알파벳","국제 음성 기호표","국제 모스 부호","국제 해상 신호기"],
+    "answerIndex": 0,
+    "explanation": "ICAO 철자 알파벳은 각 글자에 코드 단어를 배정해 무선이나 전화에서 철자를 분명하게 전달합니다.",
+    "difficulty": "easy",
+    "tags": ["통신","국제표준"]
+  },
+  {
+    "id": "general-122",
+    "category": "general",
+    "question": "OCLC가 관리·제공하며 도서관 장서를 주제별 분류 번호로 정리하는 데 쓰는 체계는?",
+    "choices": ["미국 의회도서관 분류법","국제십진분류법","듀이 십진분류법","콜론 분류법"],
+    "answerIndex": 2,
+    "explanation": "듀이 십진분류법은 도서관이 복잡한 장서를 주제별 분류 번호로 정리하고 찾는 데 사용하는 체계입니다.",
+    "difficulty": "normal",
+    "tags": ["도서","제도"]
+  },
+  {
+    "id": "general-123",
+    "category": "general",
+    "question": "신문·잡지·학술지처럼 끝나는 시점이 정해지지 않은 연속간행물을 매체와 관계없이 식별하는 국제 표준 번호는?",
+    "choices": ["ISBN","DOI","ORCID","ISSN"],
+    "answerIndex": 3,
+    "explanation": "ISSN은 인쇄물과 전자 매체를 가리지 않고 신문, 잡지, 학술지 등 계속 발행되는 자료를 식별합니다.",
+    "difficulty": "easy",
+    "tags": ["도서","국제표준"]
+  },
+  {
+    "id": "general-124",
+    "category": "general",
+    "question": "물리적·디지털·추상 객체를 위치와 별개로 지속해서 식별하도록 설계된 디지털 식별자는?",
+    "choices": ["DOI","URL","ISBN","IP 주소"],
+    "answerIndex": 0,
+    "explanation": "DOI는 물리적·디지털·추상 객체를 지속적으로 식별해 위치가 달라져도 같은 대상을 추적하고 찾게 합니다.",
+    "difficulty": "normal",
+    "tags": ["정보기술","국제표준"]
+  },
+  {
+    "id": "general-125",
+    "category": "general",
+    "question": "데이터 내용으로 값을 계산해 원본과 함께 저장·전송하고, 뒤에 데이터가 바뀌었는지 확인하는 값은?",
+    "choices": ["암호화 키","접근 토큰","체크섬","압축률"],
+    "answerIndex": 2,
+    "explanation": "체크섬은 데이터 내용에 따라 계산해 함께 보관하는 값으로, 오류나 조작으로 데이터가 달라졌는지 확인하는 데 씁니다.",
+    "difficulty": "hard",
+    "tags": ["정보기술","보안"]
+  }
+,
+  {
+    "id": "general-126",
+    "category": "general",
+    "question": "연구자와 연구 성과·소속을 연결하는 데 쓰는 고유하고 지속적인 연구자 식별자는?",
+    "choices": ["ORCID iD","ISBN","ISSN","DOI"],
+    "answerIndex": 0,
+    "explanation": "ORCID iD는 연구자가 연구·학술 활동에서 사용하며 성과와 소속을 연결하는 고유하고 지속적인 식별자입니다.",
+    "difficulty": "easy",
+    "tags": ["학술","식별자"]
+  },
+  {
+    "id": "general-127",
+    "category": "general",
+    "question": "미국 의회도서관이 조정하며 서지·관련 정보를 기계가 읽을 수 있게 표현하고 교환하는 형식 표준은?",
+    "choices": ["Dublin Core","ONIX","MARC","TEI"],
+    "answerIndex": 2,
+    "explanation": "MARC 형식은 서지 및 관련 정보를 기계 판독 형태로 표현하고 교환하는 표준이며 미국 의회도서관이 조정합니다.",
+    "difficulty": "normal",
+    "tags": ["도서관","정보표준"]
+  },
+  {
+    "id": "general-128",
+    "category": "general",
+    "question": "인터넷 자원 식별자의 포괄 개념으로, 위치를 나타내는 URL과 이름을 나타내는 URN을 모두 아우르는 것은?",
+    "choices": ["DNS","MIME","UUID","URI"],
+    "answerIndex": 3,
+    "explanation": "URI는 자원의 위치를 나타내는 URL과 이름을 나타내는 URN을 포괄하며, 위치자·이름 또는 두 성격을 모두 가질 수 있습니다.",
+    "difficulty": "normal",
+    "tags": ["인터넷","웹표준"]
+  },
+  {
+    "id": "general-129",
+    "category": "general",
+    "question": "HTML에서 이미지의 정보나 기능을 설명해 화면 읽기 프로그램과 점자로 전달되게 하는 alt 속성의 내용은?",
+    "choices": ["대체 텍스트","캡션","툴팁","메타 태그"],
+    "answerIndex": 0,
+    "explanation": "대체 텍스트는 이미지가 나타내는 핵심 정보나 기능을 글로 제공해 화면 읽기 프로그램이나 점자로 전달할 수 있게 합니다.",
+    "difficulty": "easy",
+    "tags": ["웹","접근성"]
+  },
+  {
+    "id": "general-130",
+    "category": "general",
+    "question": "개인 키로 데이터에 표시를 만들고 대응하는 공개 키로 진위와 무결성을 확인하는 기술은?",
+    "choices": ["대칭키 암호화","해시 함수","체크섬","디지털 서명"],
+    "answerIndex": 3,
+    "explanation": "디지털 서명은 개인 키로 서명하고 공개 키로 검증해 데이터의 출처와 무결성을 확인하는 비대칭키 기술입니다.",
+    "difficulty": "hard",
+    "tags": ["정보보안","암호기술"]
+  }
+,
+  {
+    "id": "general-131",
+    "category": "general",
+    "question": "ECMAScript에서 유래한 가볍고 텍스트 기반이며 언어에 독립적인 구조화 데이터 교환 형식은?",
+    "choices": ["XML","CSV","JSON","YAML"],
+    "answerIndex": 2,
+    "explanation": "JSON은 ECMAScript에서 유래한 가볍고 텍스트 기반이며 언어에 독립적인 데이터 교환 형식입니다.",
+    "difficulty": "easy",
+    "tags": ["데이터 형식","웹 기술"]
+  },
+  {
+    "id": "general-132",
+    "category": "general",
+    "question": "SGML에서 파생된 단순하고 유연한 텍스트 형식으로, 웹 등에서 다양한 데이터를 교환하는 데 쓰이는 것은?",
+    "choices": ["XML","JSON","YAML","CSV"],
+    "answerIndex": 0,
+    "explanation": "XML은 SGML에서 파생된 단순하고 유연한 텍스트 형식으로, 웹을 비롯한 여러 환경의 데이터 교환에 쓰입니다.",
+    "difficulty": "normal",
+    "tags": ["마크업 언어","웹 기술"]
+  },
+  {
+    "id": "general-133",
+    "category": "general",
+    "question": "웹 서비스 운영자가 크롤러의 URI 접근 방식을 정하는 규칙과 사용자 에이전트 그룹을 제공하는 파일은?",
+    "choices": ["robots.txt","sitemap.xml","security.txt","ads.txt"],
+    "answerIndex": 0,
+    "explanation": "robots.txt는 웹 서비스가 크롤러의 URI 접근 방식을 정하는 규칙과 사용자 에이전트 그룹을 제공하는 파일입니다.",
+    "difficulty": "normal",
+    "tags": ["웹 표준","크롤러"]
+  },
+  {
+    "id": "general-134",
+    "category": "general",
+    "question": "학술 문헌을 공공 인터넷에서 무료로 이용할 수 있게 하여 누구나 논문 전문을 읽고·내려받고·복사·배포할 수 있도록 하는 출판 원칙은?",
+    "choices": ["오픈 데이터","오픈 소스","오픈 라이선스","오픈 액세스"],
+    "answerIndex": 3,
+    "explanation": "오픈 액세스는 학술 문헌을 공공 인터넷에서 무료로 제공하여 누구나 논문 전문을 읽고, 내려받고, 복사하고, 배포할 수 있도록 합니다.",
+    "difficulty": "easy",
+    "tags": ["지식 공유","출판"]
+  },
+  {
+    "id": "general-135",
+    "category": "general",
+    "question": "각 클라이언트가 최신 파일뿐 아니라 전체 이력을 포함한 저장소를 복제해 각 복제본이 전체 백업 역할을 하는 방식은?",
+    "choices": ["로컬 버전 관리 시스템","중앙 집중식 버전 관리 시스템","파일 동기화 시스템","분산 버전 관리 시스템"],
+    "answerIndex": 3,
+    "explanation": "분산 버전 관리 시스템에서는 각 클라이언트가 전체 이력을 포함한 저장소를 복제하므로 각 복제본이 전체 백업 역할을 합니다.",
+    "difficulty": "hard",
+    "tags": ["버전 관리","소프트웨어"]
+  }
+,
+  {
+    "id": "general-136",
+    "category": "general",
+    "question": "저작권 보호가 끝났거나 보호 요건을 충족하지 못해 이전 권리자의 허락 없이 자유롭게 이용할 수 있는 저작물의 상태는?",
+    "choices": ["퍼블릭 도메인","공정 이용","오픈 액세스","저작권 양도"],
+    "answerIndex": 0,
+    "explanation": "퍼블릭 도메인에 속한 저작물은 저작권 보호가 끝났거나 보호 요건을 충족하지 못한 것으로, 이전 권리자의 허락 없이 자유롭게 이용할 수 있습니다.",
+    "difficulty": "easy",
+    "tags": ["저작권","퍼블릭 도메인"]
+  },
+  {
+    "id": "general-137",
+    "category": "general",
+    "question": "창작자가 개별 허가 협상 없이 미리 표준화된 방식으로 이용 조건을 알리고 일부 권리를 허용하게 하는 라이선스 체계는?",
+    "choices": ["공정 이용","퍼블릭 도메인","저작권 양도","CC 라이선스"],
+    "answerIndex": 3,
+    "explanation": "크리에이티브 커먼즈 라이선스는 창작자가 저작물 이용 허가를 표준화된 방식으로 미리 알릴 수 있게 하는 체계입니다.",
+    "difficulty": "normal",
+    "tags": ["저작권","공유 라이선스"]
+  },
+  {
+    "id": "general-138",
+    "category": "general",
+    "question": "문서의 디지털 이미지에서 글자를 추출해 컴퓨터가 읽고 검색할 수 있는 텍스트로 바꾸는 기술은?",
+    "choices": ["음성 인식(ASR)","광학 마크 인식(OMR)","광학 문자 인식(OCR)","음성 합성(TTS)"],
+    "answerIndex": 2,
+    "explanation": "광학 문자 인식은 문서 이미지의 글자를 자동으로 추출해 컴퓨터가 읽고 검색할 수 있는 텍스트로 바꿉니다.",
+    "difficulty": "easy",
+    "tags": ["문서 처리","문자 인식"]
+  },
+  {
+    "id": "general-139",
+    "category": "general",
+    "question": "XML의 한 종류로, 웹 콘텐츠를 배급하기 위해 채널의 메타데이터와 항목을 담는 형식은?",
+    "choices": ["RSS","CSV","JSON","마크다운"],
+    "answerIndex": 0,
+    "explanation": "RSS는 웹 콘텐츠 배급 형식이자 XML의 한 종류로, 채널 요소에 메타데이터와 콘텐츠를 담습니다.",
+    "difficulty": "normal",
+    "tags": ["웹 표준","콘텐츠 배급"]
+  },
+  {
+    "id": "general-140",
+    "category": "general",
+    "question": "응용 프로그램이나 사용자 코드가 정해진 문법으로 기능에 접근하도록 제공하는 시스템 접근점 또는 라이브러리 함수는?",
+    "choices": ["GUI","CLI","SDK","API"],
+    "answerIndex": 3,
+    "explanation": "API는 응용 프로그램이나 사용자 코드가 정해진 문법을 통해 명확한 기능에 접근하도록 제공하는 시스템 접근점 또는 라이브러리 함수입니다.",
+    "difficulty": "hard",
+    "tags": ["소프트웨어","인터페이스"]
+  },
+  {
+    "id": "general-141",
+    "category": "general",
+    "question": "임의의 바이트열을 인쇄 가능한 US-ASCII 문자로 나타내며, 24비트 입력을 네 문자로 바꾸는 인코딩은?",
+    "choices": [
+      "Base64",
+      "UTF-8",
+      "URL 인코딩",
+      "Quoted-Printable"
+    ],
+    "answerIndex": 0,
+    "explanation": "Base64는 임의의 바이트열을 인쇄 가능한 US-ASCII 문자로 나타내며 24비트 입력을 네 개의 인코딩 문자로 변환합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "데이터 인코딩",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-142",
+    "category": "general",
+    "question": "중앙 등록 절차 없이 생성할 수 있고 공간과 시간에 걸친 고유성을 목표로 하는 식별자는?",
+    "choices": [
+      "URI",
+      "MAC 주소",
+      "UUID",
+      "OID"
+    ],
+    "answerIndex": 2,
+    "explanation": "UUID는 중앙 등록 절차 없이 생성할 수 있으며 공간과 시간에 걸친 고유성을 목표로 하는 식별자입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "식별자",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-143",
+    "category": "general",
+    "question": "유니코드 문자를 가변 길이 바이트열로 표현하면서 US-ASCII 문자의 바이트 값을 그대로 보존하는 인코딩은?",
+    "choices": [
+      "UTF-8",
+      "UTF-16",
+      "Base64",
+      "ASCII"
+    ],
+    "answerIndex": 0,
+    "explanation": "UTF-8은 유니코드 문자를 가변 길이 바이트열로 표현하면서 US-ASCII 문자의 기존 바이트 값을 그대로 보존합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "문자 인코딩",
+      "유니코드"
+    ]
+  },
+  {
+    "id": "general-144",
+    "category": "general",
+    "question": "전자우편이 비ASCII 문자, 비텍스트 형식, 여러 부분으로 된 본문과 확장 헤더를 다룰 수 있게 한 규격은?",
+    "choices": [
+      "SMTP",
+      "IMAP",
+      "POP3",
+      "MIME"
+    ],
+    "answerIndex": 3,
+    "explanation": "MIME은 전자우편이 비ASCII 문자와 비텍스트 형식, 여러 부분으로 된 본문, 확장 헤더를 다룰 수 있게 한 규격입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "전자우편",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-145",
+    "category": "general",
+    "question": "각 레코드를 줄 단위로 두고 그 안의 여러 필드를 쉼표로 구분하는 파일 형식은?",
+    "choices": [
+      "JSON",
+      "TSV",
+      "CSV",
+      "XML"
+    ],
+    "answerIndex": 2,
+    "explanation": "CSV는 각 레코드를 줄 단위로 두고 필드를 쉼표로 구분하며 text/csv 미디어 유형을 사용합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "데이터 형식",
+      "표 형식"
+    ]
+  },
+  {
+    "id": "general-146",
+    "category": "general",
+    "question": "국제화 도메인 이름에서 유니코드 문자열을 호스트 이름에 허용되는 ASCII 문자로 고유하고 되돌릴 수 있게 바꾸는 인코딩은?",
+    "choices": [
+      "Base64",
+      "Quoted-Printable",
+      "퍼센트 인코딩",
+      "Punycode"
+    ],
+    "answerIndex": 3,
+    "explanation": "Punycode는 국제화 도메인 이름에서 유니코드 문자열을 호스트 이름에 허용되는 ASCII 문자열로 고유하고 가역적으로 변환합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "인터넷",
+      "문자 인코딩"
+    ]
+  },
+  {
+    "id": "general-147",
+    "category": "general",
+    "question": "슬래시로 시작하는 참조 토큰들을 차례로 써서 JSON 문서 안의 특정 값을 가리키는 표준 구문은?",
+    "choices": [
+      "JSON Patch",
+      "JSON Pointer",
+      "JSON Schema",
+      "JSON-LD"
+    ],
+    "answerIndex": 1,
+    "explanation": "JSON Pointer는 슬래시로 시작하는 참조 토큰의 연속을 이용해 JSON 문서의 루트에서 특정 값까지 차례로 찾아갑니다.",
+    "difficulty": "normal",
+    "tags": [
+      "데이터 형식",
+      "JSON"
+    ]
+  },
+  {
+    "id": "general-148",
+    "category": "general",
+    "question": "HTTP 연결을 여러 개 열지 않고도 개방 핸드셰이크 뒤 TCP 위의 메시지 프레이밍으로 브라우저와 서버가 양방향 통신하게 하는 프로토콜은?",
+    "choices": [
+      "WebSocket",
+      "Server-Sent Events",
+      "Long Polling",
+      "WebRTC DataChannel"
+    ],
+    "answerIndex": 0,
+    "explanation": "WebSocket은 개방 핸드셰이크 뒤 TCP 위에서 메시지를 주고받아 브라우저 기반 응용 프로그램과 서버의 양방향 통신을 지원합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "인터넷",
+      "통신 프로토콜"
+    ]
+  },
+  {
+    "id": "general-149",
+    "category": "general",
+    "question": "행사·할 일·일지 항목과 한가한 시간 정보를 나타내고 교환하는 달력·일정 데이터 형식은?",
+    "choices": [
+      "vCard",
+      "Atom",
+      "iCalendar",
+      "GeoJSON"
+    ],
+    "answerIndex": 2,
+    "explanation": "iCalendar는 행사, 할 일, 일지 항목과 여유 시간 정보를 특정 달력 서비스나 프로토콜에 관계없이 나타내고 교환하는 데이터 형식입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "데이터 형식",
+      "일정"
+    ]
+  },
+  {
+    "id": "general-150",
+    "category": "general",
+    "question": "사람의 말·글·수어 언어를 식별하도록 하이픈으로 구분한 여러 하위 태그를 이어 만드는 표준 식별 체계는?",
+    "choices": [
+      "MIME 미디어 타입",
+      "IANA 시간대 이름",
+      "ISO 통화 코드",
+      "언어 태그"
+    ],
+    "answerIndex": 3,
+    "explanation": "언어 태그는 사람의 말, 글, 수어 등 의사소통 언어를 식별하며 하이픈으로 구분한 하위 태그를 이어 만듭니다.",
+    "difficulty": "normal",
+    "tags": [
+      "국제표준",
+      "언어 식별"
+    ]
+  },
+  {
+    "id": "general-151",
+    "category": "general",
+    "question": "MIME에서 주로 읽을 수 있는 ASCII 문자는 그대로 두고, 임의의 바이트는 등호 다음의 두 16진수 숫자로 나타내는 전송 인코딩은?",
+    "choices": [
+      "Base64",
+      "Quoted-Printable",
+      "퍼센트 인코딩",
+      "청크 전송 코딩"
+    ],
+    "answerIndex": 1,
+    "explanation": "Quoted-Printable은 읽을 수 있는 ASCII 문자를 주로 그대로 유지하면서, 필요한 바이트를 등호와 두 16진수 숫자로 나타내는 MIME 전송 인코딩입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "인터넷 표준",
+      "문자 인코딩"
+    ]
+  },
+  {
+    "id": "general-152",
+    "category": "general",
+    "question": "HTTP 응답 본문을 어떻게 처리할지 알리고, 로컬에 저장할 때 쓸 파일 이름 같은 메타데이터도 전달할 수 있는 헤더는?",
+    "choices": [
+      "Content-Disposition",
+      "Content-Type",
+      "Content-Encoding",
+      "Content-Length"
+    ],
+    "answerIndex": 0,
+    "explanation": "Content-Disposition 응답 헤더는 응답 본문의 처리 방법에 관한 정보를 전달하며, 저장할 파일 이름 같은 메타데이터도 붙일 수 있습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "HTTP",
+      "웹 표준"
+    ]
+  },
+  {
+    "id": "general-153",
+    "category": "general",
+    "question": "대상 JSON 문서에 순서대로 적용할 add·remove·replace·move·copy·test 연산 객체의 배열로 변경 사항을 표현하는 형식은?",
+    "choices": [
+      "JSON Pointer",
+      "JSON Merge Patch",
+      "JSON Patch",
+      "JSON Schema"
+    ],
+    "answerIndex": 2,
+    "explanation": "JSON Patch 문서는 대상 JSON 문서에 적용할 연산 객체의 배열입니다. 배열의 연산은 앞에서부터 차례로 적용됩니다.",
+    "difficulty": "normal",
+    "tags": [
+      "JSON",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-154",
+    "category": "general",
+    "question": "Point·LineString·Polygon 같은 지오메트리와 Feature·FeatureCollection을 중괄호 객체와 대괄호 배열로 표현하는 지리 데이터 형식은?",
+    "choices": [
+      "KML",
+      "GeoJSON",
+      "GML",
+      "CSV"
+    ],
+    "answerIndex": 1,
+    "explanation": "GeoJSON은 지리 데이터 구조를 중괄호 객체와 대괄호 배열로 인코딩합니다. 지오메트리, Feature, FeatureCollection을 표현할 수 있습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "지리정보",
+      "JSON"
+    ]
+  },
+  {
+    "id": "general-155",
+    "category": "general",
+    "question": "대상 JSON과 비슷한 모양의 문서로 변경을 기술하며, 멤버 값 null을 기존 멤버 삭제의 뜻으로 사용하는 패치 형식은?",
+    "choices": [
+      "JSON Merge Patch",
+      "JSON Patch",
+      "JSON Pointer",
+      "JSON Schema"
+    ],
+    "answerIndex": 0,
+    "explanation": "JSON Merge Patch는 대상 문서와 비슷한 문법으로 변경을 기술합니다. 새 멤버는 추가하고 기존 값은 바꾸며, null 값은 기존 멤버를 제거하라는 뜻입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "JSON",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-156",
+    "category": "general",
+    "question": "식량과 농업을 다루는 유엔 전문기구로, 기아를 물리치기 위한 국제 노력을 이끌고 모두의 식량 안보를 목표로 하는 곳은?",
+    "choices": [
+      "유엔 식량농업기구(FAO)",
+      "세계식량계획(WFP)",
+      "세계보건기구(WHO)",
+      "국제농업개발기금(IFAD)"
+    ],
+    "answerIndex": 0,
+    "explanation": "유엔 식량농업기구는 기아를 물리치기 위한 국제적 노력을 이끌며, 모두가 충분하고 질 좋은 식품에 꾸준히 접근하는 식량 안보를 목표로 합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "국제기구",
+      "식량"
+    ]
+  },
+  {
+    "id": "general-157",
+    "category": "general",
+    "question": "유엔 체계에서 지구 대기의 상태와 육지·해양의 상호작용, 날씨·기후와 물 순환에 관한 국제 협력의 틀을 제공하는 기구는?",
+    "choices": [
+      "유엔환경계획(UNEP)",
+      "국제해사기구(IMO)",
+      "국제민간항공기구(ICAO)",
+      "세계기상기구(WMO)"
+    ],
+    "answerIndex": 3,
+    "explanation": "세계기상기구는 대기와 날씨·기후, 물 순환을 다루며 각국의 기상·수문 기관이 협력할 수 있는 틀을 제공합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "국제기구",
+      "기상"
+    ]
+  },
+  {
+    "id": "general-158",
+    "category": "general",
+    "question": "RFC 8949가 정의하며, 매우 작은 코드와 비교적 작은 메시지 크기 및 버전 협상 없는 확장성을 설계 목표로 삼는 이진 데이터 형식은?",
+    "choices": [
+      "BSON",
+      "MessagePack",
+      "CBOR",
+      "Protocol Buffers"
+    ],
+    "answerIndex": 2,
+    "explanation": "CBOR는 매우 작은 코드와 비교적 작은 메시지 크기, 버전 협상 없이 확장할 수 있는 가능성을 설계 목표로 둔 이진 데이터 형식입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "데이터 형식",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-159",
+    "category": "general",
+    "question": "구분된 표현식에 변수 값을 확장해 여러 URI를 구성하도록, URI 공간을 간결하게 기술하는 표준은?",
+    "choices": [
+      "JSON Pointer",
+      "URL 쿼리 문자열",
+      "정규 표현식",
+      "URI 템플릿"
+    ],
+    "answerIndex": 3,
+    "explanation": "URI 템플릿은 변수 확장으로 여러 URI를 기술하는 간결한 문자열이며, 표현식을 값으로 바꾸어 URI 참조를 만듭니다.",
+    "difficulty": "normal",
+    "tags": [
+      "URI",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-160",
+    "category": "general",
+    "question": "여러 JSON 텍스트 각각의 앞에 ASCII 레코드 구분자를 붙이고 줄바꿈으로 끝내 연속 전송하는 형식은?",
+    "choices": [
+      "NDJSON",
+      "JSON 배열",
+      "JSON 텍스트 시퀀스",
+      "JSON Patch"
+    ],
+    "answerIndex": 2,
+    "explanation": "JSON 텍스트 시퀀스는 각 JSON 텍스트 앞에 ASCII 레코드 구분자를 붙이고 줄바꿈으로 끝내 이어 보냅니다.",
+    "difficulty": "hard",
+    "tags": [
+      "JSON",
+      "인터넷 표준"
+    ]
+  },
+  {
+    "id": "general-161",
+    "category": "general",
+    "question": "HTTP를 확장해 원격 웹 자원의 속성·컬렉션 관리와 잠금 기능을 제공하는 협업 저작 표준은?",
+    "choices": [
+      "WebDAV",
+      "WebSocket",
+      "MQTT",
+      "LDAP"
+    ],
+    "answerIndex": 0,
+    "explanation": "WebDAV는 HTTP를 확장해 웹 자원의 속성과 컬렉션을 관리하고, 덮어쓰기를 막기 위한 잠금 기능을 제공하는 협업 저작 표준입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "인터넷 표준",
+      "HTTP"
+    ]
+  },
+  {
+    "id": "general-162",
+    "category": "general",
+    "question": "XML로 2차원 벡터 그래픽과 벡터·래스터 혼합 그래픽을 표현하는 W3C 언어는?",
+    "choices": [
+      "PNG",
+      "WebP",
+      "SVG",
+      "TIFF"
+    ],
+    "answerIndex": 2,
+    "explanation": "SVG는 XML 기반 언어로 2차원 벡터 그래픽과 벡터·래스터 혼합 그래픽을 표현합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "웹 그래픽",
+      "XML"
+    ]
+  },
+  {
+    "id": "general-163",
+    "category": "general",
+    "question": "개인이나 조직의 이름·주소·전화번호 같은 연락처 정보를 표현하고 교환하기 위한 IETF 데이터 형식은?",
+    "choices": [
+      "iCalendar",
+      "Atom",
+      "vCard",
+      "OPML"
+    ],
+    "answerIndex": 2,
+    "explanation": "vCard는 개인과 조직을 비롯한 여러 대상의 연락처 정보를 표현하고 교환하기 위한 IETF 데이터 형식입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "인터넷 표준",
+      "연락처"
+    ]
+  },
+  {
+    "id": "general-164",
+    "category": "general",
+    "question": "OASIS가 표준화한 XML 기반 문서 형식으로, 텍스트·스프레드시트·프레젠테이션 등에 적용되는 것은?",
+    "choices": [
+      "EPUB",
+      "PDF/A",
+      "OOXML",
+      "ODF"
+    ],
+    "answerIndex": 3,
+    "explanation": "OpenDocument 형식(ODF)은 응용 프로그램과 플랫폼에 독립적인 XML 기반 문서 형식이며, 텍스트·스프레드시트·프레젠테이션 등에 적용됩니다.",
+    "difficulty": "hard",
+    "tags": [
+      "문서 표준",
+      "XML"
+    ]
+  },
+  {
+    "id": "general-165",
+    "category": "general",
+    "question": "유엔 전문기구로서 세계 무선 주파수와 위성 궤도를 할당하고 통신 기술 표준을 마련하는 조직은?",
+    "choices": [
+      "WMO",
+      "ICAO",
+      "UNESCO",
+      "ITU"
+    ],
+    "answerIndex": 3,
+    "explanation": "국제전기통신연합(ITU)은 유엔의 정보통신기술 전문기구로, 세계 무선 주파수와 위성 궤도를 할당하고 통신 기술 표준을 개발합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "국제기구",
+      "전기통신"
+    ]
+  },
+  {
+    "id": "general-166",
+    "category": "general",
+    "question": "HTML·CSS·SVG 같은 구조화된 웹 콘텐츠를 하나의 파일 컨테이너로 묶어 디지털 출판물을 배포·교환하는 형식은?",
+    "choices": [
+      "EPUB",
+      "ODF",
+      "WebVTT",
+      "PDF/A"
+    ],
+    "answerIndex": 0,
+    "explanation": "EPUB은 HTML·CSS·SVG 같은 웹 콘텐츠를 표현·포장해 하나의 파일 컨테이너로 배포하는 디지털 출판 형식입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "전자출판",
+      "웹표준"
+    ]
+  },
+  {
+    "id": "general-167",
+    "category": "general",
+    "question": "HTML <track> 요소와 연결해 영상의 자막·캡션·챕터처럼 음성·영상 시간에 맞춘 텍스트 트랙을 제공하는 형식은?",
+    "choices": [
+      "SRT",
+      "TTML",
+      "WebVTT",
+      "EPUB"
+    ],
+    "answerIndex": 2,
+    "explanation": "WebVTT는 HTML <track> 요소와 연결해 자막·캡션·설명·챕터 등 시간에 맞춘 텍스트 트랙을 제공하는 형식입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "웹표준",
+      "멀티미디어"
+    ]
+  },
+  {
+    "id": "general-168",
+    "category": "general",
+    "question": "수학 표기의 구조와 내용을 기술해 웹에서 수식을 제공·처리하도록 만든 마크업 언어는?",
+    "choices": [
+      "SVG",
+      "RDF",
+      "XHTML",
+      "MathML"
+    ],
+    "answerIndex": 3,
+    "explanation": "MathML은 수학 표기의 구조와 내용을 기술해 웹에서 수학을 제공·수신·처리하도록 만든 마크업 언어입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "웹표준",
+      "수학표기"
+    ]
+  },
+  {
+    "id": "general-169",
+    "category": "general",
+    "question": "GIF를 대체하도록 설계되었고, 정지·애니메이션 래스터 이미지를 무손실로 저장하며 선택적 알파 채널을 지원하는 형식은?",
+    "choices": [
+      "PNG",
+      "JPEG",
+      "SVG",
+      "TIFF"
+    ],
+    "answerIndex": 0,
+    "explanation": "PNG는 GIF를 대체하도록 설계된 형식으로, 정지·애니메이션 래스터 이미지를 무손실 저장하고 선택적 알파 채널을 지원합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "이미지형식",
+      "무손실압축"
+    ]
+  },
+  {
+    "id": "general-170",
+    "category": "general",
+    "question": "웹 자원 정보를 주어·술어·목적어 삼중항의 집합인 그래프로 표현하는 프레임워크는?",
+    "choices": [
+      "JSON-LD",
+      "RDF",
+      "SPARQL",
+      "XML"
+    ],
+    "answerIndex": 1,
+    "explanation": "RDF는 웹 정보를 표현하는 프레임워크로, RDF 그래프를 주어·술어·목적어 삼중항의 집합으로 나타냅니다.",
+    "difficulty": "normal",
+    "tags": [
+      "시맨틱웹",
+      "데이터모델"
+    ]
+  },
+  {
+    "id": "general-171",
+    "category": "general",
+    "question": "정부·사용자·노동자 대표를 함께 모아 국제 노동기준을 만들고 양질의 일자리와 사회정의를 촉진하는 유엔 전문기구는?",
+    "choices": [
+      "국제해사기구(IMO)",
+      "세계지식재산기구(WIPO)",
+      "국제노동기구(ILO)",
+      "국제민간항공기구(ICAO)"
+    ],
+    "answerIndex": 2,
+    "explanation": "국제노동기구는 정부·사용자·노동자 대표가 함께 노동기준과 정책을 만들며 양질의 일자리와 사회정의를 촉진합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "국제기구",
+      "노동"
+    ]
+  },
+  {
+    "id": "general-172",
+    "category": "general",
+    "question": "각국이 영공을 공유해 세계 민간항공망을 함께 운영하도록 협력을 조정하는 유엔 기구는?",
+    "choices": [
+      "국제민간항공기구(ICAO)",
+      "국제해사기구(IMO)",
+      "국제노동기구(ILO)",
+      "세계지식재산기구(WIPO)"
+    ],
+    "answerIndex": 0,
+    "explanation": "국제민간항공기구는 각국이 영공을 공유하며 세계 민간항공망을 함께 운영하도록 협력을 돕습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "국제기구",
+      "항공"
+    ]
+  },
+  {
+    "id": "general-173",
+    "category": "general",
+    "question": "국제 해운의 안전·보안과 선박으로 인한 해양·대기 오염 방지를 위한 세계 기준을 마련하는 유엔 전문기구는?",
+    "choices": [
+      "국제노동기구(ILO)",
+      "국제민간항공기구(ICAO)",
+      "세계지식재산기구(WIPO)",
+      "국제해사기구(IMO)"
+    ],
+    "answerIndex": 3,
+    "explanation": "국제해사기구는 국제 해운의 안전·보안과 선박 오염 방지를 위한 규제 기준을 마련하는 유엔 전문기구입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "국제기구",
+      "해운"
+    ]
+  },
+  {
+    "id": "general-174",
+    "category": "general",
+    "question": "창작자와 혁신가가 지식재산을 국경 너머에서 보호·활용하도록 서비스와 국제 규칙 논의의 장을 제공하는 유엔 기구는?",
+    "choices": [
+      "화학무기금지기구(OPCW)",
+      "세계지식재산기구(WIPO)",
+      "국제노동기구(ILO)",
+      "국제해사기구(IMO)"
+    ],
+    "answerIndex": 1,
+    "explanation": "세계지식재산기구는 창작자와 혁신가의 지식재산을 국경 너머에서 보호하도록 서비스와 국제 규칙 논의의 장을 제공합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "국제기구",
+      "지식재산"
+    ]
+  },
+  {
+    "id": "general-175",
+    "category": "general",
+    "question": "화학 병기를 영구적이고 검증 가능하게 제거하는 세계적 노력을 감독하는 국제기구는?",
+    "choices": [
+      "국제민간항공기구(ICAO)",
+      "국제해사기구(IMO)",
+      "화학무기금지기구(OPCW)",
+      "세계지식재산기구(WIPO)"
+    ],
+    "answerIndex": 2,
+    "explanation": "화학무기금지기구는 화학 병기를 영구적이고 검증 가능하게 없애는 세계적 노력을 감독합니다.",
+    "difficulty": "hard",
+    "tags": [
+      "국제기구",
+      "군축"
+    ]
+  }
+,
+  {
+    "id": "general-176",
+    "category": "general",
+    "question": "보유자에게 회사의 일부 소유권을 주는 증권으로, 영어로 equities라고도 하는 것은?",
+    "choices": [
+      "채권",
+      "양도성예금증서",
+      "펀드 지분",
+      "주식"
+    ],
+    "answerIndex": 3,
+    "explanation": "주식은 보유자에게 회사의 일부 소유권을 주는 증권이며, 영어로 equities라고도 합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "경제",
+      "투자"
+    ]
+  },
+  {
+    "id": "general-177",
+    "category": "general",
+    "question": "발행자가 투자자에게 돈을 빌리고 이자를 지급한 뒤 만기에 원금을 갚겠다고 약속하는 채무 증권은?",
+    "choices": [
+      "채권",
+      "주식",
+      "상장지수펀드",
+      "선물계약"
+    ],
+    "answerIndex": 0,
+    "explanation": "채권은 정부나 기업 같은 발행자가 투자자에게 돈을 빌리고, 이자와 만기 원금 상환을 약속하는 채무 증권입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "경제",
+      "채무증권"
+    ]
+  },
+  {
+    "id": "general-178",
+    "category": "general",
+    "question": "가격의 등락과 관계없이 같은 금액을 일정한 간격으로 계속 투자하는 방식은?",
+    "choices": [
+      "일시금 투자",
+      "가치 평균 투자",
+      "정액 분할 투자",
+      "배당 재투자"
+    ],
+    "answerIndex": 2,
+    "explanation": "정액 분할 투자는 시장의 상승과 하락에 관계없이 같은 금액을 일정한 간격으로 투자하는 방식입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "경제",
+      "투자전략"
+    ]
+  },
+  {
+    "id": "general-179",
+    "category": "general",
+    "question": "여러 투자자의 돈을 모아 증권 등에 투자하고, 투자자가 회사 자체나 중개인을 통해 지분을 사거나 환매하는 개방형 투자회사는?",
+    "choices": [
+      "폐쇄형 펀드",
+      "상장지수펀드",
+      "헤지펀드",
+      "뮤추얼 펀드"
+    ],
+    "answerIndex": 3,
+    "explanation": "뮤추얼 펀드는 여러 투자자의 돈을 모아 자산에 투자하며, 투자자가 펀드 자체나 중개인을 통해 지분을 사고 환매하는 개방형 투자회사입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "경제",
+      "펀드"
+    ]
+  },
+  {
+    "id": "general-180",
+    "category": "general",
+    "question": "여러 투자자의 자금을 모아 포트폴리오를 구성하지만, 뮤추얼 펀드와 달리 증권거래소에서 시장가격으로 지분이 매매되는 상품은?",
+    "choices": [
+      "머니마켓 펀드",
+      "상장지수펀드",
+      "사모펀드",
+      "연금펀드"
+    ],
+    "answerIndex": 1,
+    "explanation": "상장지수펀드는 뮤추얼 펀드처럼 자금을 모아 투자하지만, 지분이 증권거래소에서 시장가격으로 거래됩니다.",
+    "difficulty": "hard",
+    "tags": [
+      "경제",
+      "상장상품"
+    ]
+  }
+,
+  {
+    "id": "general-181",
+    "category": "general",
+    "question": "발명에 대해 부여되어, 소유자가 허락 없이 타인이 이를 상업적으로 이용하는 것을 막을 수 있는 배타적 권리는?",
+    "choices": [
+      "특허권",
+      "상표권",
+      "저작권",
+      "산업디자인권"
+    ],
+    "answerIndex": 0,
+    "explanation": "특허권은 발명에 부여되는 배타적 권리로, 소유자는 타인의 무단 상업적 이용을 막을 수 있습니다.",
+    "difficulty": "easy",
+    "tags": [
+      "지식재산",
+      "혁신"
+    ]
+  },
+  {
+    "id": "general-182",
+    "category": "general",
+    "question": "한 기업의 상품이나 서비스를 다른 기업의 것과 구별할 수 있게 하는 표지에 부여되는 권리는?",
+    "choices": [
+      "특허권",
+      "상표권",
+      "영업비밀",
+      "저작권"
+    ],
+    "answerIndex": 1,
+    "explanation": "상표권은 한 기업의 상품이나 서비스를 다른 기업의 것과 구별하는 표지를 보호합니다.",
+    "difficulty": "easy",
+    "tags": [
+      "지식재산",
+      "상품식별"
+    ]
+  },
+  {
+    "id": "general-183",
+    "category": "general",
+    "question": "법적 의미에서 물품의 장식적 측면을 뜻하며, 물품의 형태나 표면 장식으로 구성될 수 있는 지식재산은?",
+    "choices": [
+      "특허",
+      "저작권",
+      "상표",
+      "산업 디자인"
+    ],
+    "answerIndex": 3,
+    "explanation": "산업 디자인은 물품의 장식적 측면으로, 물품의 형태나 표면 장식으로 구성될 수 있습니다.",
+    "difficulty": "normal",
+    "tags": [
+      "지식재산",
+      "제품외관"
+    ]
+  },
+  {
+    "id": "general-184",
+    "category": "general",
+    "question": "특정 지역에서 유래하고 그 지역 때문에 품질·특성 또는 평판을 갖는 상품에 사용하는 표지는?",
+    "choices": [
+      "상표",
+      "특허",
+      "지리적 표시",
+      "영업비밀"
+    ],
+    "answerIndex": 2,
+    "explanation": "지리적 표시는 특정 지역에서 유래하고 그 원산지 때문에 품질·특성 또는 평판을 갖는 상품에 사용하는 표지입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "지식재산",
+      "지역상품"
+    ]
+  },
+  {
+    "id": "general-185",
+    "category": "general",
+    "question": "일반적으로 알려지지 않아 상업적 가치가 있고, 권리자가 합리적인 비밀 유지 조치를 한 기밀 정보에 성립하는 지식재산권은?",
+    "choices": [
+      "저작권",
+      "특허권",
+      "영업비밀",
+      "상표권"
+    ],
+    "answerIndex": 2,
+    "explanation": "영업비밀은 일반적으로 알려지지 않아 상업적 가치가 있고 합리적인 비밀 유지 조치가 적용된 기밀 정보에 관한 권리입니다.",
+    "difficulty": "normal",
+    "tags": [
+      "지식재산",
+      "기업정보"
+    ]
+  }
+,
+  {
+    "id": "general-186",
+    "category": "general",
+    "question": "사람·동물·생태계의 건강이 서로 연결돼 있다고 보고 세 영역의 건강을 함께 균형 있게 높이려는 통합 접근은?",
+    "choices": [
+      "정밀의료",
+      "보편적 건강보장",
+      "직업보건",
+      "원 헬스"
+    ],
+    "answerIndex": 3,
+    "explanation": "원 헬스는 사람과 동물, 생태계의 건강을 지속 가능하게 균형·최적화하려는 통합 접근입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "공중보건",
+      "환경"
+    ]
+  },
+  {
+    "id": "general-187",
+    "category": "general",
+    "question": "감염병 유행 중 디지털·물리 환경에 거짓되거나 오해를 부르는 내용을 포함한 정보가 지나치게 많아져 혼란을 키우는 현상은?",
+    "choices": [
+      "인포데믹",
+      "팬데믹",
+      "엔데믹",
+      "신데믹"
+    ],
+    "answerIndex": 0,
+    "explanation": "인포데믹은 질병 유행 중 정확하지 않은 내용을 포함한 과도한 정보가 퍼져 혼란과 불신을 일으키는 현상입니다.",
+    "difficulty": "easy",
+    "tags": [
+      "보건정보",
+      "미디어"
+    ]
+  },
+  {
+    "id": "general-188",
+    "category": "general",
+    "question": "출생 시 기대수명, 평균·기대 교육연수, 1인당 국민총소득을 바탕으로 건강·지식·생활수준을 종합하는 UNDP 지표는?",
+    "choices": [
+      "다차원빈곤지수",
+      "인간개발지수",
+      "성불평등지수",
+      "사회진보지수"
+    ],
+    "answerIndex": 1,
+    "explanation": "인간개발지수는 출생 시 기대수명, 평균·기대 교육연수, 1인당 국민총소득을 이용해 건강·지식·생활수준의 성취를 종합합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "개발",
+      "지표"
+    ]
+  },
+  {
+    "id": "general-189",
+    "category": "general",
+    "question": "농업생물다양성·전통지식·문화·경관을 지역 공동체가 지속 가능하게 관리하며 생계와 식량안보를 지키는 살아 있는 유산 체계를 FAO가 무엇이라 부르는가?",
+    "choices": [
+      "세계농업센서스",
+      "국제식물보호협약",
+      "세계중요농업유산",
+      "지속가능식량체계"
+    ],
+    "answerIndex": 2,
+    "explanation": "세계중요농업유산은 공동체가 전통지식과 농업생물다양성, 경관을 함께 지켜 온 살아 있는 농업 유산 체계입니다.",
+    "difficulty": "hard",
+    "tags": [
+      "농업",
+      "유산"
+    ]
+  },
+  {
+    "id": "general-190",
+    "category": "general",
+    "question": "물리적·네트워크 위치나 자산 소유만으로 사용자를 믿지 않고, 기업 자원에 접속하기 전 주체와 장치를 인증·인가하는 보안 접근은?",
+    "choices": [
+      "제로 트러스트",
+      "경계형 보안",
+      "최소 권한 원칙",
+      "심층 방어"
+    ],
+    "answerIndex": 0,
+    "explanation": "제로 트러스트는 위치나 소유권에 따른 암묵적 신뢰를 두지 않고 자원 접근 전에 인증과 인가를 수행합니다.",
+    "difficulty": "normal",
+    "tags": [
+      "사이버보안",
+      "접근통제"
+    ]
   }
 ]

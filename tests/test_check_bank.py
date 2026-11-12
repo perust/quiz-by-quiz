@@ -74,6 +74,50 @@ class CheckBankTests(unittest.TestCase):
         self.assertEqual(2, report.config.all_round_questions)
         self.assertEqual(2, report.total_questions)
 
+    def test_question_ids_accept_exactly_three_or_four_digits(self):
+        project = self.make_project((("history", "한국사"),))
+        project.write_bank(
+            "history",
+            [
+                question("history-999", "history", "세 자리 ID 문제는?"),
+                question("history-1000", "history", "네 자리 ID 문제는?"),
+            ],
+        )
+
+        report = check_bank.audit_repository(project.root)
+
+        self.assertEqual([], report.errors)
+
+    def test_question_ids_reject_out_of_contract_forms(self):
+        for qid in ("history-10000", "science-1000", "history-abcd"):
+            with self.subTest(qid=qid):
+                project = self.make_project((("history", "한국사"),))
+                project.write_bank("history", [question(qid, "history")])
+
+                report = check_bank.audit_repository(project.root)
+
+                self.assertTrue(
+                    any("ID 형식" in error for error in report.errors), report.errors
+                )
+
+    def test_four_digit_ids_do_not_weaken_other_validation(self):
+        project = self.make_project((("history", "한국사"),))
+        duplicate_a = question("history-1000", "history", "첫 번째 문제는?")
+        duplicate_b = question("history-1000", "history", "두 번째 문제는?")
+        wrong_category = question("history-1001", "science", "세 번째 문제는?")
+        invalid_index = question("history-1002", "history", "네 번째 문제는?")
+        invalid_index["answerIndex"] = True
+        project.write_bank(
+            "history", [duplicate_a, duplicate_b, wrong_category, invalid_index]
+        )
+
+        report = check_bank.audit_repository(project.root)
+        joined = "\n".join(report.errors)
+
+        self.assertIn("ID 중복: history-1000", joined)
+        self.assertIn("category가 파일명과 다름", joined)
+        self.assertIn("answerIndex", joined)
+
     def test_config_parser_ignores_id_name_objects_outside_categories(self):
         project = self.make_project((("history", "한국사"),))
         constants = project.root / "src" / "constants.ts"

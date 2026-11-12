@@ -97,6 +97,58 @@ class GuidanceConsistencyTests(unittest.TestCase):
                 self.assertEqual(0, proc.returncode, proc.stderr)
                 self.assertIn(expected, proc.stdout)
 
+    def test_quiz_add_reserves_1000_and_rejects_10000(self):
+        snippet = python_snippets("quiz-add.md")[0]
+
+        for max_id, expected_rc, expected_text in (
+            (999, 0, "예약 ID: history-1000"),
+            (9999, 1, "최대 9999"),
+        ):
+            with self.subTest(max_id=max_id), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / "src").mkdir()
+                (root / "data").mkdir()
+                (root / "src" / "constants.ts").write_text(
+                    "export const QUESTIONS_PER_ROUND = 1;\n"
+                    "export const QUESTIONS_PER_CATEGORY_IN_ALL = 1;\n"
+                    "export const CATEGORIES: Category[] = [\n"
+                    "  { id: 'history', name: '한국사', icon: 'x', description: 'x' },\n"
+                    "  ];\n",
+                    encoding="utf-8",
+                )
+                row = {
+                    "id": f"history-{max_id:03d}",
+                    "category": "history",
+                    "question": "ID 경계 확인 문제는?",
+                    "choices": ["정답", "오답 하나", "오답 둘", "오답 셋"],
+                    "answerIndex": 0,
+                    "explanation": "ID 경계를 확인합니다.",
+                    "difficulty": "easy",
+                    "tags": ["테스트"],
+                }
+                (root / "data" / "history.json").write_text(
+                    json.dumps([row], ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                env = os.environ.copy()
+                env.update(
+                    {
+                        "PYTHONPATH": str(ROOT),
+                        "QUIZ_CATEGORY": "history",
+                        "QUIZ_COUNT": "1",
+                    }
+                )
+                proc = subprocess.run(
+                    [sys.executable, "-c", snippet],
+                    cwd=root,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertEqual(expected_rc, proc.returncode, proc.stdout + proc.stderr)
+                self.assertIn(expected_text, proc.stdout + proc.stderr)
+
     def test_daily_backup_snippet_creates_a_labeled_snapshot(self):
         snippets = python_snippets("quiz-daily.md")
         self.assertEqual(1, len(snippets))
