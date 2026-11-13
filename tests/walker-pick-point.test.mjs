@@ -389,11 +389,12 @@ test('내 캐릭터: 지금 입은 카드가 접힘 아래면 clamp된 자리가
   window.innerHeight = 900;
 });
 
-test('홈: 몸통 가운데로 본다 — 시작 자리는 그대로 「내 캐릭터」 입구 바로 아래 빈 바닥이다', () => {
+test('홈: 몸통 가운데로 보고 중앙 메뉴 아래 빈 바닥에서 시작한다', () => {
   const stage = byId('home-stage');
   stage.parent = Object.assign(new FakeElement('section'), { dataset: { screen: 'home' } });
   byId('home-note').hidden = true;
   byId('nickname-dialog').hidden = true;
+  byId('home-hub').paint({ left: 340, top: 64, width: 600, height: 624 });
   const entry = byId('open-characters').paint({ left: 16, top: 120, width: 120, height: 44 });
   const character = byId('home-character');
   const home = createHomeScreen({
@@ -414,7 +415,7 @@ test('홈: 몸통 가운데로 본다 — 시작 자리는 그대로 「내 캐�
   });
   runFrames();
 
-  assert.deepEqual(footOf(character), { x: 76, y: 164 + 48 + 6 });
+  assert.deepEqual(footOf(character), { x: 640, y: 688 + 48 + 8 });
   assert.deepEqual(pickOffset(character), { dx: 0, dy: 24 });
   assert.equal(entry.classList.contains('is-standing'), false, '시작부터 입구를 밟지 않는다');
   home.hide();

@@ -11,7 +11,6 @@
 import { NICKNAME_MAX_LENGTH, NICKNAME_MIN_LENGTH } from '../constants.js';
 import { need } from '../dom.js';
 import { createWalker } from './walker.js';
-import { shortHomeStartPoint } from './walker-geometry.js';
 import { trapFocus } from './accessibility.js';
 import { paintCharacter } from './sprite.js';
 import { allRoundLength, categoryDockCaption } from './round-rules.js';
@@ -151,6 +150,7 @@ export function createHomeScreen({
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
+    hub: need('home-hub'),
     quests: need('home-quests'),
     caption: need('category-caption'),
     grid: need('category-grid'),
@@ -171,7 +171,6 @@ export function createHomeScreen({
     dialogMessage: need('nickname-message'),
     dialogCancel: need<HTMLButtonElement>('nickname-cancel'),
     walker: need('home-character'),
-    title: need('home-title'),
     note: need('home-note'),
     noteText: need('home-note-text'),
     noteReload: need<HTMLButtonElement>('home-note-reload'),
@@ -189,27 +188,13 @@ export function createHomeScreen({
   // 선택점은 넘기지 않는다 — 워커의 기본(몸통 가운데)이 모든 화면의 규칙이다 (U10)
   const walker = createWalker({
     character: el.walker,
-    // 처음에는 「내 캐릭터」 입구 바로 아래의 월드 바닥에 선다.
-    // HUD 글자를 덮지 않으면서도 한 번 위로 걸으면 바로 입구를 고를 수 있다.
+    // 중앙 메뉴 아래의 빈 월드에 선다. 메뉴·글자와 공용 엄지 영역을 함께 비운다.
     startAt: () => {
-      // 200% 확대나 가로 화면에서는 두 보조 입구가 상단 edge HUD 양쪽으로 이동한다.
-      // 그때는 가운데의 빈 하늘에서 시작해 어느 입구도 가리지 않는다.
-      // 짧은 가로 화면(U07)은 접었던 브랜드를 위 가운데에 되살리므로 그 아래에 선다.
-      // 브랜드가 접혀 있으면 머리말이 1px 칸이라 제목의 폭도 1px 이하다
-      if (window.innerHeight <= 700) {
-        const brand = el.title.getBoundingClientRect();
-        return shortHomeStartPoint({
-          viewportWidth: window.innerWidth,
-          walkerHeight: el.walker.offsetHeight,
-          entryTop: el.openRanking.getBoundingClientRect().top,
-          brandBottom: brand.width > 1 ? brand.bottom : null,
-        });
-      }
-      const box = el.openCharacters.getBoundingClientRect();
+      const box = el.hub.getBoundingClientRect();
       if (box.width === 0) return null;
       return {
         x: box.left + box.width / 2,
-        y: box.bottom + el.walker.offsetHeight + 6,
+        y: box.bottom + el.walker.offsetHeight + 8,
       };
     },
   });

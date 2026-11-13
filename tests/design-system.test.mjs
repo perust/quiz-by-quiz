@@ -330,16 +330,16 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
 
 // ── 화면 위계 ──────────────────────────────────────────────────────
 
-test('홈: 닉네임 라벨, 보조 edge HUD, 하단 5칸 dock과 동등한 온라인·전체 도전 진입점이다', () => {
+test('홈: 중앙의 게임·분야·보조 메뉴와 동등한 온라인·전체 도전 진입점이다', () => {
   const home = html.slice(html.indexOf('data-screen="home"'), html.indexOf('data-screen="quiz"'));
-  const order = ['id="open-nickname"', '<nav class="home-menu"', '<header class="home-header">', 'class="home-quests"', 'id="category-grid"', 'class="home-primary-actions"', 'id="open-online"', 'id="start-all"'];
+  const order = ["id=\"home-hub\"", "<header class=\"home-header\">", "class=\"home-quests\"", "class=\"home-primary-actions\"", "id=\"open-online\"", "id=\"start-all\"", "id=\"category-grid\"", "id=\"open-nickname\"", "<nav class=\"home-menu\""];
   order.reduce((previous, marker) => {
     const at = home.indexOf(marker);
     assert.ok(at > previous, `${marker} 의 순서가 어긋났다`);
     return at;
   }, -1);
   const quests = home.slice(home.indexOf('class="home-quests"'), home.indexOf('id="home-character"'));
-  assert.match(quests, /id="category-grid"[\s\S]*id="open-online"[\s\S]*id="start-all"/, '다섯 분야와 두 주요 게임 진입점은 한 패널 안에 있다');
+  assert.match(quests, /id="open-online"[\s\S]*id="start-all"[\s\S]*id="category-grid"/, '다섯 분야와 두 주요 게임 진입점은 한 패널 안에 있다');
 
   const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
   const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", node('main.app', body)));
@@ -389,21 +389,21 @@ test('홈: 닉네임 라벨, 보조 edge HUD, 하단 5칸 dock과 동등한 온�
 
     // 두 보조 바로가기는 중앙 콘텐츠를 미는 panel이 아니라 독립 edge HUD 슬롯이다.
     const dock = node('nav.home-menu', stage);
-    assert.equal(valueOf(rules, dock, 'display', env), 'contents');
+    assert.equal(valueOf(rules, dock, 'display', env), 'grid');
     assert.equal(valueOf(rules, node('button.menu-card#open-ranking', dock), 'background', env), 'var(--hud-bg)');
     assert.equal(valueOf(rules, node('header.home-header', stage), 'background', env), 'transparent');
   }
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', DESKTOP), 'repeat(2, minmax(0, 1fr))');
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', MOBILE), 'minmax(0, 280px)');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', MOBILE), 'minmax(0, 1fr)');
   const mediumPortrait = { ...MOBILE, width: 440, height: 844 };
   const shortMedium = { ...MOBILE, width: 440, height: 400 };
   const fractionalMedium = { ...MOBILE, width: 440, height: 480.5 };
   const shortNarrow = { ...MOBILE, width: 400, height: 400 };
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', mediumPortrait), 'minmax(0, 280px)', '기록 pill이 있는 중간 폭 세로 화면은 한 열이다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', mediumPortrait), 'minmax(0, 1fr)', '기록 pill이 있는 중간 폭 세로 화면은 한 열이다');
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortMedium), 'repeat(2, minmax(0, 1fr))', '짧은 가로 화면은 조작부 공간을 위해 두 열이다');
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', fractionalMedium), 'minmax(0, 280px)', '소수 viewport 높이에도 반응형 규칙 사이 빈틈이 없다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', fractionalMedium), 'minmax(0, 1fr)', '소수 viewport 높이에도 반응형 규칙 사이 빈틈이 없다');
   assert.equal(valueOf(rules, node('span.challenge-card__meta#start-all-meta', startAll), 'display', shortMedium), 'none', '짧고 좁은 화면은 보조 기록을 접는다');
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortNarrow), 'minmax(0, 280px)', '420px 이하 화면은 짧아도 한 열을 유지한다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortNarrow), 'minmax(0, 1fr)', '420px 이하 화면은 짧아도 한 열을 유지한다');
   assert.equal(valueOf(rules, node('span.challenge-card__meta#start-all-meta', startAll), 'display', shortNarrow), 'none', '420px 이하 짧은 화면도 기록 pill은 시각적으로 접는다');
   assert.equal(
     valueOf(rules, node('button.menu-card.menu-card--wide#open-nickname:hover', node('div.home-player', stage)), 'background', DESKTOP),
@@ -885,9 +885,9 @@ test('안전 영역: 노치·홈 표시줄이 있는 기기에서도 조작과 �
     [node("section.screen[data-screen='ranking']", app), 'padding',
       /safe-area-inset-top[\s\S]*safe-area-inset-right[\s\S]*safe-area-inset-bottom[\s\S]*safe-area-inset-left/],
     [node('div.app-bar', body), 'padding', /safe-area-inset-top/],
-    [node('div.home-player', stage), 'top', /safe-area-inset-top/],
-    [node('div.home-player', stage), 'left', /safe-area-inset-left/],
-    [node('div.home-quests', stage), 'bottom', /safe-area-inset-bottom/],
+    [nodeFromHtml(html, 'home-hub'), 'top', /safe-area-inset-top/],
+    [nodeFromHtml(html, 'home-hub'), 'left', /safe-area-inset-left/],
+    [nodeFromHtml(html, 'home-hub'), 'bottom', /safe-area-inset-bottom/],
     [nodeFromHtml(html, 'feedback'), 'padding', /safe-area-inset-bottom/],
     [controls, '--walk-controls-bottom', /safe-area-inset-bottom/],
     [controls, '--walk-stick-left', /safe-area-inset-left/],

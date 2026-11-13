@@ -188,29 +188,15 @@ function homeTree() {
   };
 }
 
-test('짧은 가로 홈(U07): 분야 | 온라인·전체 도전을 dock 한 줄에 두고 브랜드를 되살린다', () => {
-  for (const env of [...LANDSCAPE_PHONES, { ...DESKTOP, width: 740, height: 360 }]) {
-    const at = `${env.width}×${env.height} ${env.pointer}`;
-    const home = homeTree();
-    assert.equal(valueOf(rules, home.quests, 'grid-template-columns', env), 'minmax(0, 1fr) auto', at);
-    assert.equal(px(valueOf(rules, home.quests, 'padding', env), env), 4, `${at}: 넓은 화면 dock 여백 16px을 거둔다`);
-    assert.equal(valueOf(rules, home.note, 'grid-column', env), '1 / -1', `${at}: 방 복귀 줄은 한 줄 위에 폭을 다 쓴다`);
-    // 같은 크기의 두 주요 버튼: 같은 묶음 안의 같은 두 칸, 같은 행 높이
-    assert.equal(valueOf(rules, home.actions, 'grid-template-columns', env), 'repeat(2, minmax(0, 1fr))', at);
-    assert.equal(valueOf(rules, home.actions, 'grid-auto-rows', env), '1fr', at);
-    assert.equal(valueOf(rules, home.actions, 'margin', env), '0', at);
-    assert.equal(valueOf(rules, home.actions, 'width', env), 'auto', at);
-    assert.equal(valueOf(rules, home.meta, 'display', env), 'none', `${at}: 전체 최고점 pill은 접고 이름에 남긴다`);
-    assert.equal(valueOf(rules, home.full, 'display', env), 'none', at);
-    assert.equal(valueOf(rules, home.compact, 'display', env), 'block', `${at}: 좁은 칸은 짧은 이름`);
-    // 접었던 브랜드(1px clip)를 풀고 위 가운데에 작게 둔다. 부제는 접는다
-    assert.equal(valueOf(rules, home.header, 'clip', env), 'auto', at);
-    assert.equal(valueOf(rules, home.header, 'overflow', env), 'visible', at);
-    assert.equal(valueOf(rules, home.header, 'height', env), 'auto', at);
-    assert.equal(valueOf(rules, home.header, 'width', env), 'min(42vw, 520px)', at);
-    assert.equal(px(valueOf(rules, home.header, 'min-height', env), env), 0, at);
-    assert.equal(px(valueOf(rules, home.title, 'font-size', env), env), 24, at);
-    assert.equal(valueOf(rules, home.subtitle, 'display', env), 'none', at);
+test("짧은 가로 홈도 중앙 메뉴의 같은 읽기 순서와 동등한 두 CTA를 쓴다", () => {
+  for(const env of [...LANDSCAPE_PHONES,OLD_LANDSCAPE,touch(480,320)]) {
+    const home=homeTree();
+    assert.equal(valueOf(rules,home.actions,"grid-template-columns",env),"repeat(2, minmax(0, 1fr))");
+    assert.equal(valueOf(rules,home.actions,"grid-auto-rows",env),"1fr");
+    assert.equal(valueOf(rules,home.meta,"display",env),"none");
+    assert.equal(valueOf(rules,home.header,"position",env),"static");
+    assert.equal(valueOf(rules,home.header,"width",env),"100%");
+    assert.equal(valueOf(rules,home.subtitle,"display",env),"none");
   }
 });
 
@@ -229,105 +215,18 @@ test('홈과 퀴즈는 짧은 가로에서도 같은 viewport 하단 anchor를 �
   }
 });
 
-const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-
-function shortHomeHudBoxes(env) {
-  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])", '.walk-controls--on'] });
-  const app = node('main.app', body);
-  const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", app));
-  const nav = node('nav.home-menu', stage);
-  const player = node('div.home-player', stage);
-  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
-  const characters = node('button.menu-card#open-characters', nav);
-  const ranking = node('button.menu-card#open-ranking', nav);
-  const rulesButton = node('button.icon-button.home-rules#open-rules', nav);
-  const controls = node('div.walk-controls.walk-controls--on#walk-controls', app);
-  const stick = node('div.walk-stick#walk-stick', controls);
-  const confirm = node('button.walk-confirm#walk-confirm', controls);
-  const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height });
-  const positioned = (element) => {
-    const width = px(valueOf(rules, element, 'width', env), env);
-    const height = px(valueOf(rules, element, 'min-height', env) ?? valueOf(rules, element, 'height', env), env);
-    const leftValue = valueOf(rules, element, 'left', env);
-    const rightValue = valueOf(rules, element, 'right', env);
-    const left = leftValue && leftValue !== 'auto' ? px(leftValue, env) : env.width - px(rightValue, env) - width;
-    return box(left, px(valueOf(rules, element, 'top', env), env), width, height);
-  };
-  const controlsBottom = px(valueOf(rules, controls, '--walk-controls-bottom', env), env);
-  const stickSize = px(valueOf(rules, stick, 'width', env), env);
-  const confirmSize = px(valueOf(rules, confirm, 'width', env), env);
-  const playerLeft = px(valueOf(rules, player, 'left', env), env);
-  const playerTop = px(valueOf(rules, player, 'top', env), env);
-  const playerWidth = px(valueOf(rules, player, 'width', env), env);
-  const nicknameHeight = px(valueOf(rules, nickname, 'min-height', env), env);
-  const stickLeft = px(valueOf(rules, controls, '--walk-stick-left', env), env);
-  const confirmRight = px(valueOf(rules, controls, '--walk-confirm-right', env), env);
-  return {
-    nickname: box(playerLeft, playerTop, playerWidth, nicknameHeight),
-    characters: positioned(characters),
-    ranking: positioned(ranking),
-    rules: positioned(rulesButton),
-    settings: box(env.width - 12 - 44, 12, 44, 44),
-    stick: box(stickLeft, env.height - controlsBottom - stickSize, stickSize, stickSize),
-    confirm: box(env.width - confirmRight - confirmSize, env.height - controlsBottom - confirmSize, confirmSize, confirmSize),
-  };
-}
-
-test('568×320·480×320 홈 바로가기는 닉네임·설정·게임 방법·공용 조작부와 겹치지 않는다', () => {
-  for (const env of [OLD_LANDSCAPE, touch(480, 320)]) {
-    const at = `${env.width}×${env.height}`;
-    const boxes = shortHomeHudBoxes(env);
-    assert.ok(Object.values(boxes).every((box) => Object.values(box).every(Number.isFinite)), `${at}: ${JSON.stringify(boxes)}`);
-    for (const [a, b] of [
-      ['characters', 'nickname'], ['ranking', 'settings'], ['ranking', 'rules'],
-      ['characters', 'stick'], ['ranking', 'confirm'],
-    ]) {
-      assert.equal(overlaps(boxes[a], boxes[b]), false, `${at}: ${a} ${JSON.stringify(boxes[a])} × ${b} ${JSON.stringify(boxes[b])}`);
+test("짧은 홈의 보조 입구와 복귀 줄은 절대 HUD 배치가 아닌 중앙 일반 흐름이다", () => {
+  const stage=node("div.home-stage#home-stage");
+  const hub=node("div.home-hub#home-hub",stage);
+  const nav=node("nav.home-menu",hub);
+  for(const env of [OLD_LANDSCAPE,touch(480,320),MOBILE]) {
+    assert.equal(valueOf(rules,hub,"overflow",env),"auto");
+    for(const id of ["open-characters","open-ranking","open-rules"]) {
+      const button=node(`button.menu-card#${id}`,nav);
+      assert.notEqual(valueOf(rules,button,"position",env),"absolute");
+      assert.ok(px(valueOf(rules,button,"min-height",env),env)>=44);
     }
-    assert.ok(boxes.characters.left - boxes.nickname.right >= 8, `${at}: 닉네임–캐릭터 8px`);
-    assert.ok(boxes.rules.left - boxes.ranking.right >= 8, `${at}: 랭킹–게임 방법 8px`);
-  }
-});
-
-/** 방 복귀 줄이 펼쳐진 홈. 568×320 규칙은 dock 의 :has() 로 걸린다 */
-function homeTreeWithNote() {
-  const body = node('body', null, { has: ["[data-screen='home']:not([hidden])"] });
-  const section = node("section.screen[data-screen='home']", node('main.app', body));
-  const quests = node('div.home-quests#home-quests', node('div.home-stage#home-stage', section), {
-    has: ['.home-room-note:not([hidden])'],
-  });
-  const grid = node('div.category-grid#category-grid', quests);
-  return {
-    quests,
-    note: node('button.home-room-note#home-room-note', quests),
-    noteText: node('span.home-room-note__text#home-room-note-text', node('button.home-room-note#home-room-note', quests)),
-    actions: node('div.home-primary-actions', quests),
-    full: node('span.category-card__name.category-card__name--full', node('button.category-card', grid)),
-    compact: node('span.category-card__name.category-card__name--compact', node('button.category-card', grid)),
-  };
-}
-
-test('568×320 홈: 방 복귀 줄은 분야 줄의 왼쪽 칸에 들어 dock 이 한 줄 더 커지지 않는다', () => {
-  // 줄이 dock 맨 위에 한 줄을 더 얹으면 dock 이 206px 이 되어 두 입구가 닉네임·설정을, 스틱·선택 원이
-  // 복귀 줄을 덮었다. 실측은 tools/check-screens.js ⑯이 한다
-  const home = homeTreeWithNote();
-  const at = '568×320';
-  assert.equal(valueOf(rules, home.quests, 'grid-template-columns', OLD_LANDSCAPE), 'minmax(0, 9rem) minmax(0, 1fr)', at);
-  assert.equal(valueOf(rules, home.actions, 'grid-column', OLD_LANDSCAPE), '1 / -1', `${at}: 온라인·전체 도전은 아래 줄에 폭을 다 쓴다`);
-  assert.equal(valueOf(rules, home.full, 'display', OLD_LANDSCAPE), 'none', `${at}: 좁아진 분야 칸은 짧은 이름`);
-  assert.equal(valueOf(rules, home.compact, 'display', OLD_LANDSCAPE), 'block', at);
-  assert.equal(valueOf(rules, home.note, 'display', OLD_LANDSCAPE), 'grid', at);
-  assert.equal(valueOf(rules, home.noteText, '-webkit-line-clamp', OLD_LANDSCAPE), '2', `${at}: 방 이름은 두 줄까지`);
-  assert.equal(px(valueOf(rules, home.note, 'font-size', OLD_LANDSCAPE), OLD_LANDSCAPE), 12, at);
-
-  // 줄이 없으면 568×320 dock 은 예전 두 줄 그대로다
-  const plain = homeTree();
-  assert.notEqual(valueOf(rules, plain.quests, 'grid-template-columns', OLD_LANDSCAPE), 'minmax(0, 9rem) minmax(0, 1fr)', at);
-  // 다른 크기는 줄이 있어도 이 규칙을 받지 않는다 — 넓은 짧은 가로는 한 줄 dock 위에 줄을 얹는다
-  for (const env of [touch(740, 360), touch(667, 375), MOBILE, touch(375, 667)]) {
-    const other = homeTreeWithNote();
-    assert.notEqual(valueOf(rules, other.quests, 'grid-template-columns', env), 'minmax(0, 9rem) minmax(0, 1fr)', `${env.width}×${env.height}`);
-    assert.notEqual(valueOf(rules, other.note, 'display', env), 'grid', `${env.width}×${env.height}`);
+    assert.equal(valueOf(rules,node("button.home-room-note",node("div.home-quests",hub)),"min-height",env),"var(--tap)");
   }
 });
 
@@ -343,20 +242,9 @@ test('568×320 퀴즈: 아래 여백을 한 단계 줄여 두 열 배치가 화�
   }
 });
 
-test('높이 700px 이하 홈의 시작 자리: 두 입구 사이 가운데, 보이는 브랜드 아래, 입구 줄 위', async () => {
-  const { shortHomeStartPoint } = await import('../js/ui/walker-geometry.js');
-  // 브랜드가 접힌 화면(375×667 등)은 예전 자리 그대로다: 머리 높이 + 48px, 입구 줄 위
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 375, walkerHeight: 48, entryTop: 376, brandBottom: null }), { x: 187.5, y: 96 });
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 320, walkerHeight: 48, entryTop: 80, brandBottom: null }), { x: 160, y: 72 });
-  // 브랜드가 보이면 그 아래 8px에 머리가 온다 — 브랜드가 크면 더 내려선다
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 740, walkerHeight: 48, entryTop: 212, brandBottom: 40 }), { x: 370, y: 96 });
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 740, walkerHeight: 48, entryTop: 212, brandBottom: 64 }), { x: 370, y: 120 });
-  // 그래도 입구 줄보다 아래로 내려가 입구를 밟지 않는다
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 740, walkerHeight: 48, entryTop: 110, brandBottom: 64 }), { x: 370, y: 102 });
-  // 머리가 화면 위로 솟지 않는다
-  assert.deepEqual(shortHomeStartPoint({ viewportWidth: 740, walkerHeight: 48, entryTop: 20, brandBottom: null }), { x: 370, y: 48 });
-
-  // home.ts 는 접힌 브랜드(1px 칸)를 «보이지 않음»으로 넘긴다
-  assert.match(homeSource, /if \(window\.innerHeight <= 700\) \{[\s\S]*?shortHomeStartPoint\(\{[\s\S]*?entryTop: el\.openRanking\.getBoundingClientRect\(\)\.top/);
-  assert.match(homeSource, /brandBottom: brand\.width > 1 \? brand\.bottom : null/);
+test("홈 캐릭터는 중앙 메뉴의 아래 빈 바닥에서 시작한다", () => {
+  assert.match(homeSource,/const box = el\.hub\.getBoundingClientRect\(\)/);
+  assert.match(homeSource,/x: box\.left \+ box\.width \/ 2/);
+  assert.match(homeSource,/y: box\.bottom \+ el\.walker\.offsetHeight \+ 8/);
+  assert.doesNotMatch(homeSource,/shortHomeStartPoint|window\.innerHeight <= 700/);
 });
