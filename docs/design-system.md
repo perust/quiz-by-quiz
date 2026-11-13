@@ -126,16 +126,16 @@ Radix Colors 처럼 단계 번호가 쓰임새를 말한다. 1–2 바탕·옅�
 
 | 토큰 | 값 |
 | --- | --- |
-| `--font-text` | `-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif` |
-| `--font-display` | `'NeoDunggeunmo'` + 같은 시스템 글꼴 |
+| `--font-text` | `"Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif` |
+| `--font-display` | `var(--font-text)` — 제목·숫자도 같은 Pretendard |
 | 크기 | `--text-xs` 12 · `-sm` 14 · `-md` 16 · `-lg` 18 · `-xl` 20 · `-2xl` 24 · `-3xl` 32 · `-4xl` 48 |
 | 줄 높이 | `--leading-tight` 1.25 · `-snug` 1.4 · `-normal` 1.6 |
-| 굵기 | `--weight-bold` 700 · `--weight-heavy` 800 (픽셀 글꼴은 400) |
+| 굵기 | 기본 400 · `--weight-bold` 700 · `--weight-heavy` 800 |
 
-- **본문은 시스템 글꼴이다.** 질문(18–20px)·보기(16px)·해설(16px)·설명·버튼·폼은 모두 `--font-text`.
-- **픽셀 글꼴은 짧은 표식에만 쓴다**: 브랜드 `quiz by quiz`, 문항 위치 `3 / 10`, 보기 번호, 무대 칸 번호,
-  결과 점수와 등급, 랭킹·최종 순위 숫자. 이 목록 밖에 쓰면 테스트가 실패한다. 일반 UI에서는
-  `--text-*` 단계만 쓴다.
+- **실제 UI 글자는 Pretendard로 통일한다.** 제목·메뉴·질문(18–20px)·보기(16px)·해설(16px)·설명·버튼·폼·대화상자·랭킹·타이머가 같은 글꼴을 쓴다.
+- 공식 한국어용 **Pretendard Variable v1.3.9** 원본을 `css/fonts/PretendardVariable-1.3.9.woff2`에 포함한다. 외부 CDN 요청은 없다. `45 920` 가변 굵기·normal·`font-display: swap`이며 지연·실패 시 시스템 글꼴로 읽고 조작할 수 있다. preload는 CSS와 같은 URL이다.
+- 출처·정확한 태그 commit·원본 hash는 `css/fonts/PRETENDARD-SOURCE.md`, 원본 저작권·SIL OFL 1.1 전문은 `css/fonts/PRETENDARD-LICENSE.txt`에 둔다. 원본 binary를 변환하거나 서브셋하지 않는다.
+- `--font-display`는 브랜드·문항 위치·보기 번호·무대 칸 번호·결과 점수/등급·랭킹 숫자의 기존 크기 위계를 구분하는 별칭이다. 픽셀 글꼴을 다시 연결하지 않는다. 배경·캐릭터·아이콘 묶음과 게임/입력/데이터 기능은 그대로다. 기존 NeoDunggeunmo 자산·라이선스는 보존한다.
 - 일반 UI 글자는 12px 아래로 내리지 않는다. 입력칸은 16px 이다 — 아래로 내리면 iOS 가 입력할 때 화면을 확대한다.
 - **자주 누르는 탐색 글자는 14px 이고 폭 420px 이하에서만 12px 다** (U53): 홈 dock 분야 이름, 보기의 판정 알약,
   로비 세 동작 이름. 높이만 짧은 가로 화면은 폭이 넉넉해 14px 를 지킨다. dock 은 다섯 칸 한 줄이라 14px

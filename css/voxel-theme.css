@@ -23,12 +23,14 @@
    것만 30절에 남겼다(그 절의 머리말). 규칙을 옮기거나 지우면 tools/css-snapshot.mjs 로 계산값이 그대로인지
    보고, 상태 규칙은 tests/ui-states.test.mjs·tests/design-system.test.mjs 의 실제 화면 사슬로 확인한다. */
 
+/* Pretendard v1.3.9 원본. 저작권·SIL OFL 전문: fonts/PRETENDARD-LICENSE.txt.
+   로컬 단일 파일로 한국어·영문·숫자를 제공하고, 받는 동안에는 시스템 글꼴을 쓴다. */
 @font-face {
-  font-family: 'NeoDunggeunmo';
-  src: url('fonts/neodgm.woff2') format('woff2');
+  font-family: 'Pretendard Variable';
+  src: url('fonts/PretendardVariable-1.3.9.woff2') format('woff2-variations');
   font-display: swap;
   font-style: normal;
-  font-weight: 400;
+  font-weight: 45 920;
 }
 
 /* ── 1. 토큰 ─────────────────────────────────────────────────── */
@@ -215,11 +217,10 @@
   /* 목록 줄 안의 «내 것» 표지: 왼쪽 4px 보라 띠. 높이가 아니라 표식이다 */
   --marker-mine: inset var(--space-1) 0 0 var(--accent);
 
-  /* 글꼴: 본문은 읽기 좋은 한글 시스템 글꼴, 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 */
-  --font-text: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
-    'Malgun Gothic', system-ui, sans-serif;
-  --font-display: 'NeoDunggeunmo', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Malgun Gothic', system-ui, sans-serif;
+  /* 본문·제목·숫자는 같은 Pretendard. 픽셀 정체성은 배경·캐릭터·아이콘에 남긴다. */
+  --font-text: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont,
+    'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif;
+  --font-display: var(--font-text);
   --text-xs: 12px;
   --text-sm: 14px;
   --text-md: 16px;
@@ -484,6 +485,13 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/* 키 이름·부팅 안내도 브라우저 기본 monospace로 빠지지 않는다. */
+kbd,
+code,
+pre {
+  font-family: var(--font-text);
 }
 
 /* 키보드로 이동할 때만 고리를 보여준다. 마우스 클릭에는 뜨지 않는다.
