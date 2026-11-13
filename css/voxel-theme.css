@@ -530,7 +530,6 @@ textarea {
 .quiz-hud,
 .question,
 .home-player .menu-card--wide,
-.home-menu,
 .home-quests,
 .result-block,
 .result-stats__item,
@@ -1192,9 +1191,14 @@ textarea {
   }
 }
 
-/* 짧은 가로 홈(U07, css/style.css 홈 무대 절)은 접었던 브랜드를 위 가운데에 작게 되살린다.
-   dock 안쪽 여백과 머리 높이는 26절이 거둔다 */
+/* 짧은 가로 화면도 중앙 브랜드를 작은 크기로 유지한다. */
 @media (max-height: 420px) and (min-width: 640px) {
+  .home-title {
+    font-size: var(--text-2xl);
+  }
+}
+
+@media (max-height: 700px) {
   .home-title {
     font-size: var(--text-2xl);
   }
@@ -3830,26 +3834,7 @@ select.is-standing {
 
 /* ── 26. 반응형 ────────────────────────────────────────────────── */
 
-/* 넓은 화면의 홈. .home-header 의 높이·안쪽 여백은 옛 마을 패널 시절 값이다 — 위치·폭은 css/style.css 의
-   홈 무대 절이 정한다. 계산값을 바꾸지 않으려고 U49 정리에서 그대로 두었다 */
-@media (min-width: 600px) {
-  .home-header {
-    min-height: 176px;
-    padding-left: var(--space-6);
-  }
-
-  .home-quests {
-    padding: var(--space-4);
-  }
-}
-
 @media (max-width: 420px) {
-  .home-header {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    min-height: 136px;
-    padding: var(--space-3) 0 var(--space-3) var(--space-4);
-  }
-
   .home-title span {
     font-size: var(--text-xs);
   }
@@ -3885,18 +3870,7 @@ select.is-standing {
   }
 }
 
-/* 짧은 가로 홈(U07)은 dock을 한 줄로 낮추고(css/style.css 홈 무대 절) 브랜드를 위 가운데에 작게
-   되살린다. 넓은 화면의 dock 안쪽 여백(16px)과 마을 패널 높이(176px)는 이 줄에 맞지 않아 거둔다. */
 @media (max-height: 420px) and (min-width: 640px) {
-  .home-quests {
-    padding: var(--space-1);
-  }
-
-  .home-header {
-    min-height: 0;
-    padding: 0;
-  }
-
   .home-title span {
     font-size: var(--text-xs);
   }

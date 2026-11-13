@@ -98,11 +98,11 @@ test('손가락 조작부: 스크롤 끝과 홈 메뉴는 공용 하단 조작�
 
     const { app, root, stick } = controlTree({ screen: 'home' });
     const home = node("section.screen[data-screen='home']", app);
-    const quests = node('div.home-quests#home-quests', home);
+    const quests = node('div.home-hub#home-hub', home);
     const controlsTop = px(valueOf(rules, root, '--walk-controls-bottom', env), env)
       + px(valueOf(rules, stick, 'height', env), env);
     const questsBottom = px(valueOf(rules, quests, 'bottom', env), env);
-    assert.equal(questsBottom - controlsTop, 8, `${env.width}×${env.height}: 홈 메뉴와 공용 조작부 간격`);
+    assert.equal(questsBottom - controlsTop, 72, `${env.width}×${env.height}: 중앙 메뉴 아래 캐릭터 48px·여백과 공용 조작부 간격`);
   }
 });
 
@@ -122,7 +122,7 @@ test('손가락 조작부: 여백은 조작부가 떠 있을 때만이고, 온�
 test('짧은 touch 홈도 공용 하단 이동 스틱과 선택 버튼을 유지한다', () => {
   const { app, root, stick, knob, confirm } = controlTree({ screen: 'home' });
   const home = node("section.screen[data-screen='home']", app);
-  const quests = node('div.home-quests#home-quests', home);
+  const quests = node('div.home-hub#home-hub', home);
 
   assert.equal(valueOf(rules, stick, 'display', NARROW), 'block');
   assert.equal(valueOf(rules, confirm, 'display', NARROW), 'block');
@@ -134,7 +134,7 @@ test('짧은 touch 홈도 공용 하단 이동 스틱과 선택 버튼을 유지
   assert.equal(controlsBottom, 12, '조작부는 공용 viewport 하단 edge를 쓴다');
   assert.equal(
     px(valueOf(rules, quests, 'bottom', NARROW), NARROW) - controlsBottom - 80,
-    8,
+    72,
     '홈 메뉴는 조작부 위에 토큰 간격을 둔다',
   );
 });

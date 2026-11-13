@@ -13,96 +13,47 @@ function between(text, start, end) {
   return text.slice(startIndex, endIndex);
 }
 
-test('홈 보조 바로가기는 edge HUD, 온라인과 전체 도전은 같은 크기의 주요 진입점이다', async () => {
-  const [html, css, homeSource] = await Promise.all([
-    source('../index.html'),
-    source('../css/style.css'),
-    source('../src/ui/home.ts'),
-  ]);
-  const home = between(html, 'data-screen="home"', 'data-screen="quiz"');
-  const shortcuts = between(home, '<nav class="home-menu"', '</nav>');
-  const quests = between(home, 'class="home-quests"', 'id="home-character"');
-  const profile = between(home, 'id="open-nickname"', '</button>');
-
-  assert.ok(home.indexOf('id="open-nickname"') < home.indexOf('<nav class="home-menu"'));
-  assert.match(profile, /menu-card__label">닉네임<\/span>[\s\S]*menu-card__name" id="nickname-value">퀴즈왕/);
-  assert.match(profile, /menu-card__desc sr-only">바꾸기/);
-  assert.match(profile, /menu-card__edit" aria-hidden="true"/);
-  assert.match(home, /<nav class="home-menu" aria-label="홈 바로가기">/);
-  assert.equal((shortcuts.match(/class="menu-card"/g) ?? []).length, 2);
-  // 아이콘은 글리프가 아니라 디자인 시스템 아이콘이다. 낭독은 버튼의 aria-label 이 맡는다
-  assert.match(shortcuts, /id="open-characters"[^>]*aria-label="캐릭터 모습 바꾸기"[\s\S]*?<span class="menu-card__figure" data-icon="palette" aria-hidden="true"><\/span>[\s\S]*?<span class="menu-card__name">캐릭터<\/span>/);
-  assert.match(shortcuts, /id="open-ranking"[^>]*aria-label="랭킹: 이 브라우저의 최고 기록 보기"[\s\S]*?data-icon="trophy"[\s\S]*?<span class="menu-card__name">랭킹<\/span>/);
-  assert.doesNotMatch(shortcuts, /id="open-online"/);
+test("홈은 게임 시작·분야·개인화·기록·도움말을 중앙 읽기 순서로 묶는다", async () => {
+  const [html, homeSource, css] = await Promise.all([source("../index.html"), source("../src/ui/home.ts"), source("../css/style.css")]);
+  const rules = await loadStyles(["css/style.css", "css/voxel-theme.css"]);
+  const order = ["home-title", "home-quests", "open-online", "start-all", "category-grid", "open-nickname", "open-characters", "open-ranking", "open-rules"];
+  order.reduce((previous, id) => { const at = html.indexOf(`id="${id}"`); assert.ok(at > previous, id); return at; }, -1);
+  const hub = nodeFromHtml(html, "home-hub");
+  for (const env of [DESKTOP, MOBILE, {...MOBILE, width:320, height:550}, {...MOBILE, width:480, height:320}]) {
+    assert.equal(valueOf(rules, hub, "overflow", env), "auto");
+    for (const id of order.slice(2)) assert.notEqual(valueOf(rules, nodeFromHtml(html,id), "position", env), "absolute", id);
+    assert.equal(valueOf(rules, nodeFromHtml(html,"category-grid"), "grid-template-columns", env), "repeat(5, minmax(0, 1fr))");
+  }
+  for (const id of ["open-characters", "open-ranking", "open-rules"]) {
+    const item = nodeFromHtml(html,id);
+    assert.ok(item.parent.classes.includes("home-menu"), id);
+    assert.equal(valueOf(rules,item,"width",MOBILE), "100%");
+    assert.ok(lengthOf(rules,valueOf(rules,item,"min-height",MOBILE),MOBILE)>=44);
+  }
+  // 배치만 바뀐다. 기존 이름·목적지·아이콘·단일 캐릭터·공용 조작부 소유권은 그대로 잠근다.
+  const home = between(html, "data-screen=\"home\"", "data-screen=\"quiz\"");
+  const shortcuts = between(home, "<nav class=\"home-menu\"", "</nav>");
+  const quests = between(home, "class=\"home-quests\"", "class=\"home-secondary\"");
+  const nickname = between(home, "id=\"open-nickname\"", "</button>");
+  assert.match(shortcuts, /aria-label="홈 바로가기"/);
+  assert.match(shortcuts, /id="open-characters"[^>]*aria-label="캐릭터 모습 바꾸기"[\s\S]*data-icon="palette"/);
+  assert.match(shortcuts, /id="open-ranking"[^>]*aria-label="랭킹: 이 브라우저의 최고 기록 보기"[\s\S]*data-icon="trophy"/);
+  assert.doesNotMatch(shortcuts, /id="open-online"|id="my-character-figure"/);
   assert.match(quests, /id="home-quests" role="group" aria-label="게임 선택"/);
-  assert.match(quests, /class="home-primary-actions"[\s\S]*?class="challenge-card challenge-card--online" id="open-online"[\s\S]*?data-icon="users"[\s\S]*?<span class="challenge-card__name">온라인<\/span>[\s\S]*?class="challenge-card challenge-card--all" id="start-all"/);
   assert.equal((quests.match(/class="challenge-card challenge-card--/g) ?? []).length, 2);
-  assert.doesNotMatch(shortcuts, /id="my-character-figure"/);
-  assert.doesNotMatch(homeSource, /createBody|characterFigure/);
-  assert.match(homeSource, /x: box\.left \+ box\.width \/ 2/);
-  assert.match(homeSource, /y: box\.bottom \+ el\.walker\.offsetHeight \+ 6/);
-  assert.match(homeSource, /general: '상식'/);
-  assert.match(homeSource, /art: '예술'/);
-  assert.match(homeSource, /`\$\{category\.name\} 문제 풀기, 최고 \$\{bestScore\}점`/, '전체 분야 이름과 최고 점수를 함께 낭독한다');
+  assert.match(quests, /id="open-online"[\s\S]*data-icon="users"[\s\S]*challenge-card__name">온라인<\/span>/);
+  assert.match(nickname, /menu-card__edit" aria-hidden="true"/);
+  assert.doesNotMatch(homeSource, /createBody|characterFigure|controls:|home-dock|--home-dock-h/);
   assert.match(homeSource, /category-card__name category-card__name--compact/);
-  assert.doesNotMatch(homeSource, /ResizeObserver|MutationObserver|syncDockHeight|--home-dock-h/);
-  assert.match(homeSource, /window\.innerHeight <= 700/);
-
-  // 홈의 월드 배치(edge HUD 입구·dock)는 파일 안의 글 위치가 아니라 index.html 의 실제 사슬에서 이긴 값으로 본다.
-  // 예전에는 맨 끝 30절(월드 우선 화면 구성)의 글 구간을 읽었는데, U49 에서 그 규칙이 홈 무대 절의 여러 블록으로
-  // 옮겨 갔다 — 이긴 값은 어느 판의 CSS 에서나 같아야 한다
-  const rules = await loadStyles(['css/style.css', 'css/voxel-theme.css']);
-  const tall = [DESKTOP, MOBILE];
-  const nav = nodeFromHtml(html, 'open-ranking').parent;
-  const actions = node('div.home-primary-actions', nodeFromHtml(html, 'home-quests'));
-  const categoryGrid = nodeFromHtml(html, 'category-grid');
-  const nicknameCard = nodeFromHtml(html, 'open-nickname');
-  for (const env of tall) {
-    const at = `${env.width}×${env.height}`;
-    assert.equal(valueOf(rules, nav, 'display', env), 'contents', `${at} .home-menu`);
-    assert.match(valueOf(rules, nodeFromHtml(html, 'open-ranking'), 'right', env), /^max\(/, `${at} #open-ranking right`);
-    assert.equal(valueOf(rules, categoryGrid, 'grid-template-columns', env), 'repeat(5, minmax(0, 1fr))', `${at} dock 분야 다섯 칸`);
-    assert.equal(
-      valueOf(rules, node('button.category-card:nth-child(odd):last-child', categoryGrid), 'grid-column', env),
-      'auto', `${at} 홀수 끝 칸도 한 칸`,
-    );
-    assert.equal(valueOf(rules, nicknameCard, 'grid-template-columns', env), '36px minmax(0, 1fr) 16px', `${at} 닉네임 칸`);
-    assert.equal(valueOf(rules, node('span.menu-card__edit', nicknameCard), 'display', env), 'block', `${at} 연필`);
-  }
-  // 두 보조 입구의 기본 크기는 64px 다 (폭 600px 이상은 72px, 420px 이하는 60px 로 바뀐다)
-  for (const id of ['open-characters', 'open-ranking']) {
-    assert.equal(valueOf(rules, nodeFromHtml(html, id), 'min-height', { ...MOBILE, width: 500, height: 900 }), '64px', `#${id} 높이`);
-  }
-  assert.equal(valueOf(rules, actions, 'width', DESKTOP), 'min(568px, 100%)');
-  assert.equal(valueOf(rules, actions, 'grid-template-columns', MOBILE), 'minmax(0, 280px)', '폭 420px 이하의 두 CTA');
-  assert.doesNotMatch(css, /#open-online\s*\{/, '온라인은 보조 HUD 입구가 아니다 — 따로 배치하지 않는다');
-  assert.doesNotMatch(css, /\.menu-card:nth-child\(odd\):last-child/);
-  assert.match(css, /\.menu-card__name \{[\s\S]*?white-space: nowrap/);
-  // 높이 700px 이하: 닉네임 칸이 좁아지고 연필을 거두며, 두 보조 입구는 상단 edge HUD로 가고 브랜드는 접힌다
-  const short = { ...MOBILE, width: 390, height: 700 };
-  const homeChain = node("div.home-stage#home-stage", node("section.screen[data-screen='home']"));
-  const player = node('div.home-player', homeChain);
-  const nickname = node('button.menu-card.menu-card--wide#open-nickname', player);
-  assert.equal(valueOf(rules, player, 'width', short), '120px');
-  assert.equal(valueOf(rules, nickname, 'grid-template-columns', short), '36px minmax(0, 1fr)');
-  assert.equal(valueOf(rules, node('span.menu-card__edit', nickname), 'display', short), 'none');
-  const shortcutsNav = node('nav.home-menu', homeChain);
-  const shortCharacters = node('button.menu-card#open-characters', shortcutsNav);
-  const shortRanking = node('button.menu-card#open-ranking', shortcutsNav);
-  assert.equal(lengthOf(rules, valueOf(rules, shortCharacters, 'top', short), short), 76, '캐릭터는 닉네임 아래');
-  assert.equal(lengthOf(rules, valueOf(rules, shortRanking, 'top', short), short), 116, '랭킹은 설정·게임 방법 아래');
-  for (const entry of [shortCharacters, shortRanking]) {
-    assert.equal(valueOf(rules, entry, 'bottom', short), 'auto');
-  }
-  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'position', short), 'absolute');
-  assert.equal(valueOf(rules, node('header.home-header', homeChain), 'width', short), '1px');
-  assert.doesNotMatch(homeSource, /controls:|home-dock|--home-dock-h/);
-  assert.doesNotMatch(css, /body:has\(\[data-screen='home'[^)]*\)\s+\.walk-(?:stick|confirm)/);
+  assert.match(homeSource, /`\$\{category\.name\} 문제 풀기, 최고 \$\{bestScore\}점`/);
   assert.doesNotMatch(css, /\.walk-controls\[data-placement|home-dock|--home-dock-h/);
-  assert.match(css, /body:has\(\.walk-controls--on\) \[data-screen='home'\]:not\(\[hidden\]\) \.home-quests \{[\s\S]*?bottom: var\(--walk-controls-reserve\)/);
   assert.doesNotMatch(css, /\.home-header \{\s*display: none/);
-  assert.match(css, /\.home-note \{[\s\S]*?top: calc\(max\(var\(--space-3\), env\(safe-area-inset-top\)\) \+ var\(--space-16\) \+ var\(--space-16\)\);[\s\S]*?bottom: auto/);
-  assert.match(css, /body:has\(\.home-note:not\(\[hidden\]\)\) #home-character \{\s*display: none/);
+  assert.match(html, /menu-card__label">닉네임<\/span>/);
+  assert.match(html, /menu-card__desc sr-only">바꾸기/);
+  assert.match(html, /menu-card__name">게임 방법<\/span>/);
+  assert.match(homeSource, /const box = el\.hub\.getBoundingClientRect\(\)/);
+  assert.match(homeSource, /y: box\.bottom \+ el\.walker\.offsetHeight \+ 8/);
+  assert.doesNotMatch(homeSource, /ResizeObserver|MutationObserver|syncDockHeight|--home-dock-h|shortHomeStartPoint/);
 });
 
 test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는다 — 판 길이는 상수에서 말한다 (U04)', async () => {
@@ -126,7 +77,7 @@ test('홈 문제 카드는 문제 은행 크기를 문구로 노출하지 않는
   assert.match(html, /id="start-all-meta" hidden/);
 
   // 분야 dock 위 캡션이 분야 칸 묶음의 이름이다
-  const quests = html.slice(html.indexOf('id="home-quests"'), html.indexOf('class="home-primary-actions"'));
+  const quests = html.slice(html.indexOf('id="home-quests"'), html.indexOf('class="home-secondary"'));
   assert.match(quests, /<p class="home-quests__caption" id="category-caption"><\/p>\s*<div class="category-grid" id="category-grid" role="group" aria-labelledby="category-caption"><\/div>/);
   assert.ok(quests.indexOf('id="home-room-note"') < quests.indexOf('id="category-caption"'), '복귀 줄은 여전히 dock 맨 위다');
 
@@ -163,10 +114,10 @@ test('dock 분야 이름은 폭 420px 이하에서만 12px 이고, 넓은 화면
     for (const width of [320, 360, 390, 420, 421, 440, 458, 467, 480, 481, 500, 560, 599, 600, 768, 1280]) {
       const env = { ...MOBILE, width, height };
       const at = `${width}×${height}`;
-      assert.equal(valueOf(rules, quests, 'width', env), 'min(calc(100% - var(--space-6)), 700px)', at);
+      assert.equal(valueOf(rules, quests, 'width', env), '100%', at);
       assert.equal(valueOf(rules, quests, 'border', env), 'var(--border-1) solid var(--border)', at);
       assert.equal(valueOf(rules, grid, 'grid-template-columns', env), 'repeat(5, minmax(0, 1fr))', `${at}: 다섯 칸 한 줄`);
-      const dock = Math.min(width - 24, 700) - 2 * 1 - 2 * px(quests, 'padding', env);
+      const dock = Math.min(width - 24, 600) - 8 - 2 * 1 - 2 * px(quests, 'padding', env);
       const cell = (dock - 4 * px(grid, 'gap', env)) / 5;
       for (const [id, fullName] of Object.entries(fullNames)) {
         const card = node(`button.category-card[data-category='${id}']`, grid);

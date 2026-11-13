@@ -99,98 +99,94 @@
   <main class="app">
 
     <!-- ─────────── 홈 ───────────
-         세계가 화면 전체를 채우고, 플레이어·바로가기·분야·주 행동만 가장자리에 뜬다. -->
+         세계가 화면 전체를 채우고, 게임·분야·보조 메뉴는 중앙 한 묶음에 놓인다. -->
     <section class="screen" data-screen="home" aria-labelledby="home-title" tabindex="-1">
       <!-- 캐릭터가 이 안을 걸어 다니며 메뉴를 고른다.
            버튼은 그대로 눌러도 되고, 걷기는 문제 화면 조작을 미리 익히는 길이다. -->
       <div class="home-stage" id="home-stage">
-        <div class="home-player">
-          <!-- 랭킹과 온라인 방에서 쓰는 이름. 세계 위의 작은 플레이어 HUD다. -->
-          <button type="button" class="menu-card menu-card--wide" id="open-nickname">
-            <span class="menu-card__figure" data-icon="user" aria-hidden="true"></span>
-            <span class="menu-card__body">
-              <span class="menu-card__label">닉네임</span>
-              <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
-              <span class="menu-card__desc sr-only">바꾸기</span>
-            </span>
-            <span class="menu-card__edit" aria-hidden="true"></span>
-          </button>
-        </div>
-
-        <!-- 보조 동작은 세계 가장자리의 작은 HUD 버튼으로 둔다. -->
-        <nav class="home-menu" aria-label="홈 바로가기">
-            <button type="button" class="menu-card" id="open-characters"
-                    aria-label="캐릭터 모습 바꾸기">
-              <span class="menu-card__figure" data-icon="palette" aria-hidden="true"></span>
-              <span class="menu-card__body">
-                <span class="menu-card__name">캐릭터</span>
-                <span class="menu-card__desc">모습 바꾸기</span>
-              </span>
-            </button>
-            <button type="button" class="menu-card" id="open-ranking"
-                    aria-label="랭킹: 이 브라우저의 최고 기록 보기" disabled>
-              <span class="menu-card__figure" data-icon="trophy" aria-hidden="true"></span>
-              <span class="menu-card__body">
-                <span class="menu-card__name">랭킹</span>
-                <span class="menu-card__desc">최고 기록</span>
-              </span>
-            </button>
-            <!-- 「게임 방법」 (U01). 판을 열기 전에 규칙을 읽는 자리라 시간이 흐르지 않는다.
-                 앱 바의 설정 버튼 바로 아래 edge HUD 조각이고, 홈 화면 안에 있어 다른 화면에는 없다 -->
-            <button type="button" class="icon-button home-rules" id="open-rules" aria-haspopup="dialog">
-              <span class="icon-button__icon icon" data-icon="question" aria-hidden="true"></span>
-              <span class="sr-only">게임 방법</span>
-            </button>
-        </nav>
-
-        <!-- 배경의 2D 픽셀 월드는 장식이고, 제목만 읽기 순서에 남는다. -->
-        <header class="home-header">
-          <div class="home-heading">
-            <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
-            <!-- 말 덩어리 안에서는 줄을 바꾸지 않는다. 좁아서 넘치면 «·» 곁에서만 나뉜다 -->
-            <p class="home-subtitle"><span class="home-subtitle__phrase">4지선다 상식 퀴즈</span> · <span class="home-subtitle__phrase">혼자·친구와</span></p>
-          </div>
-        </header>
-
-        <!-- 분야 고르기. 다섯 분야와 두 주요 게임 진입점이 한 패널 안에 있다 -->
-        <div class="home-quests" id="home-quests" role="group" aria-label="게임 선택">
-          <!-- 홈으로 와도 방에서 나간 것은 아니다. 서버가 «아직 방에 있다»고 답할 때만
-               뜨는 복귀 줄이다 (online/home-room-note.js 가 언제 묻는지 정한다 — 온라인을 다녀온
-               뒤의 홈, 그리고 방에 들어갔던 흔적이 있을 때의 부팅 직후). 풀던 혼자 판이면 «이어 풀기»다.
-               서버에 닿지 않는 동안에는 같은 자리가 연습(기록 안 남음) 안내와 «다시 연결»이다 (FR-7.13 3단계) -->
-          <button type="button" class="home-room-note" id="home-room-note" hidden>
-            <span class="home-room-note__text" id="home-room-note-text"></span>
-            <span class="home-room-note__action" id="home-room-note-action">돌아가기</span>
-          </button>
-          <!-- 한 판의 길이 (U04). 글은 home.js 가 QUESTIONS_PER_ROUND 로 쓴다 — 은행 크기는 쓰지 않는다.
-               분야 칸 묶음의 이름이기도 하다 -->
-          <p class="home-quests__caption" id="category-caption"></p>
-          <div class="category-grid" id="category-grid" role="group" aria-labelledby="category-caption"></div>
-
-          <!-- 온라인과 전체 도전은 같은 크기의 주요 게임 진입점이다.
-               정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
-               눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
-               home.js가 리스너를 단 뒤 열어준다. -->
-          <div class="home-primary-actions">
-            <button type="button" class="challenge-card challenge-card--online" id="open-online"
-                    aria-label="온라인, 방을 만들거나 참가해요" disabled>
-              <span class="challenge-card__icon" data-icon="users" aria-hidden="true"></span>
-              <span class="challenge-card__body">
-                <span class="challenge-card__name">온라인</span>
-                <!-- 몇 명부터 여는지를 누르기 전에 알린다. 서버에 묻기 전에는 어느 API든 맞는 이 말이고,
-                     세션이 알려 준 시작 인원으로 home.js가 «혼자서도 · 친구와 함께»(또는 이전 API의
-                     «친구와 함께 · 2명부터»)로 바꾼다. 로비를 불러오는 동안은 같은 자리에 «연결 중…» -->
-                <span class="challenge-card__desc" id="open-online-desc">방을 만들거나 참가해요</span>
-              </span>
-            </button>
-            <button type="button" class="challenge-card challenge-card--all" id="start-all" disabled>
-              <span class="challenge-card__icon" data-icon="play" aria-hidden="true"></span>
-              <span class="challenge-card__body">
-                <span class="challenge-card__name">전체 도전</span>
-                <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
-              </span>
-              <span class="challenge-card__meta" id="start-all-meta" hidden></span>
-            </button>
+        <div class="home-hub" id="home-hub">
+          <div class="home-hub__content">
+            <header class="home-header">
+              <div class="home-heading">
+                <h1 class="home-title" id="home-title">quiz <span>by</span> quiz</h1>
+                <!-- 말 덩어리 안에서는 줄을 바꾸지 않는다. 좁아서 넘치면 «·» 곁에서만 나뉜다 -->
+                <p class="home-subtitle"><span class="home-subtitle__phrase">4지선다 상식 퀴즈</span> · <span class="home-subtitle__phrase">혼자·친구와</span></p>
+              </div>
+            </header>
+            <div class="home-quests" id="home-quests" role="group" aria-label="게임 선택">
+              <!-- 홈으로 와도 방에서 나간 것은 아니다. 서버가 «아직 방에 있다»고 답할 때만
+              뜨는 복귀 줄이다 (online/home-room-note.js 가 언제 묻는지 정한다 — 온라인을 다녀온
+              뒤의 홈, 그리고 방에 들어갔던 흔적이 있을 때의 부팅 직후). 풀던 혼자 판이면 «이어 풀기»다.
+              서버에 닿지 않는 동안에는 같은 자리가 연습(기록 안 남음) 안내와 «다시 연결»이다 (FR-7.13 3단계) -->
+              <button type="button" class="home-room-note" id="home-room-note" hidden>
+                <span class="home-room-note__text" id="home-room-note-text"></span>
+                <span class="home-room-note__action" id="home-room-note-action">돌아가기</span>
+              </button>
+              <!-- 온라인과 전체 도전은 같은 크기의 주요 게임 진입점이다.
+              정적 마크업이라 스크립트가 붙기 전에도 화면에 보인다.
+              눌러도 아무 일이 없는 상태를 만들지 않으려고 disabled로 두고,
+              home.js가 리스너를 단 뒤 열어준다. -->
+              <div class="home-primary-actions">
+                <button type="button" class="challenge-card challenge-card--online" id="open-online" aria-label="온라인, 방을 만들거나 참가해요" disabled>
+                  <span class="challenge-card__icon" data-icon="users" aria-hidden="true"></span>
+                  <span class="challenge-card__body">
+                    <span class="challenge-card__name">온라인</span>
+                    <!-- 몇 명부터 여는지를 누르기 전에 알린다. 서버에 묻기 전에는 어느 API든 맞는 이 말이고,
+                    세션이 알려 준 시작 인원으로 home.js가 «혼자서도 · 친구와 함께»(또는 이전 API의
+                    «친구와 함께 · 2명부터»)로 바꾼다. 로비를 불러오는 동안은 같은 자리에 «연결 중…» -->
+                    <span class="challenge-card__desc" id="open-online-desc">방을 만들거나 참가해요</span>
+                  </span>
+                </button>
+                <button type="button" class="challenge-card challenge-card--all" id="start-all" disabled>
+                  <span class="challenge-card__icon" data-icon="play" aria-hidden="true"></span>
+                  <span class="challenge-card__body">
+                    <span class="challenge-card__name">전체 도전</span>
+                    <span class="challenge-card__desc">모든 카테고리를 섞어 한 번에</span>
+                  </span>
+                  <span class="challenge-card__meta" id="start-all-meta" hidden></span>
+                </button>
+              </div>
+              <!-- 한 판의 길이 (U04). 글은 home.js 가 QUESTIONS_PER_ROUND 로 쓴다 — 은행 크기는 쓰지 않는다.
+              분야 칸 묶음의 이름이기도 하다 -->
+              <p class="home-quests__caption" id="category-caption"></p>
+              <div class="category-grid" id="category-grid" role="group" aria-labelledby="category-caption"></div>
+            </div>
+            <div class="home-secondary">
+              <div class="home-player">
+                <!-- 랭킹과 온라인 방에서 쓰는 이름. 중앙 메뉴에서 바꾼다. -->
+                <button type="button" class="menu-card menu-card--wide" id="open-nickname">
+                  <span class="menu-card__figure" data-icon="user" aria-hidden="true"></span>
+                  <span class="menu-card__body">
+                    <span class="menu-card__label">닉네임</span>
+                    <span class="menu-card__name" id="nickname-value">퀴즈왕</span>
+                    <span class="menu-card__desc sr-only">바꾸기</span>
+                  </span>
+                  <span class="menu-card__edit" aria-hidden="true"></span>
+                </button>
+              </div>
+              <nav class="home-menu" aria-label="홈 바로가기">
+                <button type="button" class="menu-card" id="open-characters" aria-label="캐릭터 모습 바꾸기">
+                  <span class="menu-card__figure" data-icon="palette" aria-hidden="true"></span>
+                  <span class="menu-card__body">
+                    <span class="menu-card__name">캐릭터</span>
+                    <span class="menu-card__desc">모습 바꾸기</span>
+                  </span>
+                </button>
+                <button type="button" class="menu-card" id="open-ranking" aria-label="랭킹: 이 브라우저의 최고 기록 보기" disabled>
+                  <span class="menu-card__figure" data-icon="trophy" aria-hidden="true"></span>
+                  <span class="menu-card__body">
+                    <span class="menu-card__name">랭킹</span>
+                    <span class="menu-card__desc">최고 기록</span>
+                  </span>
+                </button>
+                <!-- 「게임 방법」 (U01). 판을 열기 전에 규칙을 읽는 자리라 시간이 흐르지 않는다.
+                중앙 보조 메뉴의 이름 있는 입구이고, 홈 화면 안에 있어 다른 화면에는 없다 -->
+                <button type="button" class="menu-card home-rules" id="open-rules" aria-haspopup="dialog">
+                  <span class="menu-card__figure" data-icon="question" aria-hidden="true"></span>
+                  <span class="menu-card__body"><span class="menu-card__name">게임 방법</span></span>
+                </button>
+              </nav>
+            </div>
           </div>
         </div>
 

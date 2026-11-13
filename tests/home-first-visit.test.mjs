@@ -217,44 +217,25 @@ test('홈 dock 캡션: 어두운 dock 위의 보조 글자이고, 짧은 가로 
 test('홈은 dock 높이를 관찰하지 않고 메뉴만 공용 조작부 reserve 위로 올린다', async () => {
   const [homeSource, css] = await Promise.all([source('src/ui/home.ts'), source('css/style.css')]);
   assert.doesNotMatch(homeSource, /ResizeObserver|MutationObserver|syncDockHeight|--home-dock-h|home-dock/);
-  assert.match(css, /body:has\(\.walk-controls--on\) \[data-screen='home'\]:not\(\[hidden\]\) \.home-quests \{[\s\S]*?bottom: var\(--walk-controls-reserve\)/);
+  assert.match(css, /body:has\(\.walk-controls--on\) \.home-hub \{[\s\S]*?bottom: calc\(var\(--walk-controls-reserve\)/);
   assert.doesNotMatch(css, /\.walk-controls\[data-placement|--home-dock-h|home-dock/);
 });
 
 // ── 「게임 방법」 (U01) ────────────────────────────────────────────
 
-test('「게임 방법」 입구: 홈 화면 안의 edge HUD 원이고, 설정 버튼 바로 아래(높이 480px 이하는 옆) 44px 이다', () => {
-  const homeMarkup = between(html, 'data-screen="home"', 'data-screen="quiz"');
-  const shortcuts = between(homeMarkup, '<nav class="home-menu"', '</nav>');
-  assert.match(shortcuts, /<button type="button" class="icon-button home-rules" id="open-rules" aria-haspopup="dialog">\s*<span class="icon-button__icon icon" data-icon="question" aria-hidden="true"><\/span>\s*<span class="sr-only">게임 방법<\/span>/);
-  assert.doesNotMatch(between(html, '<div class="app-bar">', '</div>'), /open-rules/, '앱 바에 두면 다른 화면의 머리말과 겹친다');
-
-  const stage = node('div.home-stage#home-stage', node("section.screen[data-screen='home']", node('main.app', node('body'))));
-  const button = node('button.icon-button.home-rules#open-rules', node('nav.home-menu', stage));
-  for (const env of [MOBILE, DESKTOP, NARROW]) {
-    assert.equal(valueOf(rules, button, 'position', env), 'absolute');
-    // 설정 버튼은 위 여백 12px 에서 44px — 그 아래 8px 띄워 선다
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'top', env), env), 12 + 44 + 8);
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'width', env), env), 44);
-    assert.ok(lengthOf(rules, valueOf(rules, button, 'min-height', env), env) >= 44);
-    assert.equal(valueOf(rules, button, 'z-index', env), null, 'z-index 없이 DOM 순서로 그린다');
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'right', env), env), 12, '설정 버튼과 같은 오른쪽 끝');
+test("「게임 방법」은 중앙 보조 메뉴의 보이는 이름과 44px 이상 목표를 가진다", () => {
+  const homeMarkup = between(html, "data-screen=\"home\"", "data-screen=\"quiz\"");
+  assert.match(homeMarkup, /class="menu-card home-rules" id="open-rules" aria-haspopup="dialog"/);
+  assert.match(homeMarkup, /menu-card__name">게임 방법<\/span>/);
+  const stage=node("div.home-stage#home-stage"), nav=node("nav.home-menu",stage);
+  const button=node("button.menu-card.home-rules#open-rules",nav);
+  for (const env of [MOBILE,DESKTOP,NARROW,{...MOBILE,width:480,height:320}]) {
+    assert.notEqual(valueOf(rules,button,"position",env),"absolute");
+    assert.equal(valueOf(rules,button,"width",env),"100%");
+    assert.ok(lengthOf(rules,valueOf(rules,button,"min-height",env),env)>=44);
   }
-  // 높이 480px 이하는 설정 버튼 왼쪽 옆 같은 줄이다 (layout-01). 아래로 쌓은 오른쪽 HUD 열(위 여백 + 96px)이
-  // 568×320 에서는 dock 위 모서리의 랭킹 입구와, 740×360 에서는 방 복귀 줄로 올라온 선택 원과 겹쳤다
-  const touch = (width, height) => ({ width, height, pointer: 'coarse', hover: 'none', reducedMotion: false });
-  for (const env of [touch(740, 360), touch(568, 320), touch(844, 390), touch(926, 428), { ...DESKTOP, width: 740, height: 360 }]) {
-    const at = `${env.width}×${env.height} ${env.pointer}`;
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'top', env), env), 12, `${at}: 설정 버튼과 같은 줄`);
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'right', env), env), 12 + 44 + 8, `${at}: 설정 버튼 왼쪽 8px`);
-  }
-  for (const env of [touch(375, 667), touch(320, 568), touch(1024, 768)]) {
-    assert.equal(lengthOf(rules, valueOf(rules, button, 'top', env), env), 12 + 44 + 8, `${env.width}×${env.height}: 높은 화면은 아래 그대로`);
-  }
-  const hovered = node('button.icon-button.home-rules#open-rules:hover', node('nav.home-menu', stage));
-  assert.equal(valueOf(rules, hovered, 'background', DESKTOP), 'var(--hud-bg)', 'hover 에도 흰 아이콘이 어두운 HUD 위에 남는다');
-  const standing = node('button.icon-button.home-rules.is-standing#open-rules', node('nav.home-menu', stage));
-  assert.equal(valueOf(rules, standing, 'outline-color', MOBILE), 'var(--focus-on-hud)');
+  assert.equal(valueOf(rules,node("button.menu-card.home-rules#open-rules:hover",nav),"background",DESKTOP),"var(--hud-bg)");
+  assert.equal(valueOf(rules,node("button.menu-card.home-rules.is-standing#open-rules",nav),"outline-color",MOBILE),"var(--focus-on-hud)");
 });
 
 test('「게임 방법」 대화상자: 다른 대화상자와 같은 인페이지 구조이고, 피드백 패널보다 위에 그려진다', () => {
