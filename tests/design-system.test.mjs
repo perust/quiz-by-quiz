@@ -4,7 +4,7 @@
 // 그래서 개별 화면이 아니라 시스템의 규칙 자체를 검사한다.
 //   · 간격은 4px 미세 / 8px 기본 격자 토큰으로만
 //   · 표면 높이는 세 단계, 테두리는 1px·2px 두 종류, 모서리·색·글꼴·움직임은 토큰으로만
-//   · 픽셀 글꼴은 브랜드·숫자·짧은 표식에만, 긴 글은 시스템 글꼴
+//   · 본문·제목·숫자는 Pretendard, 짧은 표식과 긴 글의 크기 위계는 유지
 //   · 상태는 색만이 아니라 모양·표식·높이로도 구분
 //   · 아이콘은 하나의 24×24 픽셀 묶음에서만, 손가락 목표 44px, 안전 영역
 //
@@ -282,7 +282,7 @@ test('움직임: 화면 피드백은 duration 토큰만 쓰고 끝없이 깜빡�
 
 // ── 글꼴 위계 ──────────────────────────────────────────────────────
 
-test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰고, 긴 글은 시스템 글꼴로 읽힌다', () => {
+test('글꼴: Pretendard로 통일하되 짧은 표식과 긴 글의 위계·최소 크기를 유지한다', () => {
   const allowed = new Set([
     '.home-title',
     '.quiz-position',
@@ -302,7 +302,7 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
     }
   }
   assert.ok(display.length > 0);
-  for (const selector of display) assert.ok(allowed.has(selector), `${selector} 에 픽셀 글꼴을 쓰지 않는다`);
+  for (const selector of display) assert.ok(allowed.has(selector), `${selector} 에 짧은 표식 전용 토큰을 쓰지 않는다`);
 
   const body = node('body');
   assert.equal(valueOf(rules, body, 'font-family', MOBILE), 'var(--font-text)');
@@ -317,7 +317,7 @@ test('글꼴: 픽셀 글꼴은 브랜드·숫자·짧은 게임 표식에만 쓰
   ];
   for (const element of longText) {
     const family = valueOf(rules, element, 'font-family', MOBILE);
-    assert.ok(family === null || family === 'var(--font-text)', `${element.classes.join('.')} 는 시스템 글꼴을 물려받는다: ${family}`);
+    assert.ok(family === null || family === 'var(--font-text)', `${element.classes.join('.')} 는 공통 본문 글꼴을 물려받는다: ${family}`);
   }
   // 질문·보기·해설은 16px 이상으로 읽힌다
   for (const [element, minimum] of [[longText[0], 18], [longText[1], 16], [longText[2], 16]]) {

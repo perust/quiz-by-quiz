@@ -43,7 +43,7 @@ function assertContrast(pairs, minimum) {
   }
 }
 
-test('디자인 층은 기본 스타일 뒤에 로드되고 로컬 한글 픽셀 폰트를 짧은 표식용으로만 둔다', async () => {
+test('디자인 층은 기본 스타일 뒤에 로드되고 모든 글자를 로컬 Pretendard로 통일한다', async () => {
   const [html, theme] = await Promise.all([
     source('../index.html'),
     source('../css/voxel-theme.css'),
@@ -52,10 +52,10 @@ test('디자인 층은 기본 스타일 뒤에 로드되고 로컬 한글 픽셀
   const baseStyle = html.indexOf('href="css/style.css"');
   const designLayer = html.indexOf('href="css/voxel-theme.css"');
   assert.ok(baseStyle !== -1 && designLayer > baseStyle);
-  assert.match(theme, /@font-face\s*{[\s\S]*font-family:\s*['"]NeoDunggeunmo['"][\s\S]*url\(['"]fonts\/neodgm\.woff2['"]\)/);
+  assert.match(theme, /@font-face\s*{[\s\S]*font-family:\s*['"]Pretendard Variable['"][\s\S]*url\(['"]fonts\/PretendardVariable-1\.3\.9\.woff2['"]\)/);
   assert.match(theme, /font-display:\s*swap/);
-  assert.match(root.get('--font-display') ?? '', /^'NeoDunggeunmo',/);
-  assert.doesNotMatch(root.get('--font-text') ?? '', /NeoDunggeunmo/, '본문 글꼴은 읽기 좋은 시스템 글꼴이다');
+  assert.match(resolveVars('var(--font-display)', root), /^'Pretendard Variable',/);
+  assert.match(root.get('--font-text') ?? '', /^'Pretendard Variable',/, '본문도 Pretendard를 먼저 쓴다');
   assert.equal(root.get('--space-1'), '4px');
 });
 
@@ -221,7 +221,7 @@ test('아이콘은 번들 픽셀 글꼴에 없는 장식 글리프에 기대지 
     '../src/ui/result.ts',
     '../src/ui/waiting-room.ts',
   ];
-  // NeoDunggeunmo(css/fonts/neodgm.woff2)에 없는 글리프. 시스템 글꼴로 바뀌어 모양이 제각각이 된다.
+  // 글리프 아이콘은 글꼴마다 모양이 달라진다. 기존 픽셀 아이콘 묶음을 유지한다.
   // 화살표는 조작법의 <kbd> 키 이름으로만 남긴다 — 장식이 아니라 실제 자판의 이름이다
   const unsupported = /[✓✗✔✘⏱⚠♛★☆✦♪♥⚙↻←→↑↓]/u;
   for (const file of files) {
