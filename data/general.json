@@ -2305,5 +2305,505 @@
       "사이버보안",
       "접근통제"
     ]
+  },
+  {
+    "id": "general-191",
+    "category": "general",
+    "question": "'오늘이 ___이지?'처럼 날짜를 물을 때 빈칸에 들어갈 바른 표기는?",
+    "choices": ["몇일", "며칠", "몇칠", "몃일"],
+    "answerIndex": 1,
+    "explanation": "'몇'과 '일'이 합쳐진 말로 보지 않고 소리 나는 대로 '며칠'로 적습니다. 날짜를 물을 때와 여러 날을 뜻할 때 모두 '며칠'입니다.",
+    "difficulty": "easy",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-192",
+    "category": "general",
+    "question": "'그렇게 하면 안 ___.'에서 빈칸에 들어갈 바른 표기는?",
+    "choices": ["되요", "되여", "돼요", "돼여"],
+    "answerIndex": 2,
+    "explanation": "'돼'는 '되어'가 줄어든 말이라 '되어요'를 줄이면 '돼요'가 됩니다. 어간 '되-'에 바로 '-요'를 붙인 '되요'는 틀린 표기입니다.",
+    "difficulty": "easy",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-193",
+    "category": "general",
+    "question": "먹고 난 그릇을 씻어 정리하는 일을 바르게 적은 것은?",
+    "choices": ["설거지", "설겆이", "설걷이", "설거찌"],
+    "answerIndex": 0,
+    "explanation": "옛말 '설겆다'가 더 이상 쓰이지 않아 표준어 규정은 '설거지'를 표준어로 삼았습니다. 그래서 '설겆이'는 비표준 표기입니다.",
+    "difficulty": "easy",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-194",
+    "category": "general",
+    "question": "'이게 ___이야?'처럼 뜻밖의 일을 두고 쓰는 말의 바른 표기는?",
+    "choices": ["왠일", "왼일", "웨일", "웬일"],
+    "answerIndex": 3,
+    "explanation": "'어찌 된 일'을 뜻하는 명사는 '웬일'입니다. '왜 그런지 모르게'를 뜻하는 부사 '왠지'와 헷갈리기 쉽습니다.",
+    "difficulty": "easy",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-195",
+    "category": "general",
+    "question": "'지금 바로'라는 뜻으로 '___ 다 먹었다'처럼 쓰는 부사의 바른 표기는?",
+    "choices": ["금세", "금새", "금쎄", "금셰"],
+    "answerIndex": 0,
+    "explanation": "'금시에'가 줄어든 말이라 '금세'로 적습니다. '금새'는 물건의 값을 뜻하는 다른 낱말입니다.",
+    "difficulty": "normal",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-196",
+    "category": "general",
+    "question": "뚝배기에 국물을 바특하게 잡아 두부·고기 등을 넣고 끓인 반찬의 바른 표기는?",
+    "choices": ["찌게", "찌깨", "찌개", "찌계"],
+    "answerIndex": 2,
+    "explanation": "표준어는 '찌개'이며 사전은 '찌게'를 '찌개'로 바로잡도록 안내합니다. 된장찌개·김치찌개도 모두 '찌개'로 적습니다.",
+    "difficulty": "easy",
+    "tags": ["음식", "맞춤법"]
+  },
+  {
+    "id": "general-197",
+    "category": "general",
+    "question": "쇠고기를 삶아 뜯어 넣고 얼큰하게 양념해 끓인 국의 바른 표기는?",
+    "choices": ["육계장", "육개장", "육게장", "육괴장"],
+    "answerIndex": 1,
+    "explanation": "개고기로 끓이던 개장국에서 유래해, 개고기 대신 쇠고기[肉]를 넣었다는 뜻에서 '육개장'이라 합니다. '육계장'은 표준어가 아닙니다.",
+    "difficulty": "normal",
+    "tags": ["음식", "맞춤법"]
+  },
+  {
+    "id": "general-198",
+    "category": "general",
+    "question": "두 사람이 다투는 사이에 엉뚱한 사람이 애쓰지 않고 이익을 가로챈다는 뜻의 사자성어는?",
+    "choices": ["새옹지마", "동병상련", "오비이락", "어부지리"],
+    "answerIndex": 3,
+    "explanation": "도요새와 조개가 서로 물고 놓지 않는 사이 어부가 둘 다 잡았다는 『전국책』의 이야기에서 나온 말입니다.",
+    "difficulty": "normal",
+    "tags": ["언어", "사자성어"]
+  },
+  {
+    "id": "general-199",
+    "category": "general",
+    "question": "인생의 좋은 일과 나쁜 일은 변화가 많아 미리 헤아리기 어렵다는 뜻의 사자성어는?",
+    "choices": ["새옹지마", "어부지리", "과유불급", "타산지석"],
+    "answerIndex": 0,
+    "explanation": "변방 노인의 말이 달아났다가 좋은 말을 데리고 돌아온 이야기로, 『회남자』 「인간훈」에 나옵니다.",
+    "difficulty": "normal",
+    "tags": ["언어", "사자성어"]
+  },
+  {
+    "id": "general-200",
+    "category": "general",
+    "question": "다음 가운데 사이시옷을 바르게 쓴 낱말은?",
+    "choices": ["머릿말", "윗층", "햇님", "나뭇잎"],
+    "answerIndex": 3,
+    "explanation": "'나뭇잎'은 [나문닙]처럼 ㄴ 소리가 덧나 사이시옷을 적습니다. '머리말'은 소리가 덧나지 않고, '위층'은 거센소리 앞이며, '해님'은 접미사 '-님'이 붙은 말이라 사이시옷을 쓰지 않습니다.",
+    "difficulty": "hard",
+    "tags": ["언어", "맞춤법"]
+  },
+  {
+    "id": "general-201",
+    "category": "general",
+    "question": "1리터는 몇 밀리리터인가?",
+    "choices": ["10밀리리터", "100밀리리터", "1,000밀리리터", "10,000밀리리터"],
+    "answerIndex": 2,
+    "explanation": "'밀리'는 1,000분의 1을 뜻하는 접두어라 1밀리리터는 1리터의 1,000분의 1입니다. 1리터는 한 변이 10센티미터인 정육면체의 부피와 같습니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-202",
+    "category": "general",
+    "question": "이메일 주소에서 사용자 이름과 도메인 이름 사이에 넣는 기호는?",
+    "choices": ["#", "@", "&", "%"],
+    "answerIndex": 1,
+    "explanation": "영어로는 at으로 읽어 그 도메인에 있는 사용자라는 뜻을 나타냅니다. 우리나라에서는 생김새 때문에 흔히 '골뱅이'라고 부릅니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "기호"]
+  },
+  {
+    "id": "general-203",
+    "category": "general",
+    "question": "연필 같은 물건 열두 개를 한 묶음으로 세는 단위는?",
+    "choices": ["다스", "쌈", "톳", "접"],
+    "answerIndex": 0,
+    "explanation": "같은 뜻으로 '타(打)'라는 말도 씁니다. 쌈은 바늘, 톳은 김, 접은 채소나 과일을 세는 단위입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-204",
+    "category": "general",
+    "question": "1시간은 몇 초인가?",
+    "choices": ["360초", "600초", "3,600초", "6,000초"],
+    "answerIndex": 2,
+    "explanation": "1시간은 60분이고 1분은 60초이므로 60×60=3,600초입니다.",
+    "difficulty": "easy",
+    "tags": ["숫자", "단위"]
+  },
+  {
+    "id": "general-205",
+    "category": "general",
+    "question": "핸드볼에서 한 팀이 코트에 동시에 나설 수 있는 선수는 몇 명인가?",
+    "choices": ["7명", "5명", "6명", "9명"],
+    "answerIndex": 0,
+    "explanation": "국제핸드볼연맹(IHF) 규칙은 한 팀을 14명까지 두되 코트에는 동시에 7명까지만 서게 합니다. 보통 골키퍼 한 명과 코트 플레이어 여섯 명으로 나섭니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "핸드볼"]
+  },
+  {
+    "id": "general-206",
+    "category": "general",
+    "question": "천분율, 곧 전체를 1,000으로 볼 때의 비율을 나타내는 기호 ‰를 읽는 이름은?",
+    "choices": ["프라임", "퍼밀", "파이", "섹션"],
+    "answerIndex": 1,
+    "explanation": "백분율 기호 %에 0을 하나 더 붙인 모양으로, 1‰은 1,000분의 1입니다. 바닷물의 염분처럼 작은 비율을 나타낼 때 씁니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "기호"]
+  },
+  {
+    "id": "general-207",
+    "category": "general",
+    "question": "우리 수 단위에서 1억의 1만 배가 되는 수는?",
+    "choices": ["1천억", "10조", "1경", "1조"],
+    "answerIndex": 3,
+    "explanation": "우리 수 단위는 만·억·조처럼 네 자리마다 올라가므로 1조는 10의 12제곱입니다.",
+    "difficulty": "easy",
+    "tags": ["생활", "숫자"]
+  },
+  {
+    "id": "general-208",
+    "category": "general",
+    "question": "길이 단위 1인치는 몇 센티미터로 정해져 있는가?",
+    "choices": ["1.54센티미터", "2.54센티미터", "3.54센티미터", "4.54센티미터"],
+    "answerIndex": 1,
+    "explanation": "1959년부터 쓰인 국제 야드·파운드 정의에 따라 1인치는 정확히 25.4밀리미터입니다. 텔레비전이나 모니터 화면 크기를 말할 때 흔히 씁니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-209",
+    "category": "general",
+    "question": "넓이 단위 1헥타르(ha)는 몇 제곱미터인가?",
+    "choices": ["100제곱미터", "1,000제곱미터", "10,000제곱미터", "100,000제곱미터"],
+    "answerIndex": 2,
+    "explanation": "가로·세로가 각각 100미터인 땅의 넓이로, 농지나 숲처럼 넓은 땅을 나타낼 때 씁니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-210",
+    "category": "general",
+    "question": "길이 단위 1국제마일은 약 몇 킬로미터인가?",
+    "choices": ["0.8킬로미터", "1.2킬로미터", "2.4킬로미터", "1.6킬로미터"],
+    "answerIndex": 3,
+    "explanation": "1마일은 정확히 1,609.344미터입니다. 바다와 하늘에서 쓰는 해리(1,852미터)와는 다른 단위입니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-211",
+    "category": "general",
+    "question": "보석의 질량을 잴 때 쓰는 단위 1캐럿은 몇 그램인가?",
+    "choices": ["0.5그램", "0.2그램", "1그램", "2그램"],
+    "answerIndex": 1,
+    "explanation": "보석의 무게를 잴 때 쓰는 1캐럿은 200밀리그램입니다. 금의 순도를 나타내는 'K(캐럿)'와는 뜻이 다릅니다.",
+    "difficulty": "hard",
+    "tags": ["생활", "단위"]
+  },
+  {
+    "id": "general-212",
+    "category": "general",
+    "question": "실내 배구 국제 경기에서 한 팀이 코트에 나서는 선수는 몇 명인가?",
+    "choices": ["5명", "7명", "6명", "9명"],
+    "answerIndex": 2,
+    "explanation": "국제배구연맹(FIVB) 규칙은 경기 중 팀마다 늘 여섯 명이 코트에 있어야 한다고 정합니다. 해변에서 하는 비치발리볼은 두 명이 한 팀입니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "배구"]
+  },
+  {
+    "id": "general-213",
+    "category": "general",
+    "question": "배구에서 결승 세트(5세트)를 뺀 각 세트는 몇 점을 먼저 얻고 2점 이상 앞서야 이기는가?",
+    "choices": ["25점", "15점", "21점", "30점"],
+    "answerIndex": 0,
+    "explanation": "24 대 24가 되면 2점 차가 날 때까지 이어 갑니다. 결승 세트인 5세트는 15점을 먼저 얻고 2점 이상 앞서야 끝납니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "배구"]
+  },
+  {
+    "id": "general-214",
+    "category": "general",
+    "question": "탁구에서 한 게임을 이기려면 원칙적으로 몇 점을 먼저 얻어야 하는가?",
+    "choices": ["15점", "11점", "21점", "25점"],
+    "answerIndex": 1,
+    "explanation": "랠리마다 1점씩 얻으며, 한 경기는 홀수 게임 가운데 과반을 먼저 이기는 쪽이 이깁니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "탁구"]
+  },
+  {
+    "id": "general-215",
+    "category": "general",
+    "question": "볼링에서 한 게임에 얻을 수 있는 최고 점수는?",
+    "choices": ["100점", "200점", "500점", "300점"],
+    "answerIndex": 3,
+    "explanation": "12구를 연달아 모두 스트라이크로 쓰러뜨려야 얻는 점수로, 퍼펙트 게임이라 부릅니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "볼링"]
+  },
+  {
+    "id": "general-216",
+    "category": "general",
+    "question": "축구에서 한 선수가 한 경기에 두 번째 경고(옐로카드)를 받으면 어떻게 되는가?",
+    "choices": ["벌금만 낸다", "5분간 쉰다", "퇴장당한다", "주의만 받는다"],
+    "answerIndex": 2,
+    "explanation": "국제축구평의회(IFAB) 경기 규칙은 같은 경기에서 받은 두 번째 경고를 퇴장 사유로 정합니다. 심판은 옐로카드에 이어 레드카드를 꺼내 보입니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "축구"]
+  },
+  {
+    "id": "general-217",
+    "category": "general",
+    "question": "야구에서 타자가 한 타석에서 스트라이크 세 개를 받는 것을 무엇이라 하는가?",
+    "choices": ["삼진", "볼넷", "병살", "희생타"],
+    "answerIndex": 0,
+    "explanation": "타자가 세 번의 스트라이크로 아웃되는 일을 말합니다. 반대로 투수가 스트라이크가 아닌 볼을 네 번 던지는 일은 볼넷이라 합니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "야구"]
+  },
+  {
+    "id": "general-218",
+    "category": "general",
+    "question": "농구에서 자유투 한 개를 성공하면 몇 점을 얻는가?",
+    "choices": ["2점", "1점", "3점", "4점"],
+    "answerIndex": 1,
+    "explanation": "반칙을 당한 선수가 방해 없이 던지는 슛이라 1점만 줍니다. 경기 중 3점 라인 밖에서 넣은 슛은 3점입니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "농구"]
+  },
+  {
+    "id": "general-219",
+    "category": "general",
+    "question": "축구 정규 경기에서 전반과 후반은 각각 몇 분인가?",
+    "choices": ["30분", "40분", "50분", "45분"],
+    "answerIndex": 3,
+    "explanation": "국제축구평의회(IFAB) 경기 규칙은 45분씩 같은 길이의 두 하프로 경기한다고 정합니다. 경기가 멈춘 시간은 추가 시간으로 더합니다.",
+    "difficulty": "easy",
+    "tags": ["스포츠", "축구"]
+  },
+  {
+    "id": "general-220",
+    "category": "general",
+    "question": "현재 올림픽 펜싱에서 겨루는 세 무기 종목에 들지 않는 것은?",
+    "choices": ["플뢰레", "에페", "레이피어", "사브르"],
+    "answerIndex": 2,
+    "explanation": "펜싱은 플뢰레·에페·사브르 세 종목으로 겨루며, 국제펜싱연맹(FIE)의 선수 순위도 이 세 무기로 나뉩니다. 레이피어는 이 세 종목에 들지 않습니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "올림픽"]
+  },
+  {
+    "id": "general-221",
+    "category": "general",
+    "question": "수영 개인혼영에서 선수가 헤엄치는 영법의 순서로 옳은 것은?",
+    "choices": ["접영→배영→평영→자유형", "배영→평영→접영→자유형", "자유형→평영→배영→접영", "평영→접영→자유형→배영"],
+    "answerIndex": 0,
+    "explanation": "세계수영연맹 규칙은 개인혼영을 접영·배영·평영·자유형 순으로 정합니다. 네 사람이 나누어 헤엄치는 혼계영은 물속에서 출발하는 배영이 맨 앞이라 배영·평영·접영·자유형 순입니다.",
+    "difficulty": "hard",
+    "tags": ["스포츠", "수영"]
+  },
+  {
+    "id": "general-222",
+    "category": "general",
+    "question": "아이스하키 정규 경기는 실제 경기 시간 20분짜리 피리어드 몇 개로 치르는가?",
+    "choices": ["2개", "4개", "5개", "3개"],
+    "answerIndex": 3,
+    "explanation": "국제아이스하키연맹(IIHF) 규칙은 20분씩 세 피리어드로 경기한다고 정하며, 경기가 멈추면 시계도 멈춥니다. 빙판에는 팀마다 골키퍼 한 명과 스케이터 다섯 명이 나섭니다.",
+    "difficulty": "normal",
+    "tags": ["스포츠", "아이스하키"]
+  },
+  {
+    "id": "general-223",
+    "category": "general",
+    "question": "다른 조건이 같을 때 어떤 물건을 사려는 양이 팔려는 양보다 많아지면 그 값은 대체로 어떻게 되는가?",
+    "choices": ["내린다", "오른다", "그대로다", "0이 된다"],
+    "answerIndex": 1,
+    "explanation": "수요가 공급보다 많으면 값이 오르고 공급이 수요보다 많으면 값이 내리는데, 이를 수요·공급의 법칙이라 합니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "시장"]
+  },
+  {
+    "id": "general-224",
+    "category": "general",
+    "question": "일정 기간 정해진 금액을 정기적으로 부어 넣고 만기에 원금과 이자를 받는 저축은?",
+    "choices": ["보험", "대출", "적금", "주식"],
+    "answerIndex": 2,
+    "explanation": "목돈을 한꺼번에 맡기는 정기예금과 달리 적은 돈을 여러 번에 나누어 모으는 방식입니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "금융"]
+  },
+  {
+    "id": "general-225",
+    "category": "general",
+    "question": "한 기업이 어떤 상품의 시장 공급을 혼자 차지한 상태를 무엇이라 하는가?",
+    "choices": ["독점", "담합", "분업", "경매"],
+    "answerIndex": 0,
+    "explanation": "경쟁자가 없으면 공급량을 조절해 높은 값을 유지할 수 있어, 경쟁하는 시장보다 적게 팔면서 더 비싸게 받을 수 있습니다.",
+    "difficulty": "easy",
+    "tags": ["경제", "시장"]
+  },
+  {
+    "id": "general-226",
+    "category": "general",
+    "question": "소득처럼 세금을 매기는 대상의 금액이 클수록 더 높은 세율을 적용하는 세금은?",
+    "choices": ["간접세", "비례세", "목적세", "누진세"],
+    "answerIndex": 3,
+    "explanation": "소득세 등이 이 방식을 따릅니다. 금액과 관계없이 같은 세율을 매기는 비례세와 대비됩니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "세금"]
+  },
+  {
+    "id": "general-227",
+    "category": "general",
+    "question": "한국거래소 유가증권시장에 상장된 주식의 시가총액으로 산출하는 대표 주가지수는?",
+    "choices": ["코스닥", "코스피", "다우존스", "나스닥"],
+    "answerIndex": 1,
+    "explanation": "1980년 1월 4일의 시가총액을 100으로 삼아 지금의 값을 견줍니다. 코스닥은 별도의 코스닥시장을 대표하는 지수입니다.",
+    "difficulty": "normal",
+    "tags": ["경제", "투자"]
+  },
+  {
+    "id": "general-228",
+    "category": "general",
+    "question": "우리나라에서 해마다 다음 해 최저임금안을 심의·의결해 고용노동부 장관에게 내는 기구는?",
+    "choices": ["최저임금위원회", "경제사회노동위원회", "공정거래위원회", "금융통화위원회"],
+    "answerIndex": 0,
+    "explanation": "장관의 심의 요청을 받아 최저임금안을 의결해 내면, 장관은 위원회가 의결한 안에 따라 최저임금을 결정해 고시합니다.",
+    "difficulty": "normal",
+    "tags": ["사회", "제도"]
+  },
+  {
+    "id": "general-229",
+    "category": "general",
+    "question": "대한민국 헌법에 따르면 대통령이 국무총리를 임명하려면 무엇이 필요한가?",
+    "choices": ["대법원의 승인", "국민투표", "국회의 동의", "헌법재판소의 심판"],
+    "answerIndex": 2,
+    "explanation": "헌법 제86조 제1항은 국무총리를 국회의 동의를 얻어 대통령이 임명한다고 정합니다. 국무위원은 국무총리의 제청으로 대통령이 임명합니다.",
+    "difficulty": "normal",
+    "tags": ["법", "헌법"]
+  },
+  {
+    "id": "general-230",
+    "category": "general",
+    "question": "주민등록법에 따라 주민등록증을 발급받는 나이는?",
+    "choices": ["14세 이상", "17세 이상", "18세 이상", "19세 이상"],
+    "answerIndex": 1,
+    "explanation": "주민등록법에 따라 주민등록이 된 사람 가운데 17세 이상인 사람에게 시장·군수·구청장이 발급합니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "법"]
+  },
+  {
+    "id": "general-231",
+    "category": "general",
+    "question": "어디에 물어야 할지 모르는 정부 민원을 전화로 안내받는 정부민원안내콜센터의 번호는?",
+    "choices": ["110", "114", "120", "122"],
+    "answerIndex": 0,
+    "explanation": "국번 없이 110을 누르면 여러 부처의 민원 상담과 안내를 한곳에서 받을 수 있습니다. 114는 전화번호 안내입니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "한국"]
+  },
+  {
+    "id": "general-232",
+    "category": "general",
+    "question": "숯이나 가스 같은 연료가 불완전하게 탈 때 생겨 중독 사고를 일으키는, 색과 냄새가 없는 기체는?",
+    "choices": ["이산화탄소", "질소", "수소", "일산화탄소"],
+    "answerIndex": 3,
+    "explanation": "색과 냄새가 없어 알아차리기 어려우므로, 연료를 태우는 기구는 환기가 잘 되게 쓰고 일산화탄소 경보기를 다는 것이 좋습니다.",
+    "difficulty": "normal",
+    "tags": ["생활", "안전"]
+  },
+  {
+    "id": "general-233",
+    "category": "general",
+    "question": "1995년 출범해 스위스 제네바에 본부를 두고 나라 사이의 무역 규칙을 다루는 국제기구는?",
+    "choices": ["국제통화기금(IMF)", "세계은행(WB)", "세계무역기구(WTO)", "경제협력개발기구(OECD)"],
+    "answerIndex": 2,
+    "explanation": "관세 및 무역에 관한 일반협정(GATT) 체제를 이어받아 세워졌으며, 회원국 사이의 무역 분쟁도 해결합니다.",
+    "difficulty": "easy",
+    "tags": ["국제기구", "경제"]
+  },
+  {
+    "id": "general-234",
+    "category": "general",
+    "question": "환율 안정과 국제 통화 협력을 돕고, 국제수지가 어려운 회원국에 자금을 빌려주는 국제기구는?",
+    "choices": ["국제통화기금(IMF)", "유엔개발계획(UNDP)", "국제노동기구(ILO)", "세계보건기구(WHO)"],
+    "answerIndex": 0,
+    "explanation": "1944년 44개국이 모인 브레턴우즈 회의에서 구상되었습니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구", "경제"]
+  },
+  {
+    "id": "general-235",
+    "category": "general",
+    "question": "전쟁이나 박해를 피해 나라를 떠난 난민을 보호하고 돕는 유엔 기구는?",
+    "choices": ["유엔아동기금(UNICEF)", "유엔환경계획(UNEP)", "세계식량계획(WFP)", "유엔난민기구(UNHCR)"],
+    "answerIndex": 3,
+    "explanation": "1950년 유엔 총회가 세운 기구로, 난민 문제를 해결하기 위한 국제적인 조치를 이끌고 조정합니다.",
+    "difficulty": "easy",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-236",
+    "category": "general",
+    "question": "원자력의 평화적 이용을 돕고 그것이 군사 목적으로 쓰이지 않도록 감시하는 국제기구는?",
+    "choices": ["화학무기금지기구(OPCW)", "국제원자력기구(IAEA)", "국제에너지기구(IEA)", "국제해사기구(IMO)"],
+    "answerIndex": 1,
+    "explanation": "1953년 아이젠하워 미국 대통령의 '평화를 위한 원자력' 연설을 계기로 1957년 출범했습니다.",
+    "difficulty": "normal",
+    "tags": ["국제기구", "국제"]
+  },
+  {
+    "id": "general-237",
+    "category": "general",
+    "question": "유엔의 주요 사법 기관인 국제사법재판소(ICJ)가 자리한 도시는?",
+    "choices": ["제네바", "브뤼셀", "헤이그", "빈"],
+    "answerIndex": 2,
+    "explanation": "네덜란드 헤이그의 평화궁에서 나라 사이의 법적 분쟁을 다룹니다. 같은 도시에 있는 국제형사재판소(ICC)와는 다른 기관입니다.",
+    "difficulty": "hard",
+    "tags": ["국제기구", "법"]
+  },
+  {
+    "id": "general-238",
+    "category": "general",
+    "question": "콩을 삶아 찧은 뒤 덩이를 지어 띄워 말린 것으로, 간장과 된장을 담그는 원료는?",
+    "choices": ["메주", "누룩", "엿기름", "청국장"],
+    "answerIndex": 0,
+    "explanation": "메주를 소금물에 담가 숙성시킨 뒤 우러난 국물은 간장으로, 남은 건더기는 된장으로 씁니다.",
+    "difficulty": "easy",
+    "tags": ["음식", "생활"]
+  },
+  {
+    "id": "general-239",
+    "category": "general",
+    "question": "밀 같은 곡물을 반죽해 띄워 곰팡이를 번식시킨 것으로, 술을 빚을 때 넣는 발효제는?",
+    "choices": ["메주", "누룩", "간수", "조청"],
+    "answerIndex": 1,
+    "explanation": "누룩에 번식한 곰팡이가 가진 효소가 술을 빚게 하므로, 누룩은 술을 빚는 데 기본이 되는 재료입니다.",
+    "difficulty": "normal",
+    "tags": ["음식", "생활"]
+  },
+  {
+    "id": "general-240",
+    "category": "general",
+    "question": "불린 콩을 갈아 짜낸 콩물을 끓인 뒤 간수를 넣어 엉기게 한 음식은?",
+    "choices": ["묵", "순대", "어묵", "두부"],
+    "answerIndex": 3,
+    "explanation": "간수 같은 응고제를 넣으면 콩물 속 단백질이 엉겨 굳습니다.",
+    "difficulty": "easy",
+    "tags": ["음식", "생활"]
   }
 ]
