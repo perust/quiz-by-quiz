@@ -60,11 +60,11 @@ globalThis.requestAnimationFrame = callback => {
 globalThis.cancelAnimationFrame = id => frames.delete(id);
 const { createWalker } = await import("../js/ui/walker.js");
 
-function frame() {
+function frame(elapsed = 16, timestamp = now + elapsed) {
   const pending = [...frames.values()];
   frames.clear();
-  now += 16;
-  for (const callback of pending) callback(now);
+  now += elapsed;
+  for (const callback of pending) callback(timestamp);
 }
 function idle() {
   for (let i = 0; i < 4 && frames.size; i++) frame();
@@ -109,12 +109,13 @@ function displacement(before, after, dx, dy) {
   assert.ok(Math.abs(after.y - before.y - dy * step) < 1e-8);
 }
 
-for (const [first, second, dx, dy] of [
+const releasePairs = [
   ["ArrowLeft", "ArrowRight", 1, 0], ["ArrowRight", "ArrowLeft", -1, 0],
   ["ArrowUp", "ArrowDown", 0, 1], ["ArrowDown", "ArrowUp", 0, -1],
   ["a", "d", 1, 0], ["D", "A", -1, 0],
   ["w", "s", 0, 1], ["S", "W", 0, -1],
-]) {
+];
+for (const [first, second, dx, dy] of releasePairs) {
   test(`${first}+${second}: 첫 키 release만으로 다음 RAF에서 남은 방향 이동`, t => {
     const { walker, point } = setup(t);
     const before = neutral(walker, point, first, second);
@@ -128,6 +129,38 @@ for (const [first, second, dx, dy] of [
     const stopped = point();
     frame();
     assert.deepEqual(point(), stopped, "모든 키를 떼면 멈춘다");
+  });
+}
+
+
+// RAF의 frame-start timestamp와 callback 실행 시각은 다르다. release보다 앞선
+// timestamp를 넘겨도 시간을 거꾸로 쓰거나 다음 프레임에 중복해서 세지 않는다.
+for (const [first, second, dx, dy] of releasePairs) {
+  test(`${first}+${second}: release보다 이른 RAF는 역행 없이 실제 경과부터 잇는다`, t => {
+    const { walker, point } = setup(t);
+    const before = neutral(walker, point, first, second);
+    now += 8;
+    const wakeAt = now;
+    release(first);
+    assert.equal(frames.size, 1, "추가 keydown/repeat 없이 release가 한 번 깨운다");
+    frame(1, wakeAt - 6.638);
+    t.diagnostic(JSON.stringify({ wakeAt, firstTimestamp: wakeAt - 6.638, before, after: point() }));
+    assert.deepEqual(point(), before, "release 이전 frame-start는 0초다: 역행하거나 이동을 꾸미지 않는다");
+    assert.equal(frames.size, 1, "0초 callback도 다음 RAF를 하나만 잇는다");
+    frame(1, wakeAt);
+    assert.deepEqual(point(), before, "기준 시각을 과거로 돌려 다음 프레임 시간을 부풀리지 않는다");
+    frame(16, wakeAt + 16);
+    displacement(before, point(), dx, dy);
+    const normal = point();
+    frame(100, wakeAt + 116);
+    assert.ok(Math.abs(point().x - normal.x - dx * 320 * 0.05) < 1e-8, "최대 50ms step은 그대로다");
+    assert.ok(Math.abs(point().y - normal.y - dy * 320 * 0.05) < 1e-8);
+    release(second);
+    idle();
+    const stopped = point();
+    frame();
+    assert.deepEqual(point(), stopped);
+    assert.equal(frames.size, 0, "모두 놓으면 루프가 잠든다");
   });
 }
 

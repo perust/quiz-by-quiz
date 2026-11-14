@@ -471,8 +471,11 @@ export function createWalker(config: WalkerConfig): Walker {
       return;
     }
 
-    const dt = Math.min(ts - lastTs, MAX_STEP_MS) / 1000;
-    lastTs = ts;
+    // 같은 프레임 중 깨어나면 RAF 시각이 start보다 이를 수 있다.
+    // 경과를 음수로 쓰거나 기준을 과거로 되돌려 다음 걸음을 부풀리지 않는다.
+    const frameTs = Math.max(ts, lastTs);
+    const dt = Math.min(frameTs - lastTs, MAX_STEP_MS) / 1000;
+    lastTs = frameTs;
 
     const [vx, vy] = inputVector();
     const moving = vx !== 0 || vy !== 0;
