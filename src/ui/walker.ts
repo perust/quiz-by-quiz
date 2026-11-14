@@ -165,8 +165,13 @@ function dropFocus(): void {
  */
 const held = new Set<string>();
 
+/** keyup은 모듈이 받아 현재 워커만 깨운다. 화면 쪽 공개 API에는 넣지 않는다 */
+interface ActiveWalker extends Walker {
+  onKeyRelease(): void;
+}
+
 /** 지금 움직이고 있는 워커. 화면 하나만 켜지므로 하나면 된다 */
-let active: Walker | null = null;
+let active: ActiveWalker | null = null;
 
 // DOM과 포인터 수명은 공용 컴포넌트가 소유하고, walker는 현재 방향과 confirm 의미만 받는다.
 const controls = createWalkControls({
@@ -225,8 +230,11 @@ document.addEventListener('keydown', (event) => {
   paintControls();
 }, true);
 
-// 눌린 방향키를 따라간다. 처리는 handleKey에서 하고 여기서는 상태만 둔다
-document.addEventListener('keyup', (event) => held.delete(event.key));
+// 반대 키가 상쇄되어 루프가 잠들었어도, 한쪽을 떼면 남은 방향으로 다시 걷는다.
+// 실제 기록된 방향키를 뗐을 때만 깨운다. 무관한 keyup은 입력을 바꾸지 않는다.
+document.addEventListener('keyup', (event) => {
+  if (held.delete(event.key)) active?.onKeyRelease();
+});
 window.addEventListener('blur', () => held.clear());
 window.addEventListener('resize', () => active?.relayout());
 // 화면 전체를 걸어 다닐 때는 캐릭터가 화면에 붙어 있어, 사용자가 스스로 스크롤하면
@@ -482,7 +490,7 @@ export function createWalker(config: WalkerConfig): Walker {
       // 움직이지 않으면 루프를 멈춘다. 매 프레임 깨어나 아무 일도 하지 않으면
       // 휴대폰 배터리만 쓴다. 제자리 뛰기는 CSS 애니메이션이라 프레임을
       // 돌리지 않아도 뛰고(멈춰 선 뒤 세 번), 입력이 오면 start()가 다시 깨운다
-      // (handleKey 와 onStickInput 이 start를 부른다).
+      // (handleKey·onKeyRelease·onStickInput이 start를 부른다).
       return;
     }
 
@@ -557,7 +565,7 @@ export function createWalker(config: WalkerConfig): Walker {
     return true;
   }
 
-  const walker: Walker = {
+  const walker: ActiveWalker = {
     /**
      * 이 워커를 켜고 끈다. **켜면 이전에 켜져 있던 것은 꺼진다.**
      *
@@ -662,6 +670,11 @@ export function createWalker(config: WalkerConfig): Walker {
 
     placeAt(point, report = true) {
       placeAt(point, report);
+    },
+
+    /** 방향키 release는 입력만 이어간다. keydown과 달리 포커스를 놓지 않는다 */
+    onKeyRelease() {
+      if (!isBlocked()) start();
     },
 
     /** 스틱 입력이 들어왔을 때 루프를 깨운다 */
