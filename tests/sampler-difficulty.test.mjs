@@ -221,16 +221,18 @@ test('전체 도전: 분야마다 다섯 문제이고, 판 전체의 난이도�
   assert.deepEqual(ids(first).filter((id) => recent.includes(id)), [], '그 분야의 안 본 열 문제 가운데서 낸다');
 });
 
-test('N05: 실제 은행의 전체 도전 25문제에 어려운 문제가 6~7개다 (은행 26%)', async () => {
+test('N05: 실제 은행의 전체 도전 25문제에서 어려운 문제 수는 은행 비율의 내림이나 올림이다', async () => {
+  // 수를 박아 두지 않는다 — 은행의 비율이 바뀌면(26% → 20%) 판의 몫도 따라 바뀐다
   const banks = await Promise.all(CATEGORIES.map(async ({ id }) => JSON.parse(await readFile(new URL(`../data/${id}.json`, import.meta.url), 'utf8'))));
   const all = banks.flat();
   const share = tally(all);
   const count = QUESTIONS_PER_CATEGORY_IN_ALL * CATEGORIES.length;
+  const idealHard = (count * share.hard) / all.length;
   for (let seed = 0; seed < 200; seed += 1) {
     const round = buildAllRound({ banks, countPerCategory: QUESTIONS_PER_CATEGORY_IN_ALL, random: seeded(seed) });
     assert.equal(round.length, count);
     const counts = tally(round);
-    assert.ok(counts.hard >= 6 && counts.hard <= 7, `어려움 ${counts.hard}개`);
+    assert.ok(counts.hard === Math.floor(idealHard) || counts.hard === Math.ceil(idealHard), `어려움 ${counts.hard}개 (비율로는 ${idealHard.toFixed(2)})`);
     for (const level of ['easy', 'normal', 'hard']) {
       const ideal = (count * share[level]) / all.length;
       assert.ok(Math.abs(counts[level] - ideal) < 1, `${level}: ${counts[level]}개 (비율로는 ${ideal.toFixed(2)})`);
