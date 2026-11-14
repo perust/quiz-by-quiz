@@ -38,7 +38,8 @@ def read(p):
     except OSError:
         return ''
 
-src = {p: read(p) for p in glob.glob('src/**/*.ts', recursive=True)}
+# Windows의 glob은 역슬래시 경로를 돌려준다 — 아래 비교가 모두 슬래시라 맞춘다
+src = {p.replace('\\', '/'): read(p) for p in glob.glob('src/**/*.ts', recursive=True)}
 joined = '\n'.join(src.values())
 core = {p: t for p, t in src.items() if p.startswith('src/core/')}
 ui = {p: t for p, t in src.items() if p.startswith('src/ui/')}
