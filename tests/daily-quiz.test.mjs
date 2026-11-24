@@ -500,6 +500,12 @@ function harness({ storage = memoryStorage(), persistent = true, banks = realBan
   return { controller, calls, storage, time, session };
 }
 
+/**
+ * 나가기 확인의 본문. 퀴즈 화면은 확인창을 **열 때마다** 이 값을 다시 읽는다 — 판을 연 뒤 저장이 실패하거나
+ * 회복하면 그 순간의 말이어야 한다. (예전에는 판을 열 때 정한 글 하나였다)
+ */
+const exitNoteOf = (view) => (typeof view.exitNote === 'function' ? view.exitNote() : view.exitNote);
+
 /** 퀴즈 화면이 하는 그대로: 답하고(확정), 피드백의 저장 줄을 읽고, 「다음」 */
 function answer(h, choice) {
   const s = h.session();
@@ -515,7 +521,7 @@ test('흐름: 시작 전 → 답마다 저장 → 새로고침·홈으로 와도
   tab.controller.open();
   const view = tab.calls.play[0].view;
   assert.equal(view.categoryLabel, '오늘의 퀴즈 · 11월 25일');
-  assert.match(view.exitNote, /이 기기에 저장돼요/);
+  assert.match(exitNoteOf(view), /이 기기에 저장돼요/);
   assert.equal(tab.session().timeLimitMs, null);
   assert.equal(answer(tab, 1), '이 기기에 저장했어요');
   // 확정 즉시 저장됐다 — 「다음」을 누르기 전에 새로고침해도 남는다
@@ -671,7 +677,7 @@ test('흐름: 저장소를 못 쓰면 이 창에서는 이어 가지만 저장�
 
   const memoryOnly = harness({ persistent: false });
   memoryOnly.controller.open();
-  assert.match(memoryOnly.calls.play[0].view.exitNote, /저장하지 못하고 있어요/);
+  assert.match(exitNoteOf(memoryOnly.calls.play[0].view), /저장하지 못하고 있어요/);
   assert.equal(answer(memoryOnly, 0), '저장하지 못했어요 · 이 창을 닫으면 사라져요');
 });
 
@@ -708,7 +714,7 @@ for (const failure of ['throw', 'drop']) {
     assert.deepEqual(h.controller.refreshHome(), { kind: 'resume', dateKey: '2026-11-25', answered: 2 });
     h.controller.open();
     assert.equal(h.session().position, 3);
-    assert.match(h.calls.play.at(-1).view.exitNote, /저장하지 못하고 있어요/);
+    assert.match(exitNoteOf(h.calls.play.at(-1).view), /저장하지 못하고 있어요/);
     h.controller.reviewAnswered(h.session());
     const partial = h.calls.review.at(-1);
     assert.equal(partial.review.answeredCount, 2);
@@ -725,11 +731,65 @@ for (const failure of ['throw', 'drop']) {
     assert.equal(h.calls.review.at(-1).scope, DAILY_PARTIAL_SCOPE);
     // 회복한 뒤 다시 열어 답하지 않고 보아도 저장 범위다
     h.controller.open();
-    assert.match(h.calls.play.at(-1).view.exitNote, /이 기기에 저장돼요/);
+    assert.match(exitNoteOf(h.calls.play.at(-1).view), /이 기기에 저장돼요/);
     h.controller.reviewAnswered(h.session());
     assert.equal(h.calls.review.at(-1).scope, DAILY_PARTIAL_SCOPE);
   });
+
+  test(`흐름: 판 도중 저장이 실패(${failure})하면 홈·다시 열기 없이 곧바로 연 나가기 확인도 저장했다고 말하지 않고, 같은 판에서 회복하면 돌아온다`, () => {
+    const { storage, mode } = flakyStorage();
+    const h = harness({ storage, persistent: true });
+    h.controller.open();
+    const view = h.calls.play.at(-1).view;
+    const stored = () => JSON.parse(storage.values.get(dailyKey('2026-11-25'))).answers.length;
+    // 판을 연 순간에는 저장소가 정말로 쓸 수 있다
+    assert.match(exitNoteOf(view), /이 기기에 저장돼요/);
+    assert.equal(answer(h, 0), '이 기기에 저장했어요');
+    assert.match(exitNoteOf(view), /이 기기에 저장돼요/);
+    h.session().goNext();
+
+    // 두 번째 답의 저장이 실패한다 — 메모리 2답 / 저장소 1답
+    mode.fail = failure;
+    assert.equal(answer(h, 1), '저장하지 못했어요 · 이 창을 닫으면 사라져요');
+    assert.equal(h.session().record().answers.length, 2, '이 창의 판은 두 답을 들고 있다');
+    assert.equal(stored(), 1, '저장소에는 앞 답 하나뿐이다');
+    assert.equal(h.calls.play.length, 1, '홈으로 가거나 다시 열지 않았다 — 같은 판이다');
+    // 곧바로 「나가기」를 누른다: 확인창이 그 순간의 저장 상태를 말한다
+    const unsavedNote = exitNoteOf(view);
+    assert.match(unsavedNote, /저장하지 못하고 있어요/, '메모리에만 있는 답을 저장됐다고 하지 않는다');
+    assert.doesNotMatch(unsavedNote, /이 기기에 저장돼요/);
+    assert.equal(exitNoteOf(view), unsavedNote, '다시 열어도 같은 말이다 (실패가 이어지는 동안)');
+
+    // 확인창을 닫고(계속 풀기) 저장소가 돌아온 뒤 같은 판에서 다음 답을 낸다 — 메모리의 앞 답까지 함께 쓰인다
+    mode.fail = null;
+    h.session().goNext();
+    assert.equal(answer(h, 2), '이 기기에 저장했어요');
+    assert.equal(stored(), 3, '메모리의 답까지 함께 쓰고 다시 읽어 확인했다');
+    assert.equal(h.calls.play.length, 1, '여전히 같은 판이다');
+    const recoveredNote = exitNoteOf(view);
+    assert.match(recoveredNote, /이 기기에 저장돼요/, '회복했으면 저장 범위로 돌아온다');
+    assert.doesNotMatch(recoveredNote, /저장하지 못하고 있어요/, '지난 실패의 경고가 남지 않는다');
+  });
 }
+
+test('흐름: 다른 판으로 넘어간 뒤 예전 판의 나가기 확인 말은 그 판의 것이다 — 새 판의 저장 상태를 빌리지 않는다', () => {
+  const { storage, mode } = flakyStorage();
+  const h = harness({ storage, persistent: true });
+  h.controller.open();
+  const first = h.calls.play.at(-1).view;
+  mode.fail = 'throw';
+  assert.equal(answer(h, 0), '저장하지 못했어요 · 이 창을 닫으면 사라져요');
+  assert.match(exitNoteOf(first), /저장하지 못하고 있어요/);
+  // 홈으로 → 다시 연다(메모리 진행) → 저장소가 돌아와 다음 답이 저장된다
+  h.controller.release();
+  mode.fail = null;
+  h.controller.open();
+  const second = h.calls.play.at(-1).view;
+  assert.match(exitNoteOf(second), /저장하지 못하고 있어요/, '아직 답하지 않았으면 연 레코드(메모리)를 따른다');
+  assert.equal(answer(h, 1), '이 기기에 저장했어요');
+  assert.match(exitNoteOf(second), /이 기기에 저장돼요/);
+  assert.match(exitNoteOf(first), /저장하지 못하고 있어요/, '예전 판은 제 마지막 저장을 말한다');
+});
 
 test('흐름: 오늘의 퀴즈를 만들 수 없으면 입구가 그렇다고 말하고 다시 불러오기를 권한다', () => {
   const h = harness({ banks: { ...realBanks, art: [] } });

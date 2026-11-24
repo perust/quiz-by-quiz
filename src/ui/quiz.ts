@@ -62,8 +62,12 @@ export interface QuizRoundView {
    * 생략하거나 null 이면 줄을 숨긴다(일반 판에는 없다)
    */
   saveNote?: () => string | null;
-  /** 나가기 확인의 본문. 생략하면 일반 판의 말(«기록도 남지 않아요»)이다 */
-  exitNote?: string;
+  /**
+   * 나가기 확인의 본문 (오늘의 퀴즈). **확인창을 열 때마다** 부른다 — 판을 연 뒤에 저장이 실패하거나 회복하면
+   * 그 순간의 말이어야 한다(한때 판을 열 때 정한 글 하나라, 메모리에만 있는 답을 «저장돼요»라고 했다).
+   * 생략하면 일반 판의 말(«기록도 남지 않아요»)이다
+   */
+  exitNote?: () => string;
 }
 
 export interface QuizScreen {
@@ -139,6 +143,13 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
   const defaultExitNote = el.dialogBody.textContent ?? '';
   /** 이 판의 저장 한 줄 (오늘의 퀴즈). 일반 판에는 없다 */
   let saveNote: (() => string | null) | null = null;
+  /** 이 판의 나가기 확인 본문 (오늘의 퀴즈). 일반 판에는 없다 */
+  let exitNote: (() => string) | null = null;
+
+  /** 나가기 확인 본문을 지금의 말로 쓴다. 판을 열 때와 확인창을 열 때 부른다 */
+  function renderExitBody(): void {
+    el.dialogBody.textContent = exitNote?.() ?? defaultExitNote;
+  }
 
   /** 판마다 새로 만든다. 문항 시간은 판을 여는 순간 정해진다 (FR-3.7) */
   let timer: QuestionTimer = createQuestionTimer();
@@ -503,6 +514,7 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
 
   function openExitDialog(): void {
     dialogOpener = document.activeElement as HTMLElement | null;
+    renderExitBody();
     renderExitReview();
     el.dialog.hidden = false;
     el.dialogCancel.focus();
@@ -641,12 +653,13 @@ export function createQuizScreen({ onExit, onComplete, onReview }: QuizScreenDep
   }
 
   return {
-    start(newSession, { categoryLabel: label, pinRules = false, saveNote: note, exitNote }) {
+    start(newSession, { categoryLabel: label, pinRules = false, saveNote: note, exitNote: exitBody }) {
       session = newSession;
       categoryLabel = label;
       saveNote = note ?? null;
+      exitNote = exitBody ?? null;
       el.saveNote.hidden = true;
-      el.dialogBody.textContent = exitNote ?? defaultExitNote;
+      renderExitBody();
       el.dialog.hidden = true;
       dialogOpener = null;
       timer = createQuestionTimer({ limitMs: newSession.timeLimitMs });

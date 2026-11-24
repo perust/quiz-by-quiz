@@ -93,7 +93,8 @@ export interface DailyReviewView {
 export interface DailyPlayView {
   categoryLabel: string;
   saveNote: () => string | null;
-  exitNote: string;
+  /** 나가기 확인의 본문. 퀴즈 화면이 확인창을 열 때마다 부른다 — 그 순간 이 판의 저장 상태를 말한다 */
+  exitNote: () => string;
 }
 
 export interface DailyControllerDeps {
@@ -228,6 +229,16 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     return { review, title: finished ? '오늘의 퀴즈 결과' : '오늘의 퀴즈 · 푼 문제', scope, summary, share };
   }
 
+  /**
+   * 이 판의 지금까지 푼 문제가 저장소에 있는가. 아직 답하지 않았으면 연 레코드의 값(`openedDurable`)을,
+   * 답했으면 마지막 저장의 결과를 따른다 — 판 도중 저장이 실패하면 거기서부터 거짓이고, 다음 저장이
+   * 메모리의 앞 답까지 함께 쓰고 다시 읽어 확인하면 다시 참이다
+   */
+  function sessionDurable(session: DailySession, openedDurable: boolean): boolean {
+    const saved = session.lastSave();
+    return saved === null ? openedDurable : saved !== 'memory' && store.durable;
+  }
+
   function onConfirm(record: DailyRecord, answer: Parameters<typeof appendDailyAnswer>[1]) {
     const next = appendDailyAnswer(record, answer, deps.now());
     const outcome = store.save(next);
@@ -264,11 +275,13 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     note = null;
     const session = createDailySession(start, { onConfirm });
     run = session;
-    runDurable = durable && store.durable;
+    const openedDurable = durable && store.durable;
+    runDurable = openedDurable;
     deps.play(session, {
       categoryLabel: `오늘의 퀴즈 · ${dailyDateLabel(dateKey)}`,
       saveNote: () => (run === session ? note : null),
-      exitNote: dailyExitNote(durable && store.durable),
+      // 판을 연 순간의 글 하나가 아니다 — 확인창을 열 때 이 판의 마지막 저장을 본다
+      exitNote: () => dailyExitNote(sessionDurable(session, openedDurable)),
     });
     if (notice) deps.announce(notice);
   }
@@ -290,11 +303,8 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     reviewAnswered(session) {
       if (run !== session) return;
       run = null;
-      const record = session.record();
-      const saved = session.lastSave();
       // 이 판에서 아직 답하지 않았으면 연 레코드의 저장 여부를, 답했으면 마지막 저장의 결과를 따른다
-      const durable = saved === null ? runDurable : saved !== 'memory' && store.durable;
-      deps.showReview(reviewView(record, durable, false));
+      deps.showReview(reviewView(session.record(), sessionDurable(session, runDurable), false));
     },
     release() {
       run = null;
