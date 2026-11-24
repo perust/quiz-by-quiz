@@ -26,6 +26,7 @@ import {
   type DailySession,
   type DailyStore,
 } from '../core/daily.js';
+import { dailyShareText } from '../core/daily-share.js';
 import { reviewAnswered } from '../core/scoring.js';
 import type { AnsweredReview, CategoryId } from '../types.js';
 
@@ -84,6 +85,8 @@ export interface DailyReviewView {
   title: string;
   scope: string;
   summary: string;
+  /** 끝낸 판의 공유 글(레코드의 고정 값에서 만든다). 덜 푼 판이면 null — 입구가 없다 */
+  share: string | null;
 }
 
 /** 퀴즈 화면에 넘기는 것 */
@@ -220,7 +223,9 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     const summary = finished
       ? `${date} · ${review.totalCount}문제 중 ${review.correctCount}개 정답`
       : `${date} · ${review.totalCount}문제 중 ${review.answeredCount}문제를 풀었어요 · 맞힌 문제 ${review.correctCount}개`;
-    return { review, title: finished ? '오늘의 퀴즈 결과' : '오늘의 퀴즈 · 푼 문제', scope, summary };
+    // 공유 글은 저장 여부와 무관하게 레코드에서 만든다 — 메모리에만 있는 결과도 공유하되 저장 범위 줄은 그대로다
+    const share = finished ? dailyShareText(record) : null;
+    return { review, title: finished ? '오늘의 퀴즈 결과' : '오늘의 퀴즈 · 푼 문제', scope, summary, share };
   }
 
   function onConfirm(record: DailyRecord, answer: Parameters<typeof appendDailyAnswer>[1]) {

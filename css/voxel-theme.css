@@ -2119,7 +2119,8 @@ pre {
 /* ── 15. 폼 ──────────────────────────────────────────────────── */
 .room-form__input,
 .register__input,
-.chat__input {
+.chat__input,
+.daily-share__text {
   border: var(--border-1) solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -2145,7 +2146,8 @@ pre {
 
 .room-form__input:focus-visible,
 .register__input:focus-visible,
-.chat__input:focus-visible {
+.chat__input:focus-visible,
+.daily-share__text:focus-visible {
   border-color: var(--accent);
 }
 

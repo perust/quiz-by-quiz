@@ -450,6 +450,7 @@ async function main(): Promise<void> {
         title: view.title,
         scope: view.scope,
         summary: view.summary,
+        share: view.share,
       });
       goTo('quiz-review');
     },

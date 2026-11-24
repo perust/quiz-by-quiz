@@ -815,6 +815,15 @@
 
       <div class="result-block">
         <h2 class="result-block__title quiz-review__summary" id="quiz-review-summary"></h2>
+        <!-- 끝낸 오늘의 퀴즈 결과에만 보인다 (ui/daily-share.ts). 덜 푼 판·일반 판의 푼 문제에는 없다.
+             상태 줄은 처음부터 보이는 라이브 리전이고 알리는 말만 넣는다 — 버튼은 그 밖이다 -->
+        <div class="daily-share" id="quiz-review-share" hidden>
+          <div class="daily-share__actions">
+            <button type="button" class="button button--primary" id="quiz-review-share-button">결과 공유하기</button>
+            <button type="button" class="button button--ghost" id="quiz-review-share-text-open">공유 글 보기</button>
+          </div>
+          <p class="daily-share__status" id="quiz-review-share-status" role="status"></p>
+        </div>
         <!-- 문제마다 «이 문제 이상해요» 신고 링크가 붙는다 (FR-5.8, result.ts 의 createReviewItem) -->
         <ol class="review" id="quiz-review-list" aria-labelledby="quiz-review-summary"></ol>
       </div>
@@ -1055,6 +1064,21 @@
       <p class="dialog__body" id="rules-online"></p>
       <div class="dialog__actions">
         <button type="button" class="button button--primary" id="rules-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 오늘의 퀴즈 결과의 공유 글 (ui/daily-share.ts). «푼 문제» 화면의 「공유 글 보기」가 연다 — 공유·복사가
+       되든 안 되든 직접 골라 복사하는 길이다. 고른 것만으로 복사했다고 하지 않는다 -->
+  <div class="dialog-backdrop" id="daily-share-dialog" hidden>
+    <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="daily-share-dialog-title"
+         aria-describedby="daily-share-dialog-hint">
+      <h2 class="dialog__title" id="daily-share-dialog-title">공유 글</h2>
+      <p class="dialog__body" id="daily-share-dialog-hint">글을 골라 복사한 뒤 원하는 곳에 붙여 넣어 주세요.</p>
+      <textarea class="daily-share__text" id="daily-share-text" rows="4" readonly spellcheck="false"
+                aria-labelledby="daily-share-dialog-title"></textarea>
+      <div class="dialog__actions">
+        <button type="button" class="button button--primary" id="daily-share-close">닫기</button>
       </div>
     </div>
   </div>

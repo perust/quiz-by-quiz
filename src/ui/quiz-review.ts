@@ -11,6 +11,7 @@
 import { need, needOne } from '../dom.js';
 import { createScreenWalker, pointBelowRightEdge } from './screen-walker.js';
 import { createReviewGroup, createReviewItem, groupReviewByCategory, type ReviewGroupCount } from './result.js';
+import { createDailySharePanel } from './daily-share.js';
 import type { AnsweredReview, ReviewItem } from '../types.js';
 
 /** app.ts 가 넘겨주는 콜백 */
@@ -33,6 +34,11 @@ export interface QuizReviewView {
   title?: string;
   scope?: string;
   summary?: string;
+  /**
+   * 끝낸 오늘의 퀴즈의 공유 글 (`core/daily-share.ts`). 있을 때만 «결과 공유하기»가 보인다 — 덜 푼 판·일반 판의
+   * 푼 문제는 넘기지 않는다(생략하면 입구가 없다)
+   */
+  share?: string | null;
 }
 
 export interface QuizReviewScreen {
@@ -81,6 +87,9 @@ export function createQuizReviewScreen({ onLeave }: QuizReviewScreenDeps): QuizR
 
   el.leave.addEventListener('click', () => onLeave());
 
+  // 끝낸 오늘의 퀴즈 결과의 공유 (ui/daily-share.ts). 다른 판의 푼 문제에서는 거둔다
+  const sharePanel = createDailySharePanel();
+
   function renderList(review: AnsweredReview): void {
     el.list.replaceChildren();
     // 전체 도전은 결과의 오답 풀이처럼 분야별로 접어 묶는다 (N04). 묶음이 하나뿐이면 펼쳐 둔다
@@ -97,9 +106,10 @@ export function createQuizReviewScreen({ onLeave }: QuizReviewScreenDeps): QuizR
   }
 
   return {
-    show({ review, modeLabel, characterId, inRoom, title, scope, summary }) {
+    show({ review, modeLabel, characterId, inRoom, title, scope, summary, share }) {
       el.title.textContent = title ?? defaultTitle;
       el.scope.textContent = scope ?? defaultScope;
+      sharePanel.show(share ?? null);
       walker.show(characterId);
       el.leaveLabel.textContent = inRoom ? '대기실' : '홈';
       el.summary.textContent = summary ?? answeredReviewSummary(review, modeLabel);
@@ -107,6 +117,7 @@ export function createQuizReviewScreen({ onLeave }: QuizReviewScreenDeps): QuizR
     },
 
     hide() {
+      sharePanel.hide();
       walker.hide();
     },
   };
