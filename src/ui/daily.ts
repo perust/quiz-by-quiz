@@ -137,6 +137,11 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
   /** 저장소에 쓰지 못한 레코드. 이 창 안에서만 이어 간다 */
   const unsaved = new Map<string, DailyRecord>();
   let run: DailySession | null = null;
+  /**
+   * 지금 판을 열 때의 레코드가 저장소에 있었는가 (`known()` 의 그 레코드의 값). 다시 연 판에서 아직 답하지 않았으면
+   * `lastSave()` 가 null 이라, 저장소의 능력(`store.durable`)만 보면 메모리에만 있던 진행을 «저장돼 있어요»라고 한다
+   */
+  let runDurable = false;
   let note: string | null = null;
   /** 홈의 자정 다시 쓰기를 무르는 함수 */
   let cancelMidnight: (() => void) | null = null;
@@ -254,6 +259,7 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     note = null;
     const session = createDailySession(start, { onConfirm });
     run = session;
+    runDurable = durable && store.durable;
     deps.play(session, {
       categoryLabel: `오늘의 퀴즈 · ${dailyDateLabel(dateKey)}`,
       saveNote: () => (run === session ? note : null),
@@ -280,7 +286,10 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
       if (run !== session) return;
       run = null;
       const record = session.record();
-      deps.showReview(reviewView(record, session.lastSave() !== 'memory' && store.durable, false));
+      const saved = session.lastSave();
+      // 이 판에서 아직 답하지 않았으면 연 레코드의 저장 여부를, 답했으면 마지막 저장의 결과를 따른다
+      const durable = saved === null ? runDurable : saved !== 'memory' && store.durable;
+      deps.showReview(reviewView(record, durable, false));
     },
     release() {
       run = null;

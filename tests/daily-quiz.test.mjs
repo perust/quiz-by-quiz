@@ -56,7 +56,8 @@ globalThis.window ??= { localStorage: memoryStorage() };
 
 const daily = await import('../js/core/daily.js');
 const { createDailyStore, dailyKey } = await import('../js/storage/daily-store.js');
-const { createDailyController, dailyStatusText, dailySaveNote } = await import('../js/ui/daily.js');
+const flowModule = await import('../js/ui/daily.js');
+const { createDailyController, dailyStatusText, dailySaveNote } = flowModule;
 
 const CATEGORY_IDS = ['history', 'science', 'geography', 'general', 'art'];
 const realBanks = Object.fromEntries(await Promise.all(CATEGORY_IDS.map(async (id) =>
@@ -476,6 +477,62 @@ test('흐름: 저장소를 못 쓰면 이 창에서는 이어 가지만 저장�
   assert.match(memoryOnly.calls.play[0].view.exitNote, /저장하지 못하고 있어요/);
   assert.equal(answer(memoryOnly, 0), '저장하지 못했어요 · 이 창을 닫으면 사라져요');
 });
+
+/**
+ * 처음에는 쓸 수 있는 저장소(부팅 시험을 지났다 — persistent). 부팅 뒤에 쓰기가 던지거나(`throw`),
+ * 쓰기는 통한 듯하지만 다시 읽으면 다른 값(`drop` — 말없이 버린다)이 되도록 바꿀 수 있다
+ */
+function flakyStorage() {
+  const storage = memoryStorage();
+  const mode = { fail: null };
+  const set = storage.setItem;
+  storage.setItem = (key, value) => {
+    if (mode.fail === 'throw') { storage.writes.push(key); throw new Error('QuotaExceededError'); }
+    if (mode.fail === 'drop') { storage.writes.push(key); return; }
+    set(key, value);
+  };
+  return { storage, mode };
+}
+
+for (const failure of ['throw', 'drop']) {
+  test(`흐름: 부팅 뒤 저장이 실패(${failure})한 판을 다시 열어 답하지 않고 푼 문제를 보면 저장했다고 말하지 않는다`, () => {
+    const { DAILY_UNSAVED_SCOPE, DAILY_PARTIAL_SCOPE } = flowModule;
+    const { storage, mode } = flakyStorage();
+    const h = harness({ storage, persistent: true });
+    h.controller.open();
+    // 첫 답은 저장된다 — 저장소는 처음에 정말로 쓸 수 있었다
+    assert.equal(answer(h, 0), '이 기기에 저장했어요');
+    h.session().goNext();
+    mode.fail = failure;
+    assert.equal(answer(h, 1), '저장하지 못했어요 · 이 창을 닫으면 사라져요');
+    assert.equal(JSON.parse(storage.values.get(dailyKey('2026-11-25'))).answers.length, 1, '저장소에는 앞 답 하나뿐이다');
+    // 홈으로 → 같은 진행을 다시 연다 → 답하지 않고 «나가고 푼 문제 해설 보기»
+    h.controller.release();
+    assert.deepEqual(h.controller.refreshHome(), { kind: 'resume', dateKey: '2026-11-25', answered: 2 });
+    h.controller.open();
+    assert.equal(h.session().position, 3);
+    assert.match(h.calls.play.at(-1).view.exitNote, /저장하지 못하고 있어요/);
+    h.controller.reviewAnswered(h.session());
+    const partial = h.calls.review.at(-1);
+    assert.equal(partial.review.answeredCount, 2);
+    assert.equal(partial.scope, DAILY_UNSAVED_SCOPE, '메모리에만 있는 진행을 «이 기기에 저장돼 있어요»라고 하지 않는다');
+    assert.notEqual(partial.scope, DAILY_PARTIAL_SCOPE);
+
+    // 회복: 같은 메모리 레코드의 다음 저장이 정말로 쓰이고 확인되면 저장 범위로 돌아와도 된다
+    mode.fail = null;
+    h.controller.open();
+    assert.equal(h.session().position, 3);
+    assert.equal(answer(h, 2), '이 기기에 저장했어요');
+    assert.equal(JSON.parse(storage.values.get(dailyKey('2026-11-25'))).answers.length, 3, '메모리의 답까지 함께 썼다');
+    h.controller.reviewAnswered(h.session());
+    assert.equal(h.calls.review.at(-1).scope, DAILY_PARTIAL_SCOPE);
+    // 회복한 뒤 다시 열어 답하지 않고 보아도 저장 범위다
+    h.controller.open();
+    assert.match(h.calls.play.at(-1).view.exitNote, /이 기기에 저장돼요/);
+    h.controller.reviewAnswered(h.session());
+    assert.equal(h.calls.review.at(-1).scope, DAILY_PARTIAL_SCOPE);
+  });
+}
 
 test('흐름: 오늘의 퀴즈를 만들 수 없으면 입구가 그렇다고 말하고 다시 불러오기를 권한다', () => {
   const h = harness({ banks: { ...realBanks, art: [] } });
