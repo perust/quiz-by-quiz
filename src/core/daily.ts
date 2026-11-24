@@ -4,21 +4,40 @@
 // - 날짜는 **Asia/Seoul** 의 달력 날짜다. 한국은 1988년 뒤로 서머타임이 없어 UTC+9 고정으로 셈한다 —
 //   브라우저의 시간대(`Intl`·`Date#getHours`)를 읽지 않으므로 어느 나라에서 열어도 같은 날짜다.
 // - 출제는 같은 날짜·같은 은행 판이면 언제나 같다. 은행의 배열 순서·최근 출제 기록·새로고침과 무관하다 —
-//   문제를 ID 로 정렬하고, 날짜에서 만든 씨앗으로만 고른다. 분야 다섯에서 하나씩, 보기 순서도 씨앗으로 섞는다.
-//   분야 하나라도 비었거나 분야 정의가 다섯이 아니면 **대신 아무 문제나 채우지 않고** 만들지 않는다.
+//   문제를 ID 로 정렬하고, 날짜에서 만든 씨앗으로만 고른다. 분야 다섯에서 난이도마다 정해진 수(쉬움 1·보통 1·
+//   어려움 2)를 서로 다른 문제로 골라 모두 20문제다. 보기 순서도 씨앗으로 섞는다.
+//   분야 하나라도 비었거나, 어느 분야의 한 난이도가 몫보다 적거나(어려움이 하나뿐인 것도), 분야 정의가 다섯이
+//   아니면 **다른 난이도·다른 문제로 채우지 않고** 만들지 않는다. 난이도를 모르는 문제는 어느 몫에도 들지 않는다.
 // - 시간 제한이 없다. 일반 판의 문항 시간 설정은 건드리지 않는다.
 
 import { CATEGORIES, CHOICE_COUNT } from '../constants.js';
 import { validateQuestion } from '../data/validate.js';
-import { shuffle, shuffleChoices } from './sampler.js';
+import { difficultyBucket, shuffle, shuffleChoices } from './sampler.js';
 import { createSession, type QuizSession, type SubmitInput } from './session.js';
-import type { AnswerRecord, Category, CategoryId, Question } from '../types.js';
+import type { AnswerRecord, Category, CategoryId, Difficulty, Question } from '../types.js';
 
-/** 하루에 푸는 문제 수 — 분야마다 하나 */
-export const DAILY_QUESTION_COUNT = 5;
+/** 오늘의 퀴즈가 쓰는 분야 수 */
+export const DAILY_CATEGORY_COUNT = 5;
 
-/** 저장 레코드의 판. 모양이 바뀌면 올린다 — 모르는 판은 읽지 않는다 */
-export const DAILY_SCHEMA = 'quiz.daily.v1';
+/** 분야 하나에서 난이도마다 고르는 문제 수 */
+export const DAILY_DIFFICULTY_QUOTA: Readonly<Record<Difficulty, number>> = { easy: 1, normal: 1, hard: 2 };
+
+/** 몫을 고르는 난이도 순서 (씨앗 이름에 들어간다) */
+const DAILY_DIFFICULTIES: readonly Difficulty[] = ['easy', 'normal', 'hard'];
+
+/** 하루에 푸는 문제 수 — 분야 다섯 × (쉬움 1·보통 1·어려움 2) = 20 */
+export const DAILY_QUESTION_COUNT = DAILY_CATEGORY_COUNT
+  * DAILY_DIFFICULTIES.reduce((sum, difficulty) => sum + DAILY_DIFFICULTY_QUOTA[difficulty], 0);
+
+/**
+ * 저장 레코드의 판. 모양이 바뀌면 올린다 — 모르는 판은 읽지 않는다.
+ * v1 은 하루 5문제(분야마다 하나) 시절의 판이고 열쇠도 따로다(`quiz.daily.v1.*`). v2 는 그것을 읽지도 고치지도 않는다
+ */
+export const DAILY_SCHEMA = 'quiz.daily.v2';
+
+/** 출제 규칙의 이름. 은행 판(`bankVersion`)에 섞는다 — 규칙이 바뀌면 같은 은행이어도 다른 판이다 */
+const DAILY_RULE = `daily-rule:v2:${DAILY_CATEGORY_COUNT}x(${DAILY_DIFFICULTIES.map((difficulty) =>
+  `${difficulty}${DAILY_DIFFICULTY_QUOTA[difficulty]}`).join(',')})`;
 
 /** Asia/Seoul 은 UTC+9 고정이다 (1988년 뒤로 서머타임 없음) */
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -83,7 +102,10 @@ function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** 문제 한 개의 내용 지문. 화면에 나온 보기 순서까지 담는다 — 순서가 바뀐 문제는 다른 문제다 */
+/**
+ * 문제 한 개의 내용 지문. 화면에 나온 보기 순서까지 담는다 — 순서가 바뀐 문제는 다른 문제다.
+ * 난이도도 담는다 — 몫(쉬움·보통·어려움)을 정하는 값이라 난이도만 바뀌어도 다른 문제다
+ */
 export function questionFingerprint(question: Question): string {
   return hashText(JSON.stringify([
     question.id,
@@ -92,20 +114,27 @@ export function questionFingerprint(question: Question): string {
     question.choices,
     question.answerIndex,
     question.explanation,
+    // 타입은 Difficulty 지만 검증하지 않은 JSON 에서 왔을 수 있다 — 없으면 JSON.stringify 가 null 로 적는다
+    question.difficulty,
   ]));
 }
 
-/** 분야 정의와 은행에서 오늘의 퀴즈가 쓸 수 있는 문제. 분야마다 ID 순서다 */
+/** 분야 정의와 은행에서 오늘의 퀴즈가 쓸 수 있는 문제. 분야마다·난이도마다 ID 순서다 */
 interface DailyPool {
   category: CategoryId;
+  /** 검증을 지난 문제 모두 (난이도를 모르는 문제도) */
   questions: Question[];
+  /** 난이도마다의 문제. 난이도를 모르는 문제는 어디에도 없다 */
+  tiers: Record<Difficulty, Question[]>;
 }
 
 export type DailyBuildFailure =
   /** 분야 정의가 다섯 개의 서로 다른 분야가 아니다 */
   | 'categories'
   /** 문제가 하나도 없는(못 받았거나 모두 불량인) 분야가 있다 */
-  | 'missing-category';
+  | 'missing-category'
+  /** 어느 분야의 한 난이도가 몫(쉬움 1·보통 1·어려움 2)보다 적다 */
+  | 'short-tier';
 
 export type DailyBuild =
   | { ok: true; dateKey: string; bankVersion: string; questions: Question[] }
@@ -136,29 +165,36 @@ function dailyPools(banks: DailyBuildParams['banks'], categories: readonly Categ
       seen.add(question.id);
       return true;
     });
-    return { category, questions: unique };
+    const tiers: Record<Difficulty, Question[]> = { easy: [], normal: [], hard: [] };
+    for (const question of unique) {
+      const bucket = difficultyBucket(question);
+      // 난이도를 모르는 문제는 어느 몫도 채우지 않는다
+      if (bucket !== 'unknown') tiers[bucket].push(question);
+    }
+    return { category, questions: unique, tiers };
   });
 }
 
 /**
- * 은행의 판. 오늘의 퀴즈가 쓰는 문제 내용(ID 순서)에서 만든다 — 배열 순서가 달라도 같고, 문제 하나의 글이나
- * 보기·정답이 바뀌면 다르다.
+ * 은행의 판. 출제 규칙과, 오늘의 퀴즈가 고를 수 있는 문제 내용(난이도마다 ID 순서)에서 만든다 — 배열 순서가
+ * 달라도 같고, 문제 하나의 글이나 보기·정답·난이도가 바뀌거나 규칙이 바뀌면 다르다.
  */
 function poolVersion(pools: readonly DailyPool[]): string {
-  return hashText(pools.map(({ category, questions }) =>
-    `${category}:${questions.map(questionFingerprint).join(',')}`).join('|'));
+  return hashText([DAILY_RULE, ...pools.map(({ category, tiers }) =>
+    `${category}:${DAILY_DIFFICULTIES.map((difficulty) =>
+      `${difficulty}=${tiers[difficulty].map(questionFingerprint).join(',')}`).join(';')}`)].join('|'));
 }
 
 /** 분야 정의가 정확히 다섯 개의 서로 다른 분야인가. 정렬한 코드를 돌려준다 */
 function expectedCategories(categories: readonly Pick<Category, 'id'>[]): CategoryId[] | null {
   const ids = [...new Set(categories.map((category) => category.id))].sort(byCodeUnit);
-  if (categories.length !== DAILY_QUESTION_COUNT || ids.length !== DAILY_QUESTION_COUNT) return null;
+  if (categories.length !== DAILY_CATEGORY_COUNT || ids.length !== DAILY_CATEGORY_COUNT) return null;
   return ids;
 }
 
 /**
- * 그 날짜의 다섯 문제. 분야마다 하나를 고르고(ID 로 정렬한 목록에서 씨앗으로), 문제 순서와 보기 순서를
- * 씨앗으로 섞는다. 고른 문제는 원본을 건드리지 않은 새 객체다.
+ * 그 날짜의 20문제. 분야마다 난이도의 몫만큼(쉬움 1·보통 1·어려움 2) 서로 다른 문제를 고르고(난이도마다 ID 로
+ * 정렬한 목록에서 씨앗으로), 문제 순서와 보기 순서를 씨앗으로 섞는다. 고른 문제는 원본을 건드리지 않은 새 객체다.
  */
 export function buildDailyQuestions({ dateKey, banks, categories = CATEGORIES }: DailyBuildParams): DailyBuild {
   if (!isDateKey(dateKey)) throw new Error(`날짜가 올바르지 않습니다: ${dateKey}`);
@@ -168,12 +204,16 @@ export function buildDailyQuestions({ dateKey, banks, categories = CATEGORIES }:
   const pools = dailyPools(banks, ids);
   const empty = pools.filter((pool) => pool.questions.length === 0).map((pool) => pool.category);
   if (empty.length > 0) return { ok: false, dateKey, reason: 'missing-category', categories: empty };
+  const short = pools.filter(({ tiers }) => DAILY_DIFFICULTIES.some((difficulty) =>
+    tiers[difficulty].length < DAILY_DIFFICULTY_QUOTA[difficulty])).map((pool) => pool.category);
+  if (short.length > 0) return { ok: false, dateKey, reason: 'short-tier', categories: short };
 
   const bankVersion = poolVersion(pools);
-  const picked = pools.map(({ category, questions }) => {
-    const random = seededRandom(`daily|pick|${dateKey}|${bankVersion}|${category}`);
-    return questions[Math.floor(random() * questions.length)];
-  });
+  const picked = pools.flatMap(({ category, tiers }) => DAILY_DIFFICULTIES.flatMap((difficulty) => {
+    const random = seededRandom(`daily|pick|${dateKey}|${bankVersion}|${category}|${difficulty}`);
+    // 섞은 목록의 앞에서 몫만큼 — 같은 칸에서 같은 문제를 두 번 고르지 않는다
+    return shuffle(tiers[difficulty], random).slice(0, DAILY_DIFFICULTY_QUOTA[difficulty]);
+  }));
   const ordered = shuffle(picked, seededRandom(`daily|order|${dateKey}|${bankVersion}`));
   const questions = ordered.map((question) =>
     shuffleChoices(question, seededRandom(`daily|choices|${dateKey}|${question.id}`)));
@@ -202,7 +242,7 @@ export interface DailyRecord {
   sessionId: string;
   startedAt: string;
   updatedAt: string;
-  /** 다섯 문제에 모두 답해 저장한 시각. 아니면 null */
+  /** 20문제에 모두 답해 저장한 시각. 아니면 null */
   completedAt: string | null;
   questions: Question[];
   /** questions[i] 의 지문. 레코드가 손상되거나 고쳐졌는지 본다 */
@@ -257,17 +297,25 @@ export function parseDailyRecord(raw: unknown, expectedDateKey: string): DailyRe
   if (!Array.isArray(value.fingerprints) || value.fingerprints.length !== DAILY_QUESTION_COUNT) return null;
   if (!Array.isArray(value.answers) || value.answers.length > DAILY_QUESTION_COUNT) return null;
 
-  const categories = new Set<unknown>();
+  /** 분야 → 난이도마다의 문제 수. 몫과 정확히 같아야 한다 */
+  const tierCounts = new Map<unknown, Record<Difficulty, number>>();
   const ids = new Set<unknown>();
   for (const [index, question] of value.questions.entries()) {
     if (validateQuestion(question).length > 0) return null;
     const candidate = question as Question;
     if (!CATEGORIES.some((category) => category.id === candidate.category)) return null;
-    categories.add(candidate.category);
+    const difficulty = difficultyBucket(candidate);
+    if (difficulty === 'unknown') return null;
+    const counts = tierCounts.get(candidate.category) ?? { easy: 0, normal: 0, hard: 0 };
+    counts[difficulty] += 1;
+    tierCounts.set(candidate.category, counts);
     ids.add(candidate.id);
     if (questionFingerprint(candidate) !== value.fingerprints[index]) return null;
   }
-  if (categories.size !== DAILY_QUESTION_COUNT || ids.size !== DAILY_QUESTION_COUNT) return null;
+  if (tierCounts.size !== DAILY_CATEGORY_COUNT || ids.size !== DAILY_QUESTION_COUNT) return null;
+  for (const counts of tierCounts.values()) {
+    if (DAILY_DIFFICULTIES.some((difficulty) => counts[difficulty] !== DAILY_DIFFICULTY_QUOTA[difficulty])) return null;
+  }
   const questions = value.questions as Question[];
 
   const answers: DailyAnswer[] = [];

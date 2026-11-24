@@ -1,4 +1,4 @@
-// 오늘의 퀴즈 흐름 (daily). 홈 입구 → 다섯 문제(퀴즈 화면 그대로) → 결과·풀이(«푼 문제» 화면 그대로).
+// 오늘의 퀴즈 흐름 (daily). 홈 입구 → 20문제(퀴즈 화면 그대로) → 결과·풀이(«푼 문제» 화면 그대로).
 //
 // - 화면은 새로 만들지 않는다. 퀴즈 화면에 `DailySession`(시간 제한 없음)을 넘기고, 결과는 중간에 나온 판의
 //   «푼 문제» 화면에 제목·저장 범위 한 줄만 바꿔 그린다. **결과 화면(`result.ts`)을 쓰지 않는다** — 그 화면은
@@ -37,7 +37,7 @@ export type DailyHomeStatus =
   | { kind: 'done'; dateKey: string; correct: number }
   | { kind: 'unavailable'; dateKey: string };
 
-/** 홈 입구의 보조 줄. 짧게 — 시작 전·이어 풀기 n/5·완료 */
+/** 홈 입구의 보조 줄. 짧게 — 시작 전·이어 풀기 n/20·완료 */
 export function dailyStatusText(status: DailyHomeStatus): string {
   switch (status.kind) {
     case 'new': return `${DAILY_QUESTION_COUNT}문제 · 시작 전`;
@@ -214,7 +214,7 @@ export function createDailyController(deps: DailyControllerDeps): DailyControlle
     const review = reviewAnswered({
       questions: record.questions,
       answers: dailyAnswerRecords(record),
-      // 다섯 분야가 하나씩이라 분야로 묶지 않고 푼 순서대로 펼친다
+      // 분야로 묶지 않고 실제로 푼 순서대로 펼친다 — 공유 글의 정오 순서와 같다
       mode: 'category',
       categoryId: null,
     });

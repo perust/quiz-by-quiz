@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-// 오늘의 퀴즈 결과 공유. 다섯 문제를 끝낸 날의 결과(«푼 문제» 화면)에만 «결과 공유하기» 입구가 있고,
+// 오늘의 퀴즈 결과 공유. 20문제를 끝낸 날의 결과(«푼 문제» 화면)에만 «결과 공유하기» 입구가 있고,
 // 누르면 그 클릭 안에서 Web Share(없으면 클립보드)를 한 번 부른다. 공유 글은 서비스 이름·연도를 단 KST 날짜·
-// 정답 수/5·문제 순서의 정오 다섯 개·공식 주소 하나뿐이다. 실제 소비자(DailyController → quiz-review 화면)를
+// 정답 수/20·실제로 푼 순서의 정오 20개·공식 주소 하나뿐이다. 실제 소비자(DailyController → quiz-review 화면)를
 // index.html 에서 읽은 요소로 만든 가짜 DOM 위에 띄운다 — HTML 에 없는 요소는 없다(null).
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -243,6 +243,11 @@ function harness({ storage = memoryStorage(), persistent = true, clock } = {}) {
   return { controller, calls, storage, time, session };
 }
 
+/** 하루 문제 수 — 제품 규칙(분야 다섯 × 쉬움 1·보통 1·어려움 2)에서 따로 적는다 */
+const DAILY20 = 20;
+/** 정오 무늬를 20문제 길이로 되풀이한다: p20('ox') → o x o x … (20개) */
+const p20 = (pattern) => Array.from({ length: DAILY20 }, (_, i) => pattern[i % pattern.length]);
+
 /** 오늘의 퀴즈를 열어 picks(o = 정답, x = 오답) 차례로 답한다. 끝까지면 «결과 보기»를 누른다 */
 function play(h, picks, { finish = true } = {}) {
   h.controller.open();
@@ -263,7 +268,7 @@ function expectedShare(record) {
   const [year, month, day] = record.dateKey.split('-').map(Number);
   const score = record.answers.filter((answer) => answer.correct).length;
   const marks = record.answers.map((answer) => (answer.correct ? '✅' : '❌')).join('');
-  return `Quiz by Quiz · ${year}년 ${month}월 ${day}일\n${score}/5\n${marks}\n${OFFICIAL_URL}`;
+  return `Quiz by Quiz · ${year}년 ${month}월 ${day}일\n${score}/20\n${marks}\n${OFFICIAL_URL}`;
 }
 
 const shareArea = () => byId('quiz-review-share');
@@ -289,7 +294,7 @@ function assertShareHidden(message) {
 test('완료한 오늘의 퀴즈 결과에 «결과 공유하기»가 있고, 누르기 전 0회 · 누른 그 클릭 안에서 정확한 글로 한 번 공유한다', async () => {
   const log = installNavigator();
   const h = harness();
-  const record = play(h, ['o', 'x', 'o', 'o', 'x']);
+  const record = play(h, p20('oxoox'));
   assert.equal(h.calls.review.at(-1).title, '오늘의 퀴즈 결과');
   assertShareVisible('완료 직후');
   assert.match(html, /<button type="button"[^>]*id="quiz-review-share-button"[^>]*>결과 공유하기<\/button>/);
@@ -310,22 +315,54 @@ test('완료한 오늘의 퀴즈 결과에 «결과 공유하기»가 있고, �
   reviewScreen.hide();
 });
 
-test('정오 다섯 개와 정답 수는 같은 답 배열에서 나온다 — 모두 정답 · 모두 오답 · 섞임', async () => {
+test('정오 20개와 정답 수는 같은 답 배열에서 나온다 — 화면의 해설 순서와도 같다', async () => {
   for (const [picks, score, marks] of [
-    [['o', 'o', 'o', 'o', 'o'], 5, '✅✅✅✅✅'],
-    [['x', 'x', 'x', 'x', 'x'], 0, '❌❌❌❌❌'],
-    [['x', 'o', 'x', 'o', 'o'], 3, '❌✅❌✅✅'],
+    [p20('xoxoo'), 12, '❌✅❌✅✅'.repeat(4)],
+    [p20('ooox'), 15, '✅✅✅❌'.repeat(5)],
   ]) {
     const log = installNavigator();
     const h = harness();
     const record = play(h, picks);
     assertShareVisible(picks.join(''));
+    // 화면의 풀이(«푼 문제»)도 같은 20문항을 같은 순서로 보인다
+    const review = h.calls.review.at(-1).review;
+    assert.equal(review.totalCount, 20);
+    assert.deepEqual(review.items.map((item) => item.correct), picks.map((p) => p === 'o'));
+    assert.deepEqual(review.items.map((item) => item.id), record.questions.map((q) => q.id));
     shareButton().click();
     const text = log.share[0].text;
     const lines = text.split('\n');
-    assert.equal(lines[1], `${score}/5`);
+    assert.equal(lines[1], `${score}/20`);
     assert.equal(lines[2], marks);
     assert.equal(text, expectedShare(record));
+    log.pendingShare[0].resolve();
+    await settle();
+    reviewScreen.hide();
+  }
+});
+
+test('20문제: 결과 공유 글은 n/20 과 실제 푼 순서의 정오 20개다 — 0/20 · 20/20 · 섞임', async () => {
+  const mixed = Array.from({ length: 20 }, (_, i) => ([0, 3, 4, 9, 13, 19].includes(i) ? 'x' : 'o'));
+  for (const [picks, score] of [
+    [Array(20).fill('x'), 0],
+    [Array(20).fill('o'), 20],
+    [mixed, 14],
+  ]) {
+    const log = installNavigator();
+    const h = harness();
+    h.controller.open();
+    assert.equal(h.session().total, 20, '오늘의 퀴즈 한 판은 20문제다');
+    // play 가 다시 open 해도 도는 판이 있으면 그대로 그 판을 잇는다
+    const record = play(h, picks);
+    assert.equal(record.answers.length, 20, '20문제를 모두 풀었다');
+    assert.equal(h.calls.review.at(-1).title, '오늘의 퀴즈 결과');
+    assertShareVisible(picks.join(''));
+    shareButton().click();
+    const lines = log.share[0].text.split('\n');
+    assert.equal(lines.length, 4);
+    assert.equal(lines[1], `${score}/20`);
+    assert.equal(lines[2], picks.map((p) => (p === 'o' ? '✅' : '❌')).join(''), '실제 푼 순서의 정오 20개');
+    assert.equal([...lines[2]].length, 20);
     log.pendingShare[0].resolve();
     await settle();
     reviewScreen.hide();
@@ -340,6 +377,16 @@ test('입구는 끝낸 오늘의 퀴즈 결과에만 — 덜 푼 판·빈 기록
   partial.controller.reviewAnswered(partial.session());
   assert.equal(partial.calls.review.at(-1).title, '오늘의 퀴즈 · 푼 문제');
   assertShareHidden('덜 푼 판에는 공유 입구가 없다');
+  assert.equal(partial.calls.review.at(-1).share, null);
+
+  // 19문제까지 푼 판도 덜 푼 판이다 — 20번째 답 전에는 공유 입구가 없다
+  const nineteen = harness();
+  play(nineteen, p20('o').slice(0, 19), { finish: false });
+  assert.equal(nineteen.session().hasNext(), true);
+  nineteen.controller.reviewAnswered(nineteen.session());
+  assert.equal(nineteen.calls.review.at(-1).title, '오늘의 퀴즈 · 푼 문제');
+  assert.equal(nineteen.calls.review.at(-1).share, null);
+  assertShareHidden('19문제를 푼 판에는 공유 입구가 없다');
 
   // 빈 기록: 열자마자 아무것도 풀지 않고 푼 문제 보기
   const empty = harness();
@@ -349,7 +396,7 @@ test('입구는 끝낸 오늘의 퀴즈 결과에만 — 덜 푼 판·빈 기록
 
   // 끝낸 판을 본 뒤 일반 판의 «푼 문제»(share 없음)로 다시 그리면 거둔다
   const done = harness();
-  play(done, ['o', 'o', 'x', 'o', 'o']);
+  play(done, p20('ooxoo'));
   assertShareVisible('완료');
   reviewScreen.show({
     review: { mode: 'category', categoryId: 'science', totalCount: 10, answeredCount: 1, correctCount: 1, items: [] },
@@ -376,11 +423,12 @@ test('끝낸 날을 다시 열어도, KST 자정을 넘겨 끝냈어도 레코�
   const h = harness({ storage, clock });
   h.controller.open();
   const s = h.session();
-  ['o', 'x', 'x', 'o', 'o'].forEach((pick, index) => {
+  const picks = p20('oxxoo');
+  picks.forEach((pick, index) => {
     if (index === 1) clock.now = kst('2026-11-25T00:00:30');
     const question = s.currentQuestion();
     s.submit({ choiceIndex: pick === 'o' ? question.answerIndex : (question.answerIndex + 1) % 4, elapsedMs: 900 });
-    if (index < 4) s.goNext();
+    if (index < picks.length - 1) s.goNext();
   });
   h.controller.complete(s);
   const record = s.record();
@@ -414,7 +462,7 @@ test('끝낸 날을 다시 열어도, KST 자정을 넘겨 끝냈어도 레코�
 test('Web Share 가 없으면 같은 클릭 안에서 클립보드에 같은 글을 쓰고, 실제로 끝난 뒤에만 «복사했어요»', async () => {
   const log = installNavigator({ share: false });
   const h = harness();
-  const record = play(h, ['o', 'o', 'x', 'x', 'o']);
+  const record = play(h, p20('ooxxo'));
   assertShareVisible('공유 미지원');
   shareButton().click();
   assert.deepEqual(log.clipboard, [expectedShare(record)], '같은 클릭 안에서 곧바로 복사를 시도한다');
@@ -429,7 +477,7 @@ test('Web Share 가 없으면 같은 클릭 안에서 클립보드에 같은 글
   // 클립보드도 없으면 복사했다고 하지 않고 직접 고르는 길을 말한다
   const none = installNavigator({ share: false, clipboard: false });
   const h2 = harness();
-  play(h2, ['o', 'o', 'o', 'x', 'o']);
+  play(h2, p20('oooxo'));
   shareButton().click();
   await settle();
   assert.equal(none.share.length + none.clipboard.length, 0);
@@ -441,7 +489,7 @@ test('Web Share 가 없으면 같은 클릭 안에서 클립보드에 같은 글
 test('공유 창을 닫은 것(AbortError)은 취소다 — 클립보드로 내려가지 않고 아무 말도 하지 않으며, 다시 누르면 다시 공유한다', async () => {
   const log = installNavigator();
   const h = harness();
-  const record = play(h, ['x', 'o', 'o', 'o', 'o']);
+  const record = play(h, p20('xoooo'));
   shareButton().click();
   log.pendingShare[0].reject(abortError());
   await settle();
@@ -460,7 +508,7 @@ test('공유 창을 닫은 것(AbortError)은 취소다 — 클립보드로 내�
 test('그 밖의 공유 실패는 클립보드로 내려간다 — 성공·실패 모두 끝난 뒤에만 말하고, 직접 고르는 길은 남는다', async () => {
   let log = installNavigator();
   const h = harness();
-  const record = play(h, ['o', 'x', 'o', 'x', 'o']);
+  const record = play(h, p20('oxoxo'));
   shareButton().click();
   log.pendingShare[0].reject(new DOMException('not allowed', 'NotAllowedError'));
   await settle();
@@ -504,7 +552,7 @@ test('그 밖의 공유 실패는 클립보드로 내려간다 — 성공·실�
 test('느린 공유·연달아 누르기·화면 떠나기·다른 결과로 바뀜 — 효과가 겹치지 않고 늦은 답이 새 화면을 덮지 않는다', async () => {
   let log = installNavigator();
   const first = harness();
-  play(first, ['o', 'o', 'o', 'o', 'x']);
+  play(first, p20('oooox'));
   shareButton().click();
   shareButton().click();
   shareButton().click();
@@ -520,7 +568,7 @@ test('느린 공유·연달아 누르기·화면 떠나기·다른 결과로 바
   // 떠난 뒤에 실패한 공유는 클립보드로 내려가지 않는다
   log = installNavigator();
   const second = harness();
-  play(second, ['x', 'x', 'o', 'o', 'o']);
+  play(second, p20('xxooo'));
   shareButton().click();
   reviewScreen.hide();
   log.pendingShare[0].reject(new TypeError('late failure'));
@@ -531,11 +579,11 @@ test('느린 공유·연달아 누르기·화면 떠나기·다른 결과로 바
   // 다른 결과로 바뀜: 앞 결과의 공유가 늦게 끝나도 새 결과의 상태 줄은 비어 있다
   log = installNavigator();
   const a = harness();
-  play(a, ['o', 'x', 'x', 'x', 'x']);
+  play(a, p20('oxxxx'));
   shareButton().click();
   const storage = memoryStorage();
   const b = harness({ storage, clock: { now: kst('2026-11-26T09:00:00') } });
-  const recordB = play(b, ['o', 'o', 'o', 'o', 'o']);
+  const recordB = play(b, p20('o'));
   assert.equal(statusLine().textContent, '');
   log.pendingShare[0].resolve();
   await settle();
@@ -552,7 +600,7 @@ test('느린 공유·연달아 누르기·화면 떠나기·다른 결과로 바
 test('직접 고르는 대화상자: Esc 로 닫고 연 자리로 돌아가며, 화면을 떠나면 조용히 접히고, 다시 열어도 같다', async () => {
   const log = installNavigator();
   const h = harness();
-  const record = play(h, ['o', 'x', 'o', 'x', 'x']);
+  const record = play(h, p20('oxoxx'));
   assertShareVisible('대화상자');
   const dialog = byId('daily-share-dialog');
   for (let round = 0; round < 2; round += 1) {
@@ -584,14 +632,14 @@ test('직접 고르는 대화상자: Esc 로 닫고 연 자리로 돌아가며, 
 test('공유 글은 정해진 네 줄뿐이다 — 문제·보기·해설·ID·닉네임·방 코드·토큰·localhost·query·hash 가 없고 공식 주소는 한 번', async () => {
   const log = installNavigator();
   const h = harness();
-  const record = play(h, ['o', 'x', 'o', 'o', 'x']);
+  const record = play(h, p20('oxoox'));
   shareButton().click();
   const text = log.share[0].text;
   const lines = text.split('\n');
   assert.equal(lines.length, 4);
   assert.match(lines[0], /^Quiz by Quiz · \d{4}년 \d{1,2}월 \d{1,2}일$/);
-  assert.match(lines[1], /^[0-5]\/5$/);
-  assert.match(lines[2], /^[✅❌]{5}$/u);
+  assert.match(lines[1], /^(?:1?\d|20)\/20$/);
+  assert.match(lines[2], /^[✅❌]{20}$/u);
   assert.equal(lines[3], OFFICIAL_URL);
   assert.equal(text.split(OFFICIAL_URL).length - 1, 1, '공식 주소는 정확히 한 번');
   assert.equal((text.match(/https?:\/\//g) ?? []).length, 1);
@@ -613,7 +661,7 @@ test('공유 글은 정해진 네 줄뿐이다 — 문제·보기·해설·ID·�
 test('공유는 기록·저장 진실성·랭킹·온라인에 닿지 않는다 — 메모리에만 남은 결과도 공유하되 저장했다고 하지 않는다', async () => {
   const storage = memoryStorage();
   const h = harness({ storage });
-  const record = play(h, ['o', 'x', 'o', 'x', 'o']);
+  const record = play(h, p20('oxoxo'));
   const snapshot = new Map(storage.values);
   const writes = storage.writes.length;
   const browserWrites = browserStorage.writes.length;
@@ -643,7 +691,7 @@ test('공유는 기록·저장 진실성·랭킹·온라인에 닿지 않는다 
 
   // 저장소를 못 쓰는 창: 공유는 되지만 저장 범위 줄은 여전히 «저장하지 못했어요»다
   const broken = harness({ storage: memoryStorage({ failWrites: true }) });
-  const memoryRecord = play(broken, ['o', 'o', 'x', 'o', 'x']);
+  const memoryRecord = play(broken, p20('ooxox'));
   assert.equal(broken.calls.review.at(-1).scope, DAILY_UNSAVED_SCOPE);
   assert.equal(byId('quiz-review-scope').textContent, DAILY_UNSAVED_SCOPE);
   log = installNavigator();

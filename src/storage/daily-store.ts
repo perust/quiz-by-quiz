@@ -2,12 +2,14 @@
 // 서버 어디에도 가지 않는다. 저장 방식은 `safe-storage.ts` 를 거친다(이 프로젝트에서 localStorage 를 직접
 // 만지는 곳은 거기 하나다).
 //
-// - 날짜마다 열쇠가 따로다(`quiz.daily.v1.<YYYY-MM-DD>`). 한 날짜의 쓰기가 다른 날짜를 덮을 길이 없다
+// - 날짜마다 열쇠가 따로다(`quiz.daily.v2.<YYYY-MM-DD>`). 한 날짜의 쓰기가 다른 날짜를 덮을 길이 없다
 // - 쓰기 직전에 저장소의 것을 다시 읽어 `planDailyWrite` 로 견준다 — 다른 탭이 끝낸 레코드를 덮지 않고,
 //   앞서 간 탭의 답을 되돌리지 않는다
 // - 쓴 뒤 다시 읽어 같은지 본다. 저장소가 메모리 대체품이거나 쓰기가 던지면 `memory` — 화면은 «저장했어요»라고
 //   말하지 않는다
-// - 날짜 목록(`quiz.daily.v1.index`)으로 최근 날짜만 남기고 오래된 레코드를 지운다
+// - 날짜 목록(`quiz.daily.v2.index`)으로 최근 날짜만 남기고 오래된 레코드를 지운다
+// - 하루 5문제 시절의 `quiz.daily.v1.*`(레코드·날짜 목록)은 읽지도 쓰지도 지우지도 않는다. 그 답을 20문제 판에
+//   얹거나 그 완료를 20문제 완료로 읽지 않는다 — v2 는 열쇠부터 따로다
 
 import { safeStorage, isPersistent, type KeyValueStorage } from './safe-storage.js';
 import {
@@ -18,8 +20,8 @@ import {
   type DailyStore,
 } from '../core/daily.js';
 
-const KEY_PREFIX = 'quiz.daily.v1.';
-const INDEX_KEY = 'quiz.daily.v1.index';
+const KEY_PREFIX = 'quiz.daily.v2.';
+const INDEX_KEY = 'quiz.daily.v2.index';
 /** 남겨 두는 날짜 수. 지난 날의 결과는 화면에서 열지 않으므로 넉넉히 두 주만 둔다 */
 const KEEP_DATES = 14;
 

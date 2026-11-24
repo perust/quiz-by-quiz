@@ -123,7 +123,7 @@ export interface HomeScreen {
   /** 「혼자 연습하기」로 왔을 때. 분야 dock의 첫 칸에 포커스를 둔다 (U29) */
   focusPractice(): void;
 
-  /** 「오늘의 퀴즈」 입구의 상태 한 줄 — 시작 전·이어 풀기 n/5·완료. 칸을 다시 만들지 않는다 */
+  /** 「오늘의 퀴즈」 입구의 상태 한 줄 — 시작 전·이어 풀기 n/20·완료. 칸을 다시 만들지 않는다 */
   setDailyStatus(status: DailyHomeStatus): void;
 }
 
