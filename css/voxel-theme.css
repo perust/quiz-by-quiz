@@ -850,6 +850,14 @@ pre {
   font-size: var(--text-sm);
 }
 
+/* 「오늘의 퀴즈」 상태 한 줄. HUD 위의 옅은 글자다 */
+.menu-card__status {
+  color: var(--hud-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-snug);
+}
+
 .home-player .menu-card__figure,
 .home-menu .menu-card__figure,
 .home-player .menu-card__name,
@@ -1922,6 +1930,12 @@ pre {
   color: var(--text-muted);
   font-size: var(--text-md);
   line-height: var(--leading-normal);
+}
+
+.feedback__save {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
 }
 
 .feedback .button {

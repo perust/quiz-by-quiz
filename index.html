@@ -166,6 +166,15 @@
                 </button>
               </div>
               <nav class="home-menu" aria-label="홈 바로가기">
+                <!-- 「오늘의 퀴즈」. 날마다(한국 시간) 정해진 다섯 문제를 시간 제한 없이 푼다. 답마다 이 브라우저에만
+                저장되고 랭킹·기록·서버에는 가지 않는다. 상태 한 줄(시작 전·이어 풀기 n/5·완료)은 home.ts 가 쓴다 (ui/daily.ts) -->
+                <button type="button" class="menu-card home-daily" id="open-daily" aria-label="오늘의 퀴즈" aria-describedby="daily-status" disabled>
+                  <span class="menu-card__figure" data-icon="target" aria-hidden="true"></span>
+                  <span class="menu-card__body">
+                    <span class="menu-card__name">오늘의 퀴즈</span>
+                    <span class="menu-card__status" id="daily-status">5문제</span>
+                  </span>
+                </button>
                 <button type="button" class="menu-card" id="open-characters" aria-label="캐릭터 모습 바꾸기">
                   <span class="menu-card__figure" data-icon="palette" aria-hidden="true"></span>
                   <span class="menu-card__body">
@@ -924,6 +933,8 @@
         <p class="feedback__answer-row" data-kind="mine"><span class="feedback__answer-label">내 답</span> <span class="feedback__answer-text"></span></p>
       </div>
       <p class="feedback__explanation" id="feedback-explanation"></p>
+      <!-- 오늘의 퀴즈만: 확정한 답을 저장한 결과 한 줄. 저장하지 못했으면 저장했다고 말하지 않는다 (quiz.ts) -->
+      <p class="feedback__save" id="feedback-save" hidden></p>
     </div>
     <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
     <button type="button" class="button button--primary" id="next-button">
@@ -1097,7 +1108,8 @@
   <div class="dialog-backdrop" id="exit-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
       <h2 class="dialog__title" id="exit-dialog-title">퀴즈를 그만둘까요?</h2>
-      <p class="dialog__body">지금 나가면 진행 중인 판은 사라지고 기록도 남지 않아요.</p>
+      <!-- 오늘의 퀴즈는 나가도 푼 문제가 남아 quiz.ts 가 그 판에만 본문을 바꿔 쓴다 -->
+      <p class="dialog__body" id="exit-dialog-body">지금 나가면 진행 중인 판은 사라지고 기록도 남지 않아요.</p>
       <div class="dialog__actions">
         <button type="button" class="button button--ghost" id="exit-cancel">계속 풀기</button>
         <button type="button" class="button button--danger" id="exit-confirm">나가기</button>

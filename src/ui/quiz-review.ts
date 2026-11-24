@@ -26,6 +26,13 @@ export interface QuizReviewView {
   characterId: string;
   /** 방에 들어가 있는가. 떠나는 버튼의 이름이 «대기실»이 된다 */
   inRoom: boolean;
+  /**
+   * 오늘의 퀴즈가 같은 화면을 결과·풀이로 쓸 때만 넘긴다 (`ui/daily.ts`). 제목·저장 범위 한 줄·머리 아래 한 줄을
+   * 바꾼다. 생략하면 중간에 나온 판의 말(«푼 문제 다시 보기»·«점수와 기록은 남지 않아요»)이다
+   */
+  title?: string;
+  scope?: string;
+  summary?: string;
 }
 
 export interface QuizReviewScreen {
@@ -57,7 +64,12 @@ export function createQuizReviewScreen({ onLeave }: QuizReviewScreenDeps): QuizR
     leaveLabel: need('quiz-review-leave-label'),
     summary: need('quiz-review-summary'),
     list: need('quiz-review-list'),
+    title: need('quiz-review-title'),
+    scope: need('quiz-review-scope'),
   };
+  // 중간에 나온 판의 말. 오늘의 퀴즈가 바꿔 쓴 뒤 다음에 되돌린다
+  const defaultTitle = el.title.textContent ?? '';
+  const defaultScope = el.scope.textContent ?? '';
 
   // 걸어가 버튼·펼침 줄·신고 링크를 누른다. 랭킹처럼 머리말 오른쪽 아래 빈 가장자리에서 시작한다 —
   // 머리말의 「홈」 위에 세우면 나가기 확인에서 누르던 Enter 가 이어져 그대로 떠난다
@@ -85,10 +97,12 @@ export function createQuizReviewScreen({ onLeave }: QuizReviewScreenDeps): QuizR
   }
 
   return {
-    show({ review, modeLabel, characterId, inRoom }) {
+    show({ review, modeLabel, characterId, inRoom, title, scope, summary }) {
+      el.title.textContent = title ?? defaultTitle;
+      el.scope.textContent = scope ?? defaultScope;
       walker.show(characterId);
       el.leaveLabel.textContent = inRoom ? '대기실' : '홈';
-      el.summary.textContent = answeredReviewSummary(review, modeLabel);
+      el.summary.textContent = summary ?? answeredReviewSummary(review, modeLabel);
       renderList(review);
     },
 

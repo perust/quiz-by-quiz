@@ -440,6 +440,27 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .home-menu .menu-card__arrow {
   display: none;
 }
+/* 「오늘의 퀴즈」 — 중앙 메뉴의 한 줄을 다 쓰는 가로 칸. 아이콘·이름·상태 한 줄(시작 전·이어 풀기 n/5·완료)이
+   나란히 선다. 다른 세 칸의 크기·순서는 그대로다 */
+.home-menu .home-daily {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: var(--tap);
+  gap: var(--space-2);
+  text-align: left;
+}
+.home-menu .home-daily .menu-card__body {
+  flex: 1;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.menu-card__status {
+  flex: none;
+  white-space: nowrap;
+}
 .menu-card__edit {
   flex: none;
   width: 16px;
@@ -1436,6 +1457,11 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
 
 .feedback__explanation {
   margin: 0 0 var(--space-4);
+  word-break: keep-all;
+}
+/* 오늘의 퀴즈의 저장 한 줄. 해설과 「다음 문제」 사이에 작게 둔다 */
+.feedback__save {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
   word-break: keep-all;
 }
 
