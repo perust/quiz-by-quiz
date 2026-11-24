@@ -440,6 +440,27 @@ body:has([data-screen='home']:not([hidden])) .app-bar > * {
 .home-menu .menu-card__arrow {
   display: none;
 }
+/* 「오늘의 퀴즈」 — 중앙 메뉴의 한 줄을 다 쓰는 가로 칸. 아이콘·이름·상태 한 줄(시작 전·이어 풀기 n/5·완료)이
+   나란히 선다. 다른 세 칸의 크기·순서는 그대로다 */
+.home-menu .home-daily {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: var(--tap);
+  gap: var(--space-2);
+  text-align: left;
+}
+.home-menu .home-daily .menu-card__body {
+  flex: 1;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.menu-card__status {
+  flex: none;
+  white-space: nowrap;
+}
 .menu-card__edit {
   flex: none;
   width: 16px;
@@ -1438,6 +1459,11 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
   margin: 0 0 var(--space-4);
   word-break: keep-all;
 }
+/* 오늘의 퀴즈의 저장 한 줄. 해설과 「다음 문제」 사이에 작게 둔다 */
+.feedback__save {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+  word-break: keep-all;
+}
 
 .feedback .button {
   width: 100%;
@@ -1896,6 +1922,43 @@ body:has(#feedback:not([hidden])) [data-screen='quiz'].quiz--character {
 
 .review-group__list {
   padding: var(--space-2) 0 var(--space-4);
+}
+
+/* 오늘의 퀴즈 결과 공유 (ui/daily-share.ts). «푼 문제» 화면의 요약 아래 작은 행동 줄과 상태 줄이다 — 좁은 머리말에
+   넣지 않는다. 두 버튼은 좁으면 줄을 바꿔 44px 목표와 글자를 지킨다. 상태 줄은 처음부터 보이는 라이브 리전이다 */
+.daily-share {
+  margin: 0 0 var(--space-4);
+}
+
+.daily-share__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.daily-share__actions .button {
+  flex: 1 1 auto;
+  word-break: keep-all;
+}
+
+.daily-share__status {
+  margin: var(--space-2) 0 0;
+  word-break: keep-all;
+}
+
+.daily-share__status:empty {
+  margin-top: 0;
+}
+
+/* 공유 글 대화상자의 읽기 전용 글 칸. 네 줄이 칸 안에서 다 보인다 */
+.daily-share__text {
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-2) var(--space-3);
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* 랭킹 등록 (FR-6.1) */
@@ -2896,6 +2959,14 @@ body:has(#feedback:not([hidden])) .quiz--character .arena__grid {
   body:has(.walk-controls--on) [data-screen='result']:not([hidden]) .review {
     margin-right: var(--walk-controls-right-clearance);
     margin-left: var(--walk-controls-left-clearance);
+  }
+
+  /* 오늘의 퀴즈 결과의 공유 행동 줄도 같은 안전 통로다 — 스크롤 중 어느 자리에서도 엄지 목표 밑에 들지 않는다.
+     줄은 결과 묶음(.result-block)의 안쪽 여백 안에 있으므로 페이지 가장자리에서 잰 통로에서 그 여백을 뺀다 — 조작부와의
+     틈(8px)은 그대로이고, 빼지 않으면 320px 폭에서 «공유 글 보 / 기»처럼 낱말 가운데가 접혔다 */
+  body:has(.walk-controls--on) [data-screen='quiz-review']:not([hidden]) .daily-share {
+    margin-right: calc(var(--walk-controls-right-clearance) - var(--space-4));
+    margin-left: calc(var(--walk-controls-left-clearance) - var(--space-4));
   }
 
   body:has(.walk-controls--on) [data-screen='online-quiz']:not([hidden]) .online-quiz-chat__form {

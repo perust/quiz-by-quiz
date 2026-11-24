@@ -166,6 +166,15 @@
                 </button>
               </div>
               <nav class="home-menu" aria-label="홈 바로가기">
+                <!-- 「오늘의 퀴즈」. 날마다(한국 시간) 정해진 20문제(분야마다 쉬움 1·보통 1·어려움 2)를 시간 제한 없이 푼다. 답마다 이 브라우저에만
+                저장되고 랭킹·기록·서버에는 가지 않는다. 상태 한 줄(시작 전·이어 풀기 n/20·완료)은 home.ts 가 쓴다 (ui/daily.ts) -->
+                <button type="button" class="menu-card home-daily" id="open-daily" aria-label="오늘의 퀴즈" aria-describedby="daily-status" disabled>
+                  <span class="menu-card__figure" data-icon="target" aria-hidden="true"></span>
+                  <span class="menu-card__body">
+                    <span class="menu-card__name">오늘의 퀴즈</span>
+                    <span class="menu-card__status" id="daily-status">20문제</span>
+                  </span>
+                </button>
                 <button type="button" class="menu-card" id="open-characters" aria-label="캐릭터 모습 바꾸기">
                   <span class="menu-card__figure" data-icon="palette" aria-hidden="true"></span>
                   <span class="menu-card__body">
@@ -806,6 +815,15 @@
 
       <div class="result-block">
         <h2 class="result-block__title quiz-review__summary" id="quiz-review-summary"></h2>
+        <!-- 끝낸 오늘의 퀴즈 결과에만 보인다 (ui/daily-share.ts). 덜 푼 판·일반 판의 푼 문제에는 없다.
+             상태 줄은 처음부터 보이는 라이브 리전이고 알리는 말만 넣는다 — 버튼은 그 밖이다 -->
+        <div class="daily-share" id="quiz-review-share" hidden>
+          <div class="daily-share__actions">
+            <button type="button" class="button button--primary" id="quiz-review-share-button">결과 공유하기</button>
+            <button type="button" class="button button--ghost" id="quiz-review-share-text-open">공유 글 보기</button>
+          </div>
+          <p class="daily-share__status" id="quiz-review-share-status" role="status"></p>
+        </div>
         <!-- 문제마다 «이 문제 이상해요» 신고 링크가 붙는다 (FR-5.8, result.ts 의 createReviewItem) -->
         <ol class="review" id="quiz-review-list" aria-labelledby="quiz-review-summary"></ol>
       </div>
@@ -924,6 +942,8 @@
         <p class="feedback__answer-row" data-kind="mine"><span class="feedback__answer-label">내 답</span> <span class="feedback__answer-text"></span></p>
       </div>
       <p class="feedback__explanation" id="feedback-explanation"></p>
+      <!-- 오늘의 퀴즈만: 확정한 답을 저장한 결과 한 줄. 저장하지 못했으면 저장했다고 말하지 않는다 (quiz.ts) -->
+      <p class="feedback__save" id="feedback-save" hidden></p>
     </div>
     <!-- 글자는 span으로 뺀다. 버튼 전체를 textContent로 갈아치우면 키 표시가 지워진다 -->
     <button type="button" class="button button--primary" id="next-button">
@@ -1048,6 +1068,21 @@
     </div>
   </div>
 
+  <!-- 오늘의 퀴즈 결과의 공유 글 (ui/daily-share.ts). «푼 문제» 화면의 「공유 글 보기」가 연다 — 공유·복사가
+       되든 안 되든 직접 골라 복사하는 길이다. 고른 것만으로 복사했다고 하지 않는다 -->
+  <div class="dialog-backdrop" id="daily-share-dialog" hidden>
+    <div class="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="daily-share-dialog-title"
+         aria-describedby="daily-share-dialog-hint">
+      <h2 class="dialog__title" id="daily-share-dialog-title">공유 글</h2>
+      <p class="dialog__body" id="daily-share-dialog-hint">글을 골라 복사한 뒤 원하는 곳에 붙여 넣어 주세요.</p>
+      <textarea class="daily-share__text" id="daily-share-text" rows="4" readonly spellcheck="false"
+                aria-labelledby="daily-share-dialog-title"></textarea>
+      <div class="dialog__actions">
+        <button type="button" class="button button--primary" id="daily-share-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 온라인 매치 나가기 확인. 매치는 서버에서 계속되고 방에서 나간 것도 아니다 -->
   <div class="dialog-backdrop" id="online-exit-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="online-exit-dialog-title"
@@ -1097,7 +1132,8 @@
   <div class="dialog-backdrop" id="exit-dialog" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
       <h2 class="dialog__title" id="exit-dialog-title">퀴즈를 그만둘까요?</h2>
-      <p class="dialog__body">지금 나가면 진행 중인 판은 사라지고 기록도 남지 않아요.</p>
+      <!-- 오늘의 퀴즈는 나가도 푼 문제가 남아 quiz.ts 가 그 판에만 본문을 바꿔 쓴다 -->
+      <p class="dialog__body" id="exit-dialog-body">지금 나가면 진행 중인 판은 사라지고 기록도 남지 않아요.</p>
       <div class="dialog__actions">
         <button type="button" class="button button--ghost" id="exit-cancel">계속 풀기</button>
         <button type="button" class="button button--danger" id="exit-confirm">나가기</button>

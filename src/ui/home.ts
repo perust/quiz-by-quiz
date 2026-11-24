@@ -17,6 +17,7 @@ import { allRoundLength, categoryDockCaption } from './round-rules.js';
 import { onlineEntryCopy, SOLO_ONLINE_ENTRY } from '../online/rules.js';
 import { soloRoomNoteText } from '../online/solo-play.js';
 import { NICKNAME_PROBLEM_MESSAGES, nicknameProblem } from '../online/nickname-rules.js';
+import { dailyStatusDescription, dailyStatusText, type DailyHomeStatus } from './daily.js';
 import type { Category, CategoryId, Question } from '../types.js';
 
 /** app.ts가 넘겨주는 콜백 뭉치 */
@@ -37,6 +38,8 @@ export interface HomeScreenDeps {
   onNickname: (nickname: string) => void;
   /** 문제 은행 알림의 「다시 불러오기」 (U06). 페이지를 새로 읽어 문제를 다시 받는다 */
   onReload: () => void;
+  /** 중앙 메뉴의 「오늘의 퀴즈」. 끝낸 날이면 결과, 아니면 첫 안 푼 문제부터 (ui/daily.ts) */
+  onOpenDaily: () => void;
 }
 
 /** 홈에서 돌아갈 수 있는 방. 이름은 화면에 보이고 코드는 돌아갈 때 쓴다 */
@@ -119,6 +122,9 @@ export interface HomeScreen {
 
   /** 「혼자 연습하기」로 왔을 때. 분야 dock의 첫 칸에 포커스를 둔다 (U29) */
   focusPractice(): void;
+
+  /** 「오늘의 퀴즈」 입구의 상태 한 줄 — 시작 전·이어 풀기 n/20·완료. 칸을 다시 만들지 않는다 */
+  setDailyStatus(status: DailyHomeStatus): void;
 }
 
 /** 320px의 다섯 칸 dock에서도 서로 붙지 않는 시각용 짧은 이름. 접근 가능한 이름은 전체 이름을 쓴다. */
@@ -146,7 +152,7 @@ export function homeDockCaption(practice: boolean): string {
 
 export function createHomeScreen({
   onSelectCategory, onStartAll, onOpenRanking, onOpenCharacters, onOpenOnline, onReturnToRoom,
-  onRetryOnline, onNickname, onReload,
+  onRetryOnline, onNickname, onReload, onOpenDaily,
 }: HomeScreenDeps): HomeScreen {
   const el = {
     stage: need('home-stage'),
@@ -160,6 +166,8 @@ export function createHomeScreen({
     openCharacters: need<HTMLButtonElement>('open-characters'),
     openOnline: need<HTMLButtonElement>('open-online'),
     openOnlineDesc: need('open-online-desc'),
+    openDaily: need<HTMLButtonElement>('open-daily'),
+    dailyStatus: need('daily-status'),
     roomNote: need<HTMLButtonElement>('home-room-note'),
     roomNoteText: need('home-room-note-text'),
     roomNoteAction: need('home-room-note-action'),
@@ -234,6 +242,7 @@ export function createHomeScreen({
     el.openOnline.setAttribute('aria-label', entry.label);
   }
   el.openRanking.addEventListener('click', () => onOpenRanking());
+  el.openDaily.addEventListener('click', () => onOpenDaily());
   el.openCharacters.addEventListener('click', () => onOpenCharacters());
   el.openOnline.addEventListener('click', () => {
     if (onlineBusy) return;
@@ -495,6 +504,7 @@ export function createHomeScreen({
       // 정적 버튼은 HTML에서 disabled로 시작한다. 리스너가 달린 지금 열어준다
       el.openRanking.disabled = false;
       el.openOnline.disabled = false;
+      el.openDaily.disabled = false;
       el.startAll.disabled = allCount === 0;
 
       // 기록이 없으면 한 판의 길이(«25문제»)를, 있으면 최고 점수를 보인다 (U04). 길이는 은행 크기가
@@ -567,5 +577,13 @@ export function createHomeScreen({
     },
 
     focusPractice: focusFirstPlayable,
+
+    setDailyStatus(status) {
+      // 이름은 «오늘의 퀴즈» 그대로이고, 보이는 상태 한 줄을 aria-describedby 가 설명으로 읽는다.
+      // 날짜까지 담은 긴 말은 마우스를 올렸을 때만 보인다
+      el.dailyStatus.textContent = dailyStatusText(status);
+      el.openDaily.title = dailyStatusDescription(status);
+      el.openDaily.dataset.state = status.kind;
+    },
   };
 }

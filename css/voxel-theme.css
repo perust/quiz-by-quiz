@@ -850,6 +850,14 @@ pre {
   font-size: var(--text-sm);
 }
 
+/* 「오늘의 퀴즈」 상태 한 줄. HUD 위의 옅은 글자다 */
+.menu-card__status {
+  color: var(--hud-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-snug);
+}
+
 .home-player .menu-card__figure,
 .home-menu .menu-card__figure,
 .home-player .menu-card__name,
@@ -1924,6 +1932,12 @@ pre {
   line-height: var(--leading-normal);
 }
 
+.feedback__save {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
 .feedback .button {
   min-height: var(--tap-lg);
 }
@@ -2105,7 +2119,8 @@ pre {
 /* ── 15. 폼 ──────────────────────────────────────────────────── */
 .room-form__input,
 .register__input,
-.chat__input {
+.chat__input,
+.daily-share__text {
   border: var(--border-1) solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -2131,7 +2146,8 @@ pre {
 
 .room-form__input:focus-visible,
 .register__input:focus-visible,
-.chat__input:focus-visible {
+.chat__input:focus-visible,
+.daily-share__text:focus-visible {
   border-color: var(--accent);
 }
 

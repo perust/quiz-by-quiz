@@ -68,6 +68,8 @@ import { createQuizScreen } from './ui/quiz.js';
 import { createArena } from './ui/arena.js';
 import { createResultScreen } from './ui/result.js';
 import { createQuizReviewScreen } from './ui/quiz-review.js';
+import { createDailyController } from './ui/daily.js';
+import { createDailyStore } from './storage/daily-store.js';
 import { createRankingScreen, type RankingScope } from './ui/ranking.js';
 import { createCharactersScreen } from './ui/characters-screen.js';
 import { withTopic } from './ui/korean.js';
@@ -289,6 +291,8 @@ async function main(): Promise<void> {
     },
     // 문제 은행 알림의 「다시 불러오기」 (U06). 분야 하나만 다시 받는 길은 두지 않는다 — 새로 읽는다
     onReload: () => window.location.reload(),
+    // 오늘의 퀴즈 (ui/daily.ts). 이 브라우저에만 남고 랭킹·서버에는 가지 않는다
+    onOpenDaily: () => daily.open(),
   });
 
   // 홈의 «「방」 방에 아직 있어요» 줄 (U35). 언제 묻는지는 online/home-room-note.ts 가 정한다
@@ -422,6 +426,38 @@ async function main(): Promise<void> {
 
   // 중간에 나온 판의 «푼 문제» (N04). 떠나는 곳은 나가기와 같다
   const quizReviewScreen = createQuizReviewScreen({ onLeave: leaveRound });
+
+  // ── 오늘의 퀴즈 (daily) ────────────────────────────────────────
+  // 퀴즈 화면과 «푼 문제» 화면을 그대로 쓴다. 결과 화면(랭킹 자동 저장)·혼자 온라인 판·최근 출제 기록·
+  // 문항 시간 설정을 거치지 않는다 — 저장은 이 브라우저의 오늘의 퀴즈 열쇠에만 한다(storage/daily-store.ts)
+  const daily = createDailyController({
+    store: createDailyStore(),
+    banks,
+    now: () => Date.now(),
+    newSessionId: () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    play: (session, view) => {
+      goTo('quiz');
+      // 답마다 이 브라우저에 저장돼 새로고침해도 이어 푼다 — 로컬 판의 새로고침 확인(FR-3.6)을 끈다
+      setUnloadWarning(false);
+      quizScreen.start(session, { categoryLabel: view.categoryLabel, saveNote: view.saveNote, exitNote: view.exitNote });
+    },
+    showReview: (view) => {
+      quizReviewScreen.show({
+        review: view.review,
+        modeLabel: '',
+        characterId,
+        inRoom: false,
+        title: view.title,
+        scope: view.scope,
+        summary: view.summary,
+        share: view.share,
+      });
+      goTo('quiz-review');
+    },
+    showUnavailable: (message) => homeScreen.setNote(message),
+    setHomeStatus: (status) => homeScreen.setDailyStatus(status),
+    announce,
+  });
 
   // 결과 화면은 아직 남기지 않은 기록을 저장한 **뒤에** 이 콜백들을 부른다 (FR-6.1).
   // 옮기기를 마칠 때까지 기다릴 수 있게 Promise를 돌려준다
@@ -815,7 +851,11 @@ async function main(): Promise<void> {
    */
   const closers: Record<ScreenName, () => void> = {
     home: () => homeScreen.hide(),
-    quiz: () => quizScreen.hide(),
+    quiz: () => {
+      // 오늘의 퀴즈는 답마다 저장돼 있다. 화면을 떠나면 판만 놓는다
+      daily.release();
+      quizScreen.hide();
+    },
     'online-quiz': () => onlineQuizScreen.hide(),
     result: () => resultScreen.hide(),
     'quiz-review': () => quizReviewScreen.hide(),
@@ -900,6 +940,15 @@ async function main(): Promise<void> {
   // 자리에서 동기로 써지므로 여기서 끝난다 — 서버 구현으로 바꾸면 다른 길이 필요하다
   window.addEventListener('pagehide', () => {
     if (currentScreen === 'result') resultScreen.flush();
+  });
+
+  // 오늘의 퀴즈 입구는 홈에 돌아올 때마다 지금의 날짜(KST)로 다시 쓴다. 탭이 다시 보이거나 다른 탭이 오늘의 퀴즈를
+  // 저장했을 때도 홈이면 고쳐 쓴다 — 자정을 넘긴 탭이 어제의 «완료»를 보이지 않게
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentScreen === 'home') daily.refreshHome();
+  });
+  window.addEventListener('storage', (event) => {
+    if (currentScreen === 'home' && (event.key === null || event.key.startsWith('quiz.daily.'))) daily.refreshHome();
   });
 
   // ── 홈 ─────────────────────────────────────────────────────────
@@ -1223,6 +1272,7 @@ async function main(): Promise<void> {
       characterId,
       nickname: savedNickname,
     });
+    daily.refreshHome();
     goTo('home');
     return true;
   }
@@ -1245,6 +1295,8 @@ async function main(): Promise<void> {
     // 원래 entry generation이 아니라 이 요청의 generation만 commit 권한을 가진다.
     const navigationGeneration = invalidateWaitingRoomEntry();
     if (ownsEntry) waitingRoom.hide();
+    // 퀴즈에서 퀴즈로 옮길 때는 퀴즈 화면의 closer 가 불리지 않는다. 오늘의 퀴즈 판을 놓고 연다
+    daily.release();
     const questions =
       round.mode === 'all'
         ? buildAllRound({
@@ -1322,6 +1374,11 @@ async function main(): Promise<void> {
    * 판을 열 때 이미 남았다 — 나가기와 같다.
    */
   function showAnsweredReview(session: QuizSession): void {
+    // 오늘의 퀴즈는 저장된 판이라 «기록 안 남음» 화면이 아니라 오늘의 퀴즈 풀이로 간다
+    if (daily.owns(session)) {
+      daily.reviewAnswered(session);
+      return;
+    }
     const review = reviewAnswered({
       questions: session.getQuestions(),
       answers: session.getAnswers(),
@@ -1340,6 +1397,11 @@ async function main(): Promise<void> {
   // ── 결과 ───────────────────────────────────────────────────────
 
   async function showResult(session: QuizSession): Promise<void> {
+    // 오늘의 퀴즈는 결과 화면(랭킹 자동 저장)을 거치지 않는다. 완료는 이미 이 브라우저에 저장됐다
+    if (daily.owns(session)) {
+      daily.complete(session);
+      return;
+    }
     const navigationGeneration = invalidateWaitingRoomEntry();
     const summary = summarizeRound({
       questions: session.getQuestions(),

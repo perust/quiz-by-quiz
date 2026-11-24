@@ -109,6 +109,8 @@ globalThis.document = fakeDocument;
 globalThis.window = {
   innerWidth: 390, innerHeight: 844, scrollY: 0,
   addEventListener() {}, removeEventListener() {}, scrollBy() {}, scrollTo() {},
+  // storage/safe-storage.js 가 불러오는 순간 한 번 시험한다 (오늘의 퀴즈 저장소를 쓰는 테스트). 테스트는 제 저장소를 넘긴다
+  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
 };
 
 let clock = 0;
@@ -134,6 +136,9 @@ const { backStepFor } = await import('../js/ui/back-guard.js');
 const exits = [];
 const reviews = [];
 const completed = [];
+// 일반 판의 나가기 확인 본문 (index.html 의 정적 글). 화면은 만들 때 이것을 기본값으로 읽는다
+const DEFAULT_EXIT_BODY = '지금 나가면 진행 중인 판은 사라지고 기록도 남지 않아요.';
+byId('exit-dialog-body').textContent = DEFAULT_EXIT_BODY;
 const quizScreen = createQuizScreen({
   onExit: () => exits.push('exit'),
   onComplete: (session) => completed.push(session),
@@ -299,6 +304,120 @@ test('reviewAnswered: 푼 문제를 맞힌 것까지 푼 순서대로 담고, �
     assert.equal(key in review, false, `랭킹 레코드가 될 ${key} 가 없다`);
   }
 });
+
+// ── 오늘의 퀴즈: 나가기 확인의 본문은 확인창을 열 때의 저장 상태다 ─────────────
+
+test('나가기 확인의 본문은 확인창을 열 때마다 판이 넘긴 값을 다시 읽고, 넘기지 않은 판은 본래 말이다', () => {
+  let note = '처음 말';
+  const session = createSession({ questions: [question('d1'), question('d2')], mode: 'category', categoryId: 'science' });
+  frames.clear();
+  quizScreen.start(session, { categoryLabel: '과학', exitNote: () => note });
+  byId('quiz-exit').click();
+  assert.equal(byId('exit-dialog-body').textContent, '처음 말');
+  byId('exit-cancel').click();
+  note = '바뀐 말';
+  byId('quiz-exit').click();
+  assert.equal(byId('exit-dialog-body').textContent, '바뀐 말', '판을 연 때가 아니라 확인창을 연 때의 말이다');
+  byId('exit-cancel').click();
+  quizScreen.hide();
+
+  // 다음 일반 판(분야 10·전체 25)은 넘기는 말이 없다 — 앞 판의 말을 이어 쓰지 않는다
+  startRound();
+  assert.equal(byId('exit-dialog-body').textContent, DEFAULT_EXIT_BODY);
+  byId('quiz-exit').click();
+  assert.equal(byId('exit-dialog-body').textContent, DEFAULT_EXIT_BODY);
+  byId('exit-cancel').click();
+  quizScreen.hide();
+  startRound([question('a1', 'history'), question('a2', 'art')], 'all');
+  byId('quiz-exit').click();
+  assert.equal(byId('exit-dialog-body').textContent, DEFAULT_EXIT_BODY);
+  byId('exit-confirm').click();
+  assert.deepEqual(exits, ['exit'], '확인·나가기 길은 그대로다');
+});
+
+for (const failure of ['throw', 'drop']) {
+  test(`오늘의 퀴즈: 판 도중 저장이 실패(${failure})하면 곧바로 연 확인창이 저장했다고 말하지 않고, 같은 판에서 회복하면 돌아온다`, async () => {
+    const { createDailyController } = await import('../js/ui/daily.js');
+    const { createDailyStore, dailyKey } = await import('../js/storage/daily-store.js');
+    const banks = Object.fromEntries(await Promise.all(['history', 'science', 'geography', 'general', 'art']
+      .map(async (id) => [id, JSON.parse(await source(`data/${id}.json`))])));
+
+    // 처음에는 쓸 수 있고(부팅 시험을 지났다), 나중에 쓰기가 던지거나 말없이 버려지게 바꾼다
+    const values = new Map();
+    const fault = { mode: null };
+    const storage = {
+      getItem: (key) => (values.has(key) ? values.get(key) : null),
+      setItem: (key, value) => {
+        if (fault.mode === 'throw') throw new Error('QuotaExceededError');
+        if (fault.mode === 'drop') return;
+        values.set(key, String(value));
+      },
+      removeItem: (key) => { values.delete(key); },
+    };
+    const plays = [];
+    const daily = createDailyController({
+      store: createDailyStore(storage, { persistent: true }),
+      banks,
+      now: () => Date.parse('2026-11-25T08:00:00+09:00'),
+      newSessionId: () => 'tab',
+      // app.ts 가 하는 그대로 퀴즈 화면에 올린다
+      play: (session, view) => {
+        plays.push(session);
+        frames.clear();
+        quizScreen.start(session, { categoryLabel: view.categoryLabel, saveNote: view.saveNote, exitNote: view.exitNote });
+      },
+      showReview: () => assert.fail('결과·푼 문제 화면으로 가지 않는다'),
+      showUnavailable: () => assert.fail('오늘의 퀴즈를 만들 수 있다'),
+      setHomeStatus: () => {},
+      announce: () => {},
+      schedule: () => () => {},
+    });
+    const storedAnswers = () => JSON.parse(values.get(dailyKey('2026-11-25'))).answers.length;
+    const body = () => byId('exit-dialog-body').textContent;
+
+    daily.open();
+    assert.equal(plays.length, 1);
+    const session = plays[0];
+    assert.match(body(), /이 기기에 저장돼요/, '연 순간의 저장소는 정말로 쓸 수 있다');
+    choose(0);
+    assert.equal(byId('feedback-save').textContent, '이 기기에 저장했어요');
+    byId('next-button').click();
+
+    fault.mode = failure;
+    choose(1);
+    assert.equal(byId('feedback-save').textContent, '저장하지 못했어요 · 이 창을 닫으면 사라져요');
+    assert.equal(session.record().answers.length, 2, '이 창의 판은 두 답');
+    assert.equal(storedAnswers(), 1, '저장소는 한 답');
+    // 홈·다시 열기·다른 답 없이 곧바로 「나가기」
+    byId('quiz-exit').click();
+    assert.ok(dialogOpen());
+    assert.match(body(), /저장하지 못하고 있어요/, '메모리에만 있는 답을 «이 기기에 저장돼요»라고 하지 않는다');
+    assert.doesNotMatch(body(), /이 기기에 저장돼요/);
+    byId('exit-cancel').click();
+    assert.equal(dialogOpen(), false);
+
+    // 저장소가 돌아오고 같은 판의 다음 답이 앞 답까지 함께 쓰인다 → 곧바로 연 확인창이 저장 범위로 돌아온다
+    fault.mode = null;
+    byId('next-button').click();
+    choose(2);
+    assert.equal(byId('feedback-save').textContent, '이 기기에 저장했어요');
+    assert.equal(storedAnswers(), 3);
+    assert.equal(plays.length, 1, '같은 판이다');
+    byId('quiz-exit').click();
+    assert.match(body(), /이 기기에 저장돼요/);
+    assert.doesNotMatch(body(), /저장하지 못하고 있어요/, '지난 실패의 경고가 남지 않는다');
+    byId('exit-cancel').click();
+    daily.release();
+    quizScreen.hide();
+
+    // 그 뒤의 일반 판은 본래 말이다
+    startRound();
+    byId('quiz-exit').click();
+    assert.equal(body(), DEFAULT_EXIT_BODY);
+    byId('exit-cancel').click();
+    quizScreen.hide();
+  });
+}
 
 // ── «푼 문제» 화면 ──────────────────────────────────────────────────
 

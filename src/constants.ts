@@ -139,3 +139,10 @@ export const QUESTION_REPORT_TEMPLATE = 'question-report.md';
  * 브라우저·GitHub 가 받는 길이에 넉넉히 못 미치게 잡고, 넘으면 질문·보기 부분만 잘라 낸다.
  */
 export const QUESTION_REPORT_URL_MAX_LENGTH = 6000;
+
+/**
+ * 오늘의 퀴즈 결과 공유 글의 서비스 이름과 공식 주소 (`core/daily-share.ts`). 공유 글은 지금 페이지의 주소
+ * (`location`)를 쓰지 않는다 — 로컬 서버·미리보기 주소나 query·hash 가 글에 실려 나가지 않게 배포 주소를 박아 둔다.
+ */
+export const SERVICE_NAME = 'Quiz by Quiz';
+export const SERVICE_URL = 'https://perust.github.io/quiz-by-quiz/';
