@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-// 오늘의 퀴즈 (daily). 홈의 중앙 메뉴(«홈 바로가기»)에 입구 하나를 더하고, 날마다 정해진 20문제
+// 오늘의 퀴즈 (daily). 홈의 주요 게임 진입점 묶음에서 온라인 다음, 전체 도전 앞에 입구 하나를 두고, 날마다 정해진 20문제
 // (분야 다섯 × 쉬움 1·보통 1·어려움 2)를 푼다.
 // 기록은 이 브라우저에만 남고 개인 기록·온라인 랭킹·서버에는 가지 않는다.
 
@@ -16,19 +16,19 @@ function between(text, start, end) {
   return text.slice(startIndex, endIndex);
 }
 
-test('홈의 중앙 메뉴에 오늘의 퀴즈 입구가 하나 있고 기존 입구는 그대로다', async () => {
+test('오늘의 퀴즈 입구는 하나이고 주요 게임 진입점의 둘째 자리(온라인 → 오늘의 퀴즈 → 전체 도전)다', async () => {
   const html = await source('index.html');
   const home = between(html, 'data-screen="home"', 'data-screen="quiz"');
+  const actions = between(home, '<div class="home-primary-actions">', 'class="home-quests__caption"');
   const nav = between(home, '<nav class="home-menu"', '</nav>');
-  // 입구는 중앙 메뉴 안에 딱 하나다. 모서리 바로가기나 새 카드 묶음이 아니다
-  assert.equal((html.match(/id="open-daily"/g) ?? []).length, 1, '오늘의 퀴즈 입구는 하나다');
-  assert.match(nav, /<button type="button" class="menu-card home-daily" id="open-daily"[^>]*aria-describedby="daily-status"/);
-  assert.match(nav, /menu-card__name">오늘의 퀴즈<\/span>/);
-  assert.match(nav, /id="daily-status"/);
-  // 기존 입구·이름·순서는 그대로다
-  const order = ['open-daily', 'open-characters', 'open-ranking', 'open-rules'];
-  order.reduce((previous, id) => { const at = nav.indexOf(`id="${id}"`); assert.ok(at > previous, id); return at; }, -1);
-  assert.doesNotMatch(between(home, 'class="home-quests"', 'class="home-secondary"'), /open-daily/);
+  assert.equal((html.match(/id="open-daily"/g) ?? []).length, 1, '오늘의 퀴즈 입구는 하나다 — 옮기지 복제하지 않는다');
+  assert.equal((html.match(/id="daily-status"/g) ?? []).length, 1, '상태 한 줄도 하나다');
+  // DOM 순서가 곧 낭독·Tab·눈의 순서다 (CSS order 를 쓰지 않는다)
+  const children = [...actions.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(children, ['open-online', 'open-daily', 'start-all']);
+  assert.match(actions, /<button type="button" class="menu-card home-daily" id="open-daily" aria-label="오늘의 퀴즈" aria-describedby="daily-status" disabled>/);
+  assert.match(between(actions, 'id="open-daily"', '</button>'), /id="daily-status"/, '상태 줄은 입구 안에 있다');
+  assert.doesNotMatch(nav, /open-daily|daily-status/, '보조 메뉴(«홈 바로가기»)에는 남지 않는다');
 });
 
 // ── 순수 로직·저장소·흐름 (컴파일된 js/ 를 읽는다 — `npm run build` 뒤에 돈다) ─────────────────
