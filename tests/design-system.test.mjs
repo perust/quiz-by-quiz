@@ -392,15 +392,25 @@ test('홈: 중앙의 게임·분야·보조 메뉴와 동등한 온라인·전�
     assert.equal(valueOf(rules, dock, 'display', env), 'grid');
     assert.equal(valueOf(rules, node('button.menu-card#open-ranking', dock), 'background', env), 'var(--hud-bg)');
     assert.equal(valueOf(rules, node('header.home-header', stage), 'background', env), 'transparent');
+
+    // 「오늘의 퀴즈」는 주요 진입점 묶음으로 옮겨도 보조 메뉴 때의 홈 HUD 조각 모양 그대로다 (흰 글자 · 어두운 바탕 · 안쪽 고리)
+    const daily = node('button.menu-card.home-daily#open-daily', primaryActions);
+    assert.equal(valueOf(rules, daily, 'background', env), 'var(--hud-bg)', '오늘의 퀴즈는 어두운 HUD 바탕이다');
+    assert.equal(valueOf(rules, daily, 'color', env), 'var(--hud-text)');
+    assert.equal(valueOf(rules, node('span.menu-card__name', node('span.menu-card__body', daily)), 'color', env), 'var(--hud-text)');
+    assert.equal(valueOf(rules, node('span.menu-card__status#daily-status', node('span.menu-card__body', daily)), 'color', env), 'var(--hud-text-muted)');
+    assert.equal(valueOf(rules, node('button.menu-card.home-daily#open-daily.is-standing', primaryActions), 'background', env), 'var(--hud-bg)', '올라서도 흰 글자가 읽힌다');
+    assert.equal(valueOf(rules, node('button.menu-card.home-daily#open-daily:focus-visible', primaryActions), 'outline-color', env), 'var(--focus-on-hud)');
   }
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', DESKTOP), 'repeat(2, minmax(0, 1fr))');
+  // 온라인 → 오늘의 퀴즈 → 전체 도전은 어느 폭에서나 DOM 순서대로 한 열이다 — 두 열이면 전체 도전이 온라인 아래 홀로 남는다
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', DESKTOP), 'minmax(0, 1fr)');
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', MOBILE), 'minmax(0, 1fr)');
   const mediumPortrait = { ...MOBILE, width: 440, height: 844 };
   const shortMedium = { ...MOBILE, width: 440, height: 400 };
   const fractionalMedium = { ...MOBILE, width: 440, height: 480.5 };
   const shortNarrow = { ...MOBILE, width: 400, height: 400 };
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', mediumPortrait), 'minmax(0, 1fr)', '기록 pill이 있는 중간 폭 세로 화면은 한 열이다');
-  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortMedium), 'repeat(2, minmax(0, 1fr))', '짧은 가로 화면은 조작부 공간을 위해 두 열이다');
+  assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortMedium), 'minmax(0, 1fr)', '짧은 가로 화면도 같은 한 열이고 나머지는 스크롤한다');
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', fractionalMedium), 'minmax(0, 1fr)', '소수 viewport 높이에도 반응형 규칙 사이 빈틈이 없다');
   assert.equal(valueOf(rules, node('span.challenge-card__meta#start-all-meta', startAll), 'display', shortMedium), 'none', '짧고 좁은 화면은 보조 기록을 접는다');
   assert.equal(valueOf(rules, primaryActions, 'grid-template-columns', shortNarrow), 'minmax(0, 1fr)', '420px 이하 화면은 짧아도 한 열을 유지한다');

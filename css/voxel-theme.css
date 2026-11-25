@@ -845,8 +845,10 @@ pre {
   mask: var(--i-pencil) center / contain no-repeat;
 }
 
-/* dock 안의 칸은 따로 놀지 않는다 — 바탕 없이 아이콘과 이름만, 올리면 옅게 채운다 */
-.home-menu .menu-card__name {
+/* dock 안의 칸은 따로 놀지 않는다 — 바탕 없이 아이콘과 이름만, 올리면 옅게 채운다.
+   「오늘의 퀴즈」는 주요 진입점 묶음으로 옮겼어도 같은 홈 HUD 조각 모양이라 이 절의 .home-menu 규칙마다 곁에 둔다 */
+.home-menu .menu-card__name,
+.home-daily .menu-card__name {
   font-size: var(--text-sm);
 }
 
@@ -860,8 +862,10 @@ pre {
 
 .home-player .menu-card__figure,
 .home-menu .menu-card__figure,
+.home-daily .menu-card__figure,
 .home-player .menu-card__name,
 .home-menu .menu-card__name,
+.home-daily .menu-card__name,
 .home-player .menu-card__desc,
 .home-player .menu-card__edit {
   color: var(--hud-text);
@@ -873,7 +877,8 @@ pre {
   }
 
   .home-player .menu-card--wide:hover:not(:disabled),
-  .home-menu .menu-card:hover:not(:disabled) {
+  .home-menu .menu-card:hover:not(:disabled),
+  .home-primary-actions .home-daily:hover:not(:disabled) {
     border-color: var(--accent-line);
     background: var(--hud-bg);
   }
@@ -909,7 +914,8 @@ pre {
 
 /* 홈 HUD */
 .home-player .menu-card--wide,
-.home-menu .menu-card {
+.home-menu .menu-card,
+.home-primary-actions .home-daily {
   border-color: var(--hud-line);
   background: var(--hud-bg);
   color: var(--hud-text);
@@ -919,6 +925,8 @@ pre {
 
 .home-menu .menu-card:focus-visible,
 .home-menu .menu-card.is-standing,
+.home-primary-actions .home-daily:focus-visible,
+.home-primary-actions .home-daily.is-standing,
 .home-player .menu-card--wide:focus-visible,
 .home-player .menu-card--wide.is-standing {
   border-color: var(--gold-soft);
@@ -1183,7 +1191,8 @@ pre {
   color: var(--correct-ink);
 }
 
-.home-menu .menu-card__figure {
+.home-menu .menu-card__figure,
+.home-daily .menu-card__figure {
   color: var(--gold-soft);
 }
 
@@ -3717,6 +3726,8 @@ select.is-standing {
 :root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
   .home-menu .menu-card.is-standing:not(:focus-visible),
 :root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
+  .home-primary-actions .home-daily.is-standing:not(:focus-visible),
+:root:has(:is(button, a[href], [role='button'], summary, input, textarea, select):focus-visible)
   .home-player .menu-card--wide.is-standing:not(:focus-visible) {
   border-color: var(--hud-line);
 }
@@ -3880,7 +3891,8 @@ select.is-standing {
   }
 
   /* dock 칸은 이름을 한 단계 줄여 캐릭터가 서는 오른쪽과 겹치지 않게 한다 */
-  .home-menu .menu-card__name {
+  .home-menu .menu-card__name,
+  .home-daily .menu-card__name {
     font-size: var(--text-xs);
   }
 
@@ -4037,6 +4049,7 @@ select.is-standing {
 
   .home-player .menu-card--wide,
   .home-menu .menu-card,
+  .home-primary-actions .home-daily,
   .home-quests,
   .quiz--character .quiz-hud,
   .ranking-header,

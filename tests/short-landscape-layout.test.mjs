@@ -191,7 +191,8 @@ function homeTree() {
 test("짧은 가로 홈도 중앙 메뉴의 같은 읽기 순서와 동등한 두 CTA를 쓴다", () => {
   for(const env of [...LANDSCAPE_PHONES,OLD_LANDSCAPE,touch(480,320)]) {
     const home=homeTree();
-    assert.equal(valueOf(rules,home.actions,"grid-template-columns",env),"repeat(2, minmax(0, 1fr))");
+    // 온라인 → 오늘의 퀴즈 → 전체 도전이 넓은 화면과 같은 한 열이다. 두 열이면 전체 도전이 온라인 아래 홀로 남는다
+    assert.equal(valueOf(rules,home.actions,"grid-template-columns",env),"minmax(0, 1fr)");
     assert.equal(valueOf(rules,home.actions,"grid-auto-rows",env),"1fr");
     assert.equal(valueOf(rules,home.meta,"display",env),"none");
     assert.equal(valueOf(rules,home.header,"position",env),"static");
